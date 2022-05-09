@@ -1,0 +1,54 @@
+use crate::prelude::*;
+use ard_ecs::prelude::*;
+
+#[test]
+fn game_loop() {
+    const TICK_COUNT: usize = 69;
+
+    #[derive(Default)]
+    struct Ticker {
+        start_count: usize,
+        tick_count: usize,
+        post_tick_count: usize,
+    }
+
+    impl SystemState for Ticker {
+        type Data = ();
+        type Resources = ();
+    }
+
+    impl Ticker {
+        fn start(&mut self, _: Context<Ticker>, _: Start) {
+            assert_eq!(self.start_count, 0);
+            self.start_count += 1;
+        }
+
+        fn tick(&mut self, _: Context<Ticker>, _: Tick) {
+            self.tick_count += 1;
+        }
+
+        fn post_tick(&mut self, ctx: Context<Ticker>, _: PostTick) {
+            self.post_tick_count += 1;
+            if self.post_tick_count == TICK_COUNT {
+                assert_eq!(self.tick_count, TICK_COUNT);
+                assert_eq!(self.start_count, 1);
+                ctx.events.submit(Stop);
+            }
+        }
+    }
+
+    impl Into<System> for Ticker {
+        fn into(self) -> System {
+            SystemBuilder::new(Ticker::default())
+                .with_handler(Ticker::start)
+                .with_handler(Ticker::tick)
+                .with_handler(Ticker::post_tick)
+                .build()
+        }
+    }
+
+    AppBuilder::new()
+        .add_plugin(ArdCorePlugin)
+        .add_system(Ticker::default())
+        .run();
+}

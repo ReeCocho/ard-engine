@@ -1,0 +1,204 @@
+// Compile with:
+// glslc draw_gen.comp --target-env=vulkan1.2 -o draw_gen.comp.spv
+#version 450
+
+layout(local_size_x_id = 0) in;
+
+struct DrawCall {
+    uint index_count;
+    uint instance_count;
+    uint first_index;
+    int vertex_offset;
+    uint first_instance;
+    vec4 bounds_center;
+    vec4 bounds_half_extents;
+};
+
+struct TransformedBoundingBox {
+    /// All eight corners of the box
+    vec4[8] corners;
+    /// Min point for AABB in screen space.
+    vec2 min_pt;
+    /// Max point for AABB in screen space.
+    vec2 max_pt;
+    /// Depth value for the AABB square.
+    float depth;
+};
+
+struct ObjectId {
+    uint info_idx;
+    uint batch_idx;
+    uint dummy;
+};
+
+struct ObjectInfo {
+    mat4 model;
+    uint material;
+    uint textures;
+};
+
+layout(set = 0, binding = 0) readonly buffer InputInfoData {
+    ObjectInfo[] objects;
+};
+
+layout(set = 0, binding = 1) readonly buffer InputObjectIds {
+    ObjectId[] input_ids;
+};
+
+layout(set = 0, binding = 2) buffer DrawCalls {
+    DrawCall[] draw_calls;
+};
+
+layout(set = 0, binding = 3) writeonly buffer OutputObjectIndices {
+    uint[] output_indices;
+};
+
+layout(set = 0, binding = 4) uniform sampler2D depth_pyramid;
+
+layout(set = 1, binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 projection;
+    mat4 vp;
+    mat4 view_inv;
+    mat4 projection_inv;
+    mat4 vp_inv;
+    vec4[6] planes;
+    vec4 properties;
+    vec4 position;
+} camera;
+
+layout(push_constant) uniform constants {
+    vec2 render_area;
+    uint total_objects;
+};
+
+
+
+/// Transforms the bounding box via the given model matrix.
+TransformedBoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
+    TransformedBoundingBox bb;
+
+    half_extents.x = max(half_extents.x, 0.1);
+    half_extents.y = max(half_extents.y, 0.1);
+    half_extents.z = max(half_extents.z, 0.1);
+
+    half_extents *= 1.1;
+
+    // Compute all eight corners
+    bb.corners[0] = camera.vp * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[1] = camera.vp * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[2] = camera.vp * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[3] = camera.vp * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[4] = camera.vp * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+    bb.corners[5] = camera.vp * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[6] = camera.vp * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[7] = camera.vp * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+
+    // Then find the min and max points in screen space
+    bb.min_pt = vec2(1.0, 1.0);
+    bb.max_pt = vec2(-1.0, -1.0);
+    bb.depth = 1.0;
+
+    for (int i = 0; i < 8; i++) {
+        bb.corners[i] /= bb.corners[i].w;
+        vec4 pt = bb.corners[i];
+
+        // Min
+        bb.min_pt.x = min(bb.min_pt.x, pt.x);
+        bb.min_pt.y = min(bb.min_pt.y, pt.y);
+
+        // Max
+        bb.max_pt.x = max(bb.max_pt.x, pt.x);
+        bb.max_pt.y = max(bb.max_pt.y, pt.y);
+
+        // Depth
+        bb.depth = min(bb.depth, pt.z);
+    }
+
+    return bb;
+}
+
+void main() {
+    uint object_index = gl_GlobalInvocationID.x;
+    if (object_index >= total_objects) {
+        return;
+    }
+
+    ObjectId obj = input_ids[object_index];
+    mat4 model = objects[obj.info_idx].model;
+
+    // Frustum culling using sphere radius
+    vec4 pos = model * vec4(draw_calls[obj.batch_idx].bounds_center.xyz, 1.0);
+    float radius = draw_calls[obj.batch_idx].bounds_center.w * max(model[0][0], max(model[1][1], model[2][2]));
+    for (int i = 0; i < 6; i++) { 
+        if (dot(vec4(pos.xyz, 1.0), camera.planes[i]) < -radius) {
+            return;
+        }
+    } 
+
+    TransformedBoundingBox bb = transform_bounding_box(
+        model, 
+        draw_calls[obj.batch_idx].bounds_center, 
+        draw_calls[obj.batch_idx].bounds_half_extents
+    );
+
+    vec2 dbl_pixel_size = vec2(
+        bb.max_pt.x - bb.min_pt.x,
+        bb.max_pt.y - bb.min_pt.y
+    ) * render_area;
+
+    float level = ceil(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) / 2.0));
+    
+    // Clip space to UV
+    bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);
+    bb.max_pt.y = 1.0 - bb.max_pt.y;
+
+    bb.min_pt = (bb.min_pt * 0.5) + vec2(0.5);
+    bb.min_pt.y = 1.0 - bb.min_pt.y;
+
+    // Determine depth
+    vec4 samples;
+    samples.x = textureLod(depth_pyramid, vec2(bb.min_pt.x, bb.max_pt.y), level).x;
+    samples.y = textureLod(depth_pyramid, vec2(bb.max_pt.x, bb.min_pt.y), level).x;
+    samples.z = textureLod(depth_pyramid, bb.min_pt, level).x;
+    samples.w = textureLod(depth_pyramid, bb.max_pt, level).x;
+
+    float depth = max(max(samples.x, samples.y), max(samples.z, samples.w));
+
+    if (bb.depth <= depth) {
+        uint model_offset = atomicAdd(draw_calls[obj.batch_idx].instance_count, 1);
+        uint instance_index = draw_calls[obj.batch_idx].first_instance + model_offset;
+        output_indices[instance_index] = obj.info_idx;
+    }
+
+    /*
+    // Determine diameter (in pixels) of the culling sphere
+    vec3 camera_pos = camera.position.xyz;
+    vec3 cam_to_center = pos.xyz - camera_pos;
+    float dist_to_camera = length(cam_to_center);
+    float clip_rad = radius * (1.0 / tan(camera.properties.x / 2.0)) / dist_to_camera;
+    float pixel_diam = clip_rad * max(render_area.x, render_area.y);
+
+    float level = max(ceil(log2(max(pixel_diam, 1.0))), 0.0);
+
+    // Compute sphere surface depth and UV position
+    vec3 del_to_sphere_surface = cam_to_center * (max(dist_to_camera - radius - camera.properties.y, 0.01) / dist_to_camera);
+    vec4 uv = camera.vp * vec4(camera_pos + del_to_sphere_surface, 1.0);
+    uv /= uv.w;
+    uv.xy = uv.xy * 0.5 + vec2(0.5);
+    uv.y = 1.0 - uv.y;
+
+    vec4 samples;
+    samples.x = textureLodOffset(depth_pyramid, uv.xy, level, ivec2(0, 0)).x;
+    // samples.y = textureLodOffset(depth_pyramid, uv.xy, level, ivec2(0, 1)).x;
+    // samples.z = textureLodOffset(depth_pyramid, uv.xy, level, ivec2(1, 0)).x;
+    // samples.w = textureLodOffset(depth_pyramid, uv.xy, level, ivec2(1, 1)).x;
+    float depth = samples.x; // max(max(samples.x, samples.y), max(samples.z, samples.w));
+
+    if (uv.z <= depth) {
+        uint model_offset = atomicAdd(draw_calls[obj.batch_idx].instance_count, 1);
+        uint instance_index = draw_calls[obj.batch_idx].first_instance + model_offset;
+        output_indices[instance_index] = obj.info_idx;
+    }
+    */
+}
