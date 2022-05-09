@@ -1,9 +1,4 @@
-use ard_core::prelude::*;
-use ard_graphics_api::prelude::*;
-use ard_graphics_vk::prelude::*;
-use ard_window::prelude::*;
-use ard_winit::prelude::*;
-use glam::{Mat4, Vec3, Vec4};
+use ard_engine::{core::prelude::*, graphics::prelude::*, math::*, window::prelude::*};
 
 fn main() {
     AppBuilder::new()

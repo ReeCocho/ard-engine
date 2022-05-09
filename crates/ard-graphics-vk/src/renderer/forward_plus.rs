@@ -13,6 +13,7 @@ use crate::{
 
 use ard_ecs::prelude::{ComponentQuery, Query, Read};
 use ard_graphics_api::prelude::*;
+use ard_math::{Mat4, Vec2, Vec4};
 use ard_render_graph::{
     buffer::{BufferAccessDescriptor, BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraph, RenderGraphBuilder, RenderGraphResources},
@@ -22,7 +23,6 @@ use ard_render_graph::{
 };
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec2, Vec4};
 
 use super::{
     depth_pyramid::{DepthPyramid, DepthPyramidGenerator},

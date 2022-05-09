@@ -1,5 +1,5 @@
+use ard_math::{Mat4, Vec3, Vec4};
 use ash::vk::{self, VertexInputBindingDescription};
-use glam::{Mat4, Vec3, Vec4};
 use std::sync::{Arc, Mutex};
 
 use crate::{alloc::BufferArray, prelude::*};

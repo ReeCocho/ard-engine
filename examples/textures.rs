@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use ard_core::prelude::*;
-use ard_ecs::prelude::*;
-use ard_graphics_api::prelude::*;
-use ard_graphics_vk::prelude::*;
-use ard_window::prelude::*;
-use ard_winit::prelude::*;
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use ard_engine::{
+    core::prelude::*,
+    ecs::prelude::*,
+    graphics::prelude::*,
+    math::{Mat4, Vec2, Vec3, Vec4},
+    window::prelude::*,
+};
 
 fn main() {
     AppBuilder::new()

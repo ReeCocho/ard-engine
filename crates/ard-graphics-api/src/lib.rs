@@ -27,7 +27,7 @@ pub mod prelude {
     pub use crate::*;
 }
 
-use glam::{Mat4, Vec4};
+use ard_math::{Mat4, Vec4};
 use prelude::*;
 use std::{any::Any, hash::Hash};
 

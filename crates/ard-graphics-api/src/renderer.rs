@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel};
 use ard_ecs::prelude::*;
-use glam::{Mat4, Vec3};
+use ard_math::{Mat4, Vec3};
 
 /// Event indicating that rendering is about to be performed.
 #[derive(Debug, Event, Copy, Clone)]

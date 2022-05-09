@@ -11,11 +11,7 @@ anymap = "0.12"
 rayon = "1.5"
 unsafe_unwrap = "0.1"
 crossbeam-channel = "0.5"
-ard-ecs-derive = {path = "./ard-ecs-derive/"}
-
-[dev-dependencies]
-bevy_ecs = "0.5"
-glam = "0.18"
+ard-ecs-derive = { path = "./ard-ecs-derive/" }
 
 [profile.release]
 debug = false

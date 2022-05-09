@@ -1,9 +1,13 @@
-use ard_core::prelude::*;
-use ard_ecs::prelude::*;
-use ard_graphics_vk::prelude::*;
-use ard_input::{InputState, Key};
-use ard_window::{window::WindowId, windows::Windows};
-use glam::{EulerRot, Mat4, Vec3};
+use ard_engine::{
+    core::prelude::*,
+    ecs::prelude::*,
+    graphics::prelude::*,
+    input::*,
+    math::{EulerRot, Mat4, Vec3},
+    window::prelude::*,
+};
+use ard_math::Vec4Swizzles;
+
 use std::time::Instant;
 
 pub struct FrameRate {
@@ -96,26 +100,26 @@ impl CameraMovement {
         let forward = rot.col(2);
 
         if input.key(Key::W) {
-            self.position += Vec3::from(forward) * delta * self.move_speed;
+            self.position += forward.xyz() * delta * self.move_speed;
         }
 
         if input.key(Key::S) {
-            self.position -= Vec3::from(forward) * delta * self.move_speed;
+            self.position -= forward.xyz() * delta * self.move_speed;
         }
 
         if input.key(Key::A) {
-            self.position -= Vec3::from(right) * delta * self.move_speed;
+            self.position -= right.xyz() * delta * self.move_speed;
         }
 
         if input.key(Key::D) {
-            self.position += Vec3::from(right) * delta * self.move_speed;
+            self.position += right.xyz() * delta * self.move_speed;
         }
 
         // Update camera
         camera_state.0 = CameraDescriptor {
             position: self.position,
-            center: self.position + Vec3::from(forward),
-            up: Vec3::from(up),
+            center: self.position + forward.xyz(),
+            up: up.xyz(),
             near: self.near,
             far: self.far,
             fov: self.fov,

@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 winit = "0.25"
 glam = "0.18"
-ard-ecs = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-ecs.git", branch = "main" }
-ard-core = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-core.git", branch = "main" }
-ard-window = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-window.git", branch = "main" }
-ard-input = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-input.git", branch = "main" }
+ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-core = { version = "0.1", path = "../ard-core" }
+ard-window = { version = "0.1", path = "../ard-window" }
+ard-input = { version = "0.1", path = "../ard-input" }

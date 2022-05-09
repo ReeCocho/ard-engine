@@ -7,8 +7,8 @@ use crate::{
     prelude::*,
 };
 use ard_graphics_api::prelude::*;
+use ard_math::*;
 use ash::vk;
-use glam::*;
 
 pub(crate) const MAX_VERTEX_ATTRIBUTE_COUNT: usize = 8;
 

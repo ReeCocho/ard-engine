@@ -6,24 +6,18 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-core = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-core.git", branch = "main" }
-ard-window = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-window.git", branch = "main" }
-ard-winit = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-winit.git", branch = "main" }
-ard-ecs = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-ecs.git", branch = "main" }
-ard-graphics-api = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-graphics-api.git", branch = "main" }
-ard-render-graph = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-render-graph.git", branch = "main" }
+ard-core = { version = "0.1", path = "../ard-core" }
+ard-window = { version = "0.1", path = "../ard-window" }
+ard-winit = { version = "0.1", path = "../ard-winit" }
+ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-math = { version = "0.1", path = "../ard-math" }
+ard-graphics-api = { version = "0.1", path = "../ard-graphics-api" }
+ard-render-graph = { version = "0.1", path = "../ard-render-graph" }
 ash = "0.33.3+1.2.191"
 ash-window = "0.7"
 winit = "0.25"
 gpu-alloc = "0.5"
 gpu-alloc-ash = "0.2"
 crossbeam-channel = "0.5"
-glam = { version = "0.18", features = ["bytemuck"] }
 bytemuck = "1.7"
 dashmap = "4.0"
-
-[dev-dependencies]
-ard-input = { version = "0.1", git = "ssh://git@github.com/ReeCocho/ard-input.git", branch = "main" }
-
-[profile.release]
-debug = 1

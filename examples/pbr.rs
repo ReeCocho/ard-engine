@@ -1,13 +1,10 @@
 #[path = "./util.rs"]
 mod util;
 
-use ard_core::prelude::*;
-use ard_ecs::prelude::*;
-use ard_graphics_api::prelude::*;
-use ard_graphics_vk::prelude::*;
-use ard_window::prelude::*;
-use ard_winit::prelude::*;
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use ard_engine::{
+    core::prelude::*, ecs::prelude::*, graphics::prelude::*, math::*, window::prelude::*,
+};
+
 use util::{CameraMovement, FrameRate, MainCameraState};
 
 struct BoundingBoxSystem {
@@ -25,7 +22,7 @@ impl BoundingBoxSystem {
             let camera_ubo = CameraUBO::new(&camera_state.0, 1280.0, 720.0);
             let inv = camera_ubo.vp.inverse();
 
-            let pos = Vec3::from(model.0.col(3));
+            let pos = model.0.col(3).xyz();
             let camera_pos = camera_state.0.center;
             let cam_to_center = pos - camera_pos;
             let dist_to_camera = cam_to_center.length();
@@ -123,8 +120,8 @@ impl BoundingBoxSystem {
 
             // println!("{} {}", min_point_AABB, max_point_AABB);
 
-            let half_extents = (Vec3::from(max_point_AABB) - Vec3::from(min_point_AABB)) / 2.0;
-            let center = (Vec3::from(max_point_AABB) + Vec3::from(min_point_AABB)) / 2.0;
+            let half_extents = (max_point_AABB.xyz() - min_point_AABB.xyz()) / 2.0;
+            let center = (max_point_AABB.xyz() + min_point_AABB.xyz()) / 2.0;
 
             draw.draw_rect_prism(
                 half_extents,

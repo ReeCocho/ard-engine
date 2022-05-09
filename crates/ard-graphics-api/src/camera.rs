@@ -1,4 +1,4 @@
-use glam::Vec3;
+use ard_math::Vec3;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct CameraCreateInfo {

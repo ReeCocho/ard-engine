@@ -1,6 +1,6 @@
 use ard_graphics_api::{mesh::VertexLayout, prelude::MipType};
+use ard_math::{Vec2, Vec4};
 use ash::vk;
-use glam::{Vec2, Vec4};
 use std::{
     collections::HashMap,
     ops::{Div, Shr},

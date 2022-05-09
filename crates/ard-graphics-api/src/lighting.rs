@@ -1,6 +1,6 @@
 use ard_ecs::prelude::*;
+use ard_math::Vec3;
 use bytemuck::{Pod, Zeroable};
-use glam::Vec3;
 
 use crate::Backend;
 

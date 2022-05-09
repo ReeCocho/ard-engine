@@ -1,7 +1,7 @@
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
+use ard_math::Vec4;
 use bytemuck::{Pod, Zeroable};
-use glam::Vec4;
 
 use crate::VkBackend;
 

@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec4};
+use ard_math::{Vec2, Vec4};
 use std::{
     collections::{HashMap, HashSet},
     hash::{BuildHasherDefault, Hash},

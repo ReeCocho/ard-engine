@@ -1,7 +1,7 @@
+use ard_math::IVec2;
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use factory::descriptors::DescriptorPool;
-use glam::IVec2;
 use gpu_alloc::UsageFlags;
 
 use crate::alloc::*;
