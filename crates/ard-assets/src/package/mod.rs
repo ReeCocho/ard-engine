@@ -3,8 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::prelude::Asset;
-
 pub trait Package {
     fn new(path: &Path) -> Self;
 

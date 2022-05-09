@@ -1,7 +1,5 @@
 pub mod entities;
 
-use std::num::NonZeroU32;
-
 use crate::{archetype::Archetypes, tag::Tags, world::entities::Entities};
 
 /// A world contains the data of the ECS. It is used to create entities and add and remove
@@ -14,15 +12,6 @@ pub struct World {
     pub(crate) archetypes: Archetypes,
     /// Tags and their storages.
     pub(crate) tags: Tags,
-}
-
-/// Description of an entity within the world.
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct EntityInfo {
-    /// Current version of the entity.
-    pub ver: NonZeroU32,
-    /// Index of the archetype the entity exists in.
-    pub archetype: usize,
 }
 
 impl World {

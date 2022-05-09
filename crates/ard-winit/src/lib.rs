@@ -123,16 +123,13 @@ fn winit_runner(mut app: App) {
 
                         for command in window.drain_commands() {
                             match command {
-                                WindowCommand::SetWindowMode { mode, resolution } => todo!(),
+                                WindowCommand::SetWindowMode { .. } => todo!(),
                                 WindowCommand::SetTitle { title } => {
                                     winit_window.set_title(title.as_str())
                                 }
-                                WindowCommand::SetScaleFactor { scale_factor } => todo!(),
-                                WindowCommand::SetResolution {
-                                    logical_resolution,
-                                    scale_factor,
-                                } => todo!(),
-                                WindowCommand::SetVsync { vsync } => todo!(),
+                                WindowCommand::SetScaleFactor { .. } => todo!(),
+                                WindowCommand::SetResolution { .. } => todo!(),
+                                WindowCommand::SetVsync { .. } => todo!(),
                                 WindowCommand::SetResizable { resizable } => {
                                     winit_window.set_resizable(resizable)
                                 }
@@ -157,8 +154,8 @@ fn winit_runner(mut app: App) {
                                 WindowCommand::SetMinimized { minimized } => {
                                     winit_window.set_minimized(minimized)
                                 }
-                                WindowCommand::SetPosition { position } => todo!(),
-                                WindowCommand::SetResizeConstraints { resize_constraints } => {
+                                WindowCommand::SetPosition { .. } => todo!(),
+                                WindowCommand::SetResizeConstraints { .. } => {
                                     todo!()
                                 }
                             }
