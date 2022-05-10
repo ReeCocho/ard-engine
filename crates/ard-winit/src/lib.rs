@@ -46,6 +46,8 @@ fn winit_runner(mut app: App) {
     // Run startup functions
     app.run_startups();
 
+    let mut dispatcher = std::mem::take(&mut app.dispatcher).build();
+
     // Begin main loop
     let mut last = Instant::now();
     event_loop.run(move |event, event_loop, control_flow| {
@@ -66,9 +68,9 @@ fn winit_runner(mut app: App) {
 
                 // Dispatch event
                 match event {
-                    WindowEvent::CloseRequested => app.dispatcher.submit(WindowClosed(ard_id)),
+                    WindowEvent::CloseRequested => dispatcher.submit(WindowClosed(ard_id)),
                     WindowEvent::Resized(dims) => {
-                        app.dispatcher.submit(WindowResized {
+                        dispatcher.submit(WindowResized {
                             id: ard_id,
                             width: dims.width,
                             height: dims.height,
@@ -169,18 +171,18 @@ fn winit_runner(mut app: App) {
 
                     // Compute delta time and submit tick
                     let now = Instant::now();
-                    app.dispatcher.submit(Tick(now.duration_since(last)));
+                    dispatcher.submit(Tick(now.duration_since(last)));
                     last = now;
 
                     // Dispatch until events are cleared
-                    app.dispatcher.run(&mut app.world, &app.resources);
+                    dispatcher.run(&mut app.world, &app.resources);
 
                     // Reset input state
                     app.resources.get_mut::<InputState>().unwrap().flush();
                 }
 
                 // Handle `Stopping` event
-                app.dispatcher.run(&mut app.world, &app.resources);
+                dispatcher.run(&mut app.world, &app.resources);
             }
             _ => {}
         }

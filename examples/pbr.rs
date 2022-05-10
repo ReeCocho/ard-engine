@@ -13,12 +13,19 @@ struct BoundingBoxSystem {
 }
 
 impl BoundingBoxSystem {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
-        let draw = ctx.resources.0.unwrap();
-        let factory = ctx.resources.1.unwrap();
-        let camera_state = ctx.resources.2.unwrap();
+    fn tick(
+        &mut self,
+        tick: Tick,
+        commands: Commands,
+        queries: Queries<(Read<Model>, Read<PointLight>)>,
+        res: Res<(Write<DebugDrawing>, Write<Factory>, Read<MainCameraState>)>,
+    ) {
+        let res = res.get();
+        let draw = res.0.unwrap();
+        let factory = res.1.unwrap();
+        let camera_state = res.2.unwrap();
 
-        for (model, light) in ctx.queries.make::<(Read<Model>, Read<PointLight>)>() {
+        for (model, light) in queries.make::<(Read<Model>, Read<PointLight>)>() {
             let camera_ubo = CameraUBO::new(&camera_state.0, 1280.0, 720.0);
             let inv = camera_ubo.vp.inverse();
 
@@ -134,10 +141,7 @@ impl BoundingBoxSystem {
     }
 }
 
-impl SystemState for BoundingBoxSystem {
-    type Data = (Read<Model>, Read<PointLight>);
-    type Resources = (Write<DebugDrawing>, Write<Factory>, Read<MainCameraState>);
-}
+impl SystemState for BoundingBoxSystem {}
 
 impl Into<System> for BoundingBoxSystem {
     fn into(self) -> System {

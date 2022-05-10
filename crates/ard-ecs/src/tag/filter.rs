@@ -11,15 +11,23 @@ where
     /// Storage set associated with the filter.
     type StorageSet: TagStorageSet;
 
-    /// Generates the type key of read only components.
+    /// Generates the type key all tags.
+    fn type_key() -> TypeKey;
+
+    /// Generates the type key of read only tags.
     fn read_type_key() -> TypeKey;
 
-    /// Generates the type key for mutable components.
+    /// Generates the type key for mutable tags.
     fn mut_type_key() -> TypeKey;
 }
 
 impl TagFilter for () {
     type StorageSet = ();
+
+    #[inline]
+    fn type_key() -> TypeKey {
+        TypeKey::default()
+    }
 
     #[inline]
     fn read_type_key() -> TypeKey {
@@ -36,6 +44,15 @@ macro_rules! tag_filter_impl {
     ( $n:expr, $( $name:ident )+ ) => {
         impl<$($name: TagAccess,)*> TagFilter for ($($name,)*) {
             type StorageSet = ($($name::StorageAccess,)*);
+
+            #[inline]
+            fn type_key() -> TypeKey {
+                let mut descriptor = TypeKey::default();
+                $(
+                    descriptor.add::<$name::Tag>();
+                )*
+                descriptor
+            }
 
             #[inline]
             fn read_type_key() -> TypeKey {

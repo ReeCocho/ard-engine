@@ -1,6 +1,9 @@
-use std::time::{Duration, Instant};
+use std::{
+    ops::Div,
+    time::{Duration, Instant},
+};
 
-use ard_ecs::prelude::*;
+use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 
 use crate::prelude::{App, AppBuilder, Plugin};
 
@@ -62,10 +65,7 @@ pub struct ArdCore {
     fixed_timer: Duration,
 }
 
-impl SystemState for ArdCore {
-    type Data = ();
-    type Resources = (Write<ArdCoreState>,);
-}
+impl SystemState for ArdCore {}
 
 impl Default for ArdCore {
     fn default() -> Self {
@@ -91,25 +91,43 @@ impl ArdCore {
         }
     }
 
-    pub fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
+    pub fn tick(
+        &mut self,
+        tick: Tick,
+        commands: Commands,
+        _: Queries<()>,
+        res: Res<(Write<ArdCoreState>,)>,
+    ) {
+        let res = res.get();
+        let core_state = res.0.unwrap();
+
         let duration = tick.0;
 
-        if !ctx.resources.0.unwrap().stopping {
+        if !core_state.stopping {
             // Post tick
-            ctx.events.submit(PostTick(duration));
+            commands.events.submit(PostTick(duration));
 
             // Check for fixed tick
             self.fixed_timer += duration;
             if self.fixed_timer >= self.fixed_rate {
                 self.fixed_timer = Duration::ZERO;
-                ctx.events.submit(FixedTick(self.fixed_rate));
+                commands.events.submit(FixedTick(self.fixed_rate));
             }
         }
     }
 
-    pub fn stop(&mut self, ctx: Context<Self>, _: Stop) {
-        ctx.resources.0.unwrap().stopping = true;
-        ctx.events.submit(Stopping);
+    pub fn stop(
+        &mut self,
+        _: Stop,
+        commands: Commands,
+        _: Queries<()>,
+        res: Res<(Write<ArdCoreState>,)>,
+    ) {
+        let res = res.get();
+        let mut core_state = res.0.unwrap();
+
+        core_state.stopping = true;
+        commands.events.submit(Stopping);
     }
 }
 
@@ -127,7 +145,7 @@ impl Plugin for ArdCorePlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         // Use half the number of threads on the system so we don't pin the CPU to 100%
         rayon::ThreadPoolBuilder::new()
-            .num_threads((num_cpus::get() / 2).max(1))
+            .num_threads(num_cpus::get().div(2).max(1))
             .build_global()
             .unwrap();
 
@@ -141,17 +159,19 @@ impl Plugin for ArdCorePlugin {
 fn default_core_runner(mut app: App) {
     app.run_startups();
 
+    let mut dispatcher = std::mem::take(&mut app.dispatcher).build();
+
     let mut last = Instant::now();
     while !app.resources.get::<ArdCoreState>().unwrap().stopping {
         // Submit tick event
         let now = Instant::now();
-        app.dispatcher.submit(Tick(now.duration_since(last)));
+        dispatcher.submit(Tick(now.duration_since(last)));
         last = now;
 
         // Dispatch
-        app.dispatcher.run(&mut app.world, &app.resources);
+        dispatcher.run(&mut app.world, &app.resources);
     }
 
     // Handle `Stopping` event
-    app.dispatcher.run(&mut app.world, &app.resources);
+    dispatcher.run(&mut app.world, &app.resources);
 }

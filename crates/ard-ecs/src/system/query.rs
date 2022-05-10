@@ -11,13 +11,14 @@ use crate::{
 };
 
 /// An object used to create queries.
-pub struct QueryGenerator<'a> {
-    tags: &'a Tags,
-    archetypes: &'a Archetypes,
+pub struct Queries<S: SystemData> {
+    tags: NonNull<Tags>,
+    archetypes: NonNull<Archetypes>,
     mut_components: TypeKey,
-    read_components: TypeKey,
+    all_components: TypeKey,
     mut_tags: TypeKey,
-    read_tags: TypeKey,
+    all_tags: TypeKey,
+    _phantom: std::marker::PhantomData<S>,
 }
 
 /// A query is a request by a system for access to the system required components and tags.
@@ -30,9 +31,6 @@ pub trait Query<C: ComponentFilter, T: TagFilter> {
     /// Number of entities found using this query.
     fn len(&self) -> usize;
 }
-
-/// A query that doesn't operate on anything.
-pub struct NoQuery;
 
 /// A query that only requests components.
 pub struct ComponentQuery<Components: ComponentFilter> {
@@ -76,49 +74,47 @@ struct FastEntityIterator {
     ptr: NonNull<Entity>,
 }
 
-impl<'a> QueryGenerator<'a> {
-    pub fn new<S: SystemData>(tags: &'a Tags, archetypes: &'a Archetypes) -> Self {
-        let read_components = S::Components::read_type_key();
+impl<S: SystemData> Queries<S> {
+    pub fn new(tags: &Tags, archetypes: &Archetypes) -> Self {
+        let all_components = S::Components::type_key();
         let mut_components = S::Components::mut_type_key();
-        let read_tags = S::Tags::read_type_key();
+        let all_tags = S::Tags::type_key();
         let mut_tags = S::Tags::mut_type_key();
 
         Self {
-            tags,
-            archetypes,
-            read_components,
+            tags: unsafe { NonNull::new_unchecked(tags as *const _ as *mut _) },
+            archetypes: unsafe { NonNull::new_unchecked(archetypes as *const _ as *mut _) },
+            all_components,
             mut_components,
-            read_tags,
+            all_tags,
             mut_tags,
+            _phantom: Default::default(),
         }
     }
 
     /// Creates a new query.
-    pub fn make<S: SystemData>(&self) -> S::Query {
-        let mut all_components = self.read_components.clone();
-        all_components += self.mut_components.clone();
+    pub fn make<T: SystemData>(&self) -> T::Query {
+        let read_components = T::Components::read_type_key();
+        let mut_components = T::Components::mut_type_key();
 
-        let mut all_tags = self.read_tags.clone();
-        all_tags += self.mut_tags.clone();
+        let read_tags = T::Tags::read_type_key();
+        let mut_tags = T::Tags::mut_type_key();
 
-        let read_components = S::Components::read_type_key();
-        let mut_components = S::Components::mut_type_key();
+        // Reads must be a subset of all (it is ok to request read when originally requesting write)
+        debug_assert!(read_components.subset_of(&self.all_components));
+        debug_assert!(read_tags.subset_of(&self.all_tags));
 
-        let read_tags = S::Tags::read_type_key();
-        let mut_tags = S::Tags::mut_type_key();
-
-        debug_assert!(read_components.subset_of(&all_components));
+        // Writes must be a subset of writes (can't request read first and then write later)
         debug_assert!(mut_components.subset_of(&self.mut_components));
-        debug_assert!(read_tags.subset_of(&all_tags));
         debug_assert!(mut_tags.subset_of(&self.mut_tags));
 
-        S::Query::new(self.tags, self.archetypes)
+        unsafe { T::Query::new(self.tags.as_ref(), self.archetypes.as_ref()) }
     }
 }
 
-impl<C: ComponentFilter, T: TagFilter> Query<C, T> for NoQuery {
+impl<C: ComponentFilter, T: TagFilter> Query<C, T> for () {
     fn new(_: &Tags, _: &Archetypes) -> Self {
-        NoQuery {}
+        ()
     }
 
     #[inline]

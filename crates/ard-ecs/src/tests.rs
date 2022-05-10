@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{prelude::*, resource::res::Res, system::commands::Commands};
 
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 struct ComponentA {
@@ -81,7 +81,7 @@ fn create_entities() {
 
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>(
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -119,7 +119,7 @@ fn destroy_entities() {
     world.entities_mut().destroy(&entities);
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>(
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -142,7 +142,7 @@ fn create_with_tags() {
     world.entities_mut().create((vec![ac; 1],));
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Entity, (Read<ComponentA>,), (Read<TagA>,))>(
+    let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>,))>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -170,17 +170,15 @@ fn resources() {
     struct SysB;
 
     impl SysA {
-        fn run(&mut self, ctx: Context<Self>, _: RunOnce) {
-            let resource = ctx.resources.0.as_ref().unwrap();
+        fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<ResourceA>,)>) {
+            let resource = res.get();
+            let resource = resource.0.as_ref().unwrap();
             assert_eq!(resource.x, 1);
             assert_eq!(resource.y, 2);
         }
     }
 
-    impl SystemState for SysA {
-        type Data = ();
-        type Resources = (Read<ResourceA>,);
-    }
+    impl SystemState for SysA {}
 
     impl Into<System> for SysA {
         fn into(self) -> System {
@@ -189,15 +187,12 @@ fn resources() {
     }
 
     impl SysB {
-        fn run(&mut self, ctx: Context<Self>, _: RunOnce) {
-            assert!(ctx.resources.0.is_none());
+        fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<ResourceB>,)>) {
+            assert!(res.get().0.is_none());
         }
     }
 
-    impl SystemState for SysB {
-        type Data = ();
-        type Resources = (Read<ResourceB>,);
-    }
+    impl SystemState for SysB {}
 
     impl Into<System> for SysB {
         fn into(self) -> System {
@@ -208,9 +203,10 @@ fn resources() {
     let mut resources = Resources::new();
     resources.add(ResourceA { x: 1, y: 2 });
 
-    let mut dispatcher = Dispatcher::new();
-    dispatcher.add_system(SysA {});
-    dispatcher.add_system(SysB {});
+    let mut dispatcher = Dispatcher::builder()
+        .add_system(SysA)
+        .add_system(SysB)
+        .build();
 
     let mut world = World::new();
 
@@ -240,7 +236,7 @@ fn remove_components() {
         .into();
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>(
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -274,10 +270,10 @@ fn remove_components() {
         .remove_component::<ComponentC>(entities[ENTITY_COUNT - 2]);
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(
+    let gen = Queries::<(
         Entity,
         (Read<ComponentA>, Read<ComponentB>, Read<ComponentC>),
-    )>(world.tags(), world.archetypes());
+    )>::new(world.tags(), world.archetypes());
 
     let mut count = 0;
     let mut seen = std::collections::HashSet::<Entity>::default();
@@ -315,7 +311,7 @@ fn add_components() {
 
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>(
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -375,7 +371,7 @@ fn add_tags() {
 
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>(
+    let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -432,7 +428,7 @@ fn remove_tags() {
 
     world.process_entities();
 
-    let gen = QueryGenerator::new::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>(
+    let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>::new(
         world.tags(),
         world.archetypes(),
     );
@@ -479,55 +475,38 @@ fn parallel_systems() {
     struct SystemABC;
 
     impl SystemState for SystemExclusive {
-        const EXCLUSIVE: bool = true;
-        type Data = ();
-        type Resources = ();
+        const MAIN_THREAD: bool = true;
     }
 
-    impl SystemState for SystemA {
-        type Data = (Write<ComponentA>,);
-        type Resources = ();
-    }
+    impl SystemState for SystemA {}
 
-    impl SystemState for SystemB {
-        type Data = (Write<ComponentB>,);
-        type Resources = ();
-    }
+    impl SystemState for SystemB {}
 
-    impl SystemState for SystemC {
-        type Data = (Write<ComponentC>,);
-        type Resources = ();
-    }
+    impl SystemState for SystemC {}
 
-    impl SystemState for SystemAB {
-        type Data = (Write<ComponentA>, Write<ComponentB>);
-        type Resources = ();
-    }
+    impl SystemState for SystemAB {}
 
-    impl SystemState for SystemBC {
-        type Data = (Write<ComponentB>, Write<ComponentC>);
-        type Resources = ();
-    }
+    impl SystemState for SystemBC {}
 
-    impl SystemState for SystemABC {
-        type Data = (Write<ComponentA>, Write<ComponentB>, Write<ComponentC>);
-        type Resources = ();
-    }
+    impl SystemState for SystemABC {}
 
-    let mut dispatcher = Dispatcher::new();
-    dispatcher.add_system(SystemBuilder::new(SystemExclusive).build());
-    dispatcher.add_system(SystemBuilder::new(SystemA).build());
-    dispatcher.add_system(SystemBuilder::new(SystemB).build());
-    dispatcher.add_system(SystemBuilder::new(SystemC).build());
-    dispatcher.add_system(SystemBuilder::new(SystemAB).build());
-    dispatcher.add_system(SystemBuilder::new(SystemBC).build());
-    dispatcher.add_system(SystemBuilder::new(SystemABC).build());
+    let mut dispatcher = Dispatcher::builder()
+        .add_system(SystemBuilder::new(SystemExclusive).build())
+        .add_system(SystemBuilder::new(SystemA).build())
+        .add_system(SystemBuilder::new(SystemB).build())
+        .add_system(SystemBuilder::new(SystemC).build())
+        .add_system(SystemBuilder::new(SystemAB).build())
+        .add_system(SystemBuilder::new(SystemBC).build())
+        .add_system(SystemBuilder::new(SystemABC).build())
+        .build();
 
-    let stages = dispatcher.stages();
-    assert_eq!(stages.len(), 4);
-    assert!(stages[0].main().is_some());
-    assert_eq!(stages[0].parallel().len(), 3);
-    assert_eq!(stages[1].parallel().len(), 1);
-    assert_eq!(stages[2].parallel().len(), 1);
-    assert_eq!(stages[3].parallel().len(), 1);
+    todo!();
+
+    // let stages = dispatcher.stages();
+    // assert_eq!(stages.len(), 4);
+    // assert!(stages[0].main().is_some());
+    // assert_eq!(stages[0].parallel().len(), 3);
+    // assert_eq!(stages[1].parallel().len(), 1);
+    // assert_eq!(stages[2].parallel().len(), 1);
+    // assert_eq!(stages[3].parallel().len(), 1);
 }

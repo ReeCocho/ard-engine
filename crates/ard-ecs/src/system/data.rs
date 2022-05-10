@@ -2,9 +2,7 @@ use crate::{
     component::{filter::ComponentFilter, Component},
     entity::Entity,
     prelude::Read,
-    system::query::{
-        ComponentQuery, EntityComponentQuery, EntityComponentTagQuery, NoQuery, Query,
-    },
+    system::query::{ComponentQuery, EntityComponentQuery, EntityComponentTagQuery, Query},
     tag::filter::TagFilter,
     world::World,
 };
@@ -26,15 +24,13 @@ pub trait SystemData: Sized {
     }
 }
 
-/// Implementation for system that don't operate on entities.
-
 #[derive(Component)]
 pub struct DummyComponent;
 
 impl SystemData for () {
     type Components = (Read<DummyComponent>,);
     type Tags = ();
-    type Query = NoQuery;
+    type Query = ();
 }
 
 /// Implementation for just components.

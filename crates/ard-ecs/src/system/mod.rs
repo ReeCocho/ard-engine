@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod data;
 pub mod handler;
 pub mod query;
@@ -5,75 +6,49 @@ pub mod query;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    ops::{Add, AddAssign},
 };
 
-use self::handler::EventHandler;
+use self::{commands::Commands, handler::EventHandler};
 use crate::{
-    component::filter::ComponentFilter,
-    dispatcher::EventSender,
     id_map::TypeIdMap,
-    key::TypeKey,
-    prelude::{EntityCommands, Event},
-    resource::filter::ResourceFilter,
-    system::{data::SystemData, query::QueryGenerator},
-    tag::filter::TagFilter,
-    world::entities::Entities,
+    prelude::Event,
+    resource::{filter::ResourceFilter, res::Res},
+    system::{data::SystemData, query::Queries},
 };
-
-pub struct Context<'a, S: SystemState> {
-    pub queries: QueryGenerator<'a>,
-    pub resources: <S::Resources as ResourceFilter>::Set,
-    pub commands: EntityCommands,
-    pub events: EventSender,
-    pub entities: Option<&'a mut Entities>,
-}
 
 pub struct System {
     pub(crate) state: Box<dyn SystemStateExt>,
-    pub(crate) exclusive: bool,
-    pub(crate) entities: bool,
+    /// Type ID of the system state.
+    pub(crate) id: TypeId,
+    pub(crate) main_thread: bool,
     /// Maps ID's of events to the handlers that handle them.
     pub(crate) handlers: TypeIdMap<Box<dyn EventHandler>>,
+    // Which systems must run before/after this one for a particular event type. The first value in
+    // the tuple is the event type. The second is the system state type. If the mapped value is
+    // `true`, the system will not run if the associated system does not exist. Otherwise, it will
+    // run and behave as if the system is already completed.
+    pub(crate) run_before: HashMap<(TypeId, TypeId), bool>,
+    pub(crate) run_after: HashMap<(TypeId, TypeId), bool>,
 }
 
 pub struct SystemBuilder<S: SystemState> {
     state: S,
     handlers: TypeIdMap<Box<dyn EventHandler>>,
-}
-
-#[derive(Default, Clone)]
-pub struct SystemDataAccesses {
-    pub read_components: TypeKey,
-    pub mut_components: TypeKey,
-    pub read_tags: TypeKey,
-    pub mut_tags: TypeKey,
-    pub read_resources: TypeKey,
-    pub mut_resources: TypeKey,
+    pub(crate) run_before: HashMap<(TypeId, TypeId), bool>,
+    pub(crate) run_after: HashMap<(TypeId, TypeId), bool>,
 }
 
 /// A system is the logical component of the ECS. A system operates on a subset of components,
 /// a subset of optional tags, and a set of resources.
 pub trait SystemState: Send + Sync {
     /// Request that the system run on the main thread.
-    const EXCLUSIVE: bool = false;
-
-    /// Request that the system be granted access to the `Entities` object of the active world.
-    const ENTITIES: bool = false;
-
-    /// Tags and components required by the system.
-    type Data: SystemData;
-
-    /// Resources the system requests access to.
-    type Resources: ResourceFilter;
+    const MAIN_THREAD: bool = false;
 }
 
 /// # Note
 /// This trait is automatically implemented for all systems. Do NOT manually implement this trait.
 pub trait SystemStateExt: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    fn accesses(&self) -> SystemDataAccesses;
 }
 
 impl System {
@@ -93,23 +68,76 @@ impl<S: SystemState + 'static> SystemBuilder<S> {
         Self {
             state,
             handlers: HashMap::default(),
+            run_after: HashMap::default(),
+            run_before: HashMap::default(),
         }
     }
 
-    pub fn with_handler<E: 'static + Event>(
+    /// Adds an event handler for the state.
+    pub fn with_handler<
+        E: 'static + Event,
+        C: 'static + SystemData,
+        R: 'static + ResourceFilter,
+    >(
         mut self,
-        handler: fn(&mut S, Context<S>, E) -> (),
+        handler: fn(&mut S, E, Commands, Queries<C>, Res<R>) -> (),
     ) -> Self {
         self.handlers.insert(TypeId::of::<E>(), Box::new(handler));
+        self
+    }
+
+    /// Indicates that this system should run after another system for the given event type. If
+    /// the system type doesn't handle the associated event, or the system hasn't been added, this
+    /// system will still run.
+    pub fn run_after<E: 'static + Event, OtherS: SystemState + 'static>(mut self) -> Self {
+        let key = (TypeId::of::<E>(), TypeId::of::<OtherS>());
+        assert!(!self.run_after.contains_key(&key));
+        assert!(!self.run_before.contains_key(&key));
+        self.run_after.insert(key, false);
+        self
+    }
+
+    /// Indicates that this system should run after another system for the given event type. If
+    /// the system type doesn't handle the associated event, or the system hasn't been added, this
+    /// system will NOT run.
+    pub fn run_after_req<E: 'static + Event, OtherS: SystemState + 'static>(mut self) -> Self {
+        let key = (TypeId::of::<E>(), TypeId::of::<OtherS>());
+        assert!(!self.run_after.contains_key(&key));
+        assert!(!self.run_before.contains_key(&key));
+        self.run_after.insert(key, true);
+        self
+    }
+
+    /// Indicates that this system should run before another system for the given event type. If
+    /// the system type doesn't handle the associated event, or the system hasn't been added, this
+    /// system will still run.
+    pub fn run_before<E: 'static + Event, OtherS: SystemState + 'static>(mut self) -> Self {
+        let key = (TypeId::of::<E>(), TypeId::of::<OtherS>());
+        assert!(!self.run_after.contains_key(&key));
+        assert!(!self.run_before.contains_key(&key));
+        self.run_before.insert(key, false);
+        self
+    }
+
+    /// Indicates that this system should run before another system for the given event type. If
+    /// the system type doesn't handle the associated event, or the system hasn't been added, this
+    /// system will NOT run.
+    pub fn run_before_req<E: 'static + Event, OtherS: SystemState + 'static>(mut self) -> Self {
+        let key = (TypeId::of::<E>(), TypeId::of::<OtherS>());
+        assert!(!self.run_after.contains_key(&key));
+        assert!(!self.run_before.contains_key(&key));
+        self.run_before.insert(key, true);
         self
     }
 
     pub fn build(self) -> System {
         System {
             state: Box::new(self.state),
-            exclusive: S::EXCLUSIVE,
-            entities: S::ENTITIES,
+            id: TypeId::of::<S>(),
+            main_thread: S::MAIN_THREAD,
             handlers: self.handlers,
+            run_after: HashMap::default(),
+            run_before: HashMap::default(),
         }
     }
 }
@@ -117,63 +145,5 @@ impl<S: SystemState + 'static> SystemBuilder<S> {
 impl<T: SystemState + 'static> SystemStateExt for T {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn accesses(&self) -> SystemDataAccesses {
-        SystemDataAccesses {
-            mut_components: <T::Data as SystemData>::Components::mut_type_key(),
-            read_components: <T::Data as SystemData>::Components::read_type_key(),
-            mut_tags: <T::Data as SystemData>::Tags::mut_type_key(),
-            read_tags: <T::Data as SystemData>::Tags::read_type_key(),
-            mut_resources: T::Resources::mut_type_key(),
-            read_resources: T::Resources::read_type_key(),
-        }
-    }
-}
-
-impl SystemDataAccesses {
-    /// Determines if a system with self's accesses can run in parallel with the accesses of other.
-    pub fn compatible_with(&self, other: &SystemDataAccesses) -> bool {
-        let mut all_other_components = other.mut_components.clone();
-        all_other_components += other.read_components.clone();
-
-        let mut all_other_tags = other.mut_tags.clone();
-        all_other_tags += other.read_tags.clone();
-
-        let mut all_other_resources = other.mut_resources.clone();
-        all_other_resources += other.read_resources.clone();
-
-        self.mut_components.disjoint(&all_other_components)
-            && self.read_components.disjoint(&other.mut_components)
-            && self.mut_tags.disjoint(&all_other_tags)
-            && self.read_tags.disjoint(&other.mut_tags)
-            && self.mut_resources.disjoint(&all_other_resources)
-            && self.read_resources.disjoint(&other.mut_resources)
-    }
-}
-
-impl Add for SystemDataAccesses {
-    type Output = SystemDataAccesses;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        SystemDataAccesses {
-            mut_components: self.mut_components + rhs.mut_components,
-            read_components: self.read_components + rhs.read_components,
-            mut_tags: self.mut_tags + rhs.mut_tags,
-            read_tags: self.read_tags + rhs.read_tags,
-            mut_resources: self.mut_resources + rhs.mut_resources,
-            read_resources: self.read_resources + rhs.read_resources,
-        }
-    }
-}
-
-impl AddAssign for SystemDataAccesses {
-    fn add_assign(&mut self, rhs: Self) {
-        self.mut_components += rhs.mut_components.clone();
-        self.read_components += rhs.read_components.clone();
-        self.mut_tags += rhs.mut_tags.clone();
-        self.read_tags += rhs.read_tags.clone();
-        self.mut_resources += rhs.mut_resources.clone();
-        self.read_resources += rhs.read_resources;
     }
 }

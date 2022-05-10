@@ -29,20 +29,24 @@ impl Default for SpinningCubes {
     }
 }
 
-impl SystemState for SpinningCubes {
-    type Resources = (Write<Factory>,);
-    type Data = (Write<Model>,);
-}
+impl SystemState for SpinningCubes {}
 
 impl SpinningCubes {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
+    fn tick(
+        &mut self,
+        tick: Tick,
+        _: Commands,
+        queries: Queries<(Write<Model>,)>,
+        res: Res<(Write<Factory>,)>,
+    ) {
         const SPIN_SPEED: f32 = 0.2;
         const SPIN_RADIUS: f32 = 5.0;
 
         let dt = tick.0.as_secs_f32();
         self.rot += dt * SPIN_SPEED;
 
-        let factory = ctx.resources.0.unwrap();
+        let res = res.get();
+        let factory = res.0.unwrap();
         let main_camera = factory.main_camera();
 
         let position = Vec3::new(0.0, 0.0, -10.0);
@@ -56,7 +60,7 @@ impl SpinningCubes {
         factory.update_camera(&main_camera, descriptor);
 
         // Rotate cubes
-        let qry = ctx.queries.make::<(Write<Model>,)>();
+        let qry = queries.make::<(Write<Model>,)>();
         let rads_per_cube = (2.0 * std::f32::consts::PI) / qry.len() as f32;
         for (i, (model,)) in qry.into_iter().enumerate() {
             let rot_offset = self.rot + (i as f32 * rads_per_cube);
@@ -68,7 +72,7 @@ impl SpinningCubes {
         }
     }
 
-    fn pre_render(&mut self, _: Context<Self>, _: PreRender) {
+    fn pre_render(&mut self, _: PreRender, _: Commands, _: Queries<()>, _: Res<()>) {
         let now = Instant::now();
         self.frame_ctr += 1;
         if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {

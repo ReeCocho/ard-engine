@@ -22,8 +22,8 @@ pub mod prelude {
         dispatcher::*,
         entity::*,
         event::*,
-        resource::{filter::*, *},
-        system::{data::*, handler::*, query::*, *},
+        resource::{filter::*, res::*, *},
+        system::{commands::*, data::*, handler::*, query::*, *},
         tag::{storage::*, *},
         world::{entities::*, *},
     };

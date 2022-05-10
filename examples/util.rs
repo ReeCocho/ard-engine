@@ -29,21 +29,17 @@ pub struct CameraMovement {
 #[derive(Resource, Default)]
 pub struct MainCameraState(pub CameraDescriptor);
 
-impl SystemState for FrameRate {
-    type Data = ();
-    type Resources = ();
-}
+impl SystemState for FrameRate {}
 
-impl SystemState for CameraMovement {
-    type Data = ();
-    type Resources = (
-        Write<Factory>,
-        Write<InputState>,
-        Write<Windows>,
-        Write<DebugDrawing>,
-        Write<MainCameraState>,
-    );
-}
+impl SystemState for CameraMovement {}
+
+type CameraMovementRes = (
+    Write<Factory>,
+    Write<InputState>,
+    Write<Windows>,
+    Write<DebugDrawing>,
+    Write<MainCameraState>,
+);
 
 impl Default for FrameRate {
     fn default() -> Self {
@@ -55,7 +51,7 @@ impl Default for FrameRate {
 }
 
 impl FrameRate {
-    fn pre_render(&mut self, _: Context<Self>, _: PreRender) {
+    fn pre_render(&mut self, _: PreRender, _: Commands, _: Queries<()>, _: Res<()>) {
         let now = Instant::now();
         self.frame_ctr += 1;
         if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {
@@ -67,12 +63,19 @@ impl FrameRate {
 }
 
 impl CameraMovement {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
-        let factory = ctx.resources.0.unwrap();
-        let input = ctx.resources.1.unwrap();
-        let mut windows = ctx.resources.2.unwrap();
-        let debug_drawing = ctx.resources.3.unwrap();
-        let mut camera_state = ctx.resources.4.unwrap();
+    fn tick(
+        &mut self,
+        tick: Tick,
+        _: Commands,
+        _: Queries<(Read<Model>, Read<PointLight>)>,
+        res: Res<CameraMovementRes>,
+    ) {
+        let res = res.get();
+        let factory = res.0.unwrap();
+        let input = res.1.unwrap();
+        let mut windows = res.2.unwrap();
+        let debug_drawing = res.3.unwrap();
+        let mut camera_state = res.4.unwrap();
 
         let main_camera = factory.main_camera();
 

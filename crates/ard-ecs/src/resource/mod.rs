@@ -1,5 +1,6 @@
 pub mod access;
 pub mod filter;
+pub mod res;
 
 use anymap::{any::Any, AnyMap};
 pub use ard_ecs_derive::Resource;
