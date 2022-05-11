@@ -4,13 +4,15 @@ use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel};
 use ard_ecs::prelude::*;
 use ard_math::{Mat4, Vec3};
 
-/// Event indicating that rendering is about to be performed.
+/// Event indicating that rendering is about to be performed. Contains the duration sine the
+/// last pre render event.
 #[derive(Debug, Event, Copy, Clone)]
-pub struct PreRender;
+pub struct PreRender(pub Duration);
 
-/// Event indicating that rendering has finished.
+/// Event indicating that rendering has finished. Contains the duration sine the
+/// last post render event.
 #[derive(Debug, Event, Copy, Clone)]
-pub struct PostRender;
+pub struct PostRender(pub Duration);
 
 /// Represents an object to be rendered. When paired with a `Model` component, the `Renderer`
 /// will present it to the screen dynamically.

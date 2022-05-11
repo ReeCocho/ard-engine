@@ -67,7 +67,6 @@ struct DispatcherState {
     bron_kerbosch: Vec<SystemSet>,
     to_remove: Vec<usize>,
     pending: HashSet<usize, BuildHasherDefault<FastIntHasher>>,
-    finished: Vec<usize>,
     running: HashSet<usize, BuildHasherDefault<FastIntHasher>>,
 }
 
@@ -148,11 +147,10 @@ impl Dispatcher {
 
             if let Some(dispatcher_state) = self.event_to_systems.get_mut(&event_id) {
                 let pending = &mut dispatcher_state.pending;
-                let finished = &mut dispatcher_state.finished;
+                let mut finished = 0;
                 let running = &mut dispatcher_state.running;
 
                 pending.clear();
-                finished.clear();
                 running.clear();
 
                 // Setup: reset waiting counters. Systems with no dependencies are pending.
@@ -165,7 +163,7 @@ impl Dispatcher {
                 }
 
                 // Loop until all systems have finished
-                while finished.len() != dispatcher_state.states.len() {
+                while finished != dispatcher_state.states.len() {
                     // Determine systems that have finished running
                     let to_remove = &mut dispatcher_state.to_remove;
                     to_remove.clear();
@@ -179,7 +177,7 @@ impl Dispatcher {
                         }
 
                         to_remove.push(idx);
-                        finished.push(idx);
+                        finished += 1;
 
                         // Notify dependencies of the completion
                         // NOTE: Borrow checker bullsh*t means we can't iterate over 'dependents'
@@ -281,35 +279,27 @@ impl Dispatcher {
                         let primary_idx = dispatcher_state.states[idx].system;
                         let primary_sys = &self.systems[primary_idx];
 
-                        let packet = SystemPacket {
-                            system: unsafe {
-                                NonNull::new_unchecked(
-                                    primary_sys.state.as_ref() as *const _ as *mut _
-                                )
-                            },
-                            archetypes: unsafe {
-                                NonNull::new_unchecked((&world.archetypes) as *const _ as *mut _)
-                            },
-                            thread_sender: dispatcher_state.states[idx].thread_sender.clone(),
-                            handler: unsafe {
-                                NonNull::new_unchecked(
+                        let packet = unsafe {
+                            SystemPacket {
+                                system: NonNull::new_unchecked(primary_sys.state.as_ref()
+                                    as *const _
+                                    as *mut _),
+                                archetypes: NonNull::new_unchecked(
+                                    (&world.archetypes) as *const _ as *mut _,
+                                ),
+                                thread_sender: dispatcher_state.states[idx].thread_sender.clone(),
+                                handler: NonNull::new_unchecked(
                                     primary_sys.handlers.get(&event_id).unwrap().as_ref()
                                         as *const _ as *mut _,
-                                )
-                            },
-                            resources: unsafe {
-                                NonNull::new_unchecked(resources as *const _ as *mut _)
-                            },
-                            tags: unsafe {
-                                NonNull::new_unchecked((&world.tags) as *const _ as *mut _)
-                            },
-                            event: unsafe {
-                                NonNull::new_unchecked(event.as_ref() as *const _ as *mut _)
-                            },
-                            commands: world.entities.commands(),
-                            events: Events {
-                                sender: self.event_sender.clone(),
-                            },
+                                ),
+                                resources: NonNull::new_unchecked(resources as *const _ as *mut _),
+                                tags: NonNull::new_unchecked((&world.tags) as *const _ as *mut _),
+                                event: NonNull::new_unchecked(event.as_ref() as *const _ as *mut _),
+                                commands: world.entities.commands(),
+                                events: Events {
+                                    sender: self.event_sender.clone(),
+                                },
+                            }
                         };
 
                         self.thread_pool.spawn(move || unsafe {
@@ -491,8 +481,16 @@ impl DispatcherBuilder {
                 let our_idx = *dispatcher_state.type_to_state.get(&system.id).unwrap();
                 let other_idx = *dispatcher_state.type_to_state.get(other_system_id).unwrap();
 
+                // Ensure the other system is not already dependent on us.
+                if dispatcher_state.states[our_idx]
+                    .dependents
+                    .contains(&other_idx)
+                {
+                    continue;
+                }
+
                 // The other system is a dependent of us
-                dispatcher_state.states[our_idx].dependents.push(our_idx);
+                dispatcher_state.states[our_idx].dependents.push(other_idx);
 
                 // The other system gets an implicit dependency
                 dispatcher_state.states[other_idx].dependency_count += 1;

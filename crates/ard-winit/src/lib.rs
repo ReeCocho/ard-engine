@@ -104,6 +104,9 @@ fn winit_runner(mut app: App) {
                 // Check if `Stop` was requested
                 if app.resources.get::<ArdCoreState>().unwrap().stopping() {
                     *control_flow = ControlFlow::Exit;
+
+                    // Handle `Stopping` event
+                    dispatcher.run(&mut app.world, &app.resources);
                 } else {
                     // Create windows if needed and request redraw from the primary window
                     create_windows(event_loop, &mut windows, &mut winit_windows);
@@ -180,9 +183,6 @@ fn winit_runner(mut app: App) {
                     // Reset input state
                     app.resources.get_mut::<InputState>().unwrap().flush();
                 }
-
-                // Handle `Stopping` event
-                dispatcher.run(&mut app.world, &app.resources);
             }
             _ => {}
         }

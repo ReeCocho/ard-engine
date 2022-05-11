@@ -68,22 +68,37 @@ impl TypeKey {
         }
     }
 
-    /// Indicates that this type key and the other don't contain any types in common.
+    /// Indicates that the two type keys contain none of the same elements. i.e., their
+    /// intersection is the empty set.
     #[inline]
-    pub fn disjoint(&self, other: &TypeKey) -> bool {
-        let mut self_idx = 0;
-        let mut other_idx = 0;
-        while self_idx < self.types.len() && other_idx < other.types.len() {
-            let self_ty = self.types[self_idx];
-            let other_ty = other.types[other_idx];
+    pub fn none_of(&self, other: &TypeKey) -> bool {
+        if self.is_empty() || other.is_empty() {
+            return true;
+        }
 
-            match self_ty.cmp(&other_ty) {
-                Ordering::Equal => return false,
-                Ordering::Less => self_idx += 1,
-                Ordering::Greater => other_idx += 1,
+        let mut self_i = 0;
+        let mut other_i = 0;
+
+        loop {
+            let self_id = self.types[self_i];
+            let other_id = other.types[other_i];
+
+            if self_id == other_id {
+                return false;
+            } else if self_id < other_id {
+                self_i += 1;
+
+                if self_i == self.types.len() {
+                    return true;
+                }
+            } else {
+                other_i += 1;
+
+                if other_i == other.types.len() {
+                    return true;
+                }
             }
         }
-        true
     }
 
     /// Indicates that this type key contains types that are all found in the other key.

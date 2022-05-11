@@ -34,10 +34,10 @@ impl SystemState for FrameRate {}
 impl SystemState for CameraMovement {}
 
 type CameraMovementRes = (
-    Write<Factory>,
-    Write<InputState>,
+    Read<Factory>,
+    Read<InputState>,
     Write<Windows>,
-    Write<DebugDrawing>,
+    Read<DebugDrawing>,
     Write<MainCameraState>,
 );
 
@@ -128,11 +128,6 @@ impl CameraMovement {
             fov: self.fov,
         };
 
-        factory.update_camera(&main_camera, camera_state.0);
-
-        // Debug frustum
-        debug_drawing.draw_frustum(camera_state.0, Vec3::new(1.0, 1.0, 1.0));
-
         // Lock cursor
         if input.key_down(Key::M) {
             self.cursor_locked = !self.cursor_locked;
@@ -142,6 +137,26 @@ impl CameraMovement {
             window.set_cursor_lock_mode(self.cursor_locked);
             window.set_cursor_visibility(!self.cursor_locked);
         }
+    }
+
+    fn pre_render(
+        &mut self,
+        _: PreRender,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<CameraMovementRes>,
+    ) {
+        let res = res.get();
+        let factory = res.0.unwrap();
+        let debug_drawing = res.3.unwrap();
+        let camera_state = res.4.unwrap();
+
+        let main_camera = factory.main_camera();
+
+        factory.update_camera(&main_camera, camera_state.0);
+
+        // Debug frustum
+        debug_drawing.draw_frustum(camera_state.0, Vec3::new(1.0, 1.0, 1.0));
     }
 }
 
@@ -157,6 +172,7 @@ impl Into<System> for CameraMovement {
     fn into(self) -> System {
         SystemBuilder::new(self)
             .with_handler(CameraMovement::tick)
+            .with_handler(CameraMovement::pre_render)
             .build()
     }
 }

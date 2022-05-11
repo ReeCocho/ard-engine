@@ -9,7 +9,9 @@ use crate::prw_lock::{PrwLock, PrwReadLock, PrwWriteLock};
 
 /// A resource is a piece of data that can be shared between systems. Global state of a game, for
 /// example, could be held in a resource.
-pub trait Resource {}
+pub trait Resource {
+    fn debug_name() -> &'static str;
+}
 
 /// Container of resources.
 pub struct Resources {

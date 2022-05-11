@@ -5,5 +5,3 @@ pub struct Commands {
     pub entities: EntityCommands,
     pub events: Events,
 }
-
-impl Commands {}

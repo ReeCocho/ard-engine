@@ -32,3 +32,9 @@ ard-winit = { path = "./crates/ard-winit", version = "0.1", optional = true }
 
 [dev-dependencies]
 bytemuck = "1.7"
+
+[profile.release]
+debug = 1
+lto = "fat"
+codegen-units = 1
+panic = "abort"

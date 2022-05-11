@@ -15,10 +15,10 @@ struct BoundingBoxSystem {
 impl BoundingBoxSystem {
     fn tick(
         &mut self,
-        tick: Tick,
+        pre_render: PreRender,
         commands: Commands,
         queries: Queries<(Read<Model>, Read<PointLight>)>,
-        res: Res<(Write<DebugDrawing>, Write<Factory>, Read<MainCameraState>)>,
+        res: Res<(Read<DebugDrawing>, Read<Factory>, Read<MainCameraState>)>,
     ) {
         let res = res.get();
         let draw = res.0.unwrap();
@@ -47,8 +47,6 @@ impl BoundingBoxSystem {
 
                 end_pt = inv * end_pt;
                 end_pt /= end_pt.w;
-
-                // draw.draw_line(pos, Vec3::from(end_pt), Vec3::new(1.0, 1.0, 1.0));
             }
 
             let TABLE_X = 32.0;
@@ -70,13 +68,6 @@ impl BoundingBoxSystem {
                 1.0,
             );
 
-            // Find the min and max in view space
-            // vec4 cluster_min_vs = camera.projection_inv * cluster_min_ss;
-            // cluster_min_vs /= cluster_min_vs.w;
-
-            // vec4 cluster_max_vs = camera.projection_inv * cluster_max_ss;
-            // cluster_max_vs /= cluster_max_vs.w;
-
             // Finding the 4 intersection points made from each point to the cluster near/far plane
             let mut min_point_near = camera_ubo.projection_inv * cluster_min_ss;
             let mut min_point_far =
@@ -89,11 +80,6 @@ impl BoundingBoxSystem {
             min_point_far /= min_point_far.w;
             max_point_near /= max_point_near.w;
             max_point_far /= max_point_far.w;
-
-            // vec3 min_point_near = line_intersection_to_zplane(vec3(0.0), cluster_min_vs.xyz, camera.properties.y);
-            // vec3 min_point_far  = line_intersection_to_zplane(vec3(0.0), cluster_min_vs.xyz, camera.properties.z);
-            // vec3 max_point_near = line_intersection_to_zplane(vec3(0.0), cluster_max_vs.xyz, camera.properties.y);
-            // vec3 max_point_far  = line_intersection_to_zplane(vec3(0.0), cluster_max_vs.xyz, camera.properties.z);
 
             // Min and max bounding area
             let mut min_point_AABB =
@@ -125,8 +111,6 @@ impl BoundingBoxSystem {
             min_point_AABB = Vec4::new(min_point_AABB.x, min_point_AABB.y, min_point_AABB.z, 1.0);
             max_point_AABB = Vec4::new(max_point_AABB.x, max_point_AABB.y, max_point_AABB.z, 1.0);
 
-            // println!("{} {}", min_point_AABB, max_point_AABB);
-
             let half_extents = (max_point_AABB.xyz() - min_point_AABB.xyz()) / 2.0;
             let center = (max_point_AABB.xyz() + min_point_AABB.xyz()) / 2.0;
 
@@ -147,6 +131,7 @@ impl Into<System> for BoundingBoxSystem {
     fn into(self) -> System {
         SystemBuilder::new(self)
             .with_handler(BoundingBoxSystem::tick)
+            .run_after::<Tick, CameraMovement>()
             .build()
     }
 }

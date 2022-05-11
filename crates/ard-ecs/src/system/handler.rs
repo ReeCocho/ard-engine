@@ -97,8 +97,11 @@ impl HandlerAccesses {
     /// Returns `true` if this access does not access data in an incompatible with another.
     #[inline]
     pub fn compatible(&self, other: &HandlerAccesses) -> bool {
-        self.all_components.disjoint(&other.write_components)
-            && self.all_resources.disjoint(&other.write_resources)
-            && self.all_tags.disjoint(&other.write_tags)
+        self.write_components.none_of(&other.all_components)
+            && self.write_resources.none_of(&other.all_resources)
+            && self.write_tags.none_of(&other.all_tags)
+            && other.write_components.none_of(&self.all_components)
+            && other.write_resources.none_of(&self.all_resources)
+            && other.write_tags.none_of(&self.all_tags)
     }
 }

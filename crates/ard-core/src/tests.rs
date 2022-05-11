@@ -15,16 +15,16 @@ fn game_loop() {
     impl SystemState for Ticker {}
 
     impl Ticker {
-        fn start(&mut self, _: Start, _: Commands, _: Queries<()>, res: Res<()>) {
+        fn start(&mut self, _: Start, _: Commands, _: Queries<()>, _: Res<()>) {
             assert_eq!(self.start_count, 0);
             self.start_count += 1;
         }
 
-        fn tick(&mut self, _: Tick, _: Commands, _: Queries<()>, res: Res<()>) {
+        fn tick(&mut self, _: Tick, _: Commands, _: Queries<()>, _: Res<()>) {
             self.tick_count += 1;
         }
 
-        fn post_tick(&mut self, _: PostTick, commands: Commands, _: Queries<()>, res: Res<()>) {
+        fn post_tick(&mut self, _: PostTick, commands: Commands, _: Queries<()>, _: Res<()>) {
             self.post_tick_count += 1;
             if self.post_tick_count == TICK_COUNT {
                 assert_eq!(self.tick_count, TICK_COUNT);
