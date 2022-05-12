@@ -1,5 +1,13 @@
-use std::{any::TypeId, num::NonZeroU32};
+use std::{
+    any::TypeId,
+    num::NonZeroU32,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
+use bitvec::macros::internal::funty::Fundamental;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use crate::{
@@ -14,26 +22,39 @@ use crate::{
 pub struct Entities {
     /// List of entity descriptions.
     entities: Vec<EntityInfo>,
-    /// List of free entity IDs.
-    free: Vec<u32>,
     /// List of entities to create when processing.
     to_create: Vec<EntityCreateInfo>,
     /// List of entities to destroy when processing.
     to_destroy: Vec<Entity>,
-    sender: Sender<EntityCommand>,
-    receiver: Receiver<EntityCommand>,
+    entity_commands: EntityCommands,
+    commands_sender: Sender<EntityCommand>,
+    commands_receiver: Receiver<EntityCommand>,
+    construction_data: Arc<EntityConstructionData>,
+}
+
+/// Data used when constructing new entities. This is passed to the `EntityCommands` object to
+/// allow users to create entities in parallel without locking.
+struct EntityConstructionData {
+    /// Counter for the current maximum number of entities.
+    max_entities: AtomicUsize,
+    /// List of free entity handles.
+    free_recv: Receiver<Entity>,
+    free_send: Sender<Entity>,
 }
 
 /// Used to manipulated created entities.
 #[derive(Clone)]
 pub struct EntityCommands {
     sender: Sender<EntityCommand>,
+    construction_data: Arc<EntityConstructionData>,
 }
 
 pub(crate) enum EntityCommand {
     Create {
         components: Box<dyn ComponentPack>,
         tags: Option<Box<dyn TagPack>>,
+        /// Entity handles for the newly created entities.
+        entities: Vec<Entity>,
     },
     Destroy {
         entities: Vec<Entity>,
@@ -85,13 +106,27 @@ struct EntityCreateInfo {
 impl Default for Entities {
     fn default() -> Self {
         let (sender, receiver) = unbounded();
+        let (free_send, free_recv) = unbounded();
+
+        let construction_data = Arc::new(EntityConstructionData {
+            max_entities: AtomicUsize::new(0),
+            free_recv,
+            free_send,
+        });
+
+        let entity_commands = EntityCommands {
+            sender: sender.clone(),
+            construction_data: construction_data.clone(),
+        };
+
         Self {
-            sender,
-            receiver,
+            commands_sender: sender,
+            commands_receiver: receiver,
             entities: Vec::default(),
-            free: Vec::default(),
+            entity_commands,
             to_create: Vec::default(),
             to_destroy: Vec::default(),
+            construction_data,
         }
     }
 }
@@ -100,29 +135,79 @@ impl Entities {
     /// Determines the number of active entities.
     #[inline]
     pub fn count(&self) -> usize {
-        self.entities.len() - self.free.len() - self.to_destroy.len()
+        self.entities.len() - self.construction_data.free_recv.len() - self.to_destroy.len()
     }
 
-    pub fn commands(&self) -> EntityCommands {
-        EntityCommands {
-            sender: self.sender.clone(),
-        }
+    pub fn commands(&self) -> &EntityCommands {
+        &self.entity_commands
     }
 
     /// Process entities pending creation an deletion.
     pub fn process(&mut self, archetypes: &mut Archetypes, tags: &mut Tags) {
         // Process commands
-        for command in self.receiver.clone().try_iter() {
+        for command in self.commands_receiver.clone().try_iter() {
             match command {
-                EntityCommand::Create { components, tags } => {
-                    self.create_with_tags_dyn(components, tags);
+                EntityCommand::Create {
+                    components,
+                    tags,
+                    entities,
+                } => {
+                    // No need to verify components and tags because they must have been verified
+                    // when added to the `EntityCommands` object.
+
+                    // Update entity info list if too short
+                    let mut max_id = 0;
+                    for entity in &entities {
+                        if entity.id() > max_id {
+                            max_id = entity.id();
+                        }
+                    }
+
+                    if max_id as usize >= self.entities.len() {
+                        self.entities.resize(
+                            max_id as usize + 1,
+                            EntityInfo {
+                                ver: unsafe { NonZeroU32::new_unchecked(1) },
+                                archetype: ArchetypeId::default(),
+                                index: 0,
+                                collection: None,
+                            },
+                        );
+                    }
+
+                    // For defered initialization
+                    self.to_create.push(EntityCreateInfo {
+                        components,
+                        tags,
+                        entities,
+                    });
                 }
                 EntityCommand::Destroy { entities } => {
-                    self.destroy(&entities);
+                    for entity in &entities {
+                        let ind = entity.id() as usize;
+
+                        // Verify that the entity handles are valid
+                        if ind >= self.entities.len()
+                            || self.entities[ind].ver.get() != entity.ver().as_u32()
+                        {
+                            panic!("attempt to delete an invalid entity handle");
+                        }
+
+                        // Add to list
+                        self.to_destroy.push(*entity);
+
+                        // Update version counter
+                        self.entities[ind].ver = unsafe {
+                            NonZeroU32::new_unchecked(
+                                self.entities[ind].ver.get().wrapping_add(1).max(1),
+                            )
+                        };
+                    }
                 }
                 EntityCommand::RemoveComponent { entity, id } => {
                     let mut info = &mut self.entities[entity.id() as usize];
-                    assert!(info.ver.get() == entity.ver());
+                    debug_assert!(info.ver.get() == entity.ver());
+
                     if let Some((new_archetype, new_index, moved_entity)) =
                         archetypes.remove_component(entity, info.archetype, info.index as usize, id)
                     {
@@ -137,7 +222,8 @@ impl Entities {
                 }
                 EntityCommand::AddComponent { entity, component } => {
                     let mut info = &mut self.entities[entity.id() as usize];
-                    assert!(info.ver.get() == entity.ver());
+                    debug_assert!(info.ver.get() == entity.ver());
+
                     if let Some((new_archetype, new_index, moved_entity)) = archetypes
                         .add_component(entity, info.archetype, info.index as usize, component)
                     {
@@ -209,10 +295,12 @@ impl Entities {
             }
 
             // Add entity to the free list
-            self.free.push(entity.id());
+            self.construction_data.free_send.send(entity).unwrap();
         }
     }
+}
 
+impl EntityCommands {
     /// Requests that entities be destroyed.
     ///
     /// # Note
@@ -220,166 +308,81 @@ impl Entities {
     /// deletion.
     ///
     /// # Panics
-    /// Panics if any of the entities are invalide handles.
-    pub fn destroy(&mut self, entities: &[Entity]) {
-        // Add all entities to the "to destroy" list and then update their versions. Updating the
-        // version happens here so we can avoid "double deletion"
-        for entity in entities {
-            // Verify the ID
-            let ind = entity.id() as usize;
-            assert!(ind < self.entities.len() && self.entities[ind].ver.get() == entity.ver());
-
-            // Add to list
-            self.to_destroy.push(*entity);
-
-            // Update version
-            self.entities[ind].ver =
-                NonZeroU32::new(self.entities[ind].ver.get() + 1).expect("Entity verion overflow");
-        }
-    }
-
-    /// Requests that entities be created using a set of components. A slice of the new entities
-    /// handles is returned.
-    ///
-    /// # Note
-    /// An alias for `create_with_tags(components, ())`.
+    /// This call will not panic if you provide invalid entity handles. However, the dispatcher
+    /// will detect this during deferred destruction of entities and panic then.
     #[inline]
-    pub fn create<C: ComponentPack + 'static>(&mut self, components: C) -> &[Entity] {
-        self.create_with_tags(components, ())
-    }
-
-    /// Requests that entities be created using a set of components and tags. A slice of the
-    /// new entities handles is returned.
-    ///
-    /// # Note
-    /// The entities created by this function are not actually initialized. This is to allow
-    /// adding entities to a world while a query is operating on the same world. The consequence
-    /// of this is that you cannot add or remove tags or components from the entities once they
-    /// are created until the next call to `process` on `self` which happens at the beginning
-    /// of dispatch. You can, however, request for the entities to be destroyed.
-    #[inline]
-    pub fn create_with_tags<C: ComponentPack + 'static, T: TagPack + 'static>(
-        &mut self,
-        components: C,
-        tags: T,
-    ) -> &[Entity] {
-        self.create_with_tags_dyn(
-            Box::new(components),
-            if tags.len() == 0 {
-                None
-            } else {
-                Some(Box::new(tags))
-            },
-        )
-    }
-
-    pub fn create_with_tags_dyn(
-        &mut self,
-        components: Box<dyn ComponentPack>,
-        tags: Option<Box<dyn TagPack>>,
-    ) -> &[Entity] {
-        assert!(components.is_valid());
-        if let Some(tags) = &tags {
-            assert!(tags.is_valid());
-            assert!(tags.len() == 0 || tags.len() == components.len());
-        }
-
-        // Create entity handles
-        let entities = self.gen_entities(components.len());
-
-        // Create a pack for later initialization
-        self.to_create.push(EntityCreateInfo {
-            components,
-            tags,
-            entities,
-        });
-
-        &self.to_create[self.to_create.len() - 1].entities
-    }
-
-    /// Add a component to an entity. If the entity already has this component type, it is replaced
-    /// by the new component.
-    #[inline]
-    pub fn add_component<C: ComponentExt + 'static>(&self, entity: Entity, component: C) {
-        let _ = self.sender.send(EntityCommand::AddComponent {
-            entity,
-            component: Box::new(component),
-        });
-    }
-
-    /// Remove a component from an entity. No-op if the component doesn't exist on the entity.
-    #[inline]
-    pub fn remove_component<C: Component + 'static>(&self, entity: Entity) {
-        let _ = self.sender.send(EntityCommand::RemoveComponent {
-            entity,
-            id: TypeId::of::<C>(),
-        });
-    }
-
-    /// Add a tag to an entity. If the entity already has this tag type, it is replaced by the new
-    /// tag.
-    #[inline]
-    pub fn add_tag(&self, entity: Entity, tag: impl Tag + 'static) {
-        let _ = self.sender.send(EntityCommand::AddTag {
-            entity,
-            tag: Box::new(tag),
-        });
-    }
-
-    /// Remove a tag from an entity. No-op if the tag doesn't exist on the entity.
-    #[inline]
-    pub fn remove_tag<T: Tag + 'static>(&self, entity: Entity) {
-        let _ = self.sender.send(EntityCommand::RemoveTag {
-            entity,
-            id: TypeId::of::<T>(),
-        });
-    }
-
-    /// Helper method to create entities.
-    fn gen_entities(&mut self, count: usize) -> Vec<Entity> {
-        let mut entities = Vec::with_capacity(count);
-        for _ in 0..count {
-            // Attempt to get a free entity
-            if let Some(free) = self.free.pop() {
-                // NOTE: We use the same entity version since it is updated during deletion.
-                entities.push(Entity::new(free, self.entities[free as usize].ver));
-            }
-            // New entity otherwise
-            else {
-                let ver = NonZeroU32::new(1).unwrap();
-                self.entities.push(EntityInfo {
-                    ver,
-                    archetype: ArchetypeId::default(),
-                    index: 0,
-                    collection: None,
-                });
-                entities.push(Entity::new((self.entities.len() - 1) as u32, ver));
-            }
-        }
-
-        entities
-    }
-}
-
-impl EntityCommands {
-    #[inline]
-    pub fn destroy(&mut self, entities: &[Entity]) {
+    pub fn destroy(&self, entities: &[Entity]) {
         let _ = self.sender.send(EntityCommand::Destroy {
             entities: Vec::from(entities),
         });
     }
 
+    /// An alias for `EntityCommands::create_with_tags(components, (), entities)`.
     #[inline]
-    pub fn create<C: ComponentPack + 'static>(&mut self, components: C) {
-        self.create_with_tags(components, ());
+    pub fn create<C: ComponentPack + 'static>(&self, components: C, entities: &mut [Entity]) {
+        self.create_with_tags(components, (), entities);
     }
 
+    /// Takes a component and tag pack of lengths 'm' and a mutable slice of length `n` of entity
+    /// handles. The slice will be filled with the entities created by this command. If `n < m`,
+    /// only the first `n` entity handles will be written. If `n > m`, the entity handles after the
+    /// `n`th will remain untouched.
+    ///
+    /// # Note
+    /// The entities created by this function are not actually initialized. This is to allow
+    /// adding entities to a world while a query is operating on the same world. The consequence
+    /// of this is that queries created during the same event dispatch as a call to this method
+    /// will not detect the newly created entities.
     #[inline]
     pub fn create_with_tags<C: ComponentPack + 'static, T: TagPack + 'static>(
-        &mut self,
+        &self,
         components: C,
         tags: T,
+        entities: &mut [Entity],
     ) {
+        debug_assert!(components.is_valid());
+        debug_assert!(tags.is_valid());
+
+        let new_entity_count = components.len();
+
+        if tags.len() != 0 {
+            debug_assert!(new_entity_count == tags.len());
+        }
+
+        // Construct new entity handles
+        let mut new_entities = Vec::with_capacity(new_entity_count);
+
+        // Grab handles off the free queue until we run out
+        while let Ok(entity) = self.construction_data.free_recv.try_recv() {
+            // Break early if we have created enough entities
+            if new_entities.len() == new_entity_count {
+                break;
+            }
+
+            // NOTE: We don't increment the version because it is updated during deletion
+            new_entities.push(entity);
+        }
+
+        // If we still need new handles, use the free counter
+        let needed = new_entity_count - new_entities.len();
+        if needed > 0 {
+            let base_id = self
+                .construction_data
+                .max_entities
+                .fetch_add(needed, Ordering::Relaxed);
+
+            for id in base_id..(base_id + needed) {
+                new_entities.push(Entity::new(id as u32, unsafe {
+                    NonZeroU32::new_unchecked(1)
+                }))
+            }
+        }
+
+        // Add handles to the output entities slice
+        for i in 0..(entities.len().min(new_entities.len())) {
+            entities[i] = new_entities[i];
+        }
+
         let _ = self.sender.send(EntityCommand::Create {
             components: Box::new(components),
             tags: if tags.is_empty() {
@@ -387,6 +390,7 @@ impl EntityCommands {
             } else {
                 Some(Box::new(tags))
             },
+            entities: new_entities,
         });
     }
 

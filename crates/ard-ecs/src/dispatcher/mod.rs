@@ -295,7 +295,7 @@ impl Dispatcher {
                                 resources: NonNull::new_unchecked(resources as *const _ as *mut _),
                                 tags: NonNull::new_unchecked((&world.tags) as *const _ as *mut _),
                                 event: NonNull::new_unchecked(event.as_ref() as *const _ as *mut _),
-                                commands: world.entities.commands(),
+                                commands: world.entities.commands().clone(),
                                 events: Events {
                                     sender: self.event_sender.clone(),
                                 },

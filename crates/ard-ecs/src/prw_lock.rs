@@ -73,7 +73,7 @@ impl<T> Drop for PrwLockInner<T> {
     fn drop(&mut self) {
         // Panic if there are any outstanding access handles
         #[cfg(debug_assertions)]
-        if self.access_state.load(Ordering::SeqCst) > 0 {
+        if !std::thread::panicking() && self.access_state.load(Ordering::SeqCst) > 0 {
             panic!("outstanding access handle in archetype storage on drop");
         }
     }
@@ -136,45 +136,3 @@ impl<T> DerefMut for PrwWriteLock<T> {
 unsafe impl<T> Send for PrwWriteLock<T> {}
 
 unsafe impl<T> Sync for PrwWriteLock<T> {}
-
-#[cfg(test)]
-mod tests {
-    use super::PrwLock;
-
-    #[test]
-    fn prw_lock_test() {
-        let lock = PrwLock::new(42, "");
-
-        let handle1 = lock.read();
-        assert_eq!(*handle1, 42);
-
-        let handle2 = lock.read();
-        assert_eq!(*handle2, 42);
-
-        std::mem::drop(handle1);
-        std::mem::drop(handle2);
-
-        let mut handle3 = lock.write();
-        assert_eq!(*handle3, 42);
-
-        *handle3 += 27;
-
-        assert_eq!(*handle3, 69);
-    }
-
-    #[test]
-    #[should_panic]
-    fn prw_lock_multiple_writers() {
-        let lock = PrwLock::new(42, "");
-        let mut _handle1 = lock.write();
-        let mut _handle2 = lock.write();
-    }
-
-    #[test]
-    #[should_panic]
-    fn prw_lock_readers_and_writers() {
-        let lock = PrwLock::new(42, "");
-        let mut _handle1 = lock.read();
-        let mut _handle2 = lock.write();
-    }
-}

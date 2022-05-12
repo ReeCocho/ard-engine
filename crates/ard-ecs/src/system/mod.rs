@@ -146,8 +146,8 @@ impl<S: SystemState + 'static> SystemBuilder<S> {
             id: TypeId::of::<S>(),
             main_thread: S::MAIN_THREAD,
             handlers: self.handlers,
-            run_after: HashMap::default(),
-            run_before: HashMap::default(),
+            run_after: self.run_after,
+            run_before: self.run_before,
         }
     }
 }
