@@ -10,11 +10,13 @@ use ard_math::Vec4Swizzles;
 
 use std::time::Instant;
 
+#[derive(SystemState)]
 pub struct FrameRate {
     frame_ctr: usize,
     last_sec: Instant,
 }
 
+#[derive(SystemState)]
 pub struct CameraMovement {
     pub fov: f32,
     pub near: f32,
@@ -28,10 +30,6 @@ pub struct CameraMovement {
 
 #[derive(Resource, Default)]
 pub struct MainCameraState(pub CameraDescriptor);
-
-impl SystemState for FrameRate {}
-
-impl SystemState for CameraMovement {}
 
 type CameraMovementRes = (
     Read<Factory>,

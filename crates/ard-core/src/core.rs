@@ -60,12 +60,11 @@ pub struct ArdCoreState {
 /// `Tick` → `PostTick` → `FixedTick`
 pub struct ArdCorePlugin;
 
+#[derive(SystemState)]
 pub struct ArdCore {
     fixed_rate: Duration,
     fixed_timer: Duration,
 }
-
-impl SystemState for ArdCore {}
 
 impl Default for ArdCore {
     fn default() -> Self {

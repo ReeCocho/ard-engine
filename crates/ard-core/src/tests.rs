@@ -5,14 +5,12 @@ use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 fn game_loop() {
     const TICK_COUNT: usize = 69;
 
-    #[derive(Default)]
+    #[derive(SystemState, Default)]
     struct Ticker {
         start_count: usize,
         tick_count: usize,
         post_tick_count: usize,
     }
-
-    impl SystemState for Ticker {}
 
     impl Ticker {
         fn start(&mut self, _: Start, _: Commands, _: Queries<()>, _: Res<()>) {

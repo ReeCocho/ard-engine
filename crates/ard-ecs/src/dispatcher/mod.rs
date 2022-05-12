@@ -411,13 +411,8 @@ impl DispatcherBuilder {
 
         // First loop over every system to initialize dispatcher state objects.
         for (system_idx, system) in systems.iter().enumerate() {
-            let mut event_handlers = HashSet::default();
-
             // Loop over every event handler for this system
             for (event_id, handler) in &system.handlers {
-                // Indicates that this system operates on this particular event type.
-                event_handlers.insert(*event_id);
-
                 // Intitialize the dispatcher state
                 let dispatcher_state = event_to_systems.entry(*event_id).or_default();
                 let (thread_sender, finished) = crossbeam_channel::bounded(1);
@@ -437,8 +432,6 @@ impl DispatcherBuilder {
                     .type_to_state
                     .insert(system.id, dispatcher_state.states.len() - 1);
             }
-
-            system_to_event_handlers.insert(system.id, event_handlers);
         }
 
         // Determine compatibility for each system for each event type

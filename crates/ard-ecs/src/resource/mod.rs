@@ -38,7 +38,8 @@ impl Resources {
     /// Creates a new resource. If a resource of the same type was already registered, it is
     /// replaced by the new resource.
     pub fn add<R: Resource + Any>(&mut self, resource: R) {
-        self.resources.insert(PrwLock::new(resource));
+        self.resources
+            .insert(PrwLock::new(resource, R::debug_name()));
     }
 
     /// Checks that a resource exists in the container.

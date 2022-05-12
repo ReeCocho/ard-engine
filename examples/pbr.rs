@@ -7,13 +7,14 @@ use ard_engine::{
 
 use util::{CameraMovement, FrameRate, MainCameraState};
 
+#[derive(SystemState)]
 struct BoundingBoxSystem {
     mesh: Mesh,
     models: [Mat4; 10],
 }
 
 impl BoundingBoxSystem {
-    fn tick(
+    fn pre_render(
         &mut self,
         pre_render: PreRender,
         commands: Commands,
@@ -125,13 +126,11 @@ impl BoundingBoxSystem {
     }
 }
 
-impl SystemState for BoundingBoxSystem {}
-
 impl Into<System> for BoundingBoxSystem {
     fn into(self) -> System {
         SystemBuilder::new(self)
-            .with_handler(BoundingBoxSystem::tick)
-            .run_after::<Tick, CameraMovement>()
+            .with_handler(BoundingBoxSystem::pre_render)
+            .run_after::<PreRender, CameraMovement>()
             .build()
     }
 }

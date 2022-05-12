@@ -55,7 +55,7 @@ macro_rules! resource_set_impl {
             fn type_key() -> TypeKey {
                 let mut set = TypeKey::default();
                 $(
-                    set.add::<$name>();
+                    set.add::<$name::Resource>();
                 )*
                 set
             }
@@ -65,7 +65,7 @@ macro_rules! resource_set_impl {
                 let mut set = TypeKey::default();
                 $(
                     if !$name::MUT_ACCESS {
-                        set.add::<$name>();
+                        set.add::<$name::Resource>();
                     }
                 )*
                 set
@@ -76,7 +76,7 @@ macro_rules! resource_set_impl {
                 let mut set = TypeKey::default();
                 $(
                     if $name::MUT_ACCESS {
-                        set.add::<$name>();
+                        set.add::<$name::Resource>();
                     }
                 )*
                 set

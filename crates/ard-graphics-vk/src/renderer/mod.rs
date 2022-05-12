@@ -24,6 +24,7 @@ pub mod static_geometry;
 #[derive(Debug, Event, Copy, Clone)]
 struct Render;
 
+#[derive(SystemState)]
 pub struct Renderer {
     ctx: GraphicsContext,
     factory: Factory,
@@ -35,8 +36,6 @@ pub struct Renderer {
     last_render_time: Instant,
     canvas_size: Option<(u32, u32)>,
 }
-
-impl SystemState for Renderer {}
 
 #[allow(clippy::type_complexity)]
 type RenderResources = (

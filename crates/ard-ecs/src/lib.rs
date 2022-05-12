@@ -27,6 +27,8 @@ pub mod prelude {
         tag::{storage::*, *},
         world::{entities::*, *},
     };
+
+    pub use ard_ecs_derive::*;
 }
 
 /// Maximum number of types that can be held in a bitset.

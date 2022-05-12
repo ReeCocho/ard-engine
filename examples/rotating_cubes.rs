@@ -13,6 +13,7 @@ struct CameraHolder {
     _camera: Camera,
 }
 
+#[derive(SystemState)]
 struct SpinningCubes {
     rot: f32,
     frame_ctr: usize,
@@ -28,8 +29,6 @@ impl Default for SpinningCubes {
         }
     }
 }
-
-impl SystemState for SpinningCubes {}
 
 impl SpinningCubes {
     fn tick(

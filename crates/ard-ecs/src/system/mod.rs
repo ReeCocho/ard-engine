@@ -43,12 +43,22 @@ pub struct SystemBuilder<S: SystemState> {
 pub trait SystemState: Send + Sync {
     /// Request that the system run on the main thread.
     const MAIN_THREAD: bool = false;
+
+    /// Name of the system for debugging purposes.
+    const DEBUG_NAME: &'static str;
+
+    #[inline]
+    fn debug_name() -> &'static str {
+        Self::DEBUG_NAME
+    }
 }
 
 /// # Note
 /// This trait is automatically implemented for all systems. Do NOT manually implement this trait.
 pub trait SystemStateExt: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn debug_name(&self) -> &'static str;
 }
 
 impl System {
@@ -143,7 +153,13 @@ impl<S: SystemState + 'static> SystemBuilder<S> {
 }
 
 impl<T: SystemState + 'static> SystemStateExt for T {
+    #[inline]
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    #[inline]
+    fn debug_name(&self) -> &'static str {
+        T::DEBUG_NAME
     }
 }

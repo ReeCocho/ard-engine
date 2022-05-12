@@ -13,7 +13,7 @@ use util::{CameraMovement, FrameRate, MainCameraState};
 struct CameraHolder {
     _camera: Camera,
 }
-
+#[derive(SystemState)]
 struct SpinningCamera {
     camera_rot: f32,
     frame_ctr: usize,
@@ -29,8 +29,6 @@ impl Default for SpinningCamera {
         }
     }
 }
-
-impl SystemState for SpinningCamera {}
 
 impl SpinningCamera {
     fn tick(&mut self, tick: Tick, _: Commands, _: Queries<()>, res: Res<(Write<Factory>,)>) {

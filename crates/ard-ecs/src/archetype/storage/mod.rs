@@ -74,7 +74,7 @@ impl<T: Send + Sync> ArchetypeStorage<T> {
 impl<T: Send + Sync + 'static> AnyArchetypeStorage for ArchetypeStorage<T> {
     #[inline]
     fn create(&mut self) -> usize {
-        self.buffers.push(PrwLock::new(Vec::default()));
+        self.buffers.push(PrwLock::new(Vec::default(), ""));
         self.buffers.len() - 1
     }
 

@@ -31,13 +31,12 @@ fn main() {
         .run();
 }
 
+#[derive(SystemState)]
 struct TextureUpdate {
     texture_to_update: Texture,
     time_to_update: Duration,
     update_count: usize,
 }
-
-impl SystemState for TextureUpdate {}
 
 impl Into<System> for TextureUpdate {
     fn into(self) -> System {

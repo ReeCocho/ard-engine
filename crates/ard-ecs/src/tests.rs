@@ -1,3 +1,5 @@
+use ard_ecs_derive::SystemState;
+
 use crate::{prelude::*, resource::res::Res, system::commands::Commands};
 
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -166,7 +168,10 @@ fn create_with_tags() {
 
 #[test]
 fn resources() {
+    #[derive(SystemState)]
     struct SysA;
+
+    #[derive(SystemState)]
     struct SysB;
 
     impl SysA {
@@ -177,8 +182,6 @@ fn resources() {
             assert_eq!(resource.y, 2);
         }
     }
-
-    impl SystemState for SysA {}
 
     impl Into<System> for SysA {
         fn into(self) -> System {
@@ -191,8 +194,6 @@ fn resources() {
             assert!(res.get().0.is_none());
         }
     }
-
-    impl SystemState for SysB {}
 
     impl Into<System> for SysB {
         fn into(self) -> System {
@@ -467,28 +468,30 @@ fn remove_tags() {
 #[test]
 fn parallel_systems() {
     struct SystemExclusive;
+
+    #[derive(SystemState)]
     struct SystemA;
+
+    #[derive(SystemState)]
     struct SystemB;
+
+    #[derive(SystemState)]
     struct SystemC;
+
+    #[derive(SystemState)]
     struct SystemAB;
+
+    #[derive(SystemState)]
     struct SystemBC;
+
+    #[derive(SystemState)]
     struct SystemABC;
 
     impl SystemState for SystemExclusive {
         const MAIN_THREAD: bool = true;
+
+        const DEBUG_NAME: &'static str = "SystemExclusive";
     }
-
-    impl SystemState for SystemA {}
-
-    impl SystemState for SystemB {}
-
-    impl SystemState for SystemC {}
-
-    impl SystemState for SystemAB {}
-
-    impl SystemState for SystemBC {}
-
-    impl SystemState for SystemABC {}
 
     let mut dispatcher = Dispatcher::builder()
         .add_system(SystemBuilder::new(SystemExclusive).build())

@@ -55,9 +55,8 @@ impl Plugin for WindowPlugin {
 }
 
 /// System which signals the engine to stop when the primary window closes.
+#[derive(SystemState)]
 struct ExitOnClose;
-
-impl SystemState for ExitOnClose {}
 
 impl ExitOnClose {
     fn window_closed(&mut self, evt: WindowClosed, commands: Commands, _: Queries<()>, _: Res<()>) {
