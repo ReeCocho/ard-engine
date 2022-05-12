@@ -7,7 +7,7 @@ use crate::prelude::Plugin;
 pub struct App {
     pub resources: Resources,
     pub world: World,
-    pub dispatcher: Dispatcher,
+    pub dispatcher: DispatcherBuilder,
     runner: fn(App),
     startup_functions: Vec<fn(&mut App)>,
 }
@@ -22,10 +22,10 @@ impl Default for App {
         Self {
             resources: Resources::default(),
             world: World::default(),
-            dispatcher: Dispatcher::default(),
+            dispatcher: DispatcherBuilder::new(),
             runner: |mut app| {
                 app.run_startups();
-                app.dispatcher.run(&mut app.world, &app.resources);
+                app.dispatcher.build().run(&mut app.world, &app.resources);
             },
             startup_functions: Vec::default(),
         }

@@ -11,7 +11,10 @@ anymap = "0.12"
 rayon = "1.5"
 unsafe_unwrap = "0.1"
 crossbeam-channel = "0.5"
+bitvec = "1.0"
+num_cpus = "1.13"
 ard-ecs-derive = { path = "./ard-ecs-derive/" }
+ard-log = { version = "0.1", path = "../ard-log" }
 
 [profile.release]
 debug = false

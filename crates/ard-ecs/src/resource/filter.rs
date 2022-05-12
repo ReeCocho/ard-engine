@@ -8,6 +8,9 @@ pub trait ResourceFilter {
     /// Tuple containing the requested resources.
     type Set;
 
+    /// Gets the type key of all resources read within the filter.
+    fn type_key() -> TypeKey;
+
     /// Gets the type key of resources read using the filter.
     fn read_type_key() -> TypeKey;
 
@@ -23,6 +26,11 @@ pub trait ResourceFilter {
 
 impl ResourceFilter for () {
     type Set = ();
+
+    #[inline]
+    fn type_key() -> TypeKey {
+        TypeKey::default()
+    }
 
     #[inline]
     fn read_type_key() -> TypeKey {
@@ -44,11 +52,20 @@ macro_rules! resource_set_impl {
             type Set = ($(Option<$name::Lock>,)*);
 
             #[inline]
+            fn type_key() -> TypeKey {
+                let mut set = TypeKey::default();
+                $(
+                    set.add::<$name::Resource>();
+                )*
+                set
+            }
+
+            #[inline]
             fn read_type_key() -> TypeKey {
                 let mut set = TypeKey::default();
                 $(
                     if !$name::MUT_ACCESS {
-                        set.add::<$name>();
+                        set.add::<$name::Resource>();
                     }
                 )*
                 set
@@ -59,7 +76,7 @@ macro_rules! resource_set_impl {
                 let mut set = TypeKey::default();
                 $(
                     if $name::MUT_ACCESS {
-                        set.add::<$name>();
+                        set.add::<$name::Resource>();
                     }
                 )*
                 set

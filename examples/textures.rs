@@ -31,15 +31,11 @@ fn main() {
         .run();
 }
 
+#[derive(SystemState)]
 struct TextureUpdate {
     texture_to_update: Texture,
     time_to_update: Duration,
     update_count: usize,
-}
-
-impl SystemState for TextureUpdate {
-    type Resources = (Write<Factory>,);
-    type Data = ();
 }
 
 impl Into<System> for TextureUpdate {
@@ -51,8 +47,9 @@ impl Into<System> for TextureUpdate {
 }
 
 impl TextureUpdate {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
-        let factory = ctx.resources.0.unwrap();
+    fn tick(&mut self, tick: Tick, _: Commands, _: Queries<()>, res: Res<(Write<Factory>,)>) {
+        let res = res.get();
+        let factory = res.0.unwrap();
 
         self.time_to_update += tick.0;
         if self.update_count < 2 && self.time_to_update.as_secs() >= 3 {

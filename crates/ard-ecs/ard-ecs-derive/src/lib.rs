@@ -75,8 +75,13 @@ pub fn resource(input: TokenStream) -> TokenStream {
 
 fn impl_resource(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let name_str = name.to_string();
     let gen = quote! {
-        impl Resource for #name {}
+        impl Resource for #name {
+            fn debug_name() -> &'static str {
+                #name_str
+            }
+        }
     };
     gen.into()
 }
@@ -90,8 +95,29 @@ pub fn event(input: TokenStream) -> TokenStream {
 
 fn impl_event(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let name_str = name.to_string();
     let gen = quote! {
-        impl Event for #name {}
+        impl Event for #name {
+            const DEBUG_NAME: &'static str = #name_str;
+        }
+    };
+    gen.into()
+}
+
+#[proc_macro_derive(SystemState)]
+pub fn system_state(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    let gen = impl_system_state(&ast);
+    gen.into()
+}
+
+fn impl_system_state(ast: &syn::DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+    let name_str = name.to_string();
+    let gen = quote! {
+        impl SystemState for #name {
+            const DEBUG_NAME: &'static str = #name_str;
+        }
     };
     gen.into()
 }

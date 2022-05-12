@@ -16,28 +16,29 @@ pub fn init(filter: LevelFilter) {
 
     // Output to log file. Name of the file is based on the current time.
     let now = chrono::Utc::now();
-    let log_file = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
-        .build(format!(
-            "./logs/{} {} {} {} {} {}.txt",
-            now.year(),
-            now.month(),
-            now.date(),
-            now.hour(),
-            now.minute(),
-            now.second()
-        ))
-        .expect("unable to initialize logging to file");
+
+    // let log_file = FileAppender::builder()
+    //     .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
+    //     .build(format!(
+    //         "./logs/{} {} {} {} {} {}.txt",
+    //         now.year(),
+    //         now.month(),
+    //         now.date(),
+    //         now.hour(),
+    //         now.minute(),
+    //         now.second()
+    //     ))
+    //     .expect("unable to initialize logging to file");
 
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("log_file", Box::new(log_file)))
-        .logger(
-            Logger::builder()
-                .appender("log_file")
-                .additive(false)
-                .build("app::log_file", filter),
-        )
+        // .appender(Appender::builder().build("log_file", Box::new(log_file)))
+        // .logger(
+        //     Logger::builder()
+        //         .appender("log_file")
+        //         .additive(false)
+        //         .build("app::log_file", filter),
+        // )
         .build(
             Root::builder()
                 .appender("log_file")

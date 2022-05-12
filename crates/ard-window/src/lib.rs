@@ -8,7 +8,7 @@ pub mod prelude {
 }
 
 use ard_core::prelude::*;
-use ard_ecs::prelude::*;
+use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 use prelude::WindowId;
 
 /// Plugin for the window subsystem.
@@ -55,18 +55,14 @@ impl Plugin for WindowPlugin {
 }
 
 /// System which signals the engine to stop when the primary window closes.
+#[derive(SystemState)]
 struct ExitOnClose;
 
-impl SystemState for ExitOnClose {
-    type Data = ();
-    type Resources = ();
-}
-
 impl ExitOnClose {
-    fn window_closed(&mut self, ctx: Context<Self>, evt: WindowClosed) {
+    fn window_closed(&mut self, evt: WindowClosed, commands: Commands, _: Queries<()>, _: Res<()>) {
         // If the window was the main window, send a message to end the program
         if evt.0 == WindowId::primary() {
-            ctx.events.submit(Stop);
+            commands.events.submit(Stop);
         }
     }
 }

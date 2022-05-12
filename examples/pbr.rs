@@ -7,18 +7,26 @@ use ard_engine::{
 
 use util::{CameraMovement, FrameRate, MainCameraState};
 
+#[derive(SystemState)]
 struct BoundingBoxSystem {
     mesh: Mesh,
     models: [Mat4; 10],
 }
 
 impl BoundingBoxSystem {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
-        let draw = ctx.resources.0.unwrap();
-        let factory = ctx.resources.1.unwrap();
-        let camera_state = ctx.resources.2.unwrap();
+    fn pre_render(
+        &mut self,
+        pre_render: PreRender,
+        commands: Commands,
+        queries: Queries<(Read<Model>, Read<PointLight>)>,
+        res: Res<(Read<DebugDrawing>, Read<Factory>, Read<MainCameraState>)>,
+    ) {
+        let res = res.get();
+        let draw = res.0.unwrap();
+        let factory = res.1.unwrap();
+        let camera_state = res.2.unwrap();
 
-        for (model, light) in ctx.queries.make::<(Read<Model>, Read<PointLight>)>() {
+        for (model, light) in queries.make::<(Read<Model>, Read<PointLight>)>() {
             let camera_ubo = CameraUBO::new(&camera_state.0, 1280.0, 720.0);
             let inv = camera_ubo.vp.inverse();
 
@@ -40,8 +48,6 @@ impl BoundingBoxSystem {
 
                 end_pt = inv * end_pt;
                 end_pt /= end_pt.w;
-
-                // draw.draw_line(pos, Vec3::from(end_pt), Vec3::new(1.0, 1.0, 1.0));
             }
 
             let TABLE_X = 32.0;
@@ -63,13 +69,6 @@ impl BoundingBoxSystem {
                 1.0,
             );
 
-            // Find the min and max in view space
-            // vec4 cluster_min_vs = camera.projection_inv * cluster_min_ss;
-            // cluster_min_vs /= cluster_min_vs.w;
-
-            // vec4 cluster_max_vs = camera.projection_inv * cluster_max_ss;
-            // cluster_max_vs /= cluster_max_vs.w;
-
             // Finding the 4 intersection points made from each point to the cluster near/far plane
             let mut min_point_near = camera_ubo.projection_inv * cluster_min_ss;
             let mut min_point_far =
@@ -82,11 +81,6 @@ impl BoundingBoxSystem {
             min_point_far /= min_point_far.w;
             max_point_near /= max_point_near.w;
             max_point_far /= max_point_far.w;
-
-            // vec3 min_point_near = line_intersection_to_zplane(vec3(0.0), cluster_min_vs.xyz, camera.properties.y);
-            // vec3 min_point_far  = line_intersection_to_zplane(vec3(0.0), cluster_min_vs.xyz, camera.properties.z);
-            // vec3 max_point_near = line_intersection_to_zplane(vec3(0.0), cluster_max_vs.xyz, camera.properties.y);
-            // vec3 max_point_far  = line_intersection_to_zplane(vec3(0.0), cluster_max_vs.xyz, camera.properties.z);
 
             // Min and max bounding area
             let mut min_point_AABB =
@@ -118,8 +112,6 @@ impl BoundingBoxSystem {
             min_point_AABB = Vec4::new(min_point_AABB.x, min_point_AABB.y, min_point_AABB.z, 1.0);
             max_point_AABB = Vec4::new(max_point_AABB.x, max_point_AABB.y, max_point_AABB.z, 1.0);
 
-            // println!("{} {}", min_point_AABB, max_point_AABB);
-
             let half_extents = (max_point_AABB.xyz() - min_point_AABB.xyz()) / 2.0;
             let center = (max_point_AABB.xyz() + min_point_AABB.xyz()) / 2.0;
 
@@ -134,15 +126,11 @@ impl BoundingBoxSystem {
     }
 }
 
-impl SystemState for BoundingBoxSystem {
-    type Data = (Read<Model>, Read<PointLight>);
-    type Resources = (Write<DebugDrawing>, Write<Factory>, Read<MainCameraState>);
-}
-
 impl Into<System> for BoundingBoxSystem {
     fn into(self) -> System {
         SystemBuilder::new(self)
-            .with_handler(BoundingBoxSystem::tick)
+            .with_handler(BoundingBoxSystem::pre_render)
+            .run_after::<PreRender, CameraMovement>()
             .build()
     }
 }

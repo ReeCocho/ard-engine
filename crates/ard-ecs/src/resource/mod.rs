@@ -1,5 +1,6 @@
 pub mod access;
 pub mod filter;
+pub mod res;
 
 use anymap::{any::Any, AnyMap};
 pub use ard_ecs_derive::Resource;
@@ -8,7 +9,9 @@ use crate::prw_lock::{PrwLock, PrwReadLock, PrwWriteLock};
 
 /// A resource is a piece of data that can be shared between systems. Global state of a game, for
 /// example, could be held in a resource.
-pub trait Resource {}
+pub trait Resource {
+    fn debug_name() -> &'static str;
+}
 
 /// Container of resources.
 pub struct Resources {
@@ -35,7 +38,8 @@ impl Resources {
     /// Creates a new resource. If a resource of the same type was already registered, it is
     /// replaced by the new resource.
     pub fn add<R: Resource + Any>(&mut self, resource: R) {
-        self.resources.insert(PrwLock::new(resource));
+        self.resources
+            .insert(PrwLock::new(resource, R::debug_name()));
     }
 
     /// Checks that a resource exists in the container.

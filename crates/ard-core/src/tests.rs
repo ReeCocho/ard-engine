@@ -1,38 +1,33 @@
 use crate::prelude::*;
-use ard_ecs::prelude::*;
+use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 
 #[test]
 fn game_loop() {
     const TICK_COUNT: usize = 69;
 
-    #[derive(Default)]
+    #[derive(SystemState, Default)]
     struct Ticker {
         start_count: usize,
         tick_count: usize,
         post_tick_count: usize,
     }
 
-    impl SystemState for Ticker {
-        type Data = ();
-        type Resources = ();
-    }
-
     impl Ticker {
-        fn start(&mut self, _: Context<Ticker>, _: Start) {
+        fn start(&mut self, _: Start, _: Commands, _: Queries<()>, _: Res<()>) {
             assert_eq!(self.start_count, 0);
             self.start_count += 1;
         }
 
-        fn tick(&mut self, _: Context<Ticker>, _: Tick) {
+        fn tick(&mut self, _: Tick, _: Commands, _: Queries<()>, _: Res<()>) {
             self.tick_count += 1;
         }
 
-        fn post_tick(&mut self, ctx: Context<Ticker>, _: PostTick) {
+        fn post_tick(&mut self, _: PostTick, commands: Commands, _: Queries<()>, _: Res<()>) {
             self.post_tick_count += 1;
             if self.post_tick_count == TICK_COUNT {
                 assert_eq!(self.tick_count, TICK_COUNT);
                 assert_eq!(self.start_count, 1);
-                ctx.events.submit(Stop);
+                commands.events.submit(Stop);
             }
         }
     }

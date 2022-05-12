@@ -22,11 +22,13 @@ pub mod prelude {
         dispatcher::*,
         entity::*,
         event::*,
-        resource::{filter::*, *},
-        system::{data::*, handler::*, query::*, *},
+        resource::{filter::*, res::*, *},
+        system::{commands::*, data::*, handler::*, query::*, *},
         tag::{storage::*, *},
         world::{entities::*, *},
     };
+
+    pub use ard_ecs_derive::*;
 }
 
 /// Maximum number of types that can be held in a bitset.

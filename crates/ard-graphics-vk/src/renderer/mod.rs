@@ -24,6 +24,7 @@ pub mod static_geometry;
 #[derive(Debug, Event, Copy, Clone)]
 struct Render;
 
+#[derive(SystemState)]
 pub struct Renderer {
     ctx: GraphicsContext,
     factory: Factory,
@@ -36,21 +37,17 @@ pub struct Renderer {
     canvas_size: Option<(u32, u32)>,
 }
 
-impl SystemState for Renderer {
-    type Data = (Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>);
-
-    #[allow(clippy::type_complexity)]
-    type Resources = (
-        Read<RendererSettings>,
-        Write<Surface>,
-        Read<Windows>,
-        // These two are held internally, but are requested so that no other systems write to them
-        // while rendering is occuring.
-        Write<Factory>,
-        Write<StaticGeometry>,
-        Write<DebugDrawing>,
-    );
-}
+#[allow(clippy::type_complexity)]
+type RenderResources = (
+    Read<RendererSettings>,
+    Write<Surface>,
+    Read<Windows>,
+    // These two are held internally, but are requested so that no other systems write to them
+    // while rendering is occuring.
+    Write<Factory>,
+    Write<StaticGeometry>,
+    Write<DebugDrawing>,
+);
 
 impl RendererApi<VkBackend> for Renderer {
     fn new(
@@ -97,8 +94,15 @@ impl RendererApi<VkBackend> for Renderer {
 }
 
 impl Renderer {
-    fn tick(&mut self, ecs_ctx: Context<Self>, _: Tick) {
-        let settings = ecs_ctx.resources.0.unwrap();
+    fn tick(
+        &mut self,
+        _: Tick,
+        commands: Commands,
+        _: Queries<()>,
+        res: Res<(Read<RendererSettings>,)>,
+    ) {
+        let res = res.get();
+        let settings = res.0.unwrap();
 
         // See if rendering needs to be performed
         let now = Instant::now();
@@ -111,23 +115,31 @@ impl Renderer {
         // Send events
         if do_render {
             self.last_render_time = now;
-            ecs_ctx.events.submit(PreRender);
-            ecs_ctx.events.submit(Render);
-            ecs_ctx.events.submit(PostRender);
+            let dur = now.duration_since(self.last_render_time);
+            commands.events.submit(PreRender(dur));
+            commands.events.submit(Render);
+            commands.events.submit(PostRender(dur));
         }
     }
 
-    fn stopping(&mut self, _: Context<Self>, _: Stopping) {
+    fn stopping(&mut self, _: Stopping, _: Commands, _: Queries<()>, res: Res<()>) {
         unsafe {
             self.ctx.0.device.device_wait_idle().unwrap();
         }
     }
 
-    unsafe fn render(&mut self, ecs_ctx: Context<Self>, _: Render) {
-        let settings = ecs_ctx.resources.0.unwrap();
-        let surface = ecs_ctx.resources.1.unwrap();
+    unsafe fn render(
+        &mut self,
+        _: Render,
+        commands: Commands,
+        queries: Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
+        res: Res<RenderResources>,
+    ) {
+        let res = res.get();
+        let settings = res.0.unwrap();
+        let surface = res.1.unwrap();
         let mut surface_lock = surface.0.lock().expect("mutex poisoned");
-        let windows = ecs_ctx.resources.2.unwrap();
+        let windows = res.2.unwrap();
 
         let _static_geo_lock = self.static_geometry.acquire();
         let _factory_lock = self.factory.acquire();
@@ -167,11 +179,9 @@ impl Renderer {
         self.factory.process(frame_idx);
 
         // Update context with outside state
-        let dynamic_geo = ecs_ctx
-            .queries
-            .make::<(Read<Renderable<VkBackend>>, Read<Model>)>();
+        let dynamic_geo = queries.make::<(Read<Renderable<VkBackend>>, Read<Model>)>();
 
-        let point_lights = ecs_ctx.queries.make::<(Read<PointLight>, Read<Model>)>();
+        let point_lights = queries.make::<(Read<PointLight>, Read<Model>)>();
 
         self.state.set_dynamic_geo(dynamic_geo);
         self.state.set_point_light_query(point_lights);
@@ -239,7 +249,7 @@ impl Into<System> for Renderer {
     fn into(self) -> System {
         SystemBuilder::new(self)
             .with_handler(Renderer::tick)
-            .with_handler(|s, c, e| unsafe { Renderer::render(s, c, e) })
+            .with_handler(|s, e, c, q, r| unsafe { Renderer::render(s, e, c, q, r) })
             .with_handler(Renderer::stopping)
             .build()
     }

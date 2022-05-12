@@ -13,7 +13,7 @@ use util::{CameraMovement, FrameRate, MainCameraState};
 struct CameraHolder {
     _camera: Camera,
 }
-
+#[derive(SystemState)]
 struct SpinningCamera {
     camera_rot: f32,
     frame_ctr: usize,
@@ -30,20 +30,16 @@ impl Default for SpinningCamera {
     }
 }
 
-impl SystemState for SpinningCamera {
-    type Resources = (Write<Factory>,);
-    type Data = ();
-}
-
 impl SpinningCamera {
-    fn tick(&mut self, ctx: Context<Self>, tick: Tick) {
+    fn tick(&mut self, tick: Tick, _: Commands, _: Queries<()>, res: Res<(Write<Factory>,)>) {
         const SPIN_SPEED: f32 = 0.2;
         const CAM_DISTANCE: f32 = 150.0;
 
         let dt = tick.0.as_secs_f32();
         self.camera_rot += dt * SPIN_SPEED;
 
-        let factory = ctx.resources.0.unwrap();
+        let res = res.get();
+        let factory = res.0.unwrap();
         let main_camera = factory.main_camera();
 
         let position = Vec3::new(
@@ -61,7 +57,7 @@ impl SpinningCamera {
         factory.update_camera(&main_camera, descriptor);
     }
 
-    fn pre_render(&mut self, _: Context<Self>, _: PreRender) {
+    fn pre_render(&mut self, _: PreRender, _: Commands, _: Queries<()>, _: Res<()>) {
         let now = Instant::now();
         self.frame_ctr += 1;
         if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {
