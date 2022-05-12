@@ -49,7 +49,7 @@ struct ResourceB {
 #[derive(Event, Debug, Clone)]
 struct RunOnce;
 
-fn handler<S: SystemState, E: Event>(_: &mut S, _: E, _: Commands, _: Queries<()>, res: Res<()>) {}
+fn handler<S: SystemState, E: Event>(_: &mut S, _: E, _: Commands, _: Queries<()>, _: Res<()>) {}
 
 #[test]
 fn prw_lock_test() {

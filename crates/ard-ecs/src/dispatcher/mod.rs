@@ -75,6 +75,7 @@ struct SystemState {
     /// Index of the system in the primary system list.
     system: usize,
     /// Indicates this system must run on the main thread.
+    /// TODO: Not actually used yet.
     main_thread: bool,
     /// Handler data acceses to check for compatibility.
     accesses: HandlerAccesses,

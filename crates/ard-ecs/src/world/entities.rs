@@ -27,7 +27,6 @@ pub struct Entities {
     /// List of entities to destroy when processing.
     to_destroy: Vec<Entity>,
     entity_commands: EntityCommands,
-    commands_sender: Sender<EntityCommand>,
     commands_receiver: Receiver<EntityCommand>,
     construction_data: Arc<EntityConstructionData>,
 }
@@ -120,7 +119,6 @@ impl Default for Entities {
         };
 
         Self {
-            commands_sender: sender,
             commands_receiver: receiver,
             entities: Vec::default(),
             entity_commands,

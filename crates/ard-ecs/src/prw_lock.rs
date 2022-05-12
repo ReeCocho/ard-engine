@@ -1,5 +1,4 @@
 use std::{
-    any::TypeId,
     ops::{Deref, DerefMut},
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -19,6 +18,8 @@ pub struct PrwLock<T>(Arc<PrwLockInner<T>>);
 #[derive(Debug)]
 pub struct PrwLockInner<T> {
     data: T,
+    /// Used for debugging purposes.
+    #[allow(unused)]
     name: String,
     access_state: AtomicU32,
 }
