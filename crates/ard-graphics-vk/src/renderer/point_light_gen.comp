@@ -14,6 +14,11 @@ struct PointLight {
     vec4 position_range;
 };
 
+struct Froxel {
+    vec4[4] planes;
+    vec4 min_max_z;
+};
+
 layout(set = 0, binding = 0) readonly buffer PointLights {
     PointLight[] lights;
 };
@@ -35,7 +40,12 @@ layout(set = 1, binding = 0) uniform CameraUBO {
     vec4[6] planes;
     vec4 properties;
     vec4 position;
+    vec2 scale_bias;
 } camera;
+
+layout(set = 1, binding = 1) readonly buffer Clusters {
+    Froxel data[TABLE_X][TABLE_Y][TABLE_Z];
+} cluster_froxels;
 
 layout(push_constant) uniform constants {
     vec2 render_area;
@@ -63,63 +73,37 @@ void main() {
     pos = camera.view * pos;
 
     // Check each cluster to see if the light touches it
-    for (int x = 0; x < TABLE_X; x++) {
-        for (int y = 0; y < TABLE_Y; y++) {
-            for (int z = 0; z < TABLE_Z; z++) {
-                // Find min and max point of the cluster in screen space
-                float near = pow(2.0, float(z) / float(TABLE_Z)) - 1.0;
-                float far = pow(2.0, float(z + 1) / float(TABLE_Z)) - 1.0;
+    for (int z = 0; z < TABLE_Z; z++) {
+        // Check z slice. We do z first because we can skip entire slices if we are out of z bounds
+        vec2 min_max_z = cluster_froxels.data[0][0][z].min_max_z.xy;
+        if (pos.z - radius > min_max_z.y || pos.z + radius < min_max_z.x) {
+            continue;
+        }
 
-                vec4 cluster_min_ss = vec4(
-                    ((float(x) / float(TABLE_X)) * 2.0) - 1.0,
-                    ((float(y) / float(TABLE_Y)) * 2.0) - 1.0,
-                    near,
-                    1.0
-                );
-
-                vec4 cluster_max_ss = vec4(
-                    ((float(x + 1) / float(TABLE_X)) * 2.0) - 1.0,
-                    ((float(y + 1) / float(TABLE_Y)) * 2.0) - 1.0,
-                    far,
-                    1.0
-                );
-
-                // Finding the 4 intersection points made from each point to the cluster near/far plane
-                vec4 min_point_near = camera.projection_inv * cluster_min_ss;
-                vec4 min_point_far  = camera.projection_inv * vec4(cluster_min_ss.xy, far, 1.0);
-                vec4 max_point_near = camera.projection_inv * cluster_max_ss;
-                vec4 max_point_far  = camera.projection_inv * vec4(cluster_max_ss.xy, far, 1.0);
-
-                min_point_near /= min_point_near.w;
-                min_point_far /= min_point_far.w;
-                max_point_near /= max_point_near.w;
-                max_point_far /= max_point_far.w;
-
-                // Min and max bounding area
-                vec3 min_point_AABB = min(min(min_point_near.xyz, min_point_far.xyz), min(max_point_near.xyz, max_point_far.xyz));
-                vec3 max_point_AABB = max(max(min_point_near.xyz, min_point_far.xyz), max(max_point_near.xyz, max_point_far.xyz));
-                
-                // Compute square distance from light to cluster volume
-                float sq_dist = radius * radius;
-                
-                if (pos.x < min_point_AABB.x) sq_dist -= pow(pos.x - min_point_AABB.x, 2.0);
-                else if (pos.x > max_point_AABB.x) sq_dist -= pow(pos.x - max_point_AABB.x, 2.0);
-                if (pos.y < min_point_AABB.y) sq_dist -= pow(pos.y - min_point_AABB.y, 2.0);
-                else if (pos.y > max_point_AABB.y) sq_dist -= pow(pos.y - max_point_AABB.y, 2.0);
-                if (pos.z < min_point_AABB.z) sq_dist -= pow(pos.z - min_point_AABB.z, 2.0);
-                else if (pos.z > max_point_AABB.z) sq_dist -= pow(pos.z - max_point_AABB.z, 2.0);
-
-                if (sq_dist > 0.0) {
-                    // Try to add to the cluster. Bail if it's full
-                    uint light_idx = atomicAdd(light_counts[x][y][z], 1);
-
-                    if (light_idx >= MAX_POINT_LIGHTS) {
-                        atomicAdd(light_counts[x][y][z], -1);
-                        return;
+        for (int x = 0; x < TABLE_X; x++) {
+            for (int y = 0; y < TABLE_Y; y++) {
+                // Check planes
+                bool inside = true;
+                for (int i = 0; i < 4; i++) {
+                    if (dot(pos, cluster_froxels.data[x][y][z].planes[i]) <= -radius) {
+                        inside = false;
+                        break;
                     }
-
-                    clusters[x][y][z][light_idx] = light_index;
                 }
+
+                if (!inside) {
+                    continue;
+                }
+
+                // Try to add to the cluster. Bail if it's full
+                uint light_idx = atomicAdd(light_counts[x][y][z], 1);
+
+                if (light_idx >= MAX_POINT_LIGHTS) {
+                    atomicAdd(light_counts[x][y][z], -1);
+                    return;
+                }
+
+                clusters[x][y][z][light_idx] = light_index;
             }
         }
     }

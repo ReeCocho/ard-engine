@@ -1,0 +1,96 @@
+/// Most of this is from the Google Filament Physically Based Rendering document located here:
+/// https://google.github.io/filament/Filament.md.html#annex/lightassignmentwithfroxels
+
+#version 450
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+#define TABLE_X 32
+#define TABLE_Y 16
+#define TABLE_Z 16
+
+struct Froxel {
+    vec4[4] planes;
+    vec4 min_max_z;
+};
+
+layout(set = 0, binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 projection;
+    mat4 vp;
+    mat4 view_inv;
+    mat4 projection_inv;
+    mat4 vp_inv;
+    vec4[6] planes;
+    vec4 properties;
+    vec4 position;
+    vec2 scale_bias;
+} camera;
+
+layout(set = 0, binding = 1) writeonly restrict buffer Clusters {
+    Froxel data[TABLE_X][TABLE_Y][TABLE_Z];
+} clusters;
+
+void main() {
+    vec4 corners[4];
+    corners[0] = vec4(
+        ((float(gl_WorkGroupID.x) / float(TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[1] = vec4(
+        ((float(gl_WorkGroupID.x + 1) / float(TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[2] = vec4(
+        ((float(gl_WorkGroupID.x) / float(TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[3] = vec4(
+        ((float(gl_WorkGroupID.x + 1) / float(TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    vec2 min_max_z = camera.properties.y * vec2(
+        pow(camera.properties.z / camera.properties.y, float(gl_WorkGroupID.z) / float(TABLE_Z)),
+        pow(camera.properties.z / camera.properties.y, float(gl_WorkGroupID.z + 1) / float(TABLE_Z))
+    );
+
+    vec4 frustum[4];
+    frustum[0] = camera.projection_inv * frustum[0];
+    frustum[0] /= frustum[0].w;
+    
+    frustum[1] = camera.projection_inv * frustum[1];
+    frustum[1] /= frustum[1].w;
+    
+    frustum[2] = camera.projection_inv * frustum[2];
+    frustum[2] /= frustum[2].w;
+    
+    frustum[3] = camera.projection_inv * frustum[3];
+    frustum[3] /= frustum[3].w;
+
+    Froxel froxel;
+    froxel.planes[0] = vec4(normalize(cross(frustum[0].xyz, frustum[1].xyz)), 1.0);
+    froxel.planes[1] = vec4(normalize(cross(frustum[1].xyz, frustum[2].xyz)), 1.0);
+    froxel.planes[2] = vec4(normalize(cross(frustum[2].xyz, frustum[3].xyz)), 1.0);
+    froxel.planes[3] = vec4(normalize(cross(frustum[3].xyz, frustum[0].xyz)), 1.0);
+
+    froxel.min_max_z = vec4(min_max_z, 0.0, 0.0);
+
+    clusters.data
+        [gl_WorkGroupID.x]
+        [gl_WorkGroupID.y]
+        [gl_WorkGroupID.z] = froxel;
+}

@@ -58,12 +58,20 @@ impl Factory {
         global_layout: vk::DescriptorSetLayout,
     ) -> Self {
         let camera_pool = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                .stage_flags(vk::ShaderStageFlags::ALL)
-                .build()];
+            let bindings = [
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(0)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+                    .stage_flags(vk::ShaderStageFlags::ALL)
+                    .build(),
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(1)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                    .stage_flags(vk::ShaderStageFlags::ALL)
+                    .build(),
+            ];
 
             let layout_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
                 .bindings(&bindings)

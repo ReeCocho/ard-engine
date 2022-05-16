@@ -66,6 +66,8 @@ pub(crate) struct ForwardPlus {
     draw_gen_pipeline: vk::Pipeline,
     point_light_gen_pipeline_layout: vk::PipelineLayout,
     point_light_gen_pipeline: vk::Pipeline,
+    cluster_gen_pipeline_layout: vk::PipelineLayout,
+    cluster_gen_pipeline: vk::Pipeline,
     /// Descriptor pool for frame global data.
     global_pool: DescriptorPool,
     /// Descriptor pool for draw call generation.
@@ -82,6 +84,9 @@ pub(crate) struct ForwardPlus {
     static_draws: usize,
     dynamic_draws: usize,
     work_group_size: u32,
+    /// Counter that is incremented every resize of the main canvas. Used by cameras to indicate
+    /// when cluster frustums need regeneration.
+    resize_counter: u32,
 }
 
 /// Per frame data. Must be manually released.
@@ -288,6 +293,11 @@ impl ForwardPlus {
         let _begin_recording = rg_builder.add_pass(PassDescriptor::CPUPass {
             toggleable: false,
             code: begin_recording,
+        });
+
+        let _generate_camera_ssbo = rg_builder.add_pass(PassDescriptor::CPUPass {
+            toggleable: false,
+            code: generate_camera_ssbo,
         });
 
         let highz_render = rg_builder.add_pass(PassDescriptor::RenderPass {
@@ -733,6 +743,83 @@ impl ForwardPlus {
 
         ctx.0.device.destroy_shader_module(module, None);
 
+        // Lighting cluster generation
+        let cluster_gen_pipeline_layout = {
+            let layouts = [factory.0.camera_pool.lock().unwrap().layout()];
+
+            let create_info = vk::PipelineLayoutCreateInfo::builder()
+                .set_layouts(&layouts)
+                .build();
+
+            ctx.0
+                .device
+                .create_pipeline_layout(&create_info, None)
+                .expect("Unable to create cluster gen pipeline layout")
+        };
+
+        let module = {
+            let create_info = vk::ShaderModuleCreateInfo {
+                p_code: CLUSTER_GEN_CODE.as_ptr() as *const u32,
+                code_size: CLUSTER_GEN_CODE.len(),
+                ..Default::default()
+            };
+
+            ctx.0
+                .device
+                .create_shader_module(&create_info, None)
+                .expect("Unable to create cluster generation shader module")
+        };
+
+        let cluster_gen_pipeline = {
+            let entry_name = std::ffi::CString::new("main").unwrap();
+
+            let map_entries = [
+                vk::SpecializationMapEntry::builder()
+                    .offset(0)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(0)
+                    .build(),
+                vk::SpecializationMapEntry::builder()
+                    .offset(std::mem::size_of::<u32>() as u32)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(1)
+                    .build(),
+                vk::SpecializationMapEntry::builder()
+                    .offset(2 * std::mem::size_of::<u32>() as u32)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(2)
+                    .build(),
+            ];
+
+            let table_dims = [1, 1, 1];
+
+            let as_bytes = bytemuck::bytes_of(&table_dims);
+
+            let specialization_info = vk::SpecializationInfo::builder()
+                .map_entries(&map_entries)
+                .data(&as_bytes)
+                .build();
+
+            let stage_info = vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::COMPUTE)
+                .module(module)
+                .name(&entry_name)
+                .specialization_info(&specialization_info)
+                .build();
+
+            let create_info = [vk::ComputePipelineCreateInfo::builder()
+                .stage(stage_info)
+                .layout(cluster_gen_pipeline_layout)
+                .build()];
+
+            ctx.0
+                .device
+                .create_compute_pipelines(vk::PipelineCache::null(), &create_info, None)
+                .expect("Unable to cluster generation pipeline")[0]
+        };
+
+        ctx.0.device.destroy_shader_module(module, None);
+
         let mut depth_pyramid_gen = DepthPyramidGenerator::new(ctx);
 
         let mut frame_data = Vec::with_capacity(FRAMES_IN_FLIGHT);
@@ -746,6 +833,49 @@ impl ForwardPlus {
                 &mut draw_gen_pool,
             ));
         }
+
+        // Transition the highz image from undefined to transfer src for the culling pass in the first frame
+        let (pool, cb) = ctx
+            .0
+            .create_single_use_pool(ctx.0.queue_family_indices.main);
+
+        for target in &graph
+            .lock()
+            .unwrap()
+            .resources()
+            .get_image(highz_image)
+            .unwrap()
+            .1
+        {
+            let barrier = [vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(target.image.image())
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE | vk::AccessFlags::TRANSFER_READ)
+                .build()];
+
+            ctx.0.device.cmd_pipeline_barrier(
+                cb,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::BY_REGION,
+                &[],
+                &[],
+                &barrier,
+            );
+        }
+
+        ctx.0.submit_single_use_pool(ctx.0.main, pool, cb);
 
         let forward_plus = Self {
             ctx: ctx.clone(),
@@ -772,6 +902,8 @@ impl ForwardPlus {
             draw_gen_pipeline_layout,
             point_light_gen_pipeline,
             point_light_gen_pipeline_layout,
+            cluster_gen_pipeline,
+            cluster_gen_pipeline_layout,
             global_pool,
             draw_gen_pool,
             point_light_gen_pool,
@@ -783,6 +915,7 @@ impl ForwardPlus {
             static_draws: 0,
             dynamic_draws: 0,
             work_group_size: ctx.0.properties.limits.max_compute_work_group_size[0],
+            resize_counter: 1,
         };
 
         (graph, factory, debug_drawing, forward_plus)
@@ -838,6 +971,12 @@ impl ForwardPlus {
     #[inline]
     pub fn set_surface_image_idx(&mut self, idx: usize) {
         self.surface_image_idx = idx;
+    }
+
+    /// Indicates that the canvas has been resized.
+    #[inline]
+    pub fn resize_canvas(&mut self) {
+        self.resize_counter += 1;
     }
 }
 
@@ -920,6 +1059,78 @@ fn begin_recording(
             .device
             .begin_command_buffer(*commands, &begin_info)
             .expect("unable to begin main command buffer");
+    }
+}
+
+fn generate_camera_ssbo(
+    ctx: &mut RenderGraphContext<ForwardPlus>,
+    state: &mut ForwardPlus,
+    commands: &vk::CommandBuffer,
+    _pass: &mut RenderPass<ForwardPlus>,
+    _: &mut RenderGraphResources<RenderGraphContext<ForwardPlus>>,
+) {
+    let frame = ctx.frame();
+    let device = &state.ctx.0.device;
+
+    let factory = &state.factory;
+    let mut cameras = factory.0.cameras.lock().expect("mutex poisoned");
+    let main_camera = cameras.get_mut(factory.main_camera().id).unwrap();
+
+    // Check if the main cameran needs cluster regeneration
+    if main_camera.cluster_regen_idx[frame] != state.resize_counter {
+        main_camera.cluster_regen_idx[frame] = state.resize_counter;
+
+        // Set up gen state
+        let descriptor_sets = [main_camera.set];
+        let offsets = [
+            main_camera.ubo.aligned_size() as u32 * frame as u32,
+            main_camera.aligned_cluster_size as u32 * frame as u32,
+        ];
+
+        unsafe {
+            device.cmd_bind_pipeline(
+                *commands,
+                vk::PipelineBindPoint::COMPUTE,
+                state.cluster_gen_pipeline,
+            );
+
+            device.cmd_bind_descriptor_sets(
+                *commands,
+                vk::PipelineBindPoint::COMPUTE,
+                state.cluster_gen_pipeline_layout,
+                0,
+                &descriptor_sets,
+                &offsets,
+            );
+        }
+
+        unsafe {
+            // Dispatch for culling
+            device.cmd_dispatch(
+                *commands,
+                POINT_LIGHTS_TABLE_DIMS.0 as u32,
+                POINT_LIGHTS_TABLE_DIMS.1 as u32,
+                POINT_LIGHTS_TABLE_DIMS.2 as u32,
+            );
+        }
+
+        // Barrier for highz generation
+        let barrier = [vk::MemoryBarrier::builder()
+            .src_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+            .build()];
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                *commands,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::BY_REGION,
+                &barrier,
+                &[],
+                &[],
+            );
+        }
     }
 }
 
@@ -1533,7 +1744,10 @@ fn generate_draw_calls(
 
     // Set up culling state
     let descriptor_sets = [frame.draw_gen_set, main_camera.set];
-    let offsets = [main_camera.ubo.aligned_size() as u32 * frame_idx as u32];
+    let offsets = [
+        main_camera.ubo.aligned_size() as u32 * frame_idx as u32,
+        main_camera.aligned_cluster_size as u32 * frame_idx as u32,
+    ];
 
     unsafe {
         device.cmd_bind_pipeline(
@@ -1707,7 +1921,10 @@ fn generate_point_lights(
 
     // Set up culling state
     let descriptor_sets = [frame.point_light_gen_set, main_camera.set];
-    let offsets = [main_camera.ubo.aligned_size() as u32 * frame_idx as u32];
+    let offsets = [
+        main_camera.ubo.aligned_size() as u32 * frame_idx as u32,
+        main_camera.aligned_cluster_size as u32 * frame_idx as u32,
+    ];
 
     unsafe {
         device.cmd_bind_pipeline(
@@ -1764,30 +1981,9 @@ fn depth_prepass(
     let device = &state.ctx.0.device;
     let frame = &mut state.frame_data[frame_idx];
 
-    let barrier = [vk::MemoryBarrier::builder()
-        .src_access_mask(vk::AccessFlags::MEMORY_WRITE | vk::AccessFlags::MEMORY_READ)
-        .dst_access_mask(vk::AccessFlags::MEMORY_WRITE | vk::AccessFlags::MEMORY_READ)
-        .build()];
-
-    unsafe {
-        device.cmd_pipeline_barrier(
-            *commands,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::DependencyFlags::BY_REGION,
-            &barrier,
-            &[],
-            &[],
-        );
-    }
-
     let factory = &state.factory;
     let mut cameras = factory.0.cameras.lock().expect("mutex poisoned");
     let main_camera = cameras.get_mut(factory.main_camera().id).unwrap();
-
-    unsafe {
-        main_camera.update(frame_idx, 1280.0, 720.0);
-    }
 
     unsafe {
         render(RenderArgs {
@@ -2047,7 +2243,10 @@ unsafe fn render(args: RenderArgs) {
         args.main_camera.set,
     ];
 
-    let offsets = [args.main_camera.ubo.aligned_size() as u32 * args.frame_idx as u32];
+    let offsets = [
+        args.main_camera.ubo.aligned_size() as u32 * args.frame_idx as u32,
+        args.main_camera.aligned_cluster_size as u32 * args.frame_idx as u32,
+    ];
 
     args.device.cmd_bind_descriptor_sets(
         args.commands,
@@ -2181,6 +2380,16 @@ impl Drop for ForwardPlus {
                 .device
                 .destroy_pipeline(self.point_light_gen_pipeline, None);
 
+            self.ctx
+                .0
+                .device
+                .destroy_pipeline_layout(self.cluster_gen_pipeline_layout, None);
+
+            self.ctx
+                .0
+                .device
+                .destroy_pipeline(self.cluster_gen_pipeline, None);
+
             for frame in self.frame_data.drain(..) {
                 frame.release(
                     &self.ctx,
@@ -2224,3 +2433,5 @@ fn pick_depth_format(ctx: &GraphicsContext) -> Option<vk::Format> {
 const DRAW_GEN_CODE: &[u8] = include_bytes!("draw_gen.comp.spv");
 
 const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("point_light_gen.comp.spv");
+
+const CLUSTER_GEN_CODE: &[u8] = include_bytes!("cluster_gen.comp.spv");

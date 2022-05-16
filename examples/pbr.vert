@@ -31,9 +31,10 @@ layout(set = 2, binding = 0) uniform CameraUBO {
     mat4 view_inv;
     mat4 projection_inv;
     mat4 vp_inv;
-    vec4[6] frustum;
+    vec4[6] planes;
     vec4 properties;
     vec4 position;
+    vec2 scale_bias;
 } camera;
 
 void main() {
@@ -41,6 +42,6 @@ void main() {
     vec4 world_pos = objects[obj_idxs[gl_InstanceIndex]].model * vec4(POSITION.xyz, 1.0);
     gl_Position = camera.vp * world_pos;
     WORLD_POS = world_pos.xyz;
-    FRAG_POS = gl_Position / gl_Position.w;
+    FRAG_POS = gl_Position;
     OUT_COLOR = COLOR;
 }

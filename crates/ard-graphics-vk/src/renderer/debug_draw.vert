@@ -9,9 +9,13 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view;
     mat4 projection;
     mat4 vp;
-    vec4[6] frustum;
+    mat4 view_inv;
+    mat4 projection_inv;
+    mat4 vp_inv;
+    vec4[6] planes;
     vec4 properties;
     vec4 position;
+    vec2 scale_bias;
 } camera;
 
 void main() {

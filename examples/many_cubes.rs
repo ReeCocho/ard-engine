@@ -94,7 +94,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: false,
+                debug: true,
             },
         })
         .add_startup_function(setup)

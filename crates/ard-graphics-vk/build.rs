@@ -8,6 +8,7 @@ fn main() {
     compile("zreduce.frag");
     compile("debug_draw.vert");
     compile("debug_draw.frag");
+    compile("cluster_gen.comp");
 }
 
 fn compile(name: &str) {

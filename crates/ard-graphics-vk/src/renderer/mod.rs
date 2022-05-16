@@ -227,6 +227,7 @@ impl Renderer {
             // the frames. No need to wait since a wait is performed if the surface is
             // invalidated.
             let resolution = surface_lock.resolution;
+            self.state.resize_canvas();
             self.graph
                 .lock()
                 .expect("mutex poisoned")

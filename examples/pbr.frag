@@ -27,19 +27,52 @@ layout(set = 0, binding = 3) readonly buffer PointLightTable {
     uint[TABLE_X][TABLE_Y][TABLE_Z][MAX_POINT_LIGHTS] clusters; 
 };
 
+layout(set = 2, binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 projection;
+    mat4 vp;
+    mat4 view_inv;
+    mat4 projection_inv;
+    mat4 vp_inv;
+    vec4[6] planes;
+    vec4 properties;
+    vec4 position;
+    vec2 scale_bias;
+} camera;
+
+const vec3 SLICE_TO_COLOR[TABLE_Z] = vec3[TABLE_Z](
+    vec3(0.1),
+    vec3(1.0),
+    vec3(0.5),
+    vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(1.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 1.0),
+    vec3(0.5, 0.0, 0.0),
+    vec3(0.0, 0.5, 0.0),
+    vec3(0.0, 0.0, 0.5),
+    vec3(0.5, 0.5, 0.0),
+    vec3(0.5, 0.0, 0.5),
+    vec3(0.0, 0.5, 0.5),
+    vec3(0.9)
+);
+
 void main() {
     // Determine which cluster the fragment is in
-    vec2 uv = (FRAG_POS.xy * 0.5) + vec2(0.5);
+    vec2 uv = ((FRAG_POS.xy / FRAG_POS.w) * 0.5) + vec2(0.5);
 
     ivec3 cluster = ivec3(
         clamp(int(uv.x * float(TABLE_X)), 0, TABLE_X - 1),
         clamp(int(uv.y * float(TABLE_Y)), 0, TABLE_Y - 1),
-        clamp(int(log2(FRAG_POS.z + 1.0) * float(TABLE_Z)), 0, TABLE_Z - 1)
+        clamp(int(log(FRAG_POS.z) * camera.scale_bias.x - camera.scale_bias.y), 0, TABLE_Z - 1)
     );
 
-    FRAGMENT_COLOR = vec4(0.1, 0.1, 0.1, 1.0);
-
     int count = light_counts[cluster.x][cluster.y][cluster.z];
+    
+    FRAGMENT_COLOR = vec4(0.1, 0.1, 0.1, 1.0);
+    
     // FRAGMENT_COLOR += vec4(float(count) * 0.005);
     for (int i = 0; i < count; i++) {
         PointLight light = lights[clusters[cluster.x][cluster.y][cluster.z][i]];

@@ -157,7 +157,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: false,
+                debug: true,
             },
         })
         .add_startup_function(setup)
@@ -318,7 +318,7 @@ fn setup(app: &mut App) {
         });
     }
 
-    app.world.entities_mut().create(lights);
+    app.world.entities().commands().create(lights, &mut []);
 
     // Register draws
     // NOTE: Unless you want the draw to exist forever, you should store the handles generated here
@@ -328,7 +328,7 @@ fn setup(app: &mut App) {
     const SPACING: f32 = 0.95;
     const WIDTH: usize = 100;
     const DEPTH: usize = 100;
-    const HEIGHT: usize = 100;
+    const HEIGHT: usize = 40;
 
     let mut bbs = BoundingBoxSystem {
         mesh: mesh.clone(),

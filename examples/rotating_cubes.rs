@@ -309,5 +309,5 @@ fn setup(app: &mut App) {
         vec![Model(Mat4::IDENTITY); CUBE_COUNT],
     );
 
-    app.world.entities_mut().create(cubes);
+    app.world.entities().commands().create(cubes, &mut []);
 }

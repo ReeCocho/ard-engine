@@ -425,7 +425,10 @@ impl DebugDrawingInner {
 
         // Bind camera set
         let sets = [camera.set];
-        let offsets = [camera.ubo.aligned_size() as u32 * frame_idx as u32];
+        let offsets = [
+            camera.ubo.aligned_size() as u32 * frame_idx as u32,
+            camera.aligned_cluster_size as u32 * frame_idx as u32,
+        ];
         device.cmd_bind_descriptor_sets(
             commands,
             vk::PipelineBindPoint::GRAPHICS,
