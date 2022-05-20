@@ -1,0 +1,5 @@
+PackageList(
+    packages: [
+        "test_package"
+    ]
+)

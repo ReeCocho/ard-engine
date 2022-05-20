@@ -1,20 +1,16 @@
-pub trait Asset {
-    /// Does this asset support hot reloading?
-    const HOT_RELOAD: bool = true;
+use std::path::{Path, PathBuf};
 
-    /// File extension used by assets of this type. Must be unique from other assets.
+use crate::prelude::AssetLoader;
+
+pub type AssetName = Path;
+
+pub type AssetNameBuf = PathBuf;
+
+/// Marks a type as being an asset.
+pub trait Asset: Send {
+    /// File extension of the asset. Must be unique amongst all other registered asset types.
     const EXTENSION: &'static str;
-}
 
-/// Path to a resource inside of a package. A resource can either be an asset or raw data.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ResourcePath {
-    path: String,
-    ty: ResourceType,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ResourceType {
-    Asset,
-    Data,
+    /// Loader used for this asset type.
+    type Loader: AssetLoader;
 }

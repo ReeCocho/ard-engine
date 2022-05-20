@@ -1,0 +1,5 @@
+TestAsset(
+    name: "Bob",
+    age: 21,
+    is_alive: true,
+)

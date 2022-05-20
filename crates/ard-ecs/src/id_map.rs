@@ -5,10 +5,10 @@ use std::{
 };
 
 /// Hash map that uses a no-op hasher for `TypeId`s.
-pub(crate) type TypeIdMap<V> = HashMap<TypeId, V, BuildHasherDefault<FastIntHasher>>;
+pub type TypeIdMap<V> = HashMap<TypeId, V, BuildHasherDefault<FastIntHasher>>;
 
 #[derive(Default)]
-pub(crate) struct FastIntHasher {
+pub struct FastIntHasher {
     hash: u64,
 }
 

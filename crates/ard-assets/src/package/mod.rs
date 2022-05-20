@@ -1,46 +1,58 @@
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+pub mod folder;
+pub mod manifest;
 
-pub trait Package {
-    fn new(path: &Path) -> Self;
+use std::path::Path;
 
-    /// Request that an asset be loaded.
-    fn request_load(&self, path: &str);
+use async_trait::async_trait;
+use enum_dispatch::enum_dispatch;
+use thiserror::Error;
+
+use self::{folder::FolderPackage, manifest::Manifest};
+
+/// A package contains a list of assets for the asset manager to load.
+#[enum_dispatch]
+#[derive(Clone)]
+pub enum Package {
+    Folder(FolderPackage),
 }
 
-/// Contains all packages to be used by an asset manager.
-#[derive(Debug, Default)]
-pub struct PackageManifest {
-    packages: Vec<PathBuf>,
+#[derive(Debug, Error)]
+pub enum PackageOpenError {
+    #[error("the package at the given path does not exist")]
+    DoesNotExist,
+    #[error("invalid permissions to read the file")]
+    InvalidPermissions,
+    #[error("an unknown error occured")]
+    Unknown,
 }
 
-impl PackageManifest {
-    pub fn new() -> Self {
-        Self::default()
-    }
+#[derive(Debug, Error)]
+pub enum PackageReadError {
+    #[error("the asset at the given path within the package does not exist")]
+    DoesNotExist,
+    #[error("an unknown error occured")]
+    Unknown,
+}
 
-    #[inline]
-    pub fn packages(&self) -> &[PathBuf] {
-        &self.packages
-    }
+/// Used to load assets from disk.
+#[async_trait]
+#[enum_dispatch(Package)]
+pub trait PackageInterface: Clone + Send {
+    /// Retrieve a manifest of all assets within the package.
+    fn manifest(&self) -> &Manifest;
 
-    /// Verify that the manifest is valid. This is true if there are no duplicate packages.
-    pub fn is_valid(&self) -> bool {
-        let mut packages = HashSet::<PathBuf>::default();
-        for package in &self.packages {
-            if !packages.insert(package.clone()) {
-                return false;
-            }
+    /// Reads the contents of a file within the package and returns the bytes.
+    async fn read(&self, file: &Path) -> Result<Vec<u8>, PackageReadError>;
+
+    /// Reads the contents of a file within the package and returns the bytes as a string.
+    async fn read_str(&self, file: &Path) -> Result<String, PackageReadError>;
+}
+
+impl From<std::io::Error> for PackageReadError {
+    fn from(err: std::io::Error) -> Self {
+        match err.kind() {
+            std::io::ErrorKind::NotFound => PackageReadError::DoesNotExist,
+            _ => PackageReadError::Unknown,
         }
-        true
-    }
-
-    /// Add a new package to the manifest.
-    #[inline]
-    pub fn add(mut self, path: &Path) -> Self {
-        self.packages.push(PathBuf::from(path));
-        self
     }
 }
