@@ -75,6 +75,12 @@ pub struct PackageList {
     pub packages: Vec<String>,
 }
 
+impl Default for Assets {
+    fn default() -> Self {
+        Assets::new()
+    }
+}
+
 impl Assets {
     /// Loads available assets from the packages list. Takes in a number of threads to use when
     /// loading assets from disk.
@@ -107,7 +113,7 @@ impl Assets {
             // TODO: Implement non-folder packages
             match FolderPackage::open(&path) {
                 Ok(package) => packages.push(package.into()),
-                Err(_) => {}
+                Err(err) => println!("error loading package `{}` : {}", &name, err),
             }
         }
 
@@ -181,7 +187,9 @@ impl Assets {
     #[inline]
     pub fn wait_for_load<T: Asset + 'static>(&self, handle: &Handle<T>) {
         let asset_data = &self.0.assets[handle.id() as usize];
-        while asset_data.loading.load(Ordering::Relaxed) {}
+        while asset_data.loading.load(Ordering::Relaxed) {
+            std::hint::spin_loop();
+        }
     }
 
     /// Get an asset via it's handle.
@@ -398,18 +406,13 @@ impl Assets {
         let needs_load = if asset.is_some() || asset_data.loading.load(Ordering::Relaxed) {
             false
         }
-        // Asset is not loaded, so we must try to mark it
-        else if asset_data
-            .loading
-            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-        {
-            true
-        }
-        // We fail to mark it which means another thread must have marked it right before us.
-        // Therefore, we do not need to load
+        // Asset is not loaded, so we must try to mark it. If We fail to mark it which means
+        // another thread must have marked it right before us. Therefore, we do not need to load
         else {
-            false
+            asset_data
+                .loading
+                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
         };
 
         // Update handle counter if needed
@@ -485,7 +488,7 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
     let package = req.assets.0.packages[asset_data.package].clone();
 
     // Use the loader to load the asset
-    let (asset, post_load, persistent) = match loader
+    let (asset, mut post_load, persistent) = match loader
         .load(req.assets.clone(), package.clone(), &asset_data.name)
         .await
     {
@@ -520,8 +523,8 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
             .await
         {
             Ok(res) => match res {
-                AssetPostLoadResult::Loaded => return,
-                AssetPostLoadResult::NeedsPostLoad => continue,
+                AssetPostLoadResult::Loaded => post_load = false,
+                AssetPostLoadResult::NeedsPostLoad => post_load = true,
             },
             Err(err) => {
                 println!("error loading asset `{:?}` : {}", &asset_data.name, err);
