@@ -1,5 +1,7 @@
 PackageList(
     packages: [
-        "test_package"
+        "test_package",
+        "package1",
+        "package2",
     ]
 )

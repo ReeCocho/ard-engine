@@ -1,4 +1,5 @@
 use std::any::Any;
+use thiserror::*;
 
 use crate::{
     handle::Handle,
@@ -8,21 +9,27 @@ use crate::{
 use async_trait::async_trait;
 
 pub enum AssetLoadResult<T> {
-    /// Asset loaded successfully.
-    Ok(T),
-    /// Asset loaded successfully, but needs post load initialization.
-    PostLoad(T),
-    /// There was an error when loading the asset.
-    Err,
+    /// Asset loaded successfully. An additional flag is provided to indicate that this asset
+    /// is persistent or not.
+    Loaded { asset: T, persistent: bool },
+    /// Asset loaded successfully, but needs post load initialization. An additional flag is
+    /// provided to indicate that this asset is persistent or not.
+    NeedsPostLoad { asset: T, persistent: bool },
 }
 
 pub enum AssetPostLoadResult {
     /// Asset finished in post load.
-    Ok,
+    Loaded,
     /// Asset needs another round of post load initialization.
-    PostLoad,
-    /// There was an error.
-    Err,
+    NeedsPostLoad,
+}
+
+#[derive(Debug, Error)]
+pub enum AssetLoadError {
+    #[error("there was an error while trying to read from a package")]
+    ReadError,
+    #[error("an unknown error occured while loading the asset")]
+    Unknown,
 }
 
 /// Used to load assets of a particular type.
@@ -37,7 +44,7 @@ pub trait AssetLoader: Send + Sync {
         assets: Assets,
         package: Package,
         asset: &AssetName,
-    ) -> AssetLoadResult<Self::Asset>;
+    ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError>;
 
     /// Performs post load initialization on an asset if requested.
     async fn post_load(
@@ -45,7 +52,7 @@ pub trait AssetLoader: Send + Sync {
         assets: Assets,
         package: Package,
         asset: Handle<Self::Asset>,
-    ) -> AssetPostLoadResult;
+    ) -> Result<AssetPostLoadResult, AssetLoadError>;
 }
 
 pub trait AnyAssetLoader: Any + Send + Sync {
@@ -58,8 +65,8 @@ impl<T: AssetLoader + 'static> AnyAssetLoader for T {
     }
 }
 
-impl<T: Asset> From<PackageReadError> for AssetLoadResult<T> {
+impl From<PackageReadError> for AssetLoadError {
     fn from(_: PackageReadError) -> Self {
-        AssetLoadResult::Err
+        AssetLoadError::ReadError
     }
 }

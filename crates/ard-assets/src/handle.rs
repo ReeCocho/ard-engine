@@ -1,15 +1,10 @@
 use crate::prelude::{Asset, Assets};
-use std::{
-    hash::Hash,
-    num::NonZeroU32,
-    sync::{atomic::Ordering, Arc},
-};
+use std::{hash::Hash, sync::Arc};
 
 /// Raw asset handle.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RawHandle {
     pub id: u32,
-    pub ver: NonZeroU32,
 }
 
 /// A handle to an asset in the asset manger.
@@ -29,8 +24,8 @@ unsafe impl<T: Asset> Sync for Handle<T> {}
 
 impl<T: Asset> Handle<T> {
     #[inline]
-    pub(crate) fn new(id: u32, ver: NonZeroU32, assets: Assets) -> Self {
-        let raw = RawHandle { id, ver };
+    pub(crate) fn new(id: u32, assets: Assets) -> Self {
+        let raw = RawHandle { id };
 
         Self {
             raw,
@@ -54,20 +49,20 @@ impl<T: Asset> Handle<T> {
     }
 
     #[inline]
-    pub fn id(&self) -> u32 {
-        self.raw.id
+    pub fn raw(&self) -> RawHandle {
+        self.raw
     }
 
     #[inline]
-    pub fn ver(&self) -> NonZeroU32 {
-        self.raw.ver
+    pub fn id(&self) -> u32 {
+        self.raw.id
     }
 }
 
 impl<T: Asset> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Handle::<T> {
-            raw: self.raw.clone(),
+            raw: self.raw,
             escaper: self.escaper.clone(),
             _phantom: Default::default(),
         }
@@ -78,7 +73,6 @@ impl<T: Asset> Hash for Handle<T> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_u32(self.raw.id);
-        state.write_u32(self.raw.ver.get());
     }
 }
 
@@ -94,16 +88,10 @@ impl<T: Asset> Eq for Handle<T> {}
 impl Drop for HandleEscaper {
     #[inline]
     fn drop(&mut self) {
-        let guard = self.assets.0.assets.guard();
-        let asset_data = self.assets.0.assets.get(&self.id, &guard).unwrap();
-
+        let asset_data = &self.assets.0.assets[self.id as usize];
         let mut asset = asset_data.asset.write().unwrap();
-
-        if let Some(outstanding) = asset_data.outstanding_handles.as_ref() {
-            let last_handle = outstanding.fetch_sub(1, Ordering::Relaxed) == 1;
-            if last_handle {
-                *asset = None;
-            }
+        if asset_data.decrement_handle_counter() {
+            *asset = None;
         }
     }
 }

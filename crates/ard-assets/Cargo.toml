@@ -9,10 +9,10 @@ edition = "2018"
 ard-core = { version = "0.1", path = "../ard-core" }
 ard-ecs = { version = "0.1", path = "../ard-ecs" }
 async-trait = "0.1"
-thiserror = "1.0"
+thiserror = "1"
 enum_dispatch = "0.3"
-tokio = { version = "1.18", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std" ] }
-serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
+serde = { version = "1", features = ["derive"] }
 ron = "0.7"
 anymap = "0.12"
 crossbeam-channel = "0.5"

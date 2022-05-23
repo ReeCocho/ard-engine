@@ -2,20 +2,19 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     hash::BuildHasherDefault,
-    num::NonZeroU32,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
 };
 
-use crate::handle::Handle;
 use crate::prelude::{
     AnyAssetLoader, Asset, AssetLoadResult, AssetLoader, AssetName, AssetNameBuf,
     AssetPostLoadResult, FolderPackage, Package, PackageInterface,
 };
+use crate::{handle::Handle, prelude::RawHandle};
 use ard_ecs::{id_map::FastIntHasher, prelude::*};
 use crossbeam_utils::sync::{ShardedLock, ShardedLockReadGuard, ShardedLockWriteGuard};
 use serde::{Deserialize, Serialize};
@@ -27,32 +26,27 @@ pub struct Assets(pub(crate) Arc<AssetsInner>);
 pub(crate) struct AssetsInner {
     /// All the loaded packages.
     packages: Vec<Package>,
-    /// Runtime for asyncronous asset loading.
-    runtime: tokio::runtime::Runtime,
-    /// ID counter for assets.
-    asset_ids: AtomicU32,
-    /// Map of all assets.
-    pub(crate) assets: flurry::HashMap<u32, AssetData, BuildHasherDefault<FastIntHasher>>,
+    /// Map of all assets. The index of the asset in this list corresponds to its id.
+    pub(crate) assets: Vec<AssetData>,
     /// Maps asset names to their id.
-    name_to_id: flurry::HashMap<AssetNameBuf, u32, fxhash::FxBuildHasher>,
-    /// Set of all available assets. Maps their asset names to the index of the package they should
-    /// be loaded from.
-    available: HashMap<AssetNameBuf, usize>,
-    /// List of asset extensions registered with the manager.
-    extensions: flurry::HashSet<String>,
+    name_to_id: HashMap<AssetNameBuf, u32, fxhash::FxBuildHasher>,
+    /// Map of asset extensions registered with the manager to the type of asset they represent.
+    extensions: flurry::HashMap<String, TypeId, fxhash::FxBuildHasher>,
     /// Loaders used to load assets. Maps from type ID of the asset to the loader.
-    loaders: flurry::HashMap<TypeId, Arc<dyn AnyAssetLoader>>,
+    loaders: flurry::HashMap<TypeId, Arc<dyn AnyAssetLoader>, BuildHasherDefault<FastIntHasher>>,
+    /// Map of default asset handles. The key is the type id of the asset type.
+    default_assets: flurry::HashMap<TypeId, RawHandle, fxhash::FxBuildHasher>,
 }
 
 pub struct AssetReadHandle<'a, T: Asset> {
-    _map_guard: flurry::Guard<'a>,
     _lock_guard: ShardedLockReadGuard<'a, Option<Box<dyn Any>>>,
+    _handle: Handle<T>,
     asset: &'a T,
 }
 
 pub struct AssetWriteHandle<'a, T: Asset> {
-    _map_guard: flurry::Guard<'a>,
     _lock_guard: ShardedLockWriteGuard<'a, Option<Box<dyn Any>>>,
+    _handle: Handle<T>,
     asset: &'a mut T,
 }
 
@@ -63,15 +57,13 @@ pub(crate) struct AssetData {
     pub name: AssetNameBuf,
     /// Index of the package the asset was loaded from.
     pub package: usize,
-    /// Version counter for an asset with this id.
-    pub ver: AtomicU32,
-    /// Type of data held in the asset.
-    pub ty: TypeId,
+    /// Flag indicating that this asset is being loaded.
+    pub loading: AtomicBool,
     /// Number of outstanding handles to this asset. Each time a handle is created via a load, this
     /// value is incremented. When the last copy of a handle is dropped, this value is decremented.
-    /// Only when this value reaches 0 does the asset get destroyed. A value of `None` indicates
-    /// that the asset is persistant and should not be deleted.
-    pub outstanding_handles: Option<AtomicU32>,
+    /// Only when this value reaches 0 does the asset get destroyed. A value of `u32::MAX` means
+    /// the asset is persistant (never dropped).
+    pub outstanding_handles: AtomicU32,
 }
 
 unsafe impl Send for AssetData {}
@@ -86,7 +78,7 @@ pub struct PackageList {
 impl Assets {
     /// Loads available assets from the packages list. Takes in a number of threads to use when
     /// loading assets from disk.
-    pub fn new(thread_count: usize) -> Self {
+    pub fn new() -> Self {
         // Load the package list
         let contents = match std::fs::read_to_string(Path::new("./assets/packages.ron")) {
             Ok(contents) => contents,
@@ -127,18 +119,28 @@ impl Assets {
             }
         }
 
+        // Make a vector for all the assets and make a mapping from thier names to their ids.
+        let mut name_to_id = HashMap::default();
+        let mut assets = Vec::with_capacity(available.len());
+
+        for (asset, package) in available {
+            name_to_id.insert(asset.clone(), assets.len() as u32);
+            assets.push(AssetData {
+                asset: ShardedLock::new(None),
+                name: asset,
+                package,
+                loading: AtomicBool::new(false),
+                outstanding_handles: AtomicU32::new(0),
+            });
+        }
+
         Self(Arc::new(AssetsInner {
             packages,
-            runtime: tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(thread_count)
-                .build()
-                .unwrap(),
-            available,
-            assets: Default::default(),
+            assets,
             extensions: Default::default(),
             loaders: Default::default(),
-            name_to_id: Default::default(),
-            asset_ids: AtomicU32::new(0),
+            name_to_id,
+            default_assets: Default::default(),
         }))
     }
 
@@ -162,12 +164,24 @@ impl Assets {
 
         // Make sure an asset with the same extension hasn't already been registered.
         let guard = self.0.extensions.guard();
-        if !self.0.extensions.insert(A::EXTENSION.into(), &guard) {
+        if self
+            .0
+            .extensions
+            .insert(A::EXTENSION.into(), TypeId::of::<A>(), &guard)
+            .is_some()
+        {
             panic!(
                 "asset type with extension '{}' already exists",
                 A::EXTENSION
             );
         }
+    }
+
+    /// Blocks until an asset has been loaded.
+    #[inline]
+    pub fn wait_for_load<T: Asset + 'static>(&self, handle: &Handle<T>) {
+        let asset_data = &self.0.assets[handle.id() as usize];
+        while asset_data.loading.load(Ordering::Relaxed) {}
     }
 
     /// Get an asset via it's handle.
@@ -176,15 +190,10 @@ impl Assets {
     ///
     /// # Panics
     /// Panics if the asset type is incorrect.
+    #[inline]
     pub fn get<T: Asset + 'static>(&self, handle: &Handle<T>) -> Option<AssetReadHandle<T>> {
-        // Retrieve asset data
-        let map_guard = self.0.assets.guard();
-        let asset_data = match self.0.assets.get(&handle.id(), &map_guard) {
-            Some(asset_data) => asset_data,
-            None => return None,
-        };
-
-        assert_eq!(asset_data.ty, TypeId::of::<T>());
+        // Retrieve the asset data
+        let asset_data = &self.0.assets[handle.id() as usize];
 
         // Lock the asset for reading
         let lock_guard = asset_data.asset.read().unwrap();
@@ -197,27 +206,9 @@ impl Assets {
             None => return None,
         };
 
-        // This looks stupid, but here me out.
-        // When acquiring an asset, we must guard the asset hash map and then lock the
-        // particular asset we care about. Then, to make sure no one breaks anything, we must
-        // return the guard and lock along with the reference to the asset.
-        //
-        // The problem is that we can't move out the guard and lock at the same time. The compiler
-        // thinks that the lock holds a reference to the guard because they both share the same
-        // lifetime. This prevents us from moving the guard because it could invalidate the
-        // reference held by the lock.
-        //
-        // However, the lock doesn't actually hold a reference. They merely share a lifetime. This
-        // transmute essentially removes the lifetime that ties the lock and guard together,
-        // allowing us to move them.
-        let new_lock_guard: ShardedLockReadGuard<Option<Box<dyn Any>>> =
-            unsafe { std::mem::transmute_copy(&lock_guard) };
-
-        std::mem::forget(lock_guard);
-
         Some(AssetReadHandle::<T> {
-            _lock_guard: new_lock_guard,
-            _map_guard: map_guard,
+            _lock_guard: lock_guard,
+            _handle: handle.clone(),
             asset,
         })
     }
@@ -228,15 +219,10 @@ impl Assets {
     ///
     /// # Panics
     /// Panics if the asset type is incorrect.
+    #[inline]
     pub fn get_mut<T: Asset + 'static>(&self, handle: &Handle<T>) -> Option<AssetWriteHandle<T>> {
-        // Retrieve asset data
-        let map_guard = self.0.assets.guard();
-        let asset_data = match self.0.assets.get(&handle.id(), &map_guard) {
-            Some(asset_data) => asset_data,
-            None => return None,
-        };
-
-        assert_eq!(asset_data.ty, TypeId::of::<T>());
+        // Retrieve the asset data
+        let asset_data = &self.0.assets[handle.id() as usize];
 
         // Lock the asset for reading
         let mut lock_guard = asset_data.asset.write().unwrap();
@@ -249,62 +235,79 @@ impl Assets {
             None => return None,
         };
 
-        // See the 'get' method for an explanation of this
-        let new_lock_guard: ShardedLockWriteGuard<Option<Box<dyn Any>>> =
-            unsafe { std::mem::transmute_copy(&lock_guard) };
-
-        std::mem::forget(lock_guard);
-
         Some(AssetWriteHandle::<T> {
-            _lock_guard: new_lock_guard,
-            _map_guard: map_guard,
+            _lock_guard: lock_guard,
+            _handle: handle.clone(),
             asset,
         })
     }
 
     /// Tries to get a copy of an asset handle. Returns `None` if the asset has not been requested
     /// for load.
+    #[inline]
     pub fn get_handle<A: Asset + 'static>(&self, name: &AssetName) -> Option<Handle<A>> {
-        // Asset must be from the available list
-        if !self.0.available.contains_key(name) {
-            // TODO: Use errors instead of panicking here
-            panic!("attempt to get handle of non-existant asset");
+        let id = self.get_id::<A>(name);
+        let asset_data = &self.0.assets[id as usize];
+
+        // Asset either has to be loaded or be loading
+        let asset = asset_data.asset.read().unwrap();
+        if asset.is_some() || asset_data.loading.load(Ordering::Relaxed) {
+            asset_data.increment_handle_counter();
+            Some(Handle::new(id, self.clone()))
+        } else {
+            None
         }
+    }
 
-        let name_guard = self.0.name_to_id.guard();
-        match self.0.name_to_id.get(name, &name_guard) {
-            Some(id) => {
-                // The name might have been added, but the asset data object might not have, so if
-                // we found the ID we can just loop until we get the data.
-                let asset_guard = self.0.assets.guard();
-                let asset = loop {
-                    match self.0.assets.get(id, &asset_guard) {
-                        Some(asset) => break asset,
-                        None => continue,
-                    }
-                };
+    /// Set the default asset for a type.
+    #[inline]
+    pub fn set_default<A: Asset + 'static>(&self, handle: Handle<A>) {
+        // Increment the outstanding reference counter for the asset so that if it gets replaced it
+        // will drop correctly
+        self.0.assets[handle.id() as usize].increment_handle_counter();
 
-                if let Some(outstanding) = asset.outstanding_handles.as_ref() {
-                    // If we have 0 outstanding handles, then the asset is unloaded
-                    if outstanding.load(Ordering::Relaxed) == 0 {
-                        return None;
-                    }
+        // If there was a preexisting default asset, turn it back into a handle and drop it
+        let guard = self.0.default_assets.guard();
+        if let Some(old) = self
+            .0
+            .default_assets
+            .insert(TypeId::of::<A>(), handle.raw(), &guard)
+        {
+            std::mem::drop(Handle::<A>::new(old.id, self.clone()));
+        }
+    }
 
-                    outstanding.fetch_add(1, Ordering::Relaxed);
-                    Some(Handle::new(
-                        *id,
-                        NonZeroU32::new(asset.ver.load(Ordering::Relaxed)).unwrap(),
-                        self.clone(),
-                    ))
-                } else {
-                    Some(Handle::new(
-                        *id,
-                        NonZeroU32::new(asset.ver.load(Ordering::Relaxed)).unwrap(),
-                        self.clone(),
-                    ))
-                }
+    /// Gets a copy of the default asset for a type. Returns `None` if it doesn't exist.
+    #[inline]
+    pub fn get_default<A: Asset + 'static>(&self) -> Option<Handle<A>> {
+        let guard = self.0.default_assets.guard();
+        match self.0.default_assets.get(&TypeId::of::<A>(), &guard) {
+            Some(raw) => {
+                self.0.assets[raw.id as usize].increment_handle_counter();
+                Some(Handle::new(raw.id, self.clone()))
             }
             None => None,
+        }
+    }
+
+    /// Gets a copy of an asset handle, or returns the default handle on a failure.
+    ///
+    /// # Panics
+    /// Panics if there is no default asset for the asset type requested.
+    ///
+    /// Panics if the asset name points to an asset that exists, but is of the wrong type.
+    #[inline]
+    pub fn get_handle_or_default<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
+        // If asset is real, we try to get the handle as per usual
+        if self.0.name_to_id.get(name).is_some() {
+            match self.get_handle::<A>(name) {
+                Some(handle) => handle,
+                None => self.get_default::<A>().expect("no default asset"),
+            }
+        }
+        // Otherwise, we return the default
+        else {
+            self.get_default::<A>().expect("no default asset")
         }
     }
 
@@ -316,7 +319,7 @@ impl Assets {
     /// guaranteed to have been loaded.
     pub async fn load_async<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
         // Get a handle for the asset and return if it already existed
-        let (handle, needs_init) = self.get_or_make_handle(name);
+        let (handle, needs_init) = self.get_and_mark_for_load(name);
 
         if !needs_init {
             return handle;
@@ -336,9 +339,10 @@ impl Assets {
     /// Load an asset. Returns a handle to the asset.
     ///
     /// If the asset has not yet been loaded, a request will be made to load the asset.
+    #[inline]
     pub fn load<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
         // Get a handle for the asset and return if it already existed
-        let (handle, needs_init) = self.get_or_make_handle(name);
+        let (handle, needs_init) = self.get_and_mark_for_load(name);
 
         if !needs_init {
             return handle;
@@ -350,81 +354,88 @@ impl Assets {
             handle: handle.clone(),
         };
 
-        self.0.runtime.spawn(async move {
+        tokio::spawn(async move {
             load_asset::<A>(req).await;
         });
 
         handle
     }
 
-    /// Helper function that gets a handle for an asset, or creates a new uninitialized asset data
-    /// object if it doesn't yet exist. An additional boolean is returned indicating if the asset
-    /// pointed to by the handle needs initialization.
-    fn get_or_make_handle<A: Asset + 'static>(&self, name: &AssetName) -> (Handle<A>, bool) {
-        // Check to see if the asset is loaded and we can copy a handle
-        if let Some(handle) = self.get_handle(name) {
-            return (handle, false);
-        }
+    /// Helper function to verify that an asset name points to the correct type. Returns the id
+    /// of the asset.
+    #[inline]
+    fn get_id<A: Asset + 'static>(&self, name: &AssetName) -> u32 {
+        // Asset must be from the available list
+        let id = *self.0.name_to_id.get(name).expect("asset does not exist");
 
-        // Get a new handle id for the asset
-        let new_id = self.0.asset_ids.fetch_add(1, Ordering::Relaxed);
-
-        // Try to insert the handle we just made into the "name to id" map. If we detect that
-        // this asset is already in the list, then another thread must also be trying to load
-        // this asset, in which case we can try to get the handle again.
-        let guard = self.0.name_to_id.guard();
-        let (actual_id, construct_handle) =
-            match self.0.name_to_id.try_insert(name.into(), new_id, &guard) {
-                // We successfully added our handle, so we are responsible for asset data init
-                Ok(_) => (new_id, false),
-                // If we succeed at this point, then we're good. We've got the handle.
-                // If we fail, then the handle must have been dropped, so we just need to
-                // update the outstanding handles counter by 1 and construct a handle manually.
-                Err(actual_id) => match self.get_handle(name) {
-                    Some(handle) => return (handle, false),
-                    None => (*actual_id.current, true),
-                },
-            };
-        std::mem::drop(guard);
-
-        let guard = self.0.assets.guard();
-
-        // Asset data exists so all we need to do is make the handle
-        if construct_handle {
-            let asset_data = self.0.assets.get(&actual_id, &guard).unwrap();
-            let old_val = asset_data
-                .outstanding_handles
-                .as_ref()
-                .unwrap()
-                .fetch_add(1, Ordering::Relaxed);
-
-            (
-                Handle::new(
-                    actual_id,
-                    NonZeroU32::new(asset_data.ver.load(Ordering::Relaxed)).unwrap(),
-                    self.clone(),
-                ),
-                // If the old outstanding handle reference is non-zero, then another thread must be
-                // sending a load request, so we don't have to
-                old_val != 0,
-            )
-        }
-        // Asset doesn't exist, so it's up to us to initialize
-        else {
-            self.0.assets.insert(
-                actual_id,
-                AssetData {
-                    asset: ShardedLock::new(None),
-                    name: name.into(),
-                    package: *self.0.available.get(name).unwrap(),
-                    ver: AtomicU32::new(1),
-                    ty: TypeId::of::<A>(),
-                    outstanding_handles: Some(AtomicU32::new(1)),
-                },
+        // First, ensure we have a loader for this type of asset and that the types match.
+        let guard = self.0.extensions.guard();
+        let type_id = *self
+            .0
+            .extensions
+            .get(
+                name.extension()
+                    .expect("asset has no extension")
+                    .to_str()
+                    .unwrap(),
                 &guard,
-            );
+            )
+            .expect("no loader for the asset");
+        assert_eq!(type_id, TypeId::of::<A>());
 
-            (self.get_handle(name).unwrap(), true)
+        id
+    }
+
+    /// Helper function that gets a handle for an asset An additional boolean is returned
+    /// indicating if the asset pointed to by the handle needs loading.
+    fn get_and_mark_for_load<A: Asset + 'static>(&self, name: &AssetName) -> (Handle<A>, bool) {
+        let id = self.get_id::<A>(name);
+
+        let asset_data = &self.0.assets[id as usize];
+
+        // Asset either has to be loaded or be loading
+        let asset = asset_data.asset.read().unwrap();
+        let needs_load = if asset.is_some() || asset_data.loading.load(Ordering::Relaxed) {
+            false
+        }
+        // Asset is not loaded, so we must try to mark it
+        else if asset_data
+            .loading
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            true
+        }
+        // We fail to mark it which means another thread must have marked it right before us.
+        // Therefore, we do not need to load
+        else {
+            false
+        };
+
+        // Update handle counter if needed
+        asset_data.increment_handle_counter();
+        (Handle::new(id, self.clone()), needs_load)
+    }
+}
+
+impl AssetData {
+    /// Increments the outstand handles counter on the asset data object if the asset is not
+    /// persistent.
+    #[inline]
+    pub fn increment_handle_counter(&self) {
+        if self.outstanding_handles.load(Ordering::Relaxed) != u32::MAX {
+            self.outstanding_handles.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Decrements the outstand handles counter on the asset data object if the asset is not
+    /// persistent. If the asset needs to be dropped, `true` is returned.
+    #[inline]
+    pub fn decrement_handle_counter(&self) -> bool {
+        if self.outstanding_handles.load(Ordering::Relaxed) != u32::MAX {
+            (self.outstanding_handles.fetch_sub(1, Ordering::Relaxed) - 1) == 0
+        } else {
+            false
         }
     }
 }
@@ -469,36 +480,37 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
 
     let loader = loader.as_any().downcast_ref::<A::Loader>().unwrap();
 
-    // Find the name of the asset and the package to load it from
-    let (name, package) = {
-        let guard = req.assets.0.assets.guard();
-        let asset_data = req.assets.0.assets.get(&req.handle.id(), &guard).unwrap();
-
-        (
-            asset_data.name.clone(),
-            req.assets.0.packages[asset_data.package].clone(),
-        )
-    };
+    // Find the package to load it from
+    let asset_data = &req.assets.0.assets[req.handle.id() as usize];
+    let package = req.assets.0.packages[asset_data.package].clone();
 
     // Use the loader to load the asset
-    let (asset, mut post_load) = match loader
-        .load(req.assets.clone(), package.clone(), &name)
+    let (asset, post_load, persistent) = match loader
+        .load(req.assets.clone(), package.clone(), &asset_data.name)
         .await
     {
-        AssetLoadResult::Ok(asset) => (asset, false),
-        AssetLoadResult::PostLoad(asset) => (asset, true),
-        AssetLoadResult::Err => {
-            println!("unable to load asset `{:?}`", &name);
+        Ok(res) => match res {
+            AssetLoadResult::Loaded { asset, persistent } => (asset, false, persistent),
+            AssetLoadResult::NeedsPostLoad { asset, persistent } => (asset, true, persistent),
+        },
+        Err(err) => {
+            println!("error loading asset `{:?}` : {}", &asset_data.name, err);
             return;
         }
     };
 
-    // Put the asset into the asset container
-    {
-        let guard = req.assets.0.assets.guard();
-        let asset_data = req.assets.0.assets.get(&req.handle.id(), &guard).unwrap();
-        *asset_data.asset.write().unwrap() = Some(Box::new(asset));
+    // Update to be persistent if requested
+    if persistent {
+        asset_data
+            .outstanding_handles
+            .store(u32::MAX, Ordering::Relaxed);
     }
+
+    // Put the asset into the asset container
+    *asset_data.asset.write().unwrap() = Some(Box::new(asset));
+
+    // Loading is still technically occuring, but post load allows for access at this point
+    asset_data.loading.store(false, Ordering::Relaxed);
 
     // Loop until post load is not needed
     while post_load {
@@ -507,10 +519,12 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
             .post_load(req.assets.clone(), package.clone(), handle)
             .await
         {
-            AssetPostLoadResult::Ok => post_load = false,
-            AssetPostLoadResult::PostLoad => {}
-            AssetPostLoadResult::Err => {
-                println!("unable to load asset `{:?}`", &name);
+            Ok(res) => match res {
+                AssetPostLoadResult::Loaded => return,
+                AssetPostLoadResult::NeedsPostLoad => continue,
+            },
+            Err(err) => {
+                println!("error loading asset `{:?}` : {}", &asset_data.name, err);
                 return;
             }
         }

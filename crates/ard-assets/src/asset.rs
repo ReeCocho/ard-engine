@@ -12,5 +12,5 @@ pub trait Asset: Send {
     const EXTENSION: &'static str;
 
     /// Loader used for this asset type.
-    type Loader: AssetLoader;
+    type Loader: AssetLoader + 'static;
 }

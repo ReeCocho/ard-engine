@@ -22,20 +22,11 @@ pub mod prelude {
 }
 
 /// Plugin to allow for asset management.
-pub struct AssetsPlugin {
-    /// Number of threads to use for loading assets. Must be non-zero.
-    pub thread_count: usize,
-}
-
-impl Default for AssetsPlugin {
-    fn default() -> Self {
-        Self { thread_count: 2 }
-    }
-}
+#[derive(Default)]
+pub struct AssetsPlugin;
 
 impl Plugin for AssetsPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
-        assert_ne!(self.thread_count, 0);
-        app.add_resource(Assets::new(self.thread_count));
+        app.add_resource(Assets::new());
     }
 }
