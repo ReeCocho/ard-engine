@@ -197,7 +197,7 @@ impl Dispatcher {
                     }
 
                     for idx in to_remove {
-                        running.remove(&idx);
+                        running.remove(idx);
                     }
 
                     // If there are no pending systems, we loop
@@ -223,7 +223,7 @@ impl Dispatcher {
                     let to_run = if let Some(result) = dispatcher_state.cache.get(&all_systems) {
                         result
                     } else {
-                        let mut max_cliques = &mut dispatcher_state.bron_kerbosch;
+                        let max_cliques = &mut dispatcher_state.bron_kerbosch;
                         max_cliques.clear();
 
                         bron_kerbosch(
@@ -231,7 +231,7 @@ impl Dispatcher {
                             pending_set,
                             BitArray::ZERO,
                             &dispatcher_state.compatibility,
-                            &mut max_cliques,
+                            max_cliques,
                         );
 
                         // Pick the maximum amongst all the maximal cliques
@@ -455,7 +455,7 @@ impl DispatcherBuilder {
 
         // Intitialize "after" dependencies
         for system in &systems {
-            for ((event, other_system_id), _) in &system.run_after {
+            for (event, other_system_id) in system.run_after.keys() {
                 let dispatcher_state = event_to_systems.get_mut(event).unwrap();
                 let our_idx = *dispatcher_state.type_to_state.get(&system.id).unwrap();
                 let other_idx = *dispatcher_state.type_to_state.get(other_system_id).unwrap();
@@ -470,7 +470,7 @@ impl DispatcherBuilder {
 
         // Intitialize "before" dependencies
         for system in &systems {
-            for ((event, other_system_id), _) in &system.run_before {
+            for (event, other_system_id) in system.run_before.keys() {
                 let dispatcher_state = event_to_systems.get_mut(event).unwrap();
                 let our_idx = *dispatcher_state.type_to_state.get(&system.id).unwrap();
                 let other_idx = *dispatcher_state.type_to_state.get(other_system_id).unwrap();
@@ -517,7 +517,10 @@ impl DispatcherBuilder {
         Dispatcher {
             systems,
             thread_pool: ThreadPoolBuilder::new()
-                .num_threads(self.thread_count.unwrap_or(num_cpus::get().div(2).max(1)))
+                .num_threads(
+                    self.thread_count
+                        .unwrap_or_else(|| num_cpus::get().div(2).max(1)),
+                )
                 .build()
                 .unwrap(),
             event_to_systems,
@@ -553,21 +556,21 @@ fn bron_kerbosch(
     let px = p.bitor(x);
     let pivot = px.first_one().unwrap();
 
-    let mut nh_pivot = compatibility[pivot].clone();
+    let mut nh_pivot = compatibility[pivot];
     nh_pivot.set(pivot, false);
 
     let p_removing_nh_pivot = p & (nh_pivot.not());
 
     for v in p_removing_nh_pivot.iter_ones() {
-        let mut nh_v = compatibility[v].clone();
+        let mut nh_v = compatibility[v];
         nh_v.set(v, false);
 
-        let mut new_r = r.clone();
+        let mut new_r = r;
         new_r.set(v, true);
 
-        let new_p = p.clone().bitand(nh_v);
+        let new_p = p.bitand(nh_v);
 
-        let new_x = x.clone().bitand(nh_v);
+        let new_x = x.bitand(nh_v);
 
         bron_kerbosch(new_r, new_p, new_x, compatibility, out);
 

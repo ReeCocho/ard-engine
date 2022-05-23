@@ -114,7 +114,7 @@ impl Default for Entities {
         });
 
         let entity_commands = EntityCommands {
-            sender: sender.clone(),
+            sender,
             construction_data: construction_data.clone(),
         };
 
@@ -377,9 +377,9 @@ impl EntityCommands {
         }
 
         // Add handles to the output entities slice
-        for i in 0..(entities.len().min(new_entities.len())) {
-            entities[i] = new_entities[i];
-        }
+        let elen = entities.len();
+        entities[..(elen.min(new_entities.len()))]
+            .copy_from_slice(&new_entities[..(elen.min(new_entities.len()))]);
 
         let _ = self.sender.send(EntityCommand::Create {
             components: Box::new(components),

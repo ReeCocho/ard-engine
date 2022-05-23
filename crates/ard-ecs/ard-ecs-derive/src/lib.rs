@@ -12,8 +12,7 @@ use syn::{
 #[proc_macro_derive(Component)]
 pub fn component(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    let gen = impl_component(&ast);
-    gen.into()
+    impl_component(&ast)
 }
 
 fn impl_component(ast: &syn::DeriveInput) -> TokenStream {
@@ -42,8 +41,7 @@ impl Parse for StorageAttribute {
 #[proc_macro_derive(Tag, attributes(storage))]
 pub fn tag(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    let gen = impl_tag(&ast);
-    gen.into()
+    impl_tag(&ast)
 }
 
 fn impl_tag(ast: &syn::DeriveInput) -> TokenStream {
@@ -69,8 +67,7 @@ fn impl_tag(ast: &syn::DeriveInput) -> TokenStream {
 #[proc_macro_derive(Resource)]
 pub fn resource(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    let gen = impl_resource(&ast);
-    gen.into()
+    impl_resource(&ast)
 }
 
 fn impl_resource(ast: &syn::DeriveInput) -> TokenStream {
@@ -89,8 +86,7 @@ fn impl_resource(ast: &syn::DeriveInput) -> TokenStream {
 #[proc_macro_derive(Event)]
 pub fn event(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    let gen = impl_event(&ast);
-    gen.into()
+    impl_event(&ast)
 }
 
 fn impl_event(ast: &syn::DeriveInput) -> TokenStream {
@@ -107,8 +103,7 @@ fn impl_event(ast: &syn::DeriveInput) -> TokenStream {
 #[proc_macro_derive(SystemState)]
 pub fn system_state(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    let gen = impl_system_state(&ast);
-    gen.into()
+    impl_system_state(&ast)
 }
 
 fn impl_system_state(ast: &syn::DeriveInput) -> TokenStream {

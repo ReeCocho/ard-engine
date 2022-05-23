@@ -82,19 +82,23 @@ impl TypeKey {
             let self_id = self.types[self_i];
             let other_id = other.types[other_i];
 
-            if self_id == other_id {
-                return false;
-            } else if self_id < other_id {
-                self_i += 1;
+            match self_id.cmp(&other_id) {
+                std::cmp::Ordering::Less => {
+                    self_i += 1;
 
-                if self_i == self.types.len() {
-                    return true;
+                    if self_i == self.types.len() {
+                        return true;
+                    }
                 }
-            } else {
-                other_i += 1;
+                std::cmp::Ordering::Equal => {
+                    return false;
+                }
+                std::cmp::Ordering::Greater => {
+                    other_i += 1;
 
-                if other_i == other.types.len() {
-                    return true;
+                    if other_i == other.types.len() {
+                        return true;
+                    }
                 }
             }
         }

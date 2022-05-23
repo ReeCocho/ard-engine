@@ -113,9 +113,7 @@ impl<S: SystemData> Queries<S> {
 }
 
 impl<C: ComponentFilter, T: TagFilter> Query<C, T> for () {
-    fn new(_: &Tags, _: &Archetypes) -> Self {
-        ()
-    }
+    fn new(_: &Tags, _: &Archetypes) -> Self {}
 
     #[inline]
     fn is_empty(&self) -> bool {
