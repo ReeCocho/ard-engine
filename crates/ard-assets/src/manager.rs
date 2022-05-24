@@ -155,7 +155,7 @@ impl Assets {
     /// # Panics
     /// Panics if the same asset type is already registered or an asset with the same extension
     /// is already registered.
-    pub fn register<A: Asset + 'static>(&mut self, loader: A::Loader) {
+    pub fn register<A: Asset + 'static>(&self, loader: A::Loader) {
         // Make sure the loader doesn't already exist.
         let guard = self.0.loaders.guard();
         if self
@@ -321,10 +321,6 @@ impl Assets {
 
     /// Load an asset asyncronously. Returns a handle to the asset. You should use this when
     /// loading dependent assets.
-    ///
-    /// # Note
-    /// Although this should be exceedingly rare, the asset pointed to by this handle is not
-    /// guaranteed to have been loaded.
     pub async fn load_async<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
         // Get a handle for the asset and return if it already existed
         let (handle, needs_init) = self.get_and_mark_for_load(name);

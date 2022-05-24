@@ -1,6 +1,7 @@
 use crate::mesh::VertexLayout;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ShaderType {
     Fragment,
     Vertex,
@@ -14,7 +15,7 @@ pub struct ShaderCreateInfo<'a> {
     pub code: &'a [u8],
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ShaderInputs {
     pub ubo_size: u64,
     pub texture_count: usize,

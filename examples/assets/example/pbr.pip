@@ -1,0 +1,4 @@
+(
+    vertex: "pbr.vert.shd",
+    fragment: "pbr.frag.shd",
+)

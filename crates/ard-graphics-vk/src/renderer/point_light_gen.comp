@@ -25,7 +25,7 @@ layout(set = 0, binding = 0) readonly buffer PointLights {
     PointLight[] lights;
 };
 
-layout(set = 0, binding = 1) buffer PointLightTable {
+layout(set = 0, binding = 1) restrict buffer PointLightTable {
     int[TABLE_Z][TABLE_X][TABLE_Y] light_counts;
     uint[TABLE_Z][TABLE_X][TABLE_Y][MAX_POINT_LIGHTS] clusters; 
 };

@@ -1,8 +1,9 @@
 use ard_math::{Vec2, Vec4};
+use serde::{Deserialize, Serialize};
 
 use crate::ObjectBounds;
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct VertexLayout {
     pub normals: bool,
     pub tangents: bool,

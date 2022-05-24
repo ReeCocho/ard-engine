@@ -19,6 +19,11 @@ pub mod assets {
     pub use ard_assets::*;
 }
 
+#[cfg(feature = "graphics_assets")]
+pub mod graphics_assets {
+    pub use ard_graphics_assets::*;
+}
+
 #[cfg(feature = "graphics_vk")]
 pub mod graphics {
     pub mod prelude {

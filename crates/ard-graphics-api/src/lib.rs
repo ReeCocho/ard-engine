@@ -11,6 +11,7 @@ pub mod surface;
 pub mod texture;
 
 use bytemuck::{Pod, Zeroable};
+use serde::{Deserialize, Serialize};
 
 pub mod prelude {
     pub use crate::camera::*;
@@ -56,26 +57,26 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + Any + Send + Sync {
     type Texture: TextureApi;
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TextureFormat {
     R8G8B8A8Unorm,
     R8G8B8A8Srgb,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TextureFilter {
     Nearest,
     Linear,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TextureTiling {
     Repeat,
     MirroredRepeat,
     ClampToEdge,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AnisotropyLevel {
     X1,
     X2,

@@ -18,6 +18,7 @@ pub mod prelude {
         manager::*,
         package::*,
         package::{folder::*, manifest::*},
+        *,
     };
 }
 

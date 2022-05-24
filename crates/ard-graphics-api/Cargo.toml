@@ -11,3 +11,4 @@ ard-ecs = { version = "0.1", path = "../ard-ecs" }
 ard-math = { version = "0.1", path = "../ard-math" }
 thiserror = "1.0"
 bytemuck = "1.7"
+serde = { version = "1", features = ["derive"] }

@@ -28,6 +28,8 @@ pub enum AssetPostLoadResult {
 pub enum AssetLoadError {
     #[error("there was an error while trying to read from a package")]
     ReadError,
+    #[error("an error occured: {0}")]
+    Other(Box<dyn std::error::Error>),
     #[error("an unknown error occured while loading the asset")]
     Unknown,
 }

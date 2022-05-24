@@ -2,8 +2,11 @@
 mod util;
 
 use ard_engine::{
-    core::prelude::*, ecs::prelude::*, graphics::prelude::*, math::*, window::prelude::*,
+    assets::prelude::*, core::prelude::*, ecs::prelude::*, graphics::prelude::*, math::*,
+    window::prelude::*,
 };
+
+use ard_engine::graphics_assets::prelude as graphics_assets;
 
 use util::{CameraMovement, FrameRate, MainCameraState};
 
@@ -140,7 +143,8 @@ struct CameraHolder {
     _camera: Camera,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     AppBuilder::new(ard_log::LevelFilter::Info)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
@@ -160,6 +164,8 @@ fn main() {
                 debug: false,
             },
         })
+        .add_plugin(AssetsPlugin)
+        .add_plugin(graphics_assets::GraphicsAssetsPlugin)
         .add_startup_function(setup)
         .add_resource(MainCameraState(CameraDescriptor {
             far: 200.0,
@@ -181,6 +187,7 @@ fn main() {
 
 fn setup(app: &mut App) {
     let factory = app.resources.get::<Factory>().unwrap();
+    let assets = app.resources.get::<Assets>().unwrap();
 
     // Disable frame rate limit
     app.resources
@@ -188,43 +195,10 @@ fn setup(app: &mut App) {
         .unwrap()
         .render_time = None;
 
-    // Shaders
-    let create_info = ShaderCreateInfo {
-        ty: ShaderType::Fragment,
-        code: include_bytes!("./pbr.frag.spv"),
-        vertex_layout: VertexLayout::default(),
-        inputs: ShaderInputs {
-            ubo_size: 0,
-            texture_count: 0,
-        },
-    };
-
-    let frag_shader = factory.create_shader(&create_info);
-
-    let create_info = ShaderCreateInfo {
-        ty: ShaderType::Vertex,
-        code: include_bytes!("./pbr.vert.spv"),
-        vertex_layout: VertexLayout {
-            normals: true,
-            tangents: true,
-            colors: true,
-            ..Default::default()
-        },
-        inputs: ShaderInputs {
-            ubo_size: 0,
-            texture_count: 0,
-        },
-    };
-
-    let vert_shader = factory.create_shader(&create_info);
-
-    // Pipeline
-    let create_info = PipelineCreateInfo {
-        vertex: vert_shader.clone(),
-        fragment: frag_shader.clone(),
-    };
-
-    let pipeline = factory.create_pipeline(&create_info);
+    // Load the pipeline
+    let pipeline_handle = assets.load::<graphics_assets::Pipeline>(AssetName::new("pbr.pip"));
+    assets.wait_for_load(&pipeline_handle);
+    let pipeline = assets.get(&pipeline_handle).unwrap().pipeline.clone();
 
     // Material
     let create_info = MaterialCreateInfo { pipeline };

@@ -1,0 +1,16 @@
+[package]
+name = "ard-graphics-assets"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ard-assets = { path = "../ard-assets", version = "0.1" }
+ard-graphics-vk = { path = "../ard-graphics-vk", version = "0.1" }
+ard-graphics-api = { path = "../ard-graphics-api", version = "0.1" }
+ard-core = { path = "../ard-core", version = "0.1" }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+ron = "0.7"
+image = "0.24"

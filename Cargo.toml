@@ -9,9 +9,10 @@ edition = "2021"
 members = [ "crates/*" ]
 
 [features]
-default = [ "input", "assets", "graphics_vk", "window" ]
+default = [ "input", "assets", "graphics_vk", "window", "graphics_assets" ]
 input = [ "ard-input" ]
 assets = [ "ard-assets" ]
+graphics_assets = [ "ard-graphics-assets" ]
 graphics_vk = [ "window", "ard-graphics-api", "ard-graphics-vk" ]
 window = [ "ard-window", "ard-winit" ]
 
@@ -29,9 +30,11 @@ ard-graphics-api = { path = "./crates/ard-graphics-api", version = "0.1", option
 ard-graphics-vk = { path = "./crates/ard-graphics-vk", version = "0.1", optional = true }
 ard-window = { path = "./crates/ard-window", version = "0.1", optional = true }
 ard-winit = { path = "./crates/ard-winit", version = "0.1", optional = true }
+ard-graphics-assets = { path = "./crates/ard-graphics-assets", version = "0.1", optional = true }
 
 [dev-dependencies]
 bytemuck = "1.7"
+tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 
 [profile.release]
 debug = 1
