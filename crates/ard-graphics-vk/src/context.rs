@@ -10,7 +10,8 @@ use ard_window::windows::Windows;
 use ard_winit::windows::WinitWindows;
 use ash::{
     extensions::{ext, khr},
-    vk, Entry,
+    vk::{self, DebugUtilsMessageSeverityFlagsEXT},
+    Entry,
 };
 use gpu_alloc_ash::AshMemoryDevice;
 
@@ -610,14 +611,41 @@ unsafe extern "system" fn vulkan_debug_callback(
         CStr::from_ptr(callback_data.p_message).to_string_lossy()
     };
 
-    println!(
-        "{:?}:\n{:?} [{} ({})] : {}\n",
-        message_severity,
-        message_type,
-        message_id_name,
-        &message_id_number.to_string(),
-        message,
-    );
+    match message_severity {
+        DebugUtilsMessageSeverityFlagsEXT::VERBOSE => ard_log::info!(
+            "{:?}:\n{:?} [{} ({})] : {}\n",
+            message_severity,
+            message_type,
+            message_id_name,
+            &message_id_number.to_string(),
+            message,
+        ),
+        DebugUtilsMessageSeverityFlagsEXT::INFO => ard_log::info!(
+            "{:?}:\n{:?} [{} ({})] : {}\n",
+            message_severity,
+            message_type,
+            message_id_name,
+            &message_id_number.to_string(),
+            message,
+        ),
+        DebugUtilsMessageSeverityFlagsEXT::WARNING => ard_log::warn!(
+            "{:?}:\n{:?} [{} ({})] : {}\n",
+            message_severity,
+            message_type,
+            message_id_name,
+            &message_id_number.to_string(),
+            message,
+        ),
+        DebugUtilsMessageSeverityFlagsEXT::ERROR => ard_log::error!(
+            "{:?}:\n{:?} [{} ({})] : {}\n",
+            message_severity,
+            message_type,
+            message_id_name,
+            &message_id_number.to_string(),
+            message,
+        ),
+        _ => {}
+    }
 
     vk::FALSE
 }

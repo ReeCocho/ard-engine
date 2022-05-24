@@ -141,7 +141,7 @@ struct CameraHolder {
 }
 
 fn main() {
-    AppBuilder::new()
+    AppBuilder::new(ard_log::LevelFilter::Info)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
             add_primary_window: Some(WindowDescriptor {
@@ -157,7 +157,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: true,
+                debug: false,
             },
         })
         .add_startup_function(setup)

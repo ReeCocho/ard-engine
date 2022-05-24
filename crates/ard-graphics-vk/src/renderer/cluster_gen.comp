@@ -30,7 +30,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 } camera;
 
 layout(set = 0, binding = 1) writeonly restrict buffer Clusters {
-    Froxel data[TABLE_X][TABLE_Y][TABLE_Z];
+    Froxel data[TABLE_Z][TABLE_X][TABLE_Y];
 } clusters;
 
 void main() {
@@ -90,7 +90,7 @@ void main() {
     froxel.min_max_z = vec4(min_max_z, 0.0, 0.0);
 
     clusters.data
+        [gl_WorkGroupID.z]
         [gl_WorkGroupID.x]
-        [gl_WorkGroupID.y]
-        [gl_WorkGroupID.z] = froxel;
+        [gl_WorkGroupID.y] = froxel;
 }

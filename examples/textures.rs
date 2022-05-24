@@ -9,7 +9,7 @@ use ard_engine::{
 };
 
 fn main() {
-    AppBuilder::new()
+    AppBuilder::new(ard_log::LevelFilter::Error)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
             add_primary_window: Some(WindowDescriptor {

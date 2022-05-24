@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use ard_ecs::prelude::*;
+use ard_log::LevelFilter;
 
 use crate::prelude::Plugin;
 
@@ -12,7 +13,6 @@ pub struct App {
     startup_functions: Vec<fn(&mut App)>,
 }
 
-#[derive(Default)]
 pub struct AppBuilder {
     app: App,
 }
@@ -33,8 +33,8 @@ impl Default for App {
 }
 
 impl App {
-    pub fn builder() -> AppBuilder {
-        AppBuilder::default()
+    pub fn builder(og_filter: LevelFilter) -> AppBuilder {
+        AppBuilder::new(og_filter)
     }
 
     /// Runs startup functions. Should be used by runners.
@@ -53,8 +53,11 @@ impl App {
 }
 
 impl AppBuilder {
-    pub fn new() -> Self {
-        AppBuilder::default()
+    pub fn new(log_filter: LevelFilter) -> Self {
+        ard_log::init(log_filter);
+        AppBuilder {
+            app: App::default(),
+        }
     }
 
     #[inline]

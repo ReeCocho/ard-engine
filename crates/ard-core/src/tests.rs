@@ -42,7 +42,7 @@ fn game_loop() {
         }
     }
 
-    AppBuilder::new()
+    AppBuilder::new(ard_log::LevelFilter::Off)
         .add_plugin(ArdCorePlugin)
         .add_system(Ticker::default())
         .run();

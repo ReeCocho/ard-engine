@@ -637,13 +637,27 @@ impl ForwardPlus {
         let point_light_gen_pipeline = {
             let entry_name = std::ffi::CString::new("main").unwrap();
 
-            let map_entries = [vk::SpecializationMapEntry::builder()
-                .offset(0)
-                .size(std::mem::size_of::<u32>())
-                .constant_id(0)
-                .build()];
+            let map_entries = [
+                vk::SpecializationMapEntry::builder()
+                    .offset(0)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(0)
+                    .build(),
+                vk::SpecializationMapEntry::builder()
+                    .offset(std::mem::size_of::<u32>() as u32)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(1)
+                    .build(),
+                vk::SpecializationMapEntry::builder()
+                    .offset(2 * std::mem::size_of::<u32>() as u32)
+                    .size(std::mem::size_of::<u32>())
+                    .constant_id(2)
+                    .build(),
+            ];
 
-            let as_bytes = draw_gen_workgroup_size.to_ne_bytes();
+            let table_dims = [1u32, 1, 1];
+
+            let as_bytes = bytemuck::bytes_of(&table_dims);
 
             let specialization_info = vk::SpecializationInfo::builder()
                 .map_entries(&map_entries)
@@ -791,7 +805,7 @@ impl ForwardPlus {
                     .build(),
             ];
 
-            let table_dims = [1, 1, 1];
+            let table_dims = [1u32, 1, 1];
 
             let as_bytes = bytemuck::bytes_of(&table_dims);
 
@@ -1966,7 +1980,12 @@ fn generate_point_lights(
         );
 
         // Dispatch for culling
-        device.cmd_dispatch(*commands, group_count, 1, 1);
+        device.cmd_dispatch(
+            *commands,
+            POINT_LIGHTS_TABLE_DIMS.0 as u32,
+            POINT_LIGHTS_TABLE_DIMS.1 as u32,
+            POINT_LIGHTS_TABLE_DIMS.2 as u32,
+        );
     }
 }
 

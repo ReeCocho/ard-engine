@@ -7,5 +7,6 @@ edition = "2018"
 
 [dependencies]
 ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-log = { version = "0.1", path = "../ard-log" }
 rayon = "1.5"
 num_cpus = "1.13"

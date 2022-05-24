@@ -13,6 +13,7 @@ ard-ecs = { version = "0.1", path = "../ard-ecs" }
 ard-math = { version = "0.1", path = "../ard-math" }
 ard-graphics-api = { version = "0.1", path = "../ard-graphics-api" }
 ard-render-graph = { version = "0.1", path = "../ard-render-graph" }
+ard-log = { version = "0.1", path = "../ard-log" }
 ash = "0.33.3+1.2.191"
 ash-window = "0.7"
 winit = "0.25"

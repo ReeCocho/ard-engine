@@ -23,8 +23,8 @@ layout(set = 0, binding = 1) readonly buffer PointLights {
 };
 
 layout(set = 0, binding = 3) readonly buffer PointLightTable {
-    int[TABLE_X][TABLE_Y][TABLE_Z] light_counts;
-    uint[TABLE_X][TABLE_Y][TABLE_Z][MAX_POINT_LIGHTS] clusters; 
+    int[TABLE_Z][TABLE_X][TABLE_Y] light_counts;
+    uint[TABLE_Z][TABLE_X][TABLE_Y][MAX_POINT_LIGHTS] clusters; 
 };
 
 layout(set = 2, binding = 0) uniform CameraUBO {
@@ -69,13 +69,13 @@ void main() {
         clamp(int(log(FRAG_POS.z) * camera.scale_bias.x - camera.scale_bias.y), 0, TABLE_Z - 1)
     );
 
-    int count = light_counts[cluster.x][cluster.y][cluster.z];
+    int count = light_counts[cluster.z][cluster.x][cluster.y];
     
     FRAGMENT_COLOR = vec4(0.1, 0.1, 0.1, 1.0);
     
     // FRAGMENT_COLOR += vec4(float(count) * 0.005);
     for (int i = 0; i < count; i++) {
-        PointLight light = lights[clusters[cluster.x][cluster.y][cluster.z][i]];
+        PointLight light = lights[clusters[cluster.z][cluster.x][cluster.y][i]];
         float l = length(light.position_range.xyz - WORLD_POS);
         if (l < light.position_range.w) {
             FRAGMENT_COLOR += (1.0 - ((l * l) / (light.position_range.w * light.position_range.w))) * vec4(light.color_intensity.w);
