@@ -1,0 +1,4 @@
+(
+    pbr_pipeline: "pbr.pip",
+    model: "test_scene.glb",
+)

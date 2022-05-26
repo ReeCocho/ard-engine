@@ -4,14 +4,14 @@
     vertex_layout: VertexLayout(
         normals: true,
         tangents: true,
-        colors: true,
+        colors: false,
         uv0: false,
         uv1: false,
         uv2: false,
         uv3: false,
     ),
     inputs: ShaderInputs(
-        ubo_size: 0,
+        ubo_size: 32,
         texture_count: 0,
     ),
 )

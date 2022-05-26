@@ -161,7 +161,7 @@ async fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: false,
+                debug: true,
             },
         })
         .add_plugin(AssetsPlugin)
@@ -172,7 +172,7 @@ async fn main() {
             ..Default::default()
         }))
         .add_system(CameraMovement {
-            position: Vec3::new(0.0, 5.0, 150.0),
+            position: Vec3::new(0.0, 5.0, 15.0),
             rotation: Vec3::new(0.0, 180.0, 0.0),
             near: 0.3,
             far: 200.0,
@@ -195,66 +195,34 @@ fn setup(app: &mut App) {
         .unwrap()
         .render_time = None;
 
-    // Load the pipeline
-    let pipeline_handle = assets.load::<graphics_assets::Pipeline>(AssetName::new("pbr.pip"));
-    assets.wait_for_load(&pipeline_handle);
-    let pipeline = assets.get(&pipeline_handle).unwrap().pipeline.clone();
+    // Load the model
+    let model_handle = assets.load::<graphics_assets::ModelAsset>(AssetName::new("test_scene.mdl"));
+    assets.wait_for_load(&model_handle);
 
-    // Material
-    let create_info = MaterialCreateInfo { pipeline };
+    // Insert the model into the world
+    let model = assets.get(&model_handle).unwrap();
 
-    let material = factory.create_material(&create_info);
+    // NOTE: Unless you want the draw to exist forever, you should store the handles generated here
+    // so they can be unregistered later
+    let draws = app.resources.get_mut::<StaticGeometry>().unwrap();
 
-    // Mesh
-    let positions = [
-        Vec4::new(-0.5, 0.0, 0.0, 1.0),
-        Vec4::new(0.0, 1.0, 0.0, 1.0),
-        Vec4::new(0.5, 0.0, 0.0, 1.0),
-        Vec4::new(-0.5, 0.0, 0.0, 1.0),
-        Vec4::new(0.5, 0.0, 0.0, 1.0),
-        Vec4::new(0.0, 1.0, 0.0, 1.0),
-    ];
+    for node in &model.nodes {
+        let mesh_group = &model.mesh_groups[node.mesh_group];
+        for (mesh, material_idx) in &mesh_group.meshes {
+            let material = &model.materials[*material_idx];
 
-    let normals = [
-        Vec4::new(-1.0, 0.0, 1.0, 1.0),
-        Vec4::new(0.0, 1.0, 1.0, 1.0),
-        Vec4::new(1.0, 0.0, 1.0, 1.0),
-        Vec4::new(-1.0, 0.0, 1.0, 1.0),
-        Vec4::new(1.0, 0.0, 1.0, 1.0),
-        Vec4::new(0.0, 1.0, 1.0, 1.0),
-    ];
-
-    let tangents = [
-        Vec4::new(-1.0, 0.0, 1.0, 1.0),
-        Vec4::new(0.0, 1.0, 1.0, 1.0),
-        Vec4::new(1.0, 0.0, 1.0, 1.0),
-        Vec4::new(-1.0, 0.0, 1.0, 1.0),
-        Vec4::new(1.0, 0.0, 1.0, 1.0),
-        Vec4::new(0.0, 1.0, 1.0, 1.0),
-    ];
-
-    let colors = [
-        Vec4::new(1.0, 0.0, 0.0, 1.0),
-        Vec4::new(0.0, 1.0, 0.0, 1.0),
-        Vec4::new(0.0, 0.0, 1.0, 1.0),
-        Vec4::new(1.0, 0.0, 0.0, 1.0),
-        Vec4::new(0.0, 1.0, 0.0, 1.0),
-        Vec4::new(0.0, 0.0, 1.0, 1.0),
-    ];
-
-    let indices: Vec<u32> = (0u32..6u32).collect();
-
-    let create_info = MeshCreateInfo {
-        positions: &positions,
-        normals: Some(&normals),
-        tangents: Some(&tangents),
-        colors: Some(&colors),
-        indices: &indices,
-        bounds: MeshBounds::Generate,
-        ..Default::default()
-    };
-
-    let mesh = factory.create_mesh(&create_info);
+            draws.register(
+                &[(
+                    Renderable {
+                        mesh: mesh.clone(),
+                        material: material.clone(),
+                    },
+                    Model(node.transform),
+                )],
+                &mut [],
+            );
+        }
+    }
 
     let create_info = CameraCreateInfo {
         descriptor: CameraDescriptor {
@@ -270,10 +238,10 @@ fn setup(app: &mut App) {
     });
 
     // Create lights
-    const LIGHT_COUNT: usize = 128;
-    const LIGHT_RING_RADIUS: f32 = 60.0;
-    const LIGHT_RANGE: f32 = 16.0;
-    const LIGHT_INTENSITY: f32 = 0.25;
+    const LIGHT_COUNT: usize = 1;
+    const LIGHT_RING_RADIUS: f32 = 0.0;
+    const LIGHT_RANGE: f32 = 24.0;
+    const LIGHT_INTENSITY: f32 = 8.0;
 
     let mut lights = (
         Vec::with_capacity(LIGHT_COUNT),
@@ -282,7 +250,7 @@ fn setup(app: &mut App) {
 
     for i in 0..LIGHT_COUNT {
         let angle = (i as f32 / LIGHT_COUNT as f32) * 2.0 * std::f32::consts::PI;
-        let pos = Vec3::new(angle.sin(), 0.0, angle.cos()) * LIGHT_RING_RADIUS;
+        let pos = Vec3::new(0.0, 4.0, 0.0); // Vec3::new(angle.sin(), 0.0, angle.cos()) * LIGHT_RING_RADIUS;
 
         lights.0.push(Model(Mat4::from_translation(pos)));
         lights.1.push(PointLight {
@@ -293,53 +261,4 @@ fn setup(app: &mut App) {
     }
 
     app.world.entities().commands().create(lights, &mut []);
-
-    // Register draws
-    // NOTE: Unless you want the draw to exist forever, you should store the handles generated here
-    // so they can be unregistered later
-    let draws = app.resources.get_mut::<StaticGeometry>().unwrap();
-
-    const SPACING: f32 = 0.95;
-    const WIDTH: usize = 100;
-    const DEPTH: usize = 100;
-    const HEIGHT: usize = 40;
-
-    let mut bbs = BoundingBoxSystem {
-        mesh: mesh.clone(),
-        models: [Mat4::IDENTITY; 10],
-    };
-
-    let mut i = 0;
-
-    for x in 0..WIDTH {
-        for y in 0..HEIGHT {
-            for z in 0..DEPTH {
-                let position = Vec3::new(
-                    x as f32 - (WIDTH as f32 / 2.0),
-                    y as f32 - (HEIGHT as f32 / 2.0),
-                    z as f32 - (DEPTH as f32 / 2.0),
-                ) * SPACING;
-
-                let model = Mat4::from_translation(position);
-
-                if i < 10 {
-                    bbs.models[i] = model;
-                    i += 1;
-                }
-
-                draws.register(
-                    &[(
-                        Renderable {
-                            mesh: mesh.clone(),
-                            material: material.clone(),
-                        },
-                        Model(model),
-                    )],
-                    &mut [],
-                );
-            }
-        }
-    }
-
-    app.dispatcher.add_system(bbs);
 }

@@ -106,7 +106,7 @@ fn setup(app: &mut App) {
     // Shaders
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Vertex,
-        code: include_bytes!("./textured.vert.spv"),
+        code: todo!(), // include_bytes!("./textured.vert.spv"),
         vertex_layout: VertexLayout {
             uv0: true,
             ..Default::default()
@@ -121,7 +121,7 @@ fn setup(app: &mut App) {
 
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Fragment,
-        code: include_bytes!("./textured.frag.spv"),
+        code: todo!(), // include_bytes!("./textured.frag.spv"),
         vertex_layout: VertexLayout::default(),
         inputs: ShaderInputs {
             ubo_size: 0,

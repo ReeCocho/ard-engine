@@ -6,7 +6,7 @@ use image::EncodableLayout;
 use serde::{Deserialize, Serialize};
 
 /// A texture that can be loaded from disk.
-pub struct Texture {
+pub struct TextureAsset {
     /// The texture handle.
     pub texture: graphics::Texture,
 }
@@ -22,7 +22,7 @@ struct TextureMeta {
     pub file: AssetNameBuf,
 }
 
-impl Asset for Texture {
+impl Asset for TextureAsset {
     const EXTENSION: &'static str = "tex";
 
     type Loader = TextureLoader;
@@ -30,7 +30,7 @@ impl Asset for Texture {
 
 #[async_trait]
 impl AssetLoader for TextureLoader {
-    type Asset = Texture;
+    type Asset = TextureAsset;
 
     async fn load(
         &self,
@@ -97,7 +97,7 @@ impl AssetLoader for TextureLoader {
         let texture = self.factory.create_texture(&create_info);
 
         Ok(AssetLoadResult::Loaded {
-            asset: Texture { texture },
+            asset: TextureAsset { texture },
             persistent: false,
         })
     }

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// A shader that can be loaded from disk.
-pub struct Shader {
+pub struct ShaderAsset {
     /// The shader handle.
     pub shader: graphics::Shader,
 }
@@ -24,7 +24,7 @@ struct ShaderMeta {
     pub inputs: ShaderInputs,
 }
 
-impl Asset for Shader {
+impl Asset for ShaderAsset {
     const EXTENSION: &'static str = "shd";
 
     type Loader = ShaderLoader;
@@ -32,7 +32,7 @@ impl Asset for Shader {
 
 #[async_trait]
 impl AssetLoader for ShaderLoader {
-    type Asset = Shader;
+    type Asset = ShaderAsset;
 
     async fn load(
         &self,
@@ -61,7 +61,7 @@ impl AssetLoader for ShaderLoader {
         let shader = self.factory.create_shader(&create_info);
 
         Ok(AssetLoadResult::Loaded {
-            asset: Shader { shader },
+            asset: ShaderAsset { shader },
             persistent: false,
         })
     }

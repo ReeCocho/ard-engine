@@ -125,7 +125,7 @@ fn setup(app: &mut App) {
     // Shaders
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Fragment,
-        code: include_bytes!("./triangle.frag.spv"),
+        code: include_bytes!("./assets/example/triangle.frag.spv"),
         vertex_layout: VertexLayout::default(),
         inputs: ShaderInputs {
             ubo_size: 0,
@@ -137,7 +137,7 @@ fn setup(app: &mut App) {
 
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Vertex,
-        code: include_bytes!("./triangle.vert.spv"),
+        code: include_bytes!("./assets/example/triangle.vert.spv"),
         vertex_layout: VertexLayout {
             colors: true,
             ..Default::default()
@@ -298,7 +298,8 @@ fn setup(app: &mut App) {
                     z as f32 - (DEPTH as f32 / 2.0),
                 ) * SPACING;
 
-                let model = Mat4::from_translation(position);
+                let model =
+                    Mat4::from_translation(position) * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
 
                 draws.register(
                     &[(

@@ -128,7 +128,7 @@ fn setup(app: &mut App) {
     // Shaders
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Fragment,
-        code: include_bytes!("./triangle.frag.spv"),
+        code: todo!(), // include_bytes!("./triangle.frag.spv"),
         vertex_layout: VertexLayout::default(),
         inputs: ShaderInputs {
             ubo_size: 0,
@@ -140,7 +140,7 @@ fn setup(app: &mut App) {
 
     let create_info = ShaderCreateInfo {
         ty: ShaderType::Vertex,
-        code: include_bytes!("./triangle.vert.spv"),
+        code: todo!(), // include_bytes!("./triangle.vert.spv"),
         vertex_layout: VertexLayout {
             colors: true,
             ..Default::default()

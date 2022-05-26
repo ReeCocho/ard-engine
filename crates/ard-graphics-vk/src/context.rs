@@ -92,8 +92,9 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
             extension_names_raw.push(ext::DebugUtils::name().as_ptr());
         }
 
-        let device_extensions = vec![CString::from(khr::Swapchain::name())];
+        let mut device_extensions = vec![CString::from(khr::Swapchain::name())];
         if create_info.debug {
+            device_extensions.push(CString::new("VK_KHR_shader_non_semantic_info").unwrap());
             // device_extensions.push(CString::from(khr::Synchronization2::name()));
         }
 

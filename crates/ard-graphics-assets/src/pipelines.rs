@@ -4,16 +4,16 @@ use ard_graphics_vk::prelude as graphics;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::shaders::Shader;
+use crate::shaders::ShaderAsset;
 
 /// A pipeline that can be loaded from disk.
-pub struct Pipeline {
+pub struct PipelineAsset {
     /// The pipeline handle.
     pub pipeline: graphics::Pipeline,
     /// Handle to the vertex shader.
-    vertex: Handle<Shader>,
+    vertex: Handle<ShaderAsset>,
     /// Handle to the fragment shader.
-    fragment: Handle<Shader>,
+    fragment: Handle<ShaderAsset>,
 }
 
 pub struct PipelineLoader {
@@ -29,7 +29,7 @@ struct PipelineMeta {
     pub fragment: AssetNameBuf,
 }
 
-impl Asset for Pipeline {
+impl Asset for PipelineAsset {
     const EXTENSION: &'static str = "pip";
 
     type Loader = PipelineLoader;
@@ -37,7 +37,7 @@ impl Asset for Pipeline {
 
 #[async_trait]
 impl AssetLoader for PipelineLoader {
-    type Asset = Pipeline;
+    type Asset = PipelineAsset;
 
     async fn load(
         &self,
@@ -54,8 +54,8 @@ impl AssetLoader for PipelineLoader {
         };
 
         // Load both of the shaders
-        let vertex = assets.load_async::<Shader>(&meta.vertex).await;
-        let fragment = assets.load_async::<Shader>(&meta.fragment).await;
+        let vertex = assets.load_async::<ShaderAsset>(&meta.vertex).await;
+        let fragment = assets.load_async::<ShaderAsset>(&meta.fragment).await;
 
         // Create the pipeline
         let create_info = PipelineCreateInfo {
@@ -66,7 +66,7 @@ impl AssetLoader for PipelineLoader {
         let pipeline = self.factory.create_pipeline(&create_info);
 
         Ok(AssetLoadResult::Loaded {
-            asset: Pipeline {
+            asset: PipelineAsset {
                 pipeline,
                 vertex,
                 fragment,

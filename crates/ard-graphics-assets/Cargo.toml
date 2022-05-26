@@ -10,7 +10,11 @@ ard-assets = { path = "../ard-assets", version = "0.1" }
 ard-graphics-vk = { path = "../ard-graphics-vk", version = "0.1" }
 ard-graphics-api = { path = "../ard-graphics-api", version = "0.1" }
 ard-core = { path = "../ard-core", version = "0.1" }
+ard-math = { version = "0.1", path = "../ard-math" }
+ard-log = { version = "0.1", path = "../ard-log" }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 ron = "0.7"
 image = "0.24"
+bytemuck = "1.7"
+gltf = "1"

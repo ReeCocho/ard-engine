@@ -152,9 +152,6 @@ impl CameraMovement {
         let main_camera = factory.main_camera();
 
         factory.update_camera(&main_camera, camera_state.0);
-
-        // Debug frustum
-        debug_drawing.draw_frustum(camera_state.0, Vec3::new(1.0, 1.0, 1.0));
     }
 }
 

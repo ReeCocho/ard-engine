@@ -6,32 +6,32 @@ use std::{
 fn main() {
     // Compile shaders
     compile(
-        Path::new("./src/renderer/draw_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/color.frag"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/point_light_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/pbr.frag"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/quad.vert"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/pbr.vert"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/zreduce.frag"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/textured.frag"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/debug_draw.vert"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/textured.vert"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/debug_draw.frag"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/triangle.frag"),
+        Path::new("./examples/assets/example/"),
     );
     compile(
-        Path::new("./src/renderer/cluster_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./examples/shaders/triangle.vert"),
+        Path::new("./examples/assets/example/"),
     );
 }
 

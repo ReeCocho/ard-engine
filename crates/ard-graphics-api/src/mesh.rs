@@ -64,8 +64,7 @@ impl<'a> MeshCreateInfo<'a> {
 
         let mut min = self.positions[0];
         let mut max = self.positions[0];
-        let mut sqr_radius =
-            self.positions[0].x.powi(2) + self.positions[0].z.powi(2) + self.positions[0].y.powi(2);
+        let mut sqr_radius = min.x.powi(2) + min.z.powi(2) + min.y.powi(2);
 
         for position in self.positions {
             let new_sqr_radius = position.x.powi(2) + position.z.powi(2) + position.y.powi(2);

@@ -2,12 +2,14 @@ use ard_assets::prelude::*;
 use ard_core::prelude::*;
 use ard_graphics_vk::prelude as graphics;
 
+pub mod model;
+pub mod pbr;
 pub mod pipelines;
 pub mod shaders;
 pub mod textures;
 
 pub mod prelude {
-    pub use crate::{pipelines::*, shaders::*, textures::*, *};
+    pub use crate::{model::*, pbr::*, pipelines::*, shaders::*, textures::*, *};
 }
 
 use prelude::*;
@@ -34,11 +36,17 @@ fn late_loader_register(app: &mut App) {
         .get::<Assets>()
         .expect("assets plugin required");
 
-    assets.register::<Texture>(TextureLoader {
+    assets.register::<TextureAsset>(TextureLoader {
         factory: factory.clone(),
     });
-    assets.register::<Pipeline>(PipelineLoader {
+    assets.register::<PipelineAsset>(PipelineLoader {
         factory: factory.clone(),
     });
-    assets.register::<Shader>(ShaderLoader { factory });
+    assets.register::<ShaderAsset>(ShaderLoader {
+        factory: factory.clone(),
+    });
+    assets.register::<PbrMaterialAsset>(PbrMaterialLoader {
+        factory: factory.clone(),
+    });
+    assets.register::<ModelAsset>(ModelLoader { factory });
 }

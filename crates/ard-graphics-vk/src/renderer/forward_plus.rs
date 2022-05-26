@@ -166,7 +166,7 @@ pub(crate) struct ObjectInfo {
     pub model: Mat4,
     pub material_idx: u32,
     pub textures_idx: u32,
-    pub _pad: [u32; 2],
+    pub _pad: Vec2,
 }
 
 unsafe impl Zeroable for ObjectInfo {}
@@ -1339,6 +1339,9 @@ fn highz_generate(
 ) {
     let frame_idx = ctx.frame();
     let frame = &mut state.frame_data[frame_idx];
+    let factory = &state.factory;
+    let cameras = factory.0.cameras.lock().expect("mutex poisoned");
+    let main_camera = cameras.get(factory.main_camera().id).unwrap();
 
     // Generate the depth pyramid for the frame
     unsafe {
@@ -1424,7 +1427,7 @@ fn prepare_draw_calls(
                             } else {
                                 0
                             },
-                            _pad: [0; 2],
+                            _pad: Vec2::ZERO,
                         },
                     );
 
@@ -1475,7 +1478,7 @@ fn prepare_draw_calls(
                 } else {
                     0
                 },
-                _pad: [0; 2],
+                _pad: Vec2::ZERO,
             };
 
             // Write object index
@@ -2003,6 +2006,10 @@ fn depth_prepass(
     let factory = &state.factory;
     let mut cameras = factory.0.cameras.lock().expect("mutex poisoned");
     let main_camera = cameras.get_mut(factory.main_camera().id).unwrap();
+
+    unsafe {
+        // main_camera.update(frame_idx, 1280.0, 720.0);
+    }
 
     unsafe {
         render(RenderArgs {

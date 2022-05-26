@@ -55,11 +55,6 @@ layout(push_constant) uniform constants {
 };
 
 void main() {
-    uint light_index = gl_GlobalInvocationID.x;
-    if (light_index >= total_lights) {
-        return;
-    }
-
     Froxel froxel = cluster_froxels.data
         [gl_GlobalInvocationID.z]
         [gl_GlobalInvocationID.x]
