@@ -6,6 +6,17 @@ use async_trait::async_trait;
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
+/// Physically-based-rendering materials must use a pipeline with the following properties.
+///
+/// # Vertex layout
+/// The vertex layout must have positions, normals, and uv0.
+///
+/// # UBO
+/// The UBO size must be equal to the size of `PbrMaterialData`.
+///
+/// # Textures
+/// There must be a single texture for the base color.
+///
 pub struct PbrMaterialAsset {
     /// Handle to the material object.
     pub material: graphics::Material,

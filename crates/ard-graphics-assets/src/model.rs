@@ -1,5 +1,3 @@
-use std::{any::TypeId, primitive};
-
 use ard_assets::prelude::*;
 use ard_graphics_api::prelude::*;
 use ard_graphics_vk::prelude as graphics;
@@ -16,6 +14,8 @@ use crate::{prelude::PbrMaterialData, PipelineAsset};
 pub struct ModelAsset {
     /// List of all loaded meshes.
     pub mesh_groups: Vec<MeshGroup>,
+    /// List of all textures.
+    pub textures: Vec<graphics::Texture>,
     /// List of all materials.
     pub materials: Vec<graphics::Material>,
     /// All nodes within the model.
@@ -92,9 +92,103 @@ impl AssetLoader for ModelLoader {
         // Parse the model
         let mut model = ModelAsset {
             mesh_groups: Vec::default(),
+            textures: Vec::default(),
             materials: Vec::default(),
             nodes: Vec::default(),
         };
+
+        // Create textures
+        for texture in gltf_info.textures() {
+            // Graph the buffer view and type of image
+            let (view, mime_type) = match texture.source().source() {
+                gltf::image::Source::View { view, mime_type } => (view, mime_type),
+                gltf::image::Source::Uri { .. } => {
+                    return Err(AssetLoadError::Other(
+                        String::from("unable to use uri as texture source in GLTF").into(),
+                    ))
+                }
+            };
+
+            // Determine the image codec
+            let codec = match mime_type {
+                "image/jpeg" => image::ImageFormat::Jpeg,
+                "image/png" => image::ImageFormat::Png,
+                unknown => {
+                    return Err(AssetLoadError::Other(
+                        format!("unknown texture format `{}` in GLTF", unknown).into(),
+                    ))
+                }
+            };
+
+            // Load the image and convert it to SRGB
+            let image = match view.stride() {
+                // Stride sucks :(
+                // We have to construct a temporary buffer to house the texture data
+                Some(_) => {
+                    return Err(AssetLoadError::Other(
+                        String::from("stride detected in image").into(),
+                    ))
+                }
+                // No stride is great. We can directly reference the image data in bin
+                None => match image::load_from_memory_with_format(
+                    &bin[view.offset()..(view.offset() + view.length())],
+                    codec,
+                ) {
+                    Ok(image) => image,
+                    Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+                },
+            };
+
+            let raw = match image.as_rgba8() {
+                Some(raw) => raw,
+                None => {
+                    return Err(AssetLoadError::Other(
+                        String::from("unable to convert image to rgba8").into(),
+                    ))
+                }
+            };
+
+            let max = gltf_to_ard_mag_filter(
+                texture
+                    .sampler()
+                    .mag_filter()
+                    .unwrap_or(gltf::texture::MagFilter::Linear),
+            );
+            let (min, mip) = gltf_to_ard_min_filter(
+                texture
+                    .sampler()
+                    .min_filter()
+                    .unwrap_or(gltf::texture::MinFilter::Linear),
+            );
+            let wrap_u = gltf_to_ard_wrap_mode(texture.sampler().wrap_s());
+            let wrap_v = gltf_to_ard_wrap_mode(texture.sampler().wrap_t());
+
+            // Create the texture
+            let create_info = graphics::TextureCreateInfo {
+                width: image.width(),
+                height: image.height(),
+                format: graphics::TextureFormat::R8G8B8A8Srgb,
+                data: &raw,
+                mip_type: graphics::MipType::Upload,
+                mip_count: if mip.is_some() {
+                    1 // (image.width().max(image.height()) as f32).log2() as usize + 1
+                } else {
+                    1
+                },
+                sampler: graphics::SamplerDescriptor {
+                    min_filter: min,
+                    max_filter: max,
+                    mip_filter: mip.unwrap_or(graphics::TextureFilter::Linear),
+                    x_tiling: wrap_u,
+                    y_tiling: wrap_v,
+                    anisotropic_filtering: true,
+                },
+            };
+
+            model
+                .textures
+                .push(self.factory.create_texture(&create_info));
+        }
 
         // Create PBR materials
         let pipeline = assets.get::<PipelineAsset>(&pipeline_handle).unwrap();
@@ -106,6 +200,7 @@ impl AssetLoader for ModelLoader {
             };
 
             let material = self.factory.create_material(&create_info);
+
             self.factory.update_material_data(
                 &material,
                 bytemuck::bytes_of(&PbrMaterialData {
@@ -114,6 +209,14 @@ impl AssetLoader for ModelLoader {
                     roughness: info.roughness_factor(),
                 }),
             );
+
+            if let Some(tex) = info.base_color_texture() {
+                self.factory.update_material_texture(
+                    &material,
+                    Some(&model.textures[tex.texture().index()]),
+                    0,
+                );
+            }
 
             model.materials.push(material);
         }
@@ -201,24 +304,64 @@ impl AssetLoader for ModelLoader {
                             // });
 
                             // Copy data into a buffer
-                            positions = accessor_to_vec::<Vec4>(accessor, &bin)?;
+                            positions = accessor_to_vec::<Vec4>(
+                                accessor,
+                                &bin,
+                                gltf::accessor::DataType::F32,
+                            )?;
                         }
                         gltf::Semantic::Normals => {
-                            normals = accessor_to_vec::<Vec4>(accessor, &bin)?
+                            normals = accessor_to_vec::<Vec4>(
+                                accessor,
+                                &bin,
+                                gltf::accessor::DataType::F32,
+                            )?
                         }
                         gltf::Semantic::Tangents => {
-                            tangents = accessor_to_vec::<Vec4>(accessor, &bin)?
+                            tangents = accessor_to_vec::<Vec4>(
+                                accessor,
+                                &bin,
+                                gltf::accessor::DataType::F32,
+                            )?
                         }
                         gltf::Semantic::Colors(n) => {
                             if n == 0 {
-                                colors = accessor_to_vec::<Vec4>(accessor, &bin)?;
+                                colors = accessor_to_vec::<Vec4>(
+                                    accessor,
+                                    &bin,
+                                    gltf::accessor::DataType::F32,
+                                )?;
                             }
                         }
                         gltf::Semantic::TexCoords(n) => match n {
-                            0 => uv0 = accessor_to_vec::<Vec2>(accessor, &bin)?,
-                            1 => uv1 = accessor_to_vec::<Vec2>(accessor, &bin)?,
-                            2 => uv2 = accessor_to_vec::<Vec2>(accessor, &bin)?,
-                            3 => uv3 = accessor_to_vec::<Vec2>(accessor, &bin)?,
+                            0 => {
+                                uv0 = accessor_to_vec::<Vec2>(
+                                    accessor,
+                                    &bin,
+                                    gltf::accessor::DataType::F32,
+                                )?
+                            }
+                            1 => {
+                                uv1 = accessor_to_vec::<Vec2>(
+                                    accessor,
+                                    &bin,
+                                    gltf::accessor::DataType::F32,
+                                )?
+                            }
+                            2 => {
+                                uv2 = accessor_to_vec::<Vec2>(
+                                    accessor,
+                                    &bin,
+                                    gltf::accessor::DataType::F32,
+                                )?
+                            }
+                            3 => {
+                                uv3 = accessor_to_vec::<Vec2>(
+                                    accessor,
+                                    &bin,
+                                    gltf::accessor::DataType::F32,
+                                )?
+                            }
                             _ => continue,
                         },
                         _ => {
@@ -270,45 +413,32 @@ impl AssetLoader for ModelLoader {
                     }
                 };
 
-                let indices_view = match indices_accessor.view() {
-                    Some(view) => view,
-                    None => {
-                        return Err(AssetLoadError::Other(
-                            String::from("no support for sparse attributes in GLTF").into(),
-                        ))
-                    }
-                };
-
                 match indices_accessor.data_type() {
                     gltf::accessor::DataType::U16 => {
-                        // Convert list of u16s into u32s
-                        let mut indices = Vec::with_capacity(indices_accessor.count());
-
-                        let read_offset = indices_accessor.offset() + indices_view.offset();
-                        let len = indices_accessor.count() * std::mem::size_of::<u16>();
-
-                        let u16_inds =
-                            bytemuck::cast_slice::<u8, u16>(&bin[read_offset..(read_offset + len)]);
-
-                        for ind in u16_inds {
-                            indices.push(*ind as u32)
+                        let indices = accessor_to_vec::<u16>(
+                            indices_accessor,
+                            &bin,
+                            gltf::accessor::DataType::U16,
+                        )?;
+                        let mut as_u32 = Vec::with_capacity(indices.len());
+                        for i in indices {
+                            as_u32.push(i as u32);
                         }
 
-                        create_info.indices = &indices;
+                        create_info.indices = &as_u32;
 
-                        // Create the mesh
                         mesh_group
                             .meshes
                             .push((self.factory.create_mesh(&create_info), material));
                     }
                     gltf::accessor::DataType::U32 => {
-                        let read_offset = indices_accessor.offset() + indices_view.offset();
-                        let len = indices_accessor.count() * std::mem::size_of::<u32>();
+                        let indices = accessor_to_vec::<u32>(
+                            indices_accessor,
+                            &bin,
+                            gltf::accessor::DataType::U32,
+                        )?;
+                        create_info.indices = &indices;
 
-                        create_info.indices =
-                            bytemuck::cast_slice::<u8, u32>(&bin[read_offset..(read_offset + len)]);
-
-                        // Create the mesh
                         mesh_group
                             .meshes
                             .push((self.factory.create_mesh(&create_info), material));
@@ -364,13 +494,28 @@ impl AssetLoader for ModelLoader {
 fn accessor_to_vec<T: Pod + Zeroable + 'static>(
     accessor: gltf::Accessor,
     raw: &[u8],
+    expected_data_type: gltf::accessor::DataType,
 ) -> Result<Vec<T>, AssetLoadError> {
     // Don't support non-float data types
-    if accessor.data_type() != gltf::accessor::DataType::F32 {
+    if accessor.data_type() != expected_data_type {
         return Err(AssetLoadError::Other(
-            String::from("no support for types other than float in GLTF").into(),
+            format!(
+                "expected `{:?}` accessor data type but got `{:?}` in GLTF",
+                expected_data_type,
+                accessor.data_type()
+            )
+            .into(),
         ));
     }
+
+    let data_size = match expected_data_type {
+        gltf::accessor::DataType::I8 => std::mem::size_of::<i8>(),
+        gltf::accessor::DataType::U8 => std::mem::size_of::<u8>(),
+        gltf::accessor::DataType::I16 => std::mem::size_of::<i16>(),
+        gltf::accessor::DataType::U16 => std::mem::size_of::<u16>(),
+        gltf::accessor::DataType::U32 => std::mem::size_of::<u32>(),
+        gltf::accessor::DataType::F32 => std::mem::size_of::<f32>(),
+    };
 
     // Must have a view
     let view = match accessor.view() {
@@ -392,7 +537,7 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
     // Create a raw buffer for the point data
     // NOTE: We have to use unsafe here because bytemuck requires the alignments to be the same.
     // The u8 alignment requirement is less strict than T, so we initialize as T and then convert
-    // to u8. Same thing happens in the return.
+    // to u8. Same thing but in reverse happens in the return.
     let mut points = unsafe {
         let mut buf = Vec::<T>::with_capacity(accessor.count());
         let ptr = buf.as_mut_ptr();
@@ -404,10 +549,10 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
 
     // Determine strides and sizes for copying data
     let read_size = match accessor.dimensions() {
-        gltf::accessor::Dimensions::Scalar => std::mem::size_of::<f32>(),
-        gltf::accessor::Dimensions::Vec2 => 2 * std::mem::size_of::<f32>(),
-        gltf::accessor::Dimensions::Vec3 => 3 * std::mem::size_of::<f32>(),
-        gltf::accessor::Dimensions::Vec4 => 4 * std::mem::size_of::<f32>(),
+        gltf::accessor::Dimensions::Scalar => data_size,
+        gltf::accessor::Dimensions::Vec2 => 2 * data_size,
+        gltf::accessor::Dimensions::Vec3 => 3 * data_size,
+        gltf::accessor::Dimensions::Vec4 => 4 * data_size,
         _ => {
             return Err(AssetLoadError::Other(
                 String::from("no support for matrix types in GLTF").into(),
@@ -457,5 +602,50 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
             len / std::mem::size_of::<T>(),
             cap / std::mem::size_of::<T>(),
         ))
+    }
+}
+
+/// First filter is the texture filter. Second is for mip maps. If second is `None`, mip maps
+/// should not be generated.
+#[inline]
+const fn gltf_to_ard_min_filter(
+    filter: gltf::texture::MinFilter,
+) -> (graphics::TextureFilter, Option<graphics::TextureFilter>) {
+    match filter {
+        gltf::texture::MinFilter::Nearest => (graphics::TextureFilter::Nearest, None),
+        gltf::texture::MinFilter::Linear => (graphics::TextureFilter::Linear, None),
+        gltf::texture::MinFilter::NearestMipmapNearest => (
+            graphics::TextureFilter::Nearest,
+            Some(graphics::TextureFilter::Nearest),
+        ),
+        gltf::texture::MinFilter::LinearMipmapNearest => (
+            graphics::TextureFilter::Linear,
+            Some(graphics::TextureFilter::Nearest),
+        ),
+        gltf::texture::MinFilter::NearestMipmapLinear => (
+            graphics::TextureFilter::Nearest,
+            Some(graphics::TextureFilter::Linear),
+        ),
+        gltf::texture::MinFilter::LinearMipmapLinear => (
+            graphics::TextureFilter::Linear,
+            Some(graphics::TextureFilter::Linear),
+        ),
+    }
+}
+
+#[inline]
+const fn gltf_to_ard_mag_filter(filter: gltf::texture::MagFilter) -> graphics::TextureFilter {
+    match filter {
+        gltf::texture::MagFilter::Nearest => graphics::TextureFilter::Nearest,
+        gltf::texture::MagFilter::Linear => graphics::TextureFilter::Linear,
+    }
+}
+
+#[inline]
+const fn gltf_to_ard_wrap_mode(mode: gltf::texture::WrappingMode) -> graphics::TextureTiling {
+    match mode {
+        gltf::texture::WrappingMode::ClampToEdge => graphics::TextureTiling::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => graphics::TextureTiling::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => graphics::TextureTiling::Repeat,
     }
 }

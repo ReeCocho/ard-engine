@@ -292,7 +292,7 @@ impl DebugDrawingInner {
         let device = &self.ctx.0.device;
         let mut draws = self.draws.lock().expect("mutex poisoned");
         let mut frames = self.frame_data.lock().expect("mutex poisoned");
-        let mut frame = &mut frames[frame_idx];
+        let frame = &mut frames[frame_idx];
 
         // Don't need to render if we have no draws
         if draws.is_empty() {
@@ -331,7 +331,7 @@ impl DebugDrawingInner {
                     frame.color_buffer.write_slice(offset, &[color, color]);
                     offset += 2;
                 }
-                DebugObject::Sphere { center, radius } => todo!(),
+                DebugObject::Sphere { .. } => todo!(),
                 DebugObject::Frustum(descriptor) => {
                     let mut positions = [
                         // Vertical lines
@@ -490,10 +490,10 @@ impl DebugDrawingApi<VkBackend> for DebugDrawing {
         draws.push((DebugObject::Line { a, b }, color));
     }
 
-    fn draw_sphere(&self, center: Vec3, radius: f32, color: Vec3) {
+    fn draw_sphere(&self, _: Vec3, _: f32, _: Vec3) {
         todo!();
-        let mut draws = self.0.draws.lock().expect("mutex poisoned");
-        draws.push((DebugObject::Sphere { center, radius }, color));
+        // let mut draws = self.0.draws.lock().expect("mutex poisoned");
+        // draws.push((DebugObject::Sphere { center, radius }, color));
     }
 
     fn draw_frustum(&self, descriptor: CameraDescriptor, color: Vec3) {

@@ -114,8 +114,8 @@ impl Renderer {
 
         // Send events
         if do_render {
-            self.last_render_time = now;
             let dur = now.duration_since(self.last_render_time);
+            self.last_render_time = now;
             commands.events.submit(PreRender(dur));
             commands.events.submit(Render);
             commands.events.submit(PostRender(dur));

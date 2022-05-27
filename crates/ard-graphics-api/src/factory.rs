@@ -25,7 +25,12 @@ pub trait FactoryApi<B: Backend>: Resource + Clone + Send + Sync {
 
     fn update_material_data(&self, material: &B::Material, data: &[u8]);
 
-    fn update_material_texture(&self, material: &B::Material, texture: &B::Texture, slot: usize);
+    fn update_material_texture(
+        &self,
+        material: &B::Material,
+        texture: Option<&B::Texture>,
+        slot: usize,
+    );
 
     /// Load a particular mip level for a texture created with `MipType::UploadLater`.
     fn load_texture_mip(&self, texture: &B::Texture, level: usize, data: &[u8]);

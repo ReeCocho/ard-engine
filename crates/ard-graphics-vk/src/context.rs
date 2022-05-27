@@ -103,7 +103,7 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
             .map(|ext| ext.as_ptr() as *const i8)
             .collect::<Vec<_>>();
 
-        let vk_version = vk::make_api_version(0, 1, 1, 0);
+        let vk_version = vk::make_api_version(0, 1, 2, 0);
 
         unsafe {
             let entry = match Entry::new() {

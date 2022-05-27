@@ -115,7 +115,9 @@ impl Buffer {
 
         // Allocate memory
         let request = Request {
-            size: create_info.size,
+            // Was getting a strange bug here without adding on the alignment. Maybe a bug with
+            // gpu-alloc
+            size: create_info.size + mem_reqs.alignment,
             align_mask: mem_reqs.alignment - 1,
             usage: create_info.memory_usage,
             memory_types: !0,

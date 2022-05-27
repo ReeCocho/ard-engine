@@ -8,12 +8,13 @@ use ard_engine::{
 
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
+use ard_graphics_assets::prelude::PbrMaterialData;
 use util::{CameraMovement, FrameRate, MainCameraState};
 
 #[derive(SystemState)]
 struct BoundingBoxSystem {
-    mesh: Mesh,
-    models: [Mat4; 10],
+    material: Material,
+    timer: f32,
 }
 
 impl BoundingBoxSystem {
@@ -29,103 +30,16 @@ impl BoundingBoxSystem {
         let factory = res.1.unwrap();
         let camera_state = res.2.unwrap();
 
-        for (model, light) in queries.make::<(Read<Model>, Read<PointLight>)>() {
-            let camera_ubo = CameraUBO::new(&camera_state.0, 1280.0, 720.0);
-            let inv = camera_ubo.vp.inverse();
+        self.timer += pre_render.0.as_secs_f32();
 
-            let pos = model.0.col(3).xyz();
-            let camera_pos = camera_state.0.center;
-            let cam_to_center = pos - camera_pos;
-            let dist_to_camera = cam_to_center.length();
-            let clip_rad = light.radius * (1.0 / (camera_state.0.fov / 2.0).tan()) / dist_to_camera;
-
-            for i in 0..2 {
-                let mut end_pt = camera_ubo.vp * Vec4::new(pos.x, pos.y, pos.z, 1.0);
-                end_pt /= end_pt.w;
-
-                match i {
-                    0 => end_pt.y += clip_rad,
-                    1 => end_pt.y -= clip_rad,
-                    _ => {}
-                }
-
-                end_pt = inv * end_pt;
-                end_pt /= end_pt.w;
-            }
-
-            let TABLE_X = 32.0;
-            let TABLE_Y = 16.0;
-            let x = 16.0;
-            let y = 8.0;
-
-            let cluster_min_ss = Vec4::new(
-                ((x / TABLE_X) * 2.0) - 1.0,
-                ((y / TABLE_Y) * 2.0) - 1.0,
-                0.0,
-                1.0,
-            );
-
-            let cluster_max_ss = Vec4::new(
-                (((x + 1.0) / TABLE_X) * 2.0) - 1.0,
-                (((y + 1.0) / TABLE_Y) * 2.0) - 1.0,
-                0.0,
-                1.0,
-            );
-
-            // Finding the 4 intersection points made from each point to the cluster near/far plane
-            let mut min_point_near = camera_ubo.projection_inv * cluster_min_ss;
-            let mut min_point_far =
-                camera_ubo.projection_inv * Vec4::new(cluster_min_ss.x, cluster_min_ss.y, 1.0, 1.0);
-            let mut max_point_near = camera_ubo.projection_inv * cluster_max_ss;
-            let mut max_point_far =
-                camera_ubo.projection_inv * Vec4::new(cluster_max_ss.x, cluster_max_ss.y, 1.0, 1.0);
-
-            min_point_near /= min_point_near.w;
-            min_point_far /= min_point_far.w;
-            max_point_near /= max_point_near.w;
-            max_point_far /= max_point_far.w;
-
-            // Min and max bounding area
-            let mut min_point_AABB =
-                min_point_near.min(min_point_far.min(max_point_near.min(max_point_far)));
-            let mut max_point_AABB =
-                min_point_near.max(min_point_far.max(max_point_near.max(max_point_far)));
-
-            // Compute square distance from light to cluster volume
-            let mut sq_dist = 0.0;
-            if pos.x < min_point_AABB.x {
-                sq_dist += (min_point_AABB.x - pos.x) * (min_point_AABB.x - pos.x);
-            }
-            if pos.x > max_point_AABB.x {
-                sq_dist += (pos.x - max_point_AABB.x) * (pos.x - max_point_AABB.x);
-            }
-            if pos.y < min_point_AABB.y {
-                sq_dist += (min_point_AABB.y - pos.y) * (min_point_AABB.y - pos.y);
-            }
-            if pos.y > max_point_AABB.y {
-                sq_dist += (pos.y - max_point_AABB.y) * (pos.y - max_point_AABB.y);
-            }
-            if pos.z < min_point_AABB.z {
-                sq_dist += (min_point_AABB.z - pos.z) * (min_point_AABB.z - pos.z);
-            }
-            if pos.z > max_point_AABB.z {
-                sq_dist += (pos.z - max_point_AABB.z) * (pos.z - max_point_AABB.z);
-            }
-
-            min_point_AABB = Vec4::new(min_point_AABB.x, min_point_AABB.y, min_point_AABB.z, 1.0);
-            max_point_AABB = Vec4::new(max_point_AABB.x, max_point_AABB.y, max_point_AABB.z, 1.0);
-
-            let half_extents = (max_point_AABB.xyz() - min_point_AABB.xyz()) / 2.0;
-            let center = (max_point_AABB.xyz() + min_point_AABB.xyz()) / 2.0;
-
-            draw.draw_rect_prism(
-                half_extents,
-                camera_ubo.view_inv * Mat4::from_translation(center),
-                Vec3::X,
-            );
-
-            break;
-        }
+        factory.update_material_data(
+            &self.material,
+            bytemuck::bytes_of(&PbrMaterialData {
+                base_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+                metallic: (self.timer.sin() * 0.5) + 0.5,
+                roughness: 0.2,
+            }),
+        );
     }
 }
 
@@ -176,7 +90,7 @@ async fn main() {
             rotation: Vec3::new(0.0, 180.0, 0.0),
             near: 0.3,
             far: 200.0,
-            fov: (80.0 as f32).to_radians(),
+            fov: (90.0 as f32).to_radians(),
             look_speed: 0.1,
             move_speed: 30.0,
             cursor_locked: false,
@@ -201,6 +115,11 @@ fn setup(app: &mut App) {
 
     // Insert the model into the world
     let model = assets.get(&model_handle).unwrap();
+
+    app.dispatcher.add_system(BoundingBoxSystem {
+        material: model.materials[5].clone(),
+        timer: 0.0,
+    });
 
     // NOTE: Unless you want the draw to exist forever, you should store the handles generated here
     // so they can be unregistered later
@@ -240,8 +159,8 @@ fn setup(app: &mut App) {
     // Create lights
     const LIGHT_COUNT: usize = 1;
     const LIGHT_RING_RADIUS: f32 = 0.0;
-    const LIGHT_RANGE: f32 = 24.0;
-    const LIGHT_INTENSITY: f32 = 8.0;
+    const LIGHT_RANGE: f32 = 80.0;
+    const LIGHT_INTENSITY: f32 = 6.0;
 
     let mut lights = (
         Vec::with_capacity(LIGHT_COUNT),
@@ -250,7 +169,8 @@ fn setup(app: &mut App) {
 
     for i in 0..LIGHT_COUNT {
         let angle = (i as f32 / LIGHT_COUNT as f32) * 2.0 * std::f32::consts::PI;
-        let pos = Vec3::new(0.0, 4.0, 0.0); // Vec3::new(angle.sin(), 0.0, angle.cos()) * LIGHT_RING_RADIUS;
+        let pos = Vec3::new(0.0, 32.0, 0.0)
+            + (Vec3::new(angle.sin(), 0.0, angle.cos()) * LIGHT_RING_RADIUS);
 
         lights.0.push(Model(Mat4::from_translation(pos)));
         lights.1.push(PointLight {

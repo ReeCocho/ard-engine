@@ -1,10 +1,12 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #define TABLE_X 32
 #define TABLE_Y 16
 #define TABLE_Z 16
 #define MAX_POINT_LIGHTS 256
+#define NO_TEXTURE 2047
 
 const float PI = 3.14159265359;
 
@@ -19,6 +21,7 @@ layout(location = 0) in vec4 FRAG_POS;
 layout(location = 1) in vec3 WORLD_POS;
 layout(location = 2) in vec3 NORMAL;
 layout(location = 3) flat in uint INSTANCE_IDX;
+layout(location = 4) in vec2 UV0;
 
 struct ObjectInfo {
     mat4 model;
@@ -49,6 +52,8 @@ layout(set = 0, binding = 3) readonly buffer PointLightTable {
     uint[TABLE_Z][TABLE_X][TABLE_Y][MAX_POINT_LIGHTS] clusters; 
 };
 
+layout(set = 1, binding = 0) uniform sampler2D[] TEXTURES;
+
 layout(set = 2, binding = 0) uniform CameraUBO {
     mat4 view;
     mat4 projection;
@@ -61,6 +66,10 @@ layout(set = 2, binding = 0) uniform CameraUBO {
     vec4 position;
     vec2 scale_bias;
 } camera;
+
+layout(set = 3, binding = 0) readonly buffer TextureData {
+    uint[][8] material_textures;
+};
 
 layout(set = 3, binding = 1) readonly buffer MaterialData {
     PbrMaterial[] materials;
@@ -106,15 +115,24 @@ void main() {
     PbrMaterial material = materials[objects[obj_idxs[INSTANCE_IDX]].material];
 
     // Normal in world space
-    vec3 N = NORMAL;
+    vec3 N = normalize(NORMAL);
 
     // Vector from fragment to the camera
     vec3 V = normalize(camera.position.xyz - WORLD_POS);
 
+    // Determine the base color of the fragment
+    vec3 base_color = material.base_color.xyz;
+    uint material_textures_idx = objects[INSTANCE_IDX].textures;
+    uint texture_idx = material_textures[material_textures_idx][0];
+
+    if (texture_idx != NO_TEXTURE) {
+        base_color *= texture(TEXTURES[texture_idx], UV0).xyz;
+    }
+
     // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
     vec3 F0 = vec3(0.04); 
-    F0 = mix(F0, material.base_color.xyz, material.metallic);
+    F0 = mix(F0, base_color, material.metallic);
     
     vec3 Lo = vec3(0.0);
 
@@ -159,11 +177,11 @@ void main() {
             // Add to outgoing radiance Lo
             // NOTE: We already multiplied the BRDF by the Fresnel (kS) so we won't multiply
             // by kS again
-            Lo += (kD * material.base_color.xyz / PI + specular) * radiance * NdotL;
+            Lo += (kD * base_color / PI + specular) * radiance * NdotL;
         }
     }
 
-    vec3 ambient = vec3(0.03) * material.base_color.xyz;    
+    vec3 ambient = vec3(0.03) * base_color;    
     vec3 color = ambient + Lo;
 
     FRAGMENT_COLOR = vec4(color, 1.0);

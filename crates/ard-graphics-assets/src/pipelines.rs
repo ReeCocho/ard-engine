@@ -11,9 +11,9 @@ pub struct PipelineAsset {
     /// The pipeline handle.
     pub pipeline: graphics::Pipeline,
     /// Handle to the vertex shader.
-    vertex: Handle<ShaderAsset>,
+    _vertex: Handle<ShaderAsset>,
     /// Handle to the fragment shader.
-    fragment: Handle<ShaderAsset>,
+    _fragment: Handle<ShaderAsset>,
 }
 
 pub struct PipelineLoader {
@@ -68,8 +68,8 @@ impl AssetLoader for PipelineLoader {
         Ok(AssetLoadResult::Loaded {
             asset: PipelineAsset {
                 pipeline,
-                vertex,
-                fragment,
+                _vertex: vertex,
+                _fragment: fragment,
             },
             persistent: false,
         })

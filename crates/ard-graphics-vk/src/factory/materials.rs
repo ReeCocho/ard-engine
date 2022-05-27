@@ -337,9 +337,10 @@ impl MaterialBuffer {
                 let dst = map.as_ptr().add(offset) as *mut u32;
 
                 for (i, texture) in material.textures.iter().enumerate() {
-                    if let Some(texture) = texture {
-                        *dst.add(i) = texture.id;
-                    }
+                    *dst.add(i) = match texture {
+                        Some(texture) => texture.id,
+                        None => VkBackend::MAX_TEXTURES as u32 - 1,
+                    };
                 }
 
                 let aligned_start = align_down(offset as u64, atom_mask);

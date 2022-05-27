@@ -145,7 +145,7 @@ fn setup(app: &mut App) {
     let material = factory.create_material(&create_info);
 
     // Update material with texture
-    factory.update_material_texture(&material, &texture, 0);
+    factory.update_material_texture(&material, Some(&texture), 0);
 
     // Quad
     let positions = [

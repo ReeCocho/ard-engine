@@ -2294,9 +2294,10 @@ unsafe fn render(args: RenderArgs) {
         );
     }
 
-    for (i, (key, _)) in args.keys[args.draw_offset..(args.draw_offset + args.draw_count)]
+    for (i, (key, _)) in args.keys[0..(args.draw_offset + args.draw_count)]
         .iter()
         .enumerate()
+        .skip(args.draw_offset)
     {
         let (pipeline_id, vertex_layout, mesh_id, _) = crate::util::from_draw_key(*key);
 

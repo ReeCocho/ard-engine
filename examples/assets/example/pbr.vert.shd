@@ -3,15 +3,15 @@
     ty: Vertex,
     vertex_layout: VertexLayout(
         normals: true,
-        tangents: true,
+        tangents: false,
         colors: false,
-        uv0: false,
+        uv0: true,
         uv1: false,
         uv2: false,
         uv3: false,
     ),
     inputs: ShaderInputs(
         ubo_size: 32,
-        texture_count: 0,
+        texture_count: 1,
     ),
 )

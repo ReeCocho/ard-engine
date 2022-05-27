@@ -310,18 +310,45 @@ impl FactoryApi<VkBackend> for Factory {
     }
 
     fn create_material(&self, create_info: &MaterialCreateInfo<VkBackend>) -> Material {
-        let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut materials = self.0.materials.lock().expect("mutex poisoned");
-        let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
+        let (material, needs_tex_set) = {
+            let _lock = self.0.exclusive.read().expect("lock poisoned");
+            let mut materials = self.0.materials.lock().expect("mutex poisoned");
+            let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
 
-        let material_inner = unsafe { MaterialInner::new(&mut material_buffers, create_info) };
-        let escaper = materials.insert(material_inner);
+            let needs_tex_set = {
+                let pipelines = self.0.pipelines.lock().expect("mutex poisoned");
+                let tex_count = pipelines
+                    .get(create_info.pipeline.id)
+                    .unwrap()
+                    .inputs
+                    .texture_count;
+                if tex_count != 0 {
+                    Some(tex_count)
+                } else {
+                    None
+                }
+            };
 
-        Material {
-            id: escaper.id(),
-            pipeline_id: create_info.pipeline.id,
-            escaper,
+            let material_inner = unsafe { MaterialInner::new(&mut material_buffers, create_info) };
+            let escaper = materials.insert(material_inner);
+
+            (
+                Material {
+                    id: escaper.id(),
+                    pipeline_id: create_info.pipeline.id,
+                    escaper,
+                },
+                needs_tex_set,
+            )
+        };
+
+        if let Some(count) = needs_tex_set {
+            for i in 0..count {
+                self.update_material_texture(&material, None, i);
+            }
         }
+
+        material
     }
 
     fn create_camera(&self, create_info: &CameraCreateInfo) -> Camera {
@@ -425,7 +452,7 @@ impl FactoryApi<VkBackend> for Factory {
         }
     }
 
-    fn update_material_texture(&self, material: &Material, texture: &Texture, slot: usize) {
+    fn update_material_texture(&self, material: &Material, texture: Option<&Texture>, slot: usize) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
         let mut materials = self.0.materials.lock().expect("mutex poisoned");
         let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
@@ -436,6 +463,6 @@ impl FactoryApi<VkBackend> for Factory {
 
         // Copy in slice
         assert!(slot < material_inner.textures.len());
-        material_inner.textures[slot] = Some(texture.clone());
+        material_inner.textures[slot] = texture.map(|tex| tex.clone());
     }
 }
