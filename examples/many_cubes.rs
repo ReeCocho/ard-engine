@@ -103,7 +103,7 @@ fn main() {
             position: Vec3::new(0.0, 5.0, 150.0),
             rotation: Vec3::new(0.0, 180.0, 0.0),
             near: 0.3,
-            far: 1000.0,
+            far: 200.0,
             fov: (80.0 as f32).to_radians(),
             look_speed: 0.1,
             move_speed: 30.0,
@@ -298,8 +298,7 @@ fn setup(app: &mut App) {
                     z as f32 - (DEPTH as f32 / 2.0),
                 ) * SPACING;
 
-                let model =
-                    Mat4::from_translation(position) * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
+                let model = Mat4::from_translation(position); // * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
 
                 draws.register(
                     &[(

@@ -80,9 +80,9 @@ layout(push_constant) uniform constants {
 TransformedBoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
     TransformedBoundingBox bb;
 
-    half_extents.x = max(half_extents.x + 0.25, 0.25);
-    half_extents.y = max(half_extents.y + 0.25, 0.25);
-    half_extents.z = max(half_extents.z + 0.25, 0.25);
+    half_extents.x = max(half_extents.x + 0.1, 0.1);
+    half_extents.y = max(half_extents.y + 0.1, 0.1);
+    half_extents.z = max(half_extents.z + 0.1, 0.1);
 
     // Compute all eight corners
     bb.corners[0] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
@@ -160,7 +160,7 @@ void main() {
     // Determine depth
     float depth = textureLod(depth_pyramid, (bb.max_pt + bb.min_pt) / 2.0, level).x;
     float f = camera.properties.z;
-    float n = camera.properties.y * 2.0;
+    float n = camera.properties.y;
     depth = (-f * n / (depth * (f - n) - f));
 
     debugPrintfEXT("Computed %f   vs Sampled %f", bb.depth, depth);

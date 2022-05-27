@@ -11,13 +11,11 @@ layout(push_constant) uniform block {
 };
 
 void main() {
-    vec4 texels;
+    vec2 texels = vec2(0);
     texels.x = texture(in_image, UV).x;
-    texels.y = textureOffset(in_image, UV, ivec2(-1, 0)).x;
-    texels.z = textureOffset(in_image, UV, ivec2(-1, -1)).x;
-    texels.w = textureOffset(in_image, UV, ivec2(0, -1)).x;
+    texels.y = textureOffset(in_image, UV, ivec2(-1, -1)).x;
 
-    float maxZ = max(max(texels.x, texels.y), max(texels.z, texels.w));
+    float maxZ = max(texels.x, texels.y);
 
     vec3 extra;
 
