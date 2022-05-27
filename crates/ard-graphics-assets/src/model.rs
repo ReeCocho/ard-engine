@@ -169,9 +169,13 @@ impl AssetLoader for ModelLoader {
                 height: image.height(),
                 format: graphics::TextureFormat::R8G8B8A8Srgb,
                 data: &raw,
-                mip_type: graphics::MipType::Upload,
+                mip_type: if mip.is_some() {
+                    graphics::MipType::Generate
+                } else {
+                    graphics::MipType::Upload
+                },
                 mip_count: if mip.is_some() {
-                    1 // (image.width().max(image.height()) as f32).log2() as usize + 1
+                    (image.width().max(image.height()) as f32).log2() as usize + 1
                 } else {
                     1
                 },

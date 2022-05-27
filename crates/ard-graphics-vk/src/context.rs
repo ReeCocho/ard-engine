@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::{c_void, CStr, CString},
+    mem::ManuallyDrop,
     sync::{Arc, Mutex},
 };
 
@@ -13,7 +14,7 @@ use ash::{
     vk::{self, DebugUtilsMessageSeverityFlagsEXT},
     Entry,
 };
-use gpu_alloc_ash::AshMemoryDevice;
+use gpu_allocator::vulkan::*;
 
 use crate::{surface::Surface, VkBackend};
 
@@ -33,7 +34,7 @@ pub(crate) struct GraphicsContextInner {
     pub transfer: vk::Queue,
     pub present: vk::Queue,
     pub compute: vk::Queue,
-    pub allocator: Mutex<gpu_alloc::GpuAllocator<ash::vk::DeviceMemory>>,
+    pub allocator: ManuallyDrop<Mutex<Allocator>>,
 }
 
 #[derive(Default)]
@@ -85,7 +86,7 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
         let surface_extensions = ash_window::enumerate_required_extensions(winit_window).unwrap();
         let mut extension_names_raw = surface_extensions
             .iter()
-            .map(|ext| ext.as_ptr())
+            .map(|ext| *ext)
             .collect::<Vec<_>>();
 
         if create_info.debug {
@@ -106,7 +107,7 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
         let vk_version = vk::make_api_version(0, 1, 2, 0);
 
         unsafe {
-            let entry = match Entry::new() {
+            let entry = match Entry::load() {
                 Ok(entry) => entry,
                 Err(err) => return Err(GraphicsContextCreateError(err.to_string())),
             };
@@ -135,7 +136,11 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
                             | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
                             | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
                     )
-                    .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
+                    .message_type(
+                        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                            | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+                            | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
+                    )
                     .pfn_user_callback(Some(vulkan_debug_callback));
 
                 let debug_utils_loader = ext::DebugUtils::new(&entry, &instance);
@@ -228,12 +233,10 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
                 .push_next(&mut features2)
                 .build();
 
-            let device = Arc::new(
-                match instance.create_device(pd_query.device, &create_info, None) {
-                    Ok(device) => device,
-                    Err(err) => return Err(GraphicsContextCreateError(err.to_string())),
-                },
-            );
+            let device = match instance.create_device(pd_query.device, &create_info, None) {
+                Ok(device) => device,
+                Err(err) => return Err(GraphicsContextCreateError(err.to_string())),
+            };
 
             let main =
                 device.get_device_queue(pd_query.queue_family_indices.main, queue_indices.0 as u32);
@@ -250,10 +253,23 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
                 queue_indices.3 as u32,
             );
 
-            let allocator = Mutex::new(gpu_alloc::GpuAllocator::new(
-                gpu_alloc::Config::i_am_potato(),
-                gpu_alloc_ash::device_properties(&instance, vk_version, pd_query.device)
-                    .expect("could not get device properties for gpu allocator"),
+            let allocator = ManuallyDrop::new(Mutex::new(
+                Allocator::new(&AllocatorCreateDesc {
+                    instance: instance.clone(),
+                    device: device.clone(),
+                    physical_device: pd_query.device,
+                    debug_settings: gpu_allocator::AllocatorDebugSettings {
+                        log_memory_information: false,
+                        log_leaks_on_shutdown: true,
+                        store_stack_traces: false,
+                        log_allocations: false,
+                        log_frees: false,
+                        log_stack_traces: false,
+                    },
+                    // TODO: Look into this
+                    buffer_device_address: false,
+                })
+                .expect("unable to create GPU memory allocator"),
             ));
 
             let inner = Arc::new(GraphicsContextInner {
@@ -264,7 +280,7 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
                 properties: pd_query.properties,
                 features: pd_query.features,
                 queue_family_indices: pd_query.queue_family_indices,
-                device,
+                device: Arc::new(device),
                 main,
                 transfer,
                 present,
@@ -358,10 +374,9 @@ impl Drop for GraphicsContextInner {
     fn drop(&mut self) {
         unsafe {
             self.device.device_wait_idle().unwrap();
-            self.allocator
-                .lock()
-                .expect("mutex poisoned")
-                .cleanup(AshMemoryDevice::wrap(&self.device));
+
+            std::mem::drop(ManuallyDrop::take(&mut self.allocator));
+
             self.device.destroy_device(None);
             if let Some((loader, messenger)) = &self.debug {
                 loader.destroy_debug_utils_messenger(*messenger, None);

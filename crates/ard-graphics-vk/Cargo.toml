@@ -14,11 +14,10 @@ ard-math = { version = "0.1", path = "../ard-math" }
 ard-graphics-api = { version = "0.1", path = "../ard-graphics-api" }
 ard-render-graph = { version = "0.1", path = "../ard-render-graph" }
 ard-log = { version = "0.1", path = "../ard-log" }
-ash = "0.33.3+1.2.191"
-ash-window = "0.7"
+ash = "0.37.0+1.3.209"
+ash-window = "0.10"
 winit = "0.25"
-gpu-alloc = "0.5"
-gpu-alloc-ash = "0.2"
+gpu-allocator = "0.18"
 crossbeam-channel = "0.5"
 bytemuck = "1.7"
 dashmap = "4.0"

@@ -2,7 +2,6 @@ use ard_math::IVec2;
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use factory::descriptors::DescriptorPool;
-use gpu_alloc::UsageFlags;
 
 use crate::alloc::*;
 use crate::prelude::*;
@@ -545,7 +544,7 @@ impl DepthPyramid {
             ctx: ctx.clone(),
             width,
             height,
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
             mip_levels,
             array_layers: 1,

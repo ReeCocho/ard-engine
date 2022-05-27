@@ -6,7 +6,6 @@ use std::{
 
 use crate::prelude::*;
 use ash::vk;
-use gpu_alloc::UsageFlags;
 
 use crate::{
     alloc::{Buffer, BufferCreateInfo},
@@ -354,7 +353,7 @@ impl BufferArrayAllocator {
             ctx: ctx.clone(),
             size: (object_size * base_block_len * block_count) as u64,
             buffer_usage: usage,
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
         };
 
         let buffer = Buffer::new(&create_info);
@@ -523,7 +522,7 @@ impl BufferArrayAllocator {
             ctx: self.ctx.clone(),
             size: (self.object_size * self.base_block_len * self.block_count) as u64,
             buffer_usage: self.buffer.usage(),
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
         };
 
         let mut new_buffer = Buffer::new(&create_info);

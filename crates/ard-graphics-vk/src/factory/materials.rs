@@ -1,5 +1,4 @@
 use ash::vk::{self, BufferUsageFlags};
-use gpu_alloc::UsageFlags;
 use renderer::graph::FRAMES_IN_FLIGHT;
 use std::{collections::HashMap, hash::BuildHasherDefault, ptr::NonNull};
 
@@ -231,7 +230,7 @@ impl MaterialBuffer {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             buffer_usage: vk::BufferUsageFlags::STORAGE_BUFFER,
-            memory_usage: UsageFlags::UPLOAD,
+            memory_usage: gpu_allocator::MemoryLocation::CpuToGpu,
             size: INITIAL_MATERIAL_UBO_CAPACITY * data_size,
         };
 
@@ -308,7 +307,7 @@ impl MaterialBuffer {
                 ctx: ctx.clone(),
                 size: new_cap * self.data_size,
                 buffer_usage: BufferUsageFlags::STORAGE_BUFFER,
-                memory_usage: UsageFlags::UPLOAD,
+                memory_usage: gpu_allocator::MemoryLocation::CpuToGpu,
             };
 
             let mut new_buffer = Buffer::new(&create_info);
@@ -321,9 +320,6 @@ impl MaterialBuffer {
             // Swap new buffer and old buffer
             std::mem::swap(buffer, &mut new_buffer);
             std::mem::swap(map, &mut new_map);
-
-            // New buffer now contains the old buffer. Unmap and let drop
-            new_buffer.unmap(device);
         }
 
         // TODO: This is gross. Maybe do something different?

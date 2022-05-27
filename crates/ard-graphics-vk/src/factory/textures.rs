@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use ash::vk;
-use gpu_alloc::UsageFlags;
 
 use super::{container::ResourceContainer, descriptors::DescriptorPool};
 use crate::{
@@ -49,7 +48,7 @@ impl TextureSets {
                 ctx: ctx.clone(),
                 width: 1,
                 height: 1,
-                memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+                memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
                 image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
                 mip_levels: 1,
                 array_layers: 1,

@@ -9,7 +9,6 @@ use ard_render_graph::{
     LoadOp, Operations,
 };
 use ash::vk;
-use gpu_alloc::UsageFlags;
 
 use crate::{
     alloc::{Image, ImageCreateInfo, StorageBuffer, UniformBuffer, WriteStorageBuffer},
@@ -669,7 +668,7 @@ impl RenderTarget {
             ctx: ctx.clone(),
             width: size_group.width,
             height: size_group.height,
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: match descriptor.format {
                 vk::Format::D24_UNORM_S8_UINT | vk::Format::D32_SFLOAT_S8_UINT => {
                     vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT

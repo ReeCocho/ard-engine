@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use ash::vk;
-use gpu_alloc::UsageFlags;
 
 use crate::alloc::{Buffer, Image, ImageCreateInfo};
 use crate::factory::container::*;
@@ -40,7 +39,7 @@ impl TextureInner {
             ctx: ctx.clone(),
             width: create_info.width,
             height: create_info.height,
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: vk::ImageUsageFlags::SAMPLED
                 | vk::ImageUsageFlags::TRANSFER_DST
                 | vk::ImageUsageFlags::TRANSFER_SRC,

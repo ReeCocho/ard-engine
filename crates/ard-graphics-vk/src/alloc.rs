@@ -1,7 +1,7 @@
 use ash::{vk, vk::DeviceMemory};
 use bytemuck::Pod;
-use gpu_alloc::{MappedMemoryRange, MemoryBlock, MemoryDevice, Request, UsageFlags};
-use gpu_alloc_ash::AshMemoryDevice;
+use gpu_allocator::vulkan::*;
+use gpu_allocator::MemoryLocation;
 use std::{mem::ManuallyDrop, ptr::NonNull};
 
 use crate::{context::GraphicsContext, renderer::graph::FRAMES_IN_FLIGHT};
@@ -9,7 +9,7 @@ use crate::{context::GraphicsContext, renderer::graph::FRAMES_IN_FLIGHT};
 pub struct BufferCreateInfo {
     pub ctx: GraphicsContext,
     pub size: u64,
-    pub memory_usage: UsageFlags,
+    pub memory_usage: MemoryLocation,
     pub buffer_usage: vk::BufferUsageFlags,
 }
 
@@ -17,7 +17,7 @@ pub struct ImageCreateInfo {
     pub ctx: GraphicsContext,
     pub width: u32,
     pub height: u32,
-    pub memory_usage: UsageFlags,
+    pub memory_usage: MemoryLocation,
     pub image_usage: vk::ImageUsageFlags,
     pub mip_levels: u32,
     pub array_layers: u32,
@@ -26,7 +26,7 @@ pub struct ImageCreateInfo {
 
 pub struct Buffer {
     pub(crate) buffer: vk::Buffer,
-    pub(crate) block: ManuallyDrop<MemoryBlock<DeviceMemory>>,
+    pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) size: u64,
     pub(crate) usage: vk::BufferUsageFlags,
     ctx: GraphicsContext,
@@ -68,7 +68,7 @@ pub struct Image {
     mip_levels: u32,
     size: u64,
     format: vk::Format,
-    block: ManuallyDrop<MemoryBlock<DeviceMemory>>,
+    block: ManuallyDrop<Allocation>,
     pub(crate) ctx: GraphicsContext,
 }
 
@@ -77,15 +77,17 @@ impl Buffer {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             size: data.len() as u64,
-            memory_usage: UsageFlags::TRANSIENT | UsageFlags::UPLOAD,
+            memory_usage: MemoryLocation::CpuToGpu,
             buffer_usage: vk::BufferUsageFlags::TRANSFER_SRC,
         };
 
         let mut buffer = Buffer::new(&create_info);
-        buffer
+        let map = buffer
             .block
-            .write_bytes(AshMemoryDevice::wrap(&create_info.ctx.0.device), 0, data)
-            .expect("unable to write to staging buffer");
+            .mapped_slice_mut()
+            .expect("unable to map block memory");
+
+        map[0..data.len()].copy_from_slice(data);
 
         buffer
     }
@@ -114,21 +116,20 @@ impl Buffer {
             .get_buffer_memory_requirements(buffer);
 
         // Allocate memory
-        let request = Request {
-            // Was getting a strange bug here without adding on the alignment. Maybe a bug with
-            // gpu-alloc
-            size: create_info.size + mem_reqs.alignment,
-            align_mask: mem_reqs.alignment - 1,
-            usage: create_info.memory_usage,
-            memory_types: !0,
+        let request = AllocationCreateDesc {
+            name: "buffer",
+            requirements: mem_reqs,
+            location: create_info.memory_usage,
+            linear: true,
         };
+
         let block = create_info
             .ctx
             .0
             .allocator
             .lock()
             .expect("mutex poisoned")
-            .alloc(AshMemoryDevice::wrap(&create_info.ctx.0.device), request)
+            .allocate(&request)
             .expect("unable to allocate buffer memory");
 
         // Bind buffer to memory
@@ -136,7 +137,7 @@ impl Buffer {
             .ctx
             .0
             .device
-            .bind_buffer_memory(buffer, *block.memory(), block.offset())
+            .bind_buffer_memory(buffer, block.memory(), block.offset())
             .expect("unable to bind buffer to memory");
 
         Buffer {
@@ -150,25 +151,22 @@ impl Buffer {
 
     #[inline]
     pub unsafe fn map(&mut self, device: &ash::Device) -> NonNull<u8> {
-        self.block
-            .map(AshMemoryDevice::wrap(device), 0, self.size as usize)
-            .expect("unable to map buffer")
-    }
-
-    #[inline]
-    pub unsafe fn unmap(&mut self, device: &ash::Device) {
-        self.block.unmap(AshMemoryDevice::wrap(device));
+        NonNull::new_unchecked(
+            self.block
+                .mapped_ptr()
+                .expect("unable to map buffer")
+                .as_ptr() as *mut u8,
+        )
     }
 
     #[inline]
     pub unsafe fn flush(&mut self, device: &ash::Device, offset: u64, len: u64) {
-        let device = AshMemoryDevice::wrap(device);
         device
-            .flush_memory_ranges(&[MappedMemoryRange {
-                memory: self.block.memory(),
-                offset,
-                size: len,
-            }])
+            .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                .memory(self.block.memory())
+                .offset(offset)
+                .size(len)
+                .build()])
             .expect("unable to flush buffer memory range");
     }
 
@@ -197,10 +195,8 @@ impl Drop for Buffer {
                 .allocator
                 .lock()
                 .expect("mutex poisoned")
-                .dealloc(
-                    AshMemoryDevice::wrap(&self.ctx.0.device),
-                    std::mem::ManuallyDrop::take(&mut self.block),
-                );
+                .free(std::mem::ManuallyDrop::take(&mut self.block))
+                .expect("unable to free buffer allocation");
         }
     }
 }
@@ -240,27 +236,28 @@ impl Image {
             .get_image_memory_requirements(image);
 
         // Allocate memory
-        let request = Request {
-            size: mem_reqs.size,
-            align_mask: mem_reqs.alignment - 1,
-            usage: create_info.memory_usage,
-            memory_types: mem_reqs.memory_type_bits,
+        let request = AllocationCreateDesc {
+            name: "buffer",
+            requirements: mem_reqs,
+            location: create_info.memory_usage,
+            linear: true,
         };
+
         let block = create_info
             .ctx
             .0
             .allocator
             .lock()
             .expect("mutex poisoned")
-            .alloc(AshMemoryDevice::wrap(&create_info.ctx.0.device), request)
-            .expect("unable to allocate image memory");
+            .allocate(&request)
+            .expect("unable to allocate buffer memory");
 
         // Bind image to memory
         create_info
             .ctx
             .0
             .device
-            .bind_image_memory(image, *block.memory(), block.offset())
+            .bind_image_memory(image, block.memory(), block.offset())
             .expect("unable to bind image to memory");
 
         Image {
@@ -315,10 +312,8 @@ impl Drop for Image {
                 .allocator
                 .lock()
                 .expect("mutex poisoned")
-                .dealloc(
-                    AshMemoryDevice::wrap(&self.ctx.0.device),
-                    std::mem::ManuallyDrop::take(&mut self.block),
-                );
+                .free(std::mem::ManuallyDrop::take(&mut self.block))
+                .expect("unable to free image memory allocation");
         }
     }
 }
@@ -333,15 +328,12 @@ impl<T: Pod> BufferArray<T> {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             size,
-            memory_usage: UsageFlags::UPLOAD | UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: MemoryLocation::CpuToGpu,
             buffer_usage,
         };
 
         let mut buffer = Buffer::new(&create_info);
-        let map = buffer
-            .block
-            .map(AshMemoryDevice::wrap(&ctx.0.device), 0, size as usize)
-            .expect("unable to map buffer range");
+        let map = buffer.map(&ctx.0.device);
 
         BufferArray {
             buffer,
@@ -383,18 +375,20 @@ impl<T: Pod> BufferArray<T> {
     }
 
     pub unsafe fn invalidate(&mut self, offset: usize, len: usize) {
-        let device = AshMemoryDevice::wrap(&self.buffer.ctx.0.device);
         let offset = (offset * std::mem::size_of::<T>()) as u64;
         let len = (len * std::mem::size_of::<T>()) as u64;
 
         match self.buffer.ctx.0.properties.limits.non_coherent_atom_size {
             0 => {
-                device
-                    .invalidate_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset,
-                        size: len,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .invalidate_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(offset)
+                        .size(len)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
             size => {
@@ -402,12 +396,15 @@ impl<T: Pod> BufferArray<T> {
                 let aligned_offset = offset & !atom_mask;
                 let end = (offset + len + atom_mask) & !atom_mask;
 
-                device
-                    .invalidate_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset: aligned_offset,
-                        size: end - aligned_offset,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .invalidate_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(aligned_offset)
+                        .size(end - aligned_offset)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
         };
@@ -415,18 +412,20 @@ impl<T: Pod> BufferArray<T> {
 
     /// Flush a range of objects within the buffer.
     pub unsafe fn flush(&mut self, offset: usize, len: usize) {
-        let device = AshMemoryDevice::wrap(&self.buffer.ctx.0.device);
         let offset = (offset * std::mem::size_of::<T>()) as u64;
         let len = (len * std::mem::size_of::<T>()) as u64;
 
         match self.buffer.ctx.0.properties.limits.non_coherent_atom_size {
             0 => {
-                device
-                    .flush_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset,
-                        size: len,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(offset)
+                        .size(len)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
             size => {
@@ -434,12 +433,15 @@ impl<T: Pod> BufferArray<T> {
                 let aligned_offset = offset & !atom_mask;
                 let end = (offset + len + atom_mask) & !atom_mask;
 
-                device
-                    .flush_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset: aligned_offset,
-                        size: end - aligned_offset,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(aligned_offset)
+                        .size(end - aligned_offset)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
         };
@@ -461,23 +463,18 @@ impl<T: Pod> BufferArray<T> {
             let create_info = BufferCreateInfo {
                 ctx: self.buffer.ctx.clone(),
                 size: (std::mem::size_of::<T>() * cap) as u64,
-                memory_usage: UsageFlags::UPLOAD,
+                memory_usage: MemoryLocation::CpuToGpu,
                 buffer_usage: self.buffer.usage(),
             };
 
-            self.buffer
-                .block
-                .unmap(AshMemoryDevice::wrap(&self.buffer.ctx.0.device));
             self.buffer = Buffer::new(&create_info);
-            self.map = self
-                .buffer
-                .block
-                .map(
-                    AshMemoryDevice::wrap(&self.buffer.ctx.0.device),
-                    0,
-                    std::mem::size_of::<T>() * cap,
-                )
-                .expect("unable to map buffer range");
+            self.map = NonNull::new_unchecked(
+                self.buffer
+                    .block
+                    .mapped_ptr()
+                    .expect("unable to map buffer")
+                    .as_ptr() as *mut u8,
+            );
 
             Some(self.cap)
         } else {
@@ -487,13 +484,7 @@ impl<T: Pod> BufferArray<T> {
 }
 
 impl<T: Pod> Drop for BufferArray<T> {
-    fn drop(&mut self) {
-        unsafe {
-            self.buffer
-                .block
-                .unmap(AshMemoryDevice::wrap(&self.buffer.ctx.0.device));
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 impl WriteStorageBuffer {
@@ -501,16 +492,19 @@ impl WriteStorageBuffer {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             size: initial_cap as u64,
-            memory_usage: UsageFlags::UPLOAD | UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: MemoryLocation::CpuToGpu,
             buffer_usage: vk::BufferUsageFlags::STORAGE_BUFFER
                 | vk::BufferUsageFlags::INDIRECT_BUFFER,
         };
 
         let mut buffer = Buffer::new(&create_info);
-        let map = buffer
-            .block
-            .map(AshMemoryDevice::wrap(&ctx.0.device), 0, initial_cap)
-            .expect("unable to map buffer range");
+        let map = NonNull::new_unchecked(
+            buffer
+                .block
+                .mapped_ptr()
+                .expect("unable to map buffer")
+                .as_ptr() as *mut u8,
+        );
 
         WriteStorageBuffer {
             buffer,
@@ -554,18 +548,20 @@ impl WriteStorageBuffer {
 
     /// Flush a range of bytes within the buffer.
     pub unsafe fn flush(&self, offset: usize, len: usize) {
-        let device = AshMemoryDevice::wrap(&self.buffer.ctx.0.device);
         let offset = offset as u64;
         let len = len as u64;
 
         match self.buffer.ctx.0.properties.limits.non_coherent_atom_size {
             0 => {
-                device
-                    .flush_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset,
-                        size: len,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(offset)
+                        .size(len)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
             size => {
@@ -573,12 +569,15 @@ impl WriteStorageBuffer {
                 let aligned_offset = offset & !atom_mask;
                 let end = (offset + len + atom_mask) & !atom_mask;
 
-                device
-                    .flush_memory_ranges(&[MappedMemoryRange {
-                        memory: self.buffer.block.memory(),
-                        offset: aligned_offset,
-                        size: end - aligned_offset,
-                    }])
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(aligned_offset)
+                        .size(end - aligned_offset)
+                        .build()])
                     .expect("unable to flush buffer memory range");
             }
         };
@@ -600,19 +599,18 @@ impl WriteStorageBuffer {
             let create_info = BufferCreateInfo {
                 ctx: self.buffer.ctx.clone(),
                 size: cap as u64,
-                memory_usage: UsageFlags::UPLOAD,
+                memory_usage: MemoryLocation::CpuToGpu,
                 buffer_usage: self.buffer.usage(),
             };
 
-            self.buffer
-                .block
-                .unmap(AshMemoryDevice::wrap(&self.buffer.ctx.0.device));
             self.buffer = Buffer::new(&create_info);
-            self.map = self
-                .buffer
-                .block
-                .map(AshMemoryDevice::wrap(&self.buffer.ctx.0.device), 0, cap)
-                .expect("unable to map buffer range");
+            self.map = NonNull::new_unchecked(
+                self.buffer
+                    .block
+                    .mapped_ptr()
+                    .expect("unable to map buffer")
+                    .as_ptr() as *mut u8,
+            );
 
             Some(self.cap)
         } else {
@@ -622,13 +620,7 @@ impl WriteStorageBuffer {
 }
 
 impl Drop for WriteStorageBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            self.buffer
-                .block
-                .unmap(AshMemoryDevice::wrap(&self.buffer.ctx.0.device));
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 impl StorageBuffer {
@@ -636,7 +628,7 @@ impl StorageBuffer {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             size: initial_cap as u64,
-            memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: MemoryLocation::GpuOnly,
             buffer_usage: vk::BufferUsageFlags::STORAGE_BUFFER,
         };
 
@@ -672,7 +664,7 @@ impl StorageBuffer {
             let create_info = BufferCreateInfo {
                 ctx: self.buffer.ctx.clone(),
                 size: cap as u64,
-                memory_usage: UsageFlags::FAST_DEVICE_ACCESS,
+                memory_usage: MemoryLocation::GpuOnly,
                 buffer_usage: self.buffer.usage(),
             };
 
@@ -699,19 +691,18 @@ impl UniformBuffer {
         let create_info = BufferCreateInfo {
             ctx: ctx.clone(),
             size: aligned_size * FRAMES_IN_FLIGHT as u64,
-            memory_usage: UsageFlags::UPLOAD | UsageFlags::FAST_DEVICE_ACCESS,
+            memory_usage: MemoryLocation::CpuToGpu,
             buffer_usage: vk::BufferUsageFlags::UNIFORM_BUFFER,
         };
 
         let mut buffer = Buffer::new(&create_info);
-        let map = buffer
-            .block
-            .map(
-                AshMemoryDevice::wrap(&ctx.0.device),
-                0,
-                aligned_size as usize * FRAMES_IN_FLIGHT,
-            )
-            .expect("unable to map buffer range");
+        let map = NonNull::new_unchecked(
+            buffer
+                .block
+                .mapped_ptr()
+                .expect("unable to map buffer")
+                .as_ptr() as *mut u8,
+        );
 
         let mut buffer = UniformBuffer {
             buffer,
@@ -748,25 +739,21 @@ impl UniformBuffer {
 
         *(self.map.as_ptr().add(self.aligned_size as usize * frame) as *mut T) = data;
 
-        let device = AshMemoryDevice::wrap(&self.buffer.ctx.0.device);
-        device
-            .flush_memory_ranges(&[MappedMemoryRange {
-                memory: self.buffer.block.memory(),
-                offset: self.aligned_size * frame as u64,
-                size: self.aligned_size,
-            }])
+        self.buffer
+            .ctx
+            .0
+            .device
+            .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                .memory(self.buffer.block.memory())
+                .offset(self.aligned_size * frame as u64)
+                .size(self.aligned_size)
+                .build()])
             .expect("unable to flush buffer memory range");
     }
 }
 
 impl Drop for UniformBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            self.buffer
-                .block
-                .unmap(AshMemoryDevice::wrap(&self.buffer.ctx.0.device));
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 unsafe impl<T: Pod> Send for BufferArray<T> {}
