@@ -3,7 +3,7 @@ use std::time::Instant;
 use self::{
     debug_drawing::DebugDrawing,
     forward_plus::{ForwardPlus, GameRendererGraphRef},
-    graph::{RenderGraphContext, RenderPass},
+    graph::RenderGraphContext,
     static_geometry::StaticGeometry,
 };
 use crate::{context::GraphicsContext, factory::Factory, surface::Surface, VkBackend};

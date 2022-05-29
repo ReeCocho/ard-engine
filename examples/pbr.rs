@@ -21,14 +21,12 @@ impl BoundingBoxSystem {
     fn pre_render(
         &mut self,
         pre_render: PreRender,
-        commands: Commands,
-        queries: Queries<(Read<Model>, Read<PointLight>)>,
-        res: Res<(Read<DebugDrawing>, Read<Factory>, Read<MainCameraState>)>,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<(Read<Factory>,)>,
     ) {
         let res = res.get();
-        let draw = res.0.unwrap();
-        let factory = res.1.unwrap();
-        let camera_state = res.2.unwrap();
+        let factory = res.0.unwrap();
 
         self.timer += pre_render.0.as_secs_f32();
 

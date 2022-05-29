@@ -8,6 +8,7 @@ pub mod mesh;
 pub mod pipeline;
 pub mod renderer;
 pub mod shader;
+pub mod shader_constants;
 pub mod surface;
 pub mod texture;
 pub mod util;
@@ -60,7 +61,7 @@ impl Backend for VkBackend {
     const MAX_MATERIALS: usize = 2048;
     const MAX_CAMERA: usize = 64;
     const MAX_TEXTURES: usize = 2048;
-    const MAX_TEXTURES_PER_MATERIAL: usize = 8;
+    const MAX_TEXTURES_PER_MATERIAL: usize = shader_constants::MAX_TEXTURES_PER_MATERIAL;
 }
 
 pub struct VkGraphicsPlugin {

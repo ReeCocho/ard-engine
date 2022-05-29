@@ -1,5 +1,5 @@
+use crate::shader_constants::{FRAMES_IN_FLIGHT, NO_TEXTURE};
 use ash::vk::{self, BufferUsageFlags};
-use renderer::graph::FRAMES_IN_FLIGHT;
 use std::{collections::HashMap, hash::BuildHasherDefault, ptr::NonNull};
 
 use crate::{
@@ -335,7 +335,7 @@ impl MaterialBuffer {
                 for (i, texture) in material.textures.iter().enumerate() {
                     *dst.add(i) = match texture {
                         Some(texture) => texture.id,
-                        None => VkBackend::MAX_TEXTURES as u32 - 1,
+                        None => NO_TEXTURE,
                     };
                 }
 

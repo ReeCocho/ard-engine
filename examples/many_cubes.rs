@@ -94,7 +94,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: true,
+                debug: false,
             },
         })
         .add_startup_function(setup)
@@ -298,7 +298,8 @@ fn setup(app: &mut App) {
                     z as f32 - (DEPTH as f32 / 2.0),
                 ) * SPACING;
 
-                let model = Mat4::from_translation(position); // * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
+                let model =
+                    Mat4::from_translation(position) * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
 
                 draws.register(
                     &[(

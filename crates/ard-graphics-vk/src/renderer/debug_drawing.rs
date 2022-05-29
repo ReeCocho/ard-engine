@@ -8,7 +8,7 @@ use ard_graphics_api::prelude::*;
 
 use crate::VkBackend;
 
-use super::graph::FRAMES_IN_FLIGHT;
+use crate::shader_constants::FRAMES_IN_FLIGHT;
 
 const DEFAULT_DEBUG_BUFFER_CAP: usize = 1;
 

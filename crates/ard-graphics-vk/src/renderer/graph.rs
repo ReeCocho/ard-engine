@@ -13,9 +13,8 @@ use ash::vk;
 use crate::{
     alloc::{Image, ImageCreateInfo, StorageBuffer, UniformBuffer, WriteStorageBuffer},
     context::GraphicsContext,
+    shader_constants::FRAMES_IN_FLIGHT,
 };
-
-pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
 pub(crate) struct RenderGraphContext<T> {
     ctx: GraphicsContext,

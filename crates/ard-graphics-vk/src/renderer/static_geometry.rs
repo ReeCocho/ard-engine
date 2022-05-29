@@ -8,6 +8,7 @@ use std::{
 
 use crate::{
     prelude::*,
+    shader_constants::FRAMES_IN_FLIGHT,
     util::{make_draw_key, FastIntHasher},
 };
 use ard_ecs::prelude::*;
@@ -15,7 +16,7 @@ use ard_graphics_api::prelude::*;
 use ard_math::Mat4;
 use dashmap::DashMap;
 
-use super::{forward_plus::DrawKey, graph::FRAMES_IN_FLIGHT};
+use super::forward_plus::DrawKey;
 
 #[derive(Resource, Clone)]
 pub struct StaticGeometry(pub(crate) Arc<StaticGeometryInner>);

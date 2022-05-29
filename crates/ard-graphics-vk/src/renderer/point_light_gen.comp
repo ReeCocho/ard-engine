@@ -2,52 +2,29 @@
 // glslc point_light_gen.comp --target-env=vulkan1.2 -o point_light_gen.comp.spv
 #version 450
 
+#include "data_structures.glsl"
+
 layout(local_size_x_id = 0) in;
 layout(local_size_y_id = 1) in;
 layout(local_size_z_id = 2) in;
 
-#define TABLE_X 32
-#define TABLE_Y 16
-#define TABLE_Z 16
-#define MAX_POINT_LIGHTS 256
-
-struct PointLight {
-    vec4 color_intensity;
-    vec4 position_range;
-};
-
-struct Froxel {
-    vec4[4] planes;
-    vec4 min_max_z;
-};
-
-layout(set = 0, binding = 0) readonly buffer PointLights {
+layout(set = 0, binding = 0) readonly buffer ARD_PointLights {
     PointLight[] lights;
 };
 
-layout(set = 0, binding = 1) restrict buffer PointLightTable {
-    int[TABLE_Z][TABLE_X][TABLE_Y] light_counts;
-    uint[TABLE_Z][TABLE_X][TABLE_Y][MAX_POINT_LIGHTS] clusters; 
+layout(set = 0, binding = 1) restrict buffer ARD_PointLightTable {
+    PointLightTable point_light_table;
 };
 
 layout(set = 0, binding = 2) uniform sampler2D depth_pyramid;
 
-layout(set = 1, binding = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 projection;
-    mat4 vp;
-    mat4 view_inv;
-    mat4 projection_inv;
-    mat4 vp_inv;
-    vec4[6] planes;
-    vec4 properties;
-    vec4 position;
-    vec2 scale_bias;
-} camera;
+layout(set = 1, binding = 0) uniform ARD_Camera {
+    Camera camera;
+};
 
-layout(set = 1, binding = 1) readonly buffer Clusters {
-    Froxel data[TABLE_Z][TABLE_X][TABLE_Y];
-} cluster_froxels;
+layout(set = 1, binding = 1) readonly buffer ARD_CameraClusterFroxels {
+    CameraClusterFroxels clusters;
+};
 
 layout(push_constant) uniform constants {
     vec2 render_area;
@@ -55,7 +32,7 @@ layout(push_constant) uniform constants {
 };
 
 void main() {
-    Froxel froxel = cluster_froxels.data
+    Froxel froxel = clusters.froxels
         [gl_GlobalInvocationID.z]
         [gl_GlobalInvocationID.x]
         [gl_GlobalInvocationID.y];
@@ -63,7 +40,7 @@ void main() {
     uint light_idx = 0;
     for (int i = 0; i < total_lights; i++) {
         // Bounds check for lights
-        if (light_idx >= MAX_POINT_LIGHTS) {
+        if (light_idx >= MAX_POINT_LIGHTS_PER_FROXEL) {
             break;
         }
 
@@ -93,15 +70,16 @@ void main() {
         }
 
         // Add light to cluster
-        light_counts
+        point_light_table.light_counts
             [gl_GlobalInvocationID.z]
             [gl_GlobalInvocationID.x]
             [gl_GlobalInvocationID.y] += 1;
 
-        clusters[gl_GlobalInvocationID.z]
-                [gl_GlobalInvocationID.x]
-                [gl_GlobalInvocationID.y]
-                [light_idx] = i;
+        point_light_table.clusters
+            [gl_GlobalInvocationID.z]
+            [gl_GlobalInvocationID.x]
+            [gl_GlobalInvocationID.y]
+            [light_idx] = i;
 
         light_idx += 1;
     }

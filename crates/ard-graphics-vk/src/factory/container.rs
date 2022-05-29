@@ -1,4 +1,4 @@
-use crate::renderer::graph::FRAMES_IN_FLIGHT;
+use crate::shader_constants::FRAMES_IN_FLIGHT;
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 

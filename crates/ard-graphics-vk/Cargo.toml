@@ -21,3 +21,7 @@ gpu-allocator = "0.18"
 crossbeam-channel = "0.5"
 bytemuck = "1.7"
 dashmap = "4.0"
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+ron = "0.7"

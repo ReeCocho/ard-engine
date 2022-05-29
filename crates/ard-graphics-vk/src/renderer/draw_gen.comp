@@ -3,40 +3,9 @@
 #version 450
 #extension GL_EXT_debug_printf : enable
 
+#include "data_structures.glsl"
+
 layout(local_size_x_id = 0) in;
-
-struct DrawCall {
-    uint index_count;
-    uint instance_count;
-    uint first_index;
-    int vertex_offset;
-    uint first_instance;
-    vec4 bounds_center;
-    vec4 bounds_half_extents;
-};
-
-struct TransformedBoundingBox {
-    /// All eight corners of the box
-    vec4[8] corners;
-    /// Min point for AABB in screen space.
-    vec2 min_pt;
-    /// Max point for AABB in screen space.
-    vec2 max_pt;
-    /// Depth value for the AABB square.
-    float depth;
-};
-
-struct ObjectId {
-    uint info_idx;
-    uint batch_idx;
-    uint dummy;
-};
-
-struct ObjectInfo {
-    mat4 model;
-    uint material;
-    uint textures;
-};
 
 layout(set = 0, binding = 0) readonly buffer InputInfoData {
     ObjectInfo[] objects;
@@ -56,18 +25,9 @@ layout(set = 0, binding = 3) writeonly buffer OutputObjectIndices {
 
 layout(set = 0, binding = 4) uniform sampler2D depth_pyramid;
 
-layout(set = 1, binding = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 projection;
-    mat4 vp;
-    mat4 view_inv;
-    mat4 projection_inv;
-    mat4 vp_inv;
-    vec4[6] planes;
-    vec4 properties;
-    vec4 position;
-    vec2 scale_bias;
-} camera;
+layout(set = 1, binding = 0) uniform ARD_Camera {
+    Camera camera;
+};
 
 layout(push_constant) uniform constants {
     vec2 render_area;
@@ -97,7 +57,7 @@ TransformedBoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half
     // Then find the min and max points in screen space
     bb.min_pt = vec2(1000.0, 1000.0);
     bb.max_pt = vec2(-1000.0, -1000.0);
-    bb.depth = 1.0 + camera.properties.z;
+    bb.depth = 1.0 + camera.far_clip;
 
     for (int i = 0; i < 8; i++) {
         // Depth
@@ -159,8 +119,8 @@ void main() {
 
     // Determine depth
     float depth = textureLod(depth_pyramid, (bb.max_pt + bb.min_pt) / 2.0, level).x;
-    float f = camera.properties.z;
-    float n = camera.properties.y;
+    float f = camera.far_clip;
+    float n = camera.near_clip;
     depth = (-f * n / (depth * (f - n) - f));
 
     debugPrintfEXT("Computed %f   vs Sampled %f", bb.depth, depth);

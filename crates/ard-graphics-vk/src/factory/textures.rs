@@ -6,7 +6,7 @@ use super::{container::ResourceContainer, descriptors::DescriptorPool};
 use crate::{
     alloc::{Buffer, Image, ImageCreateInfo},
     prelude::*,
-    renderer::graph::FRAMES_IN_FLIGHT,
+    shader_constants::FRAMES_IN_FLIGHT,
 };
 
 pub(crate) struct TextureSets {

@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
 use crate::{
     alloc::Buffer, camera::forward_plus::GameRendererGraphRef, layouts::Layouts, prelude::*,
-    renderer::forward_plus::Passes, renderer::graph::FRAMES_IN_FLIGHT, util::make_layout_key,
+    renderer::forward_plus::Passes, shader_constants::FRAMES_IN_FLIGHT, util::make_layout_key,
 };
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
@@ -59,12 +59,14 @@ impl Factory {
     ) -> Self {
         let camera_pool = {
             let bindings = [
+                // Camera UBO
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(0)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
                     .stage_flags(vk::ShaderStageFlags::ALL)
                     .build(),
+                // Camera cluster froxels
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(1)
                     .descriptor_count(1)

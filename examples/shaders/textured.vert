@@ -2,41 +2,17 @@
 // glslc textured.vert -o textured.vert.spv
 #version 450 core
 
+#define ARD_VERTEX_SHADER
+#include "user_shaders.glsl"
+
 layout(location = 0) in vec4 POSITION;
 layout(location = 1) in vec2 UV0;
 
-layout(location = 0) out vec2 OUT_UV0;
-layout(location = 1) flat out uint INSTANCE_IDX;
+layout(location = 1) out vec2 OUT_UV0;
 
-struct ObjectInfo {
-    mat4 model;
-    uint material;
-    uint textures;
-};
-
-layout(set = 0, binding = 0) readonly buffer InputInfoData {
-    ObjectInfo[] objects;
-};
-
-layout(set = 0, binding = 2) readonly buffer InputObjectIdxs {
-    uint[] obj_idxs;
-};
-
-layout(set = 2, binding = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 projection;
-    mat4 vp;
-    mat4 view_inv;
-    mat4 projection_inv;
-    mat4 vp_inv;
-    vec4[6] planes;
-    vec4 properties;
-    vec4 position;
-    vec2 scale_bias;
-} camera;
-
-void main() {
-    INSTANCE_IDX = gl_InstanceIndex;
+void entry() {
     OUT_UV0 = UV0;
-    gl_Position = camera.vp * objects[obj_idxs[gl_InstanceIndex]].model * vec4(POSITION.xyz, 1.0);
+    gl_Position = camera.vp * get_model_matrix() * vec4(POSITION.xyz, 1.0);
 }
+
+ARD_ENTRY(entry)

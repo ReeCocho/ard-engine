@@ -1,3 +1,5 @@
+pub mod render_data;
+
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
 use crate::{
@@ -7,7 +9,8 @@ use crate::{
     factory::descriptors::DescriptorPool,
     factory::Factory,
     mesh::VertexLayoutKey,
-    renderer::{graph::FRAMES_IN_FLIGHT, StaticGeometry},
+    renderer::StaticGeometry,
+    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL},
     VkBackend,
 };
 
@@ -37,8 +40,6 @@ pub(crate) const DEFAULT_OBJECT_ID_BUFFER_CAP: usize = 1;
 pub(crate) const DEFAULT_DRAW_CALL_CAP: usize = 1;
 pub(crate) const DEFAULT_POINT_LIGHT_CAP: usize = 1;
 pub(crate) const SETS_PER_POOL: usize = FRAMES_IN_FLIGHT;
-pub(crate) const POINT_LIGHTS_TABLE_DIMS: (usize, usize, usize) = (32, 16, 16);
-pub(crate) const MAX_POINT_LIGHTS_PER_GRID: usize = 256;
 
 /// Forward plus internals for render graph.
 pub(crate) struct ForwardPlus {
@@ -179,12 +180,11 @@ unsafe impl Pod for ObjectInfo {}
 pub(crate) struct PointLightTable {
     /// NOTE: Light counts must be a signed integer because GLSL has no `atomicSub`. So, we must
     /// simulate it by adding a negative number which means the values must be signed.
-    light_count:
-        [i32; POINT_LIGHTS_TABLE_DIMS.0 * POINT_LIGHTS_TABLE_DIMS.1 * POINT_LIGHTS_TABLE_DIMS.2],
-    light_indices: [u32; POINT_LIGHTS_TABLE_DIMS.0
-        * POINT_LIGHTS_TABLE_DIMS.1
-        * POINT_LIGHTS_TABLE_DIMS.2
-        * MAX_POINT_LIGHTS_PER_GRID],
+    light_count: [i32; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
+    light_indices: [u32; FROXEL_TABLE_DIMS.0
+        * FROXEL_TABLE_DIMS.1
+        * FROXEL_TABLE_DIMS.2
+        * MAX_POINT_LIGHTS_PER_FROXEL],
 }
 
 /// Container for Vulkan render passes used in the forward plus renderer.
@@ -1122,9 +1122,9 @@ fn generate_camera_ssbo(
             // Dispatch for culling
             device.cmd_dispatch(
                 *commands,
-                POINT_LIGHTS_TABLE_DIMS.0 as u32,
-                POINT_LIGHTS_TABLE_DIMS.1 as u32,
-                POINT_LIGHTS_TABLE_DIMS.2 as u32,
+                FROXEL_TABLE_DIMS.0 as u32,
+                FROXEL_TABLE_DIMS.1 as u32,
+                FROXEL_TABLE_DIMS.2 as u32,
             );
         }
 
@@ -1839,14 +1839,13 @@ fn generate_point_lights(
     unsafe {
         point_lights_table_buffer.write_slice(
             0,
-            &[0 as i32;
-                POINT_LIGHTS_TABLE_DIMS.0 * POINT_LIGHTS_TABLE_DIMS.1 * POINT_LIGHTS_TABLE_DIMS.2],
+            &[0 as i32; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
         );
         point_lights_table_buffer.flush(
             0,
-            POINT_LIGHTS_TABLE_DIMS.0
-                * POINT_LIGHTS_TABLE_DIMS.1
-                * POINT_LIGHTS_TABLE_DIMS.2
+            FROXEL_TABLE_DIMS.0
+                * FROXEL_TABLE_DIMS.1
+                * FROXEL_TABLE_DIMS.2
                 * std::mem::size_of::<i32>(),
         );
     }
@@ -1985,9 +1984,9 @@ fn generate_point_lights(
         // Dispatch for culling
         device.cmd_dispatch(
             *commands,
-            POINT_LIGHTS_TABLE_DIMS.0 as u32,
-            POINT_LIGHTS_TABLE_DIMS.1 as u32,
-            POINT_LIGHTS_TABLE_DIMS.2 as u32,
+            FROXEL_TABLE_DIMS.0 as u32,
+            FROXEL_TABLE_DIMS.1 as u32,
+            FROXEL_TABLE_DIMS.2 as u32,
         );
     }
 }
@@ -2457,8 +2456,8 @@ fn pick_depth_format(ctx: &GraphicsContext) -> Option<vk::Format> {
     None
 }
 
-const DRAW_GEN_CODE: &[u8] = include_bytes!("draw_gen.comp.spv");
+const DRAW_GEN_CODE: &[u8] = include_bytes!("../draw_gen.comp.spv");
 
-const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("point_light_gen.comp.spv");
+const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("../point_light_gen.comp.spv");
 
-const CLUSTER_GEN_CODE: &[u8] = include_bytes!("cluster_gen.comp.spv");
+const CLUSTER_GEN_CODE: &[u8] = include_bytes!("../cluster_gen.comp.spv");

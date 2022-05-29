@@ -3,69 +3,59 @@
 
 #version 450
 
+#include "data_structures.glsl"
+
 layout(local_size_x_id = 0) in;
 layout(local_size_y_id = 1) in;
 layout(local_size_z_id = 2) in;
 
-#define TABLE_X 32
-#define TABLE_Y 16
-#define TABLE_Z 16
-
-struct Froxel {
-    vec4[4] planes;
-    vec4 min_max_z;
+layout(set = 0, binding = 0) uniform ARD_Camera {
+    Camera camera;
 };
 
-layout(set = 0, binding = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 projection;
-    mat4 vp;
-    mat4 view_inv;
-    mat4 projection_inv;
-    mat4 vp_inv;
-    vec4[6] planes;
-    vec4 properties;
-    vec4 position;
-    vec2 scale_bias;
-} camera;
-
-layout(set = 0, binding = 1) writeonly restrict buffer Clusters {
-    Froxel data[TABLE_Z][TABLE_X][TABLE_Y];
-} clusters;
+layout(set = 0, binding = 1) writeonly restrict buffer ARD_CameraClusterFroxels {
+    CameraClusterFroxels clusters;
+};
 
 void main() {
     vec4 corners[4];
     corners[0] = vec4(
-        ((float(gl_WorkGroupID.x) / float(TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y) / float(TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
     corners[1] = vec4(
-        ((float(gl_WorkGroupID.x + 1) / float(TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y) / float(TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
     corners[2] = vec4(
-        ((float(gl_WorkGroupID.x) / float(TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y + 1) / float(TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
     corners[3] = vec4(
-        ((float(gl_WorkGroupID.x + 1) / float(TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y + 1) / float(TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
-    vec2 min_max_z = camera.properties.y * vec2(
-        pow(camera.properties.z / camera.properties.y, float(gl_WorkGroupID.z) / float(TABLE_Z)),
-        pow(camera.properties.z / camera.properties.y, float(gl_WorkGroupID.z + 1) / float(TABLE_Z))
+    vec2 min_max_z = camera.near_clip * vec2(
+        pow(
+            camera.far_clip / camera.near_clip, 
+            float(gl_WorkGroupID.z) / float(FROXEL_TABLE_Z)
+        ),
+        pow(
+            camera.far_clip / camera.near_clip, 
+            float(gl_WorkGroupID.z + 1) / float(FROXEL_TABLE_Z)
+        )
     );
 
     vec4 frustum[4];
@@ -89,7 +79,7 @@ void main() {
 
     froxel.min_max_z = vec4(min_max_z, 0.0, 0.0);
 
-    clusters.data
+    clusters.froxels
         [gl_WorkGroupID.z]
         [gl_WorkGroupID.x]
         [gl_WorkGroupID.y] = froxel;

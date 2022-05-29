@@ -4,7 +4,7 @@ use gpu_allocator::vulkan::*;
 use gpu_allocator::MemoryLocation;
 use std::{mem::ManuallyDrop, ptr::NonNull};
 
-use crate::{context::GraphicsContext, renderer::graph::FRAMES_IN_FLIGHT};
+use crate::{context::GraphicsContext, shader_constants::FRAMES_IN_FLIGHT};
 
 pub struct BufferCreateInfo {
     pub ctx: GraphicsContext,

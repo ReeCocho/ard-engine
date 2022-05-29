@@ -8,8 +8,7 @@ use self::{
     alloc::{StorageBuffer, UniformBuffer},
     container::EscapeHandle,
     descriptors::DescriptorPool,
-    forward_plus::POINT_LIGHTS_TABLE_DIMS,
-    renderer::graph::FRAMES_IN_FLIGHT,
+    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
 
 #[derive(Clone)]
@@ -40,11 +39,12 @@ pub struct CameraUBO {
     pub projection_inv: Mat4,
     pub vp_inv: Mat4,
     pub frustum: Frustum,
-    /// `x` = fov. `y` = near clipping plane. `z` = far clipping plane.
-    pub properties: Vec4,
     pub position: Vec4,
     /// Scale and bias for clustered lighting.
     pub cluster_scale_bias: Vec2,
+    pub fov: f32,
+    pub near_clip: f32,
+    pub far_clip: f32,
 }
 
 #[repr(C)]
@@ -58,8 +58,7 @@ pub(crate) struct Froxel {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct CameraLightClusters {
-    pub frustums:
-        [Froxel; POINT_LIGHTS_TABLE_DIMS.0 * POINT_LIGHTS_TABLE_DIMS.1 * POINT_LIGHTS_TABLE_DIMS.2],
+    pub frustums: [Froxel; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
 }
 
 unsafe impl Pod for CameraUBO {}
@@ -165,7 +164,6 @@ impl CameraUBO {
             projection_inv: projection.inverse(),
             vp_inv: vp.inverse(),
             frustum: vp.into(),
-            properties: Vec4::new(descriptor.fov, descriptor.near, descriptor.far, 0.0),
             position: Vec4::new(
                 descriptor.position.x,
                 descriptor.position.y,
@@ -173,10 +171,13 @@ impl CameraUBO {
                 0.0,
             ),
             cluster_scale_bias: Vec2::new(
-                (POINT_LIGHTS_TABLE_DIMS.2 as f32) / (descriptor.far / descriptor.near).ln(),
-                ((POINT_LIGHTS_TABLE_DIMS.2 as f32) * descriptor.near.ln())
+                (FROXEL_TABLE_DIMS.2 as f32) / (descriptor.far / descriptor.near).ln(),
+                ((FROXEL_TABLE_DIMS.2 as f32) * descriptor.near.ln())
                     / (descriptor.far / descriptor.near).ln(),
             ),
+            fov: descriptor.fov,
+            near_clip: descriptor.near,
+            far_clip: descriptor.far,
         }
     }
 }
