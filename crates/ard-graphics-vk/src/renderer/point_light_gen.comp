@@ -27,7 +27,6 @@ layout(set = 1, binding = 1) readonly buffer ARD_CameraClusterFroxels {
 };
 
 layout(push_constant) uniform constants {
-    vec2 render_area;
     uint total_lights;
 };
 

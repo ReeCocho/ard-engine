@@ -306,6 +306,7 @@ fn setup(app: &mut App) {
                         Renderable {
                             mesh: mesh.clone(),
                             material: material.clone(),
+                            layers: RenderLayerFlags::all(),
                         },
                         Model(model),
                     )],

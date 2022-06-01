@@ -11,6 +11,7 @@ pub mod surface;
 pub mod texture;
 
 use bytemuck::{Pod, Zeroable};
+use enumflags2::{bitflags, make_bitflags, BitFlags};
 use serde::{Deserialize, Serialize};
 
 pub mod prelude {
@@ -108,6 +109,19 @@ pub struct Frustum {
     /// With inward facing normals.
     pub planes: [Vec4; 6],
 }
+
+/// Layer mask used for renderable objects.
+#[bitflags]
+#[repr(u32)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RenderLayer {
+    /// Layer used by objects that should cast shadows.
+    ShadowCaster,
+    /// Layer used by opaque geometry.
+    Opaque,
+}
+
+pub type RenderLayerFlags = BitFlags<RenderLayer, u32>;
 
 unsafe impl Pod for ObjectBounds {}
 unsafe impl Zeroable for ObjectBounds {}

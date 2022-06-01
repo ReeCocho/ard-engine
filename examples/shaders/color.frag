@@ -14,7 +14,6 @@ layout(location = 0) out vec4 FRAGMENT_COLOR;
 
 layout(location = 1) in vec4 VERT_COLOR;
 
-
 void entry() {
     FRAGMENT_COLOR = get_material_data().color;
 }

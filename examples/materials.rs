@@ -155,6 +155,7 @@ fn setup(app: &mut App) {
                     Renderable {
                         mesh: triangle_mesh.clone(),
                         material: material.clone(),
+                        layers: RenderLayerFlags::all(),
                     },
                     Model(Mat4::from_translation(Vec3::new(
                         -(x as f32) - 1.0,
@@ -177,6 +178,7 @@ fn setup(app: &mut App) {
                     Renderable {
                         mesh: quad_mesh.clone(),
                         material: material.clone(),
+                        layers: RenderLayerFlags::all(),
                     },
                     Model(Mat4::from_translation(Vec3::new(
                         x as f32 + 1.0,

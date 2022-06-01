@@ -91,8 +91,6 @@ void main() { \
 
 #endif
 
-
-
 /// Gets the model matrix for object.
 mat4 get_model_matrix() {
     #ifdef ARD_VERTEX_SHADER

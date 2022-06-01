@@ -23,7 +23,7 @@ pub struct StaticGeometry(pub(crate) Arc<StaticGeometryInner>);
 
 pub(crate) struct StaticGeometryInner {
     pub(crate) batches: DashMap<DrawKey, StaticBatch, BuildHasherDefault<FastIntHasher>>,
-    pub(crate) sorted_keys: Mutex<Vec<DrawKey>>,
+    pub(crate) sorted_keys: RwLock<Vec<DrawKey>>,
     /// Indicates, for the specific frame, that the static geometry has been changed and needs to
     /// be reuploaded.
     pub(crate) dirty: [AtomicBool; FRAMES_IN_FLIGHT],
@@ -39,6 +39,7 @@ pub(crate) struct StaticBatch {
     #[allow(unused)]
     pub material: Material,
     pub mesh: Mesh,
+    pub layers: RenderLayerFlags,
     pub models: Vec<Mat4>,
     pub handles: Vec<StaticRenderable>,
 }
@@ -47,7 +48,7 @@ impl StaticGeometry {
     pub(crate) fn new() -> Self {
         StaticGeometry(Arc::new(StaticGeometryInner {
             batches: DashMap::default(),
-            sorted_keys: Mutex::default(),
+            sorted_keys: RwLock::default(),
             handle_to_object: DashMap::default(),
             handle_ctr: AtomicU32::default(),
             len: AtomicUsize::default(),
@@ -84,7 +85,7 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
                 batches.get_mut(&key).unwrap()
             } else {
                 // Batch doesn't exist. Add sorted key and insert new batch
-                let mut sorted_keys = self.0.sorted_keys.lock().expect("mutex poisoned");
+                let mut sorted_keys = self.0.sorted_keys.write().expect("mutex poisoned");
                 if let Err(pos) = sorted_keys.binary_search(&key) {
                     sorted_keys.insert(pos, key);
                 }
@@ -92,6 +93,7 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
                 batches.entry(key).or_insert(StaticBatch {
                     material: model.0.material.clone(),
                     mesh: model.0.mesh.clone(),
+                    layers: model.0.layers,
                     models: Vec::default(),
                     handles: Vec::default(),
                 })

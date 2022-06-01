@@ -289,6 +289,7 @@ fn setup(app: &mut App) {
             Renderable {
                 mesh: mesh.clone(),
                 material: material.clone(),
+                layers: RenderLayerFlags::all(),
             },
             Model(Mat4::IDENTITY),
         )],
@@ -303,6 +304,7 @@ fn setup(app: &mut App) {
             Renderable::<VkBackend> {
                 mesh: mesh.clone(),
                 material: material.clone(),
+                layers: RenderLayerFlags::all(),
             };
             CUBE_COUNT
         ],

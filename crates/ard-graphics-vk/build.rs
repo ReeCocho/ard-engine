@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{path::Path, process::Command};
 
 use serde::{Deserialize, Serialize};
 
@@ -71,52 +68,62 @@ fn main() {
     // Compile shaders
     compile(
         Path::new("./src/renderer/draw_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/draw_gen.comp.spv"),
+        &["HIGH_Z_CULLING"],
+    );
+    compile(
+        Path::new("./src/renderer/draw_gen.comp"),
+        Path::new("./src/renderer/draw_gen_no_highz.comp.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/point_light_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/point_light_gen.comp.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/quad.vert"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/quad.vert.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/zreduce.frag"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/zreduce.frag.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/debug_draw.vert"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/debug_draw.vert.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/debug_draw.frag"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/debug_draw.frag.spv"),
+        &[],
     );
     compile(
         Path::new("./src/renderer/cluster_gen.comp"),
-        Path::new("./src/renderer/"),
+        Path::new("./src/renderer/cluster_gen.comp.spv"),
+        &[],
     );
 }
 
-fn compile(in_path: &Path, out_path: &Path) {
-    // Construct the output name of the shader
-    let mut out_name: PathBuf = out_path.into();
-    out_name.push(in_path.file_name().unwrap());
-
-    let mut extension: String = in_path.extension().unwrap().to_str().unwrap().into();
-    extension.push_str(".spv");
-
-    out_name.set_extension(&extension);
+fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {
+    // Construct flag arguments.
+    let mut flag_args = Vec::with_capacity(flags.len());
+    for flag in flags {
+        flag_args.push(format!("-D{}", flag));
+    }
 
     // Compile the shader
-    let err = format!("unable to compile {:?}", out_name);
+    let err = format!("unable to compile {:?}", out_path);
     let stderr = Command::new("glslc")
         .arg(in_path)
         .arg("-I./shader_includes/")
+        .args(&flag_args)
         .arg("--target-env=vulkan1.2")
         .arg("-o")
-        .arg(&out_name)
+        .arg(&out_path)
         .output()
         .expect(&err)
         .stderr;

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel};
+use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel, RenderLayerFlags};
 use ard_ecs::prelude::*;
 use ard_math::{Mat4, Vec3};
 
@@ -20,6 +20,7 @@ pub struct PostRender(pub Duration);
 pub struct Renderable<B: Backend> {
     pub mesh: B::Mesh,
     pub material: B::Material,
+    pub layers: RenderLayerFlags,
 }
 
 impl<B: Backend> Component for Renderable<B> {}

@@ -39,14 +39,13 @@ pub struct FactoryInner {
     pub(crate) material_buffers: Mutex<MaterialBuffers>,
     pub(crate) mesh_buffers: Mutex<MeshBuffers>,
     pub(crate) texture_sets: Mutex<TextureSets>,
-    pub(crate) camera_pool: Mutex<DescriptorPool>,
     pub(crate) layouts: Layouts,
-    pub(crate) meshes: Mutex<ResourceContainer<MeshInner>>,
-    pub(crate) shaders: Mutex<ResourceContainer<ShaderInner>>,
-    pub(crate) pipelines: Mutex<ResourceContainer<PipelineInner>>,
-    pub(crate) materials: Mutex<ResourceContainer<MaterialInner>>,
-    pub(crate) cameras: Mutex<ResourceContainer<CameraInner>>,
-    pub(crate) textures: Mutex<ResourceContainer<TextureInner>>,
+    pub(crate) meshes: RwLock<ResourceContainer<MeshInner>>,
+    pub(crate) shaders: RwLock<ResourceContainer<ShaderInner>>,
+    pub(crate) pipelines: RwLock<ResourceContainer<PipelineInner>>,
+    pub(crate) materials: RwLock<ResourceContainer<MaterialInner>>,
+    pub(crate) cameras: RwLock<ResourceContainer<CameraInner>>,
+    pub(crate) textures: RwLock<ResourceContainer<TextureInner>>,
 }
 
 impl Factory {
@@ -56,36 +55,8 @@ impl Factory {
         passes: &Passes,
         graph: &GameRendererGraphRef,
         global_layout: vk::DescriptorSetLayout,
+        camera_layout: vk::DescriptorSetLayout,
     ) -> Self {
-        let camera_pool = {
-            let bindings = [
-                // Camera UBO
-                vk::DescriptorSetLayoutBinding::builder()
-                    .binding(0)
-                    .descriptor_count(1)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                    .stage_flags(vk::ShaderStageFlags::ALL)
-                    .build(),
-                // Camera cluster froxels
-                vk::DescriptorSetLayoutBinding::builder()
-                    .binding(1)
-                    .descriptor_count(1)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-                    .stage_flags(vk::ShaderStageFlags::ALL)
-                    .build(),
-            ];
-
-            let layout_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
-                .bindings(&bindings)
-                .build();
-
-            DescriptorPool::new(
-                ctx,
-                &layout_create_info,
-                FRAMES_IN_FLIGHT * VkBackend::MAX_CAMERA,
-            )
-        };
-
         let material_buffers = MaterialBuffers::new(ctx);
         let texture_sets = TextureSets::new(ctx, anisotropy);
 
@@ -94,7 +65,7 @@ impl Factory {
             global_layout,
             texture_sets.layout(),
             material_buffers.layout(),
-            camera_pool.layout(),
+            camera_layout,
         );
 
         // TODO: Make default vertex and index buffer lengths part of renderer settings
@@ -109,15 +80,14 @@ impl Factory {
             material_buffers: Mutex::new(material_buffers),
             mesh_buffers: Mutex::new(mesh_buffers),
             texture_sets: Mutex::new(texture_sets),
-            camera_pool: Mutex::new(camera_pool),
             exclusive: RwLock::default(),
             staging: Mutex::new(StagingBuffers::new(ctx)),
-            meshes: Mutex::new(ResourceContainer::new()),
-            shaders: Mutex::new(ResourceContainer::new()),
-            pipelines: Mutex::new(ResourceContainer::new()),
-            materials: Mutex::new(ResourceContainer::new()),
-            cameras: Mutex::new(ResourceContainer::new()),
-            textures: Mutex::new(ResourceContainer::new()),
+            meshes: RwLock::new(ResourceContainer::new()),
+            shaders: RwLock::new(ResourceContainer::new()),
+            pipelines: RwLock::new(ResourceContainer::new()),
+            materials: RwLock::new(ResourceContainer::new()),
+            cameras: RwLock::new(ResourceContainer::new()),
+            textures: RwLock::new(ResourceContainer::new()),
         }));
 
         let camera = factory.create_camera(&CameraCreateInfo {
@@ -133,12 +103,12 @@ impl Factory {
     pub(crate) unsafe fn process(&self, frame: usize) {
         let mut staging = self.0.staging.lock().expect("mutex poisoned");
         let mut texture_sets = self.0.texture_sets.lock().expect("mutex poisoned");
-        let mut meshes = self.0.meshes.lock().expect("mutex poisoned");
-        let mut materials = self.0.materials.lock().expect("mutex poisoned");
-        let mut shaders = self.0.shaders.lock().expect("mutex poisoned");
-        let mut pipelines = self.0.pipelines.lock().expect("mutex poisoned");
-        let mut cameras = self.0.cameras.lock().expect("mutex poisoned");
-        let mut textures = self.0.textures.lock().expect("mutex poisoned");
+        let mut meshes = self.0.meshes.write().expect("mutex poisoned");
+        let mut materials = self.0.materials.write().expect("mutex poisoned");
+        let mut shaders = self.0.shaders.write().expect("mutex poisoned");
+        let mut pipelines = self.0.pipelines.write().expect("mutex poisoned");
+        let mut cameras = self.0.cameras.write().expect("mutex poisoned");
+        let mut textures = self.0.textures.write().expect("mutex poisoned");
         let mut mesh_buffers = self.0.mesh_buffers.lock().expect("mutex poisoned");
         let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
 
@@ -221,7 +191,7 @@ impl Drop for FactoryInner {
 impl FactoryApi<VkBackend> for Factory {
     fn create_mesh(&self, create_info: &MeshCreateInfo) -> Mesh {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut meshes = self.0.meshes.lock().expect("mutex poisoned");
+        let mut meshes = self.0.meshes.write().expect("mutex poisoned");
         let mut mesh_buffers = self.0.mesh_buffers.lock().expect("mutex poisoned");
         assert!(meshes.len() < VkBackend::MAX_MESHES);
 
@@ -268,7 +238,7 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn create_shader(&self, create_info: &ShaderCreateInfo) -> Shader {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut shaders = self.0.shaders.lock().expect("mutex poisoned");
+        let mut shaders = self.0.shaders.write().expect("mutex poisoned");
 
         let shader_inner = unsafe { ShaderInner::new(&self.0.ctx, create_info) };
 
@@ -288,8 +258,8 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn create_pipeline(&self, create_info: &PipelineCreateInfo<VkBackend>) -> Pipeline {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut pipelines = self.0.pipelines.lock().expect("mutex poisoned");
-        let shaders = self.0.shaders.lock().expect("mutex poisoned");
+        let mut pipelines = self.0.pipelines.write().expect("mutex poisoned");
+        let shaders = self.0.shaders.read().expect("mutex poisoned");
         let graph = self.0.graph.lock().expect("mutex poisoned");
 
         let pipeline_inner = unsafe {
@@ -314,11 +284,11 @@ impl FactoryApi<VkBackend> for Factory {
     fn create_material(&self, create_info: &MaterialCreateInfo<VkBackend>) -> Material {
         let (material, needs_tex_set) = {
             let _lock = self.0.exclusive.read().expect("lock poisoned");
-            let mut materials = self.0.materials.lock().expect("mutex poisoned");
+            let mut materials = self.0.materials.write().expect("mutex poisoned");
             let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
 
             let needs_tex_set = {
-                let pipelines = self.0.pipelines.lock().expect("mutex poisoned");
+                let pipelines = self.0.pipelines.read().expect("mutex poisoned");
                 let tex_count = pipelines
                     .get(create_info.pipeline.id)
                     .unwrap()
@@ -355,10 +325,9 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn create_camera(&self, create_info: &CameraCreateInfo) -> Camera {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut cameras = self.0.cameras.lock().expect("mutex poisoned");
-        let mut camera_pool = self.0.camera_pool.lock().expect("mutex poisoned");
+        let mut cameras = self.0.cameras.write().expect("mutex poisoned");
 
-        let camera_inner = unsafe { CameraInner::new(&self.0.ctx, &mut camera_pool, create_info) };
+        let camera_inner = unsafe { CameraInner::new(&self.0.ctx, create_info) };
         let escaper = cameras.insert(camera_inner);
 
         Camera {
@@ -369,7 +338,7 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn create_texture(&self, create_info: &TextureCreateInfo) -> Texture {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut textures = self.0.textures.lock().expect("mutex poisoned");
+        let mut textures = self.0.textures.write().expect("mutex poisoned");
 
         let (texture_inner, staging_buffer) =
             unsafe { TextureInner::new(&self.0.ctx, create_info) };
@@ -406,14 +375,14 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn update_camera(&self, camera: &Camera, descriptor: CameraDescriptor) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut cameras = self.0.cameras.lock().expect("mutex poisoned");
+        let mut cameras = self.0.cameras.write().expect("mutex poisoned");
         let camera = cameras.get_mut(camera.id).unwrap();
         camera.descriptor = descriptor;
     }
 
     fn load_texture_mip(&self, texture: &Texture, level: usize, data: &[u8]) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let textures = self.0.textures.lock().expect("mutex poisoned");
+        let textures = self.0.textures.write().expect("mutex poisoned");
         let mut staging = self.0.staging.lock().expect("mutex poisoned");
 
         let texture_inner = textures
@@ -437,7 +406,7 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn update_material_data(&self, material: &Material, data: &[u8]) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut materials = self.0.materials.lock().expect("mutex poisoned");
+        let mut materials = self.0.materials.write().expect("mutex poisoned");
         let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
         let material_inner = materials.get_mut(material.id).unwrap();
 
@@ -456,7 +425,7 @@ impl FactoryApi<VkBackend> for Factory {
 
     fn update_material_texture(&self, material: &Material, texture: Option<&Texture>, slot: usize) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
-        let mut materials = self.0.materials.lock().expect("mutex poisoned");
+        let mut materials = self.0.materials.write().expect("mutex poisoned");
         let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
         let material_inner = materials.get_mut(material.id).unwrap();
 

@@ -186,6 +186,7 @@ fn setup(app: &mut App) {
             Renderable {
                 mesh: quad_mesh,
                 material,
+                layers: RenderLayerFlags::all(),
             },
             Model(Mat4::from_translation(Vec3::new(0.0, 0.0, 1.0))),
         )],

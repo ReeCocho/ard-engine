@@ -11,6 +11,14 @@ use crate::{
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PassId(pub(crate) u32);
 
+impl PassId {
+    /// Creates an invalid pass id.
+    #[inline]
+    pub const fn invalid() -> Self {
+        PassId(u32::MAX)
+    }
+}
+
 pub trait Pass<C: Context> {
     fn run(
         &mut self,

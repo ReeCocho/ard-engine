@@ -10,6 +10,8 @@ use crate::VkBackend;
 
 use crate::shader_constants::FRAMES_IN_FLIGHT;
 
+use super::forward_plus::mesh_passes::mesh_pass::MeshPassCameraInfo;
+
 const DEFAULT_DEBUG_BUFFER_CAP: usize = 1;
 
 #[derive(Resource, Clone)]
@@ -39,12 +41,12 @@ enum DebugObject {
 impl DebugDrawing {
     pub(crate) unsafe fn new(
         ctx: &GraphicsContext,
-        factory: &Factory,
+        camera_layout: vk::DescriptorSetLayout,
         opaque_render_pass: vk::RenderPass,
     ) -> Self {
         Self(Arc::new(DebugDrawingInner::new(
             ctx,
-            factory,
+            camera_layout,
             opaque_render_pass,
         )))
     }
@@ -53,7 +55,7 @@ impl DebugDrawing {
 impl DebugDrawingInner {
     pub(crate) unsafe fn new(
         ctx: &GraphicsContext,
-        factory: &Factory,
+        camera_layout: vk::DescriptorSetLayout,
         opaque_render_pass: vk::RenderPass,
     ) -> Self {
         let mut frames = Vec::with_capacity(FRAMES_IN_FLIGHT);
@@ -62,7 +64,7 @@ impl DebugDrawingInner {
         }
 
         let pipeline_layout = {
-            let layouts = [factory.0.camera_pool.lock().unwrap().layout()];
+            let layouts = [camera_layout];
 
             let create_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
@@ -286,7 +288,7 @@ impl DebugDrawingInner {
         &self,
         commands: vk::CommandBuffer,
         frame_idx: usize,
-        camera: &CameraInner,
+        camera: &MeshPassCameraInfo,
         screen_size: (u32, u32),
     ) {
         let device = &self.ctx.0.device;

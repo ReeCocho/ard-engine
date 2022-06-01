@@ -23,7 +23,9 @@ layout(set = 0, binding = 3) writeonly buffer OutputObjectIndices {
     uint[] output_indices;
 };
 
+#ifdef HIGH_Z_CULLING
 layout(set = 0, binding = 4) uniform sampler2D depth_pyramid;
+#endif
 
 layout(set = 1, binding = 0) uniform ARD_Camera {
     Camera camera;
@@ -97,6 +99,7 @@ void main() {
         }
     } 
 
+#if defined(HIGH_Z_CULLING)
     TransformedBoundingBox bb = transform_bounding_box(
         model, 
         draw_calls[obj.batch_idx].bounds_center, 
@@ -130,4 +133,9 @@ void main() {
         uint instance_index = draw_calls[obj.batch_idx].first_instance + model_offset;
         output_indices[instance_index] = obj.info_idx;
     }
+#else
+    uint model_offset = atomicAdd(draw_calls[obj.batch_idx].instance_count, 1);
+    uint instance_index = draw_calls[obj.batch_idx].first_instance + model_offset;
+    output_indices[instance_index] = obj.info_idx;
+#endif
 }

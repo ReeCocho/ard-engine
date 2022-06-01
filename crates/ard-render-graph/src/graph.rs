@@ -211,6 +211,11 @@ impl<C: Context> RenderGraphBuilder<C> {
     }
 
     #[inline]
+    pub fn get_size_group(&self, id: SizeGroupId) -> &SizeGroup {
+        &self.size_groups[id.0 as usize]
+    }
+
+    #[inline]
     pub fn add_size_group(&mut self, size_group: SizeGroup) -> SizeGroupId {
         self.size_groups.push(size_group);
         SizeGroupId(self.size_groups.len() as u32 - 1)

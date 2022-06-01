@@ -29,7 +29,7 @@ pub struct Renderer {
     ctx: GraphicsContext,
     factory: Factory,
     static_geometry: StaticGeometry,
-    debug_drawing: DebugDrawing,
+    _debug_drawing: DebugDrawing,
     rg_ctx: RenderGraphContext<ForwardPlus>,
     state: ForwardPlus,
     graph: GameRendererGraphRef,
@@ -79,7 +79,7 @@ impl RendererApi<VkBackend> for Renderer {
                 ctx: create_info.ctx.clone(),
                 factory: factory.clone(),
                 static_geometry: static_geometry.clone(),
-                debug_drawing: debug_drawing.clone(),
+                _debug_drawing: debug_drawing.clone(),
                 last_render_time: Instant::now(),
                 rg_ctx,
                 graph,
@@ -122,7 +122,7 @@ impl Renderer {
         }
     }
 
-    fn stopping(&mut self, _: Stopping, _: Commands, _: Queries<()>, res: Res<()>) {
+    fn stopping(&mut self, _: Stopping, _: Commands, _: Queries<()>, _: Res<()>) {
         unsafe {
             self.ctx.0.device.device_wait_idle().unwrap();
         }
@@ -131,7 +131,7 @@ impl Renderer {
     unsafe fn render(
         &mut self,
         _: Render,
-        commands: Commands,
+        _: Commands,
         queries: Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
         res: Res<RenderResources>,
     ) {
@@ -170,7 +170,7 @@ impl Renderer {
             if texture_sets.anisotropy() != settings.anisotropy_level {
                 texture_sets.set_anisotropy(
                     settings.anisotropy_level,
-                    &self.factory.0.textures.lock().expect("mutex poisoned"),
+                    &self.factory.0.textures.read().expect("mutex poisoned"),
                 );
             }
         }
@@ -179,12 +179,9 @@ impl Renderer {
         self.factory.process(frame_idx);
 
         // Update context with outside state
-        let dynamic_geo = queries.make::<(Read<Renderable<VkBackend>>, Read<Model>)>();
-
-        let point_lights = queries.make::<(Read<PointLight>, Read<Model>)>();
-
-        self.state.set_dynamic_geo(dynamic_geo);
-        self.state.set_point_light_query(point_lights);
+        self.state.set_dynamic_geo(&queries);
+        self.state
+            .set_point_light_query(queries.make::<(Read<PointLight>, Read<Model>)>());
         self.state.set_surface_image_idx(image_idx);
 
         // Run the render graph
@@ -227,20 +224,20 @@ impl Renderer {
             // the frames. No need to wait since a wait is performed if the surface is
             // invalidated.
             let resolution = surface_lock.resolution;
-            self.state.resize_canvas();
-            self.graph
-                .lock()
-                .expect("mutex poisoned")
-                .update_size_group(
-                    &mut self.rg_ctx,
-                    self.state.canvas_size_group(),
-                    SizeGroup {
-                        width: resolution.width,
-                        height: resolution.height,
-                        mip_levels: 1,
-                        array_layers: 1,
-                    },
-                );
+            let mut graph = self.graph.lock().expect("mutex poisoned");
+
+            graph.update_size_group(
+                &mut self.rg_ctx,
+                self.state.canvas_size_group(),
+                SizeGroup {
+                    width: resolution.width,
+                    height: resolution.height,
+                    mip_levels: 1,
+                    array_layers: 1,
+                },
+            );
+
+            self.state.resize_canvas(graph.resources_mut());
         }
     }
 }
