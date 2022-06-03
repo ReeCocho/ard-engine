@@ -269,6 +269,8 @@ impl MeshPass {
         device: &ash::Device,
         frame: usize,
         shadow_sampler: vk::Sampler,
+        poisson_disk_sampler: vk::Sampler,
+        poisson_disk_view: vk::ImageView,
         resources: &mut RenderGraphResources<RenderGraphContext<ForwardPlus>>,
         object_info: BufferId,
         point_lights: BufferId,
@@ -299,22 +301,37 @@ impl MeshPass {
             device.update_descriptor_sets(&writes, &[]);
         }
 
-        // Write shadow map if needed
+        // Write shadow map and poisson disk if needed
         if let Some(shadow_map) = &self.shadow_image {
             let (_, shadow_map_images) = resources.get_image(*shadow_map).unwrap();
 
-            let shadow_map_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(shadow_map_images[frame].view)
-                .sampler(shadow_sampler)
-                .build()];
+            let image_infos = [
+                vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(shadow_map_images[frame].view)
+                    .sampler(shadow_sampler)
+                    .build(),
+                vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(poisson_disk_view)
+                    .sampler(poisson_disk_sampler)
+                    .build(),
+            ];
 
-            let writes = [vk::WriteDescriptorSet::builder()
-                .dst_set(global_set)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .dst_binding(5)
-                .image_info(&shadow_map_info)
-                .build()];
+            let writes = [
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(global_set)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .dst_binding(5)
+                    .image_info(&image_infos[0..1])
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(global_set)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .dst_binding(6)
+                    .image_info(&image_infos[1..2])
+                    .build(),
+            ];
 
             device.update_descriptor_sets(&writes, &[]);
         }

@@ -7,6 +7,7 @@ use self::mesh_pass::{MeshPass, MeshPassCreateInfo};
 
 use super::{DrawKey, ForwardPlus};
 use crate::{
+    alloc::{Buffer, Image, ImageCreateInfo},
     camera::{
         depth_pyramid::DepthPyramidGenerator, descriptors::DescriptorPool, graph::RenderPass,
         GraphicsContext, Lighting, RawPointLight,
@@ -56,6 +57,8 @@ pub(crate) struct MeshPasses {
     pub depth_pyramid_gen: DepthPyramidGenerator,
     /// Sampler used to sample shadow maps.
     pub shadow_sampler: vk::Sampler,
+    /// Sampler used when sampling the poisson disk texture.
+    pub poisson_disk_sampler: vk::Sampler,
     /// Descriptor pool for frame global data.
     pub global_pool: DescriptorPool,
     /// Descriptor pool for draw call generation.
@@ -78,6 +81,9 @@ pub(crate) struct MeshPasses {
     // Camera cluster generation pipeline.
     pub cluster_gen_pipeline_layout: vk::PipelineLayout,
     pub cluster_gen_pipeline: vk::Pipeline,
+    // Poisson disk image info.
+    pub poisson_disk: Image,
+    pub poisson_disk_view: vk::ImageView,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -237,6 +243,13 @@ impl<'a> MeshPassesBuilder<'a> {
                 // Shadow map
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(5)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // Poisson disk
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(6)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
@@ -666,6 +679,27 @@ impl<'a> MeshPassesBuilder<'a> {
                 .expect("unable to create shadow sampler")
         };
 
+        let poisson_disk_sampler = unsafe {
+            let create_info = vk::SamplerCreateInfo::builder()
+                .address_mode_u(vk::SamplerAddressMode::REPEAT)
+                .address_mode_v(vk::SamplerAddressMode::REPEAT)
+                .address_mode_w(vk::SamplerAddressMode::REPEAT)
+                .mag_filter(vk::Filter::NEAREST)
+                .min_filter(vk::Filter::NEAREST)
+                .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                .min_lod(0.0)
+                .max_lod(0.0)
+                .anisotropy_enable(false)
+                .build();
+
+            ctx.0
+                .device
+                .create_sampler(&create_info, None)
+                .expect("unable to create poisson disk sampler")
+        };
+
+        let (poisson_disk, poisson_disk_view) = unsafe { create_disk(ctx) };
+
         let passes = MeshPasses {
             ctx: ctx.clone(),
             passes: Vec::default(),
@@ -681,6 +715,7 @@ impl<'a> MeshPassesBuilder<'a> {
             global_pool,
             draw_gen_pool,
             shadow_sampler,
+            poisson_disk_sampler,
             light_clustering_pool,
             camera_pool,
             object_info,
@@ -692,6 +727,8 @@ impl<'a> MeshPassesBuilder<'a> {
             point_light_gen_pipeline,
             cluster_gen_pipeline_layout,
             cluster_gen_pipeline,
+            poisson_disk,
+            poisson_disk_view,
         };
 
         MeshPassesBuilder {
@@ -1162,6 +1199,8 @@ impl MeshPasses {
                     device,
                     frame,
                     state.mesh_passes.shadow_sampler,
+                    state.mesh_passes.poisson_disk_sampler,
+                    state.mesh_passes.poisson_disk_view,
                     resources,
                     state.mesh_passes.object_info,
                     state.mesh_passes.point_lights,
@@ -1345,7 +1384,10 @@ impl Drop for MeshPasses {
                 pass.release(&mut self.depth_pyramid_gen);
             }
 
+            device.destroy_image_view(self.poisson_disk_view, None);
+
             device.destroy_sampler(self.shadow_sampler, None);
+            device.destroy_sampler(self.poisson_disk_sampler, None);
 
             device.destroy_pipeline_layout(self.cluster_gen_pipeline_layout, None);
             device.destroy_pipeline_layout(self.draw_gen_pipeline_layout, None);
@@ -1392,6 +1434,138 @@ impl MeshPassStage {
     }
 }
 
+/// Helper function to create the poisson disk.
+unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
+    let poisson_disk_image = {
+        let create_info = ImageCreateInfo {
+            ctx: ctx.clone(),
+            ty: vk::ImageType::TYPE_3D,
+            width: POISSON_DISK_DIMS,
+            height: POISSON_DISK_DIMS,
+            depth: POISSON_DISK_DIMS,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
+            image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            mip_levels: 1,
+            array_layers: 1,
+            format: vk::Format::R32G32_SFLOAT,
+        };
+
+        Image::new(&create_info)
+    };
+
+    let poisson_disk_image_view = {
+        let create_info = vk::ImageViewCreateInfo::builder()
+            .image(poisson_disk_image.image())
+            .view_type(vk::ImageViewType::TYPE_3D)
+            .format(vk::Format::R32G32_SFLOAT)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .build();
+
+        ctx.0
+            .device
+            .create_image_view(&create_info, None)
+            .expect("unable to create poisson disk image view")
+    };
+
+    let staging_buffer = Buffer::new_staging_buffer(ctx, POISSON_DISK_ANGLES);
+
+    // Upload staging buffer to error image
+    let (command_pool, commands) = ctx
+        .0
+        .create_single_use_pool(ctx.0.queue_family_indices.transfer);
+
+    let barrier = [vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::UNDEFINED)
+        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+        .image(poisson_disk_image.image())
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .build()];
+
+    ctx.0.device.cmd_pipeline_barrier(
+        commands,
+        vk::PipelineStageFlags::TOP_OF_PIPE,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::BY_REGION,
+        &[],
+        &[],
+        &barrier,
+    );
+
+    let regions = [vk::BufferImageCopy::builder()
+        .buffer_offset(0)
+        .buffer_row_length(0)
+        .buffer_image_height(0)
+        .image_subresource(vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+        .image_extent(vk::Extent3D {
+            width: POISSON_DISK_DIMS,
+            height: POISSON_DISK_DIMS,
+            depth: POISSON_DISK_DIMS,
+        })
+        .build()];
+
+    ctx.0.device.cmd_copy_buffer_to_image(
+        commands,
+        staging_buffer.buffer(),
+        poisson_disk_image.image(),
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &regions,
+    );
+
+    let barrier = [vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .src_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+        .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
+        .image(poisson_disk_image.image())
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .build()];
+
+    ctx.0.device.cmd_pipeline_barrier(
+        commands,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+        vk::DependencyFlags::BY_REGION,
+        &[],
+        &[],
+        &barrier,
+    );
+
+    ctx.0
+        .submit_single_use_pool(ctx.0.transfer, command_pool, commands);
+
+    (poisson_disk_image, poisson_disk_image_view)
+}
+
 const DRAW_GEN_CODE: &[u8] = include_bytes!("../../draw_gen.comp.spv");
 
 const DRAW_GEN_NO_HIGHZ_CODE: &[u8] = include_bytes!("../../draw_gen_no_highz.comp.spv");
@@ -1399,3 +1573,7 @@ const DRAW_GEN_NO_HIGHZ_CODE: &[u8] = include_bytes!("../../draw_gen_no_highz.co
 const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("../../point_light_gen.comp.spv");
 
 const CLUSTER_GEN_CODE: &[u8] = include_bytes!("../../cluster_gen.comp.spv");
+
+const POISSON_DISK_DIMS: u32 = 32;
+
+const POISSON_DISK_ANGLES: &[u8] = include_bytes!("./random_disk.bin");

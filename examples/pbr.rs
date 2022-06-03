@@ -179,5 +179,5 @@ fn setup(app: &mut App) {
         });
     }
 
-    app.world.entities().commands().create(lights, &mut []);
+    // app.world.entities().commands().create(lights, &mut []);
 }

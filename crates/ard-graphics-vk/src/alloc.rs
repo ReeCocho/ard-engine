@@ -15,8 +15,10 @@ pub struct BufferCreateInfo {
 
 pub struct ImageCreateInfo {
     pub ctx: GraphicsContext,
+    pub ty: vk::ImageType,
     pub width: u32,
     pub height: u32,
+    pub depth: u32,
     pub memory_usage: MemoryLocation,
     pub image_usage: vk::ImageUsageFlags,
     pub mip_levels: u32,
@@ -205,11 +207,11 @@ impl Image {
     pub unsafe fn new(create_info: &ImageCreateInfo) -> Self {
         // Create image
         let image_create_info = vk::ImageCreateInfo::builder()
-            .image_type(vk::ImageType::TYPE_2D)
+            .image_type(create_info.ty)
             .extent(vk::Extent3D {
                 width: create_info.width,
                 height: create_info.height,
-                depth: 1,
+                depth: create_info.depth,
             })
             .mip_levels(create_info.mip_levels)
             .array_layers(create_info.array_layers)

@@ -30,9 +30,13 @@ pub(crate) struct RawPointLight {
 #[repr(C)]
 pub(crate) struct LightingUbo {
     pub sun_vp: Mat4,
+    pub sun_view: Mat4,
+    pub sun_proj: Mat4,
     pub ambient: Vec4,
     pub sun_color_intensity: Vec4,
     pub sun_direction: Vec4,
+    pub sun_size_uv: Vec2,
+    pub sun_size: f32,
     pub shadow_bias_min: f32,
     pub shadow_bias_max: f32,
 }
@@ -41,9 +45,13 @@ impl Default for LightingUbo {
     fn default() -> Self {
         Self {
             sun_vp: Mat4::IDENTITY,
+            sun_view: Mat4::IDENTITY,
+            sun_proj: Mat4::IDENTITY,
             ambient: Vec4::new(0.03, 0.03, 0.03, 1.0),
-            sun_color_intensity: Vec4::new(1.0, 1.0, 1.0, 0.0),
-            sun_direction: Vec4::new(0.0, -1.0, 0.0, 1.0),
+            sun_color_intensity: Vec4::new(1.0, 1.0, 1.0, 5.0),
+            sun_direction: Vec4::new(1.0, -1.0, 1.0, 0.0).normalize(),
+            sun_size_uv: Vec2::ONE,
+            sun_size: 0.5,
             shadow_bias_min: 0.0001,
             shadow_bias_max: 0.001,
         }
@@ -52,19 +60,11 @@ impl Default for LightingUbo {
 
 impl Lighting {
     pub(crate) unsafe fn new(ctx: &GraphicsContext) -> Self {
-        let lubo = LightingUbo {
-            sun_direction: Vec4::from((
-                (Vec3::ZERO - Vec3::new(32.0, 32.0, 32.0)).normalize(),
-                1.0,
-            )),
-            ..Default::default()
-        };
-
-        let ubo = UniformBuffer::new(ctx, lubo);
+        let ubo = UniformBuffer::new(ctx, LightingUbo::default());
 
         Self {
             ubo,
-            ubo_data: lubo,
+            ubo_data: LightingUbo::default(),
         }
     }
 
@@ -112,11 +112,20 @@ impl Lighting {
 
         let proj = Mat4::orthographic_lh(min.x, max.x, min.y, max.y, min.z, max.z);
 
-        // Compute the vp matrix
+        // Compute the vp matrix and update frustum size
+        self.ubo_data.sun_view = view;
+        self.ubo_data.sun_proj = proj;
         self.ubo_data.sun_vp = proj * view;
+        self.ubo_data.sun_size_uv =
+            self.ubo_data.sun_size / Vec2::new(max.x - min.x, max.y - min.y);
 
         // Write to the UBO
         self.ubo.write(self.ubo_data, frame);
+
+        // Construct the frustum planes for culling. We set the back plane to 0 so that we never
+        // cull objects behind the view.
+        let mut frustum = Frustum::from(self.ubo_data.sun_vp);
+        frustum.planes[4] = Vec4::ZERO;
 
         CameraUbo {
             view,
@@ -125,7 +134,7 @@ impl Lighting {
             view_inv: view.inverse(),
             projection_inv: proj.inverse(),
             vp_inv: self.ubo_data.sun_vp.inverse(),
-            frustum: Frustum::from(self.ubo_data.sun_vp),
+            frustum,
             position: Vec4::from((center - (min.z * self.ubo_data.sun_direction.xyz()), 1.0)),
             cluster_scale_bias: Vec2::ZERO,
             fov: 1.0,

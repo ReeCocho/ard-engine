@@ -665,8 +665,10 @@ impl RenderTarget {
     ) -> Self {
         let create_info = ImageCreateInfo {
             ctx: ctx.clone(),
+            ty: vk::ImageType::TYPE_2D,
             width: size_group.width,
             height: size_group.height,
+            depth: 1,
             memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: match descriptor.format {
                 vk::Format::D24_UNORM_S8_UINT | vk::Format::D32_SFLOAT_S8_UINT => {

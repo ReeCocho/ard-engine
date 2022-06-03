@@ -542,8 +542,10 @@ impl DepthPyramid {
 
         let create_info = ImageCreateInfo {
             ctx: ctx.clone(),
+            ty: vk::ImageType::TYPE_2D,
             width,
             height,
+            depth: 1,
             memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
             mip_levels,

@@ -10,16 +10,53 @@
 
 const float PI = 3.14159265359;
 
+const vec2 poisson_offsets[32] = vec2[32](
+	vec2(0.06407013, 0.05409927),
+	vec2(0.7366577, 0.5789394),
+	vec2(-0.6270542, -0.5320278),
+	vec2(-0.4096107, 0.8411095),
+	vec2(0.6849564, -0.4990818),
+	vec2(-0.874181, -0.04579735),
+	vec2(0.9989998, 0.0009880066),
+	vec2(-0.004920578, -0.9151649),
+	vec2(0.1805763, 0.9747483),
+	vec2(-0.2138451, 0.2635818),
+	vec2(0.109845, 0.3884785),
+	vec2(0.06876755, -0.3581074),
+	vec2(0.374073, -0.7661266),
+	vec2(0.3079132, -0.1216763),
+	vec2(-0.3794335, -0.8271583),
+	vec2(-0.203878, -0.07715034),
+	vec2(0.5912697, 0.1469799),
+	vec2(-0.88069, 0.3031784),
+	vec2(0.5040108, 0.8283722),
+	vec2(-0.5844124, 0.5494877),
+	vec2(0.6017799, -0.1726654),
+	vec2(-0.5554981, 0.1559997),
+	vec2(-0.3016369, -0.3900928),
+	vec2(-0.5550632, -0.1723762),
+	vec2(0.925029, 0.2995041),
+	vec2(-0.2473137, 0.5538505),
+	vec2(0.9183037, -0.2862392),
+	vec2(0.2469421, 0.6718712),
+	vec2(0.3916397, -0.4328209),
+	vec2(-0.03576927, -0.6220032),
+	vec2(-0.04661255, 0.7995201),
+	vec2(0.4402924, 0.3640312)
+);
+
 #ifdef ARD_VERTEX_SHADER
 layout(location = 16) flat out uint ARD_INSTANCE_IDX;
 layout(location = 17) out vec3 ARD_FRAG_POS;
 layout(location = 18) out vec4 ARD_FRAG_POS_LIGHT_SPACE;
+layout(location = 19) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE;
 #endif
 
 #ifdef ARD_FRAGMENT_SHADER
 layout(location = 16) flat in uint ARD_INSTANCE_IDX;
 layout(location = 17) in vec3 ARD_FRAG_POS;
 layout(location = 18) in vec4 ARD_FRAG_POS_LIGHT_SPACE;
+layout(location = 19) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE;
 #endif
 
 //////////////
@@ -47,6 +84,8 @@ layout(set = 0, binding = 4) uniform ARD_Lighting {
 };
 
 layout(set = 0, binding = 5) uniform sampler2D ARD_SHADOW_MAP;
+
+layout(set = 0, binding = 6) uniform sampler3D ARD_POISSON_DISK;
 
 ////////////////
 /// TEXTURES ///
@@ -91,6 +130,7 @@ void main() { \
     ARD_INSTANCE_IDX = gl_InstanceIndex; \
     VsOut vs_out = func(); \
     ARD_FRAG_POS = vs_out.frag_pos; \
+    ARD_FRAG_POS_LIGHT_VIEW_SPACE = vec3(ARD_LIGHTING.sun_view * vec4(vs_out.frag_pos, 1.0)); \
     ARD_FRAG_POS_LIGHT_SPACE = ARD_LIGHTING.sun_vp * vec4(vs_out.frag_pos, 1.0); \
 } \
 
@@ -194,21 +234,94 @@ vec3 fresnel_schlick(float cos_theta, vec3 F0) {
 
 #extension GL_EXT_debug_printf : enable
 
-float shadow_calculation(vec4 frag_pos_light_space, vec3 normal) {
+// PCSS code here:
+// https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf
+
+float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv) {
+    float sum = 0.0;
+    for (int i = 0; i < 32; ++i) {
+        vec2 offset = poisson_offsets[i] * filter_radius_uv;
+        float shadow_depth = texture(ARD_SHADOW_MAP, uv + offset).r;
+        sum += z_receiver - bias < shadow_depth ? 1.0 : 0.0;
+    }
+    return sum / 32.0;
+}
+
+float shadow_calculation(
+    vec4 frag_pos_light_space, 
+    float light_space_depth,
+    vec3 normal
+) {
+    float NoL = dot(normal, ARD_LIGHTING.sun_direction.xyz);
+    float bias = max(
+        ARD_LIGHTING.shadow_bias_max * (1.0 - NoL), 
+        ARD_LIGHTING.shadow_bias_min
+    );
+
+    // blocker search
     vec3 proj_coords = frag_pos_light_space.xyz / frag_pos_light_space.w;
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
     proj_coords.y = 1.0 - proj_coords.y;
-    float closest_depth = texture(ARD_SHADOW_MAP, proj_coords.xy).r;
-    float current_depth = proj_coords.z;
-    float bias = max(
-        ARD_LIGHTING.shadow_bias_max * (1.0 - dot(normal, ARD_LIGHTING.sun_direction.xyz)), 
-        ARD_LIGHTING.shadow_bias_min
-    );
-    float shadow = current_depth - bias < closest_depth ? 1.0 : 0.0;
 
-    debugPrintfEXT("Computed %f   vs Sampled %f", current_depth, closest_depth);
+    vec2 filter_radius_uv = 0.05 * ARD_LIGHTING.sun_size_uv;
 
-    return shadow;
+	// Filtering
+	return pcf_filter(proj_coords.xy, proj_coords.z, bias, filter_radius_uv);
+}
+
+/// light_color - As named.
+/// base_color - Albedo factory of material.
+/// roughness - Roughness factor.
+/// metallic - Metallic factor.
+/// attenuation - As named.
+/// L - Direction from fragment to light.
+/// V - Direction from fragment to camera.
+/// N - Surface normal.
+/// F0 - Reflectance at normal incidence.
+vec3 lighting_general(
+    vec3 light_color,
+    vec3 base_color,
+    float roughness,
+    float metallic,
+    float attenuation,
+    vec3 L,
+    vec3 V,
+    vec3 N,
+    vec3 F0
+) {
+    // Per light radiance
+    vec3 H = normalize(V + L);
+    vec3 radiance = light_color * attenuation;
+
+    // Cook-Torrance BRDF
+    float NDF = distribution_GGX(N, H, roughness);
+    float G = geometry_smith(N, V, L, roughness);
+    vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+
+    // Bias to avoid divide by 0
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+    vec3 specular = numerator / denominator;
+
+    // kS is Fresnel
+    vec3 kS = F;
+
+    // For energy conservation, the diffuse and specular light can't be above 1.0 (unless
+    // the surface emits light); to preserve this relationship the diffuse component (kD)
+    // should be equal to 1.0 - kS
+    vec3 kD = vec3(1.0) - kS;
+
+    // Multiply kD by the inverse metalness such that only non-metals have diffuse
+    // lighting, or a linear blend if partly metal (pure metals have no diffuse light).
+    kD *= 1.0 - metallic;
+
+    // Scale light by NdotL
+    float NdotL = max(dot(N, L), 0.0);
+
+    // Add to outgoing radiance Lo
+    // NOTE: We already multiplied the BRDF by the Fresnel (kS) so we won't multiply
+    // by kS again
+    return (kD * base_color / PI + specular) * radiance * NdotL;
 }
 
 /// Performs PBR lighting calculations.
@@ -257,8 +370,23 @@ vec3 lighting(
     
     vec3 Lo = vec3(0.0);
 
-    float shadow = shadow_calculation(ARD_FRAG_POS_LIGHT_SPACE, N);
+    // Directional light
+    float shadow = shadow_calculation(ARD_FRAG_POS_LIGHT_SPACE, ARD_FRAG_POS_LIGHT_VIEW_SPACE.z, N);
+    float sun_attenuation = shadow;
 
+    Lo += lighting_general(
+        ARD_LIGHTING.sun_color_intensity.xyz * ARD_LIGHTING.sun_color_intensity.w,
+        base_color,
+        roughness,
+        metallic,
+        sun_attenuation,
+        -normalize(ARD_LIGHTING.sun_direction.xyz),
+        V,
+        N,
+        F0
+    );
+
+    // Point lights
     for (int i = 0; i < count; i++) {
         uint light_idx = ARD_POINT_LIGHT_TABLE.clusters[cluster.z][cluster.x][cluster.y][i];
         PointLight light = ARD_POINT_LIGHTS[light_idx];
@@ -267,43 +395,22 @@ vec3 lighting(
         float dist_to_light = length(frag_to_light);
 
         if (dist_to_light < light.position_range.w) {
-            // Per light radiance
             vec3 L = normalize(frag_to_light);
-            vec3 H = normalize(V + L);
             float sqr_dist = dist_to_light * dist_to_light;
             float sqr_range = light.position_range.w * light.position_range.w;
-            float attenuation = (1.0 - (sqr_dist / sqr_range)) * light.color_intensity.w * shadow;
-            vec3 radiance = light.color_intensity.xyz * attenuation;
-
-            // Cook-Torrance BRDF
-            float NDF = distribution_GGX(N, H, roughness);
-            float G = geometry_smith(N, V, L, roughness);
-            vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
-
-            // Bias to avoid divide by 0
-            vec3 numerator = NDF * G * F;
-            float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-            vec3 specular = numerator / denominator;
-
-            // kS is Fresnel
-            vec3 kS = F;
-
-            // For energy conservation, the diffuse and specular light can't be above 1.0 (unless
-            // the surface emits light); to preserve this relationship the diffuse component (kD)
-            // should be equal to 1.0 - kS
-            vec3 kD = vec3(1.0) - kS;
-
-            // Multiply kD by the inverse metalness such that only non-metals have diffuse
-            // lighting, or a linear blend if partly metal (pure metals have no diffuse light).
-            kD *= 1.0 - metallic;
-
-            // Scale light by NdotL
-            float NdotL = max(dot(N, L), 0.0);
-
-            // Add to outgoing radiance Lo
-            // NOTE: We already multiplied the BRDF by the Fresnel (kS) so we won't multiply
-            // by kS again
-            Lo += (kD * base_color / PI + specular) * radiance * NdotL;
+            float attenuation = (1.0 - (sqr_dist / sqr_range)) * light.color_intensity.w;
+            
+            Lo += lighting_general(
+                light.color_intensity.xyz,
+                base_color,
+                roughness,
+                metallic,
+                attenuation,
+                L,
+                V,
+                N,
+                F0
+            );
         }
     }
 

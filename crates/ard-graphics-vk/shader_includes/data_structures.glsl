@@ -11,9 +11,13 @@
 
 struct Lighting {
     mat4 sun_vp;
+    mat4 sun_view;
+    mat4 sun_proj;
     vec4 ambient;
     vec4 sun_color_intensity;
     vec4 sun_direction;
+    vec2 sun_size_uv;
+    float sun_size;
     float shadow_bias_min;
     float shadow_bias_max;
 };

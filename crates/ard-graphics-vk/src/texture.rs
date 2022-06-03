@@ -37,8 +37,10 @@ impl TextureInner {
         // Create image
         let img_create_info = ImageCreateInfo {
             ctx: ctx.clone(),
+            ty: vk::ImageType::TYPE_2D,
             width: create_info.width,
             height: create_info.height,
+            depth: 1,
             memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
             image_usage: vk::ImageUsageFlags::SAMPLED
                 | vk::ImageUsageFlags::TRANSFER_DST
