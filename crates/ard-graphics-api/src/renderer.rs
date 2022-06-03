@@ -58,7 +58,13 @@ pub trait RendererApi<B: Backend>: SystemState + Sized {
     /// Creates the renderer and the associated factory for creating rendering objects.
     fn new(
         create_info: &RendererCreateInfo<B>,
-    ) -> (Self, B::Factory, B::StaticGeometry, B::DebugDrawing);
+    ) -> (
+        Self,
+        B::Factory,
+        B::StaticGeometry,
+        B::DebugDrawing,
+        B::Lighting,
+    );
 }
 
 /// Used to register objects that don't move when rendering.

@@ -9,7 +9,7 @@ use super::{DrawKey, ForwardPlus};
 use crate::{
     camera::{
         depth_pyramid::DepthPyramidGenerator, descriptors::DescriptorPool, graph::RenderPass,
-        GraphicsContext, RawPointLight,
+        GraphicsContext, Lighting, RawPointLight,
     },
     prelude::graph::RenderGraphContext,
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL},
@@ -20,6 +20,7 @@ use ard_math::{Mat4, Vec2, Vec4};
 use ard_render_graph::{
     buffer::{BufferAccessDescriptor, BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraphBuilder, RenderGraphResources},
+    image::ImageAccessDecriptor,
     pass::{ColorAttachmentDescriptor, DepthStencilAttachmentDescriptor, PassDescriptor, PassId},
     AccessType, LoadOp, Operations,
 };
@@ -53,6 +54,8 @@ pub(crate) struct MeshPasses {
     pub object_buffers_expanded: bool,
     /// Used to create depth mip chains for high-z culling.
     pub depth_pyramid_gen: DepthPyramidGenerator,
+    /// Sampler used to sample shadow maps.
+    pub shadow_sampler: vk::Sampler,
     /// Descriptor pool for frame global data.
     pub global_pool: DescriptorPool,
     /// Descriptor pool for draw call generation.
@@ -77,11 +80,13 @@ pub(crate) struct MeshPasses {
     pub cluster_gen_pipeline: vk::Pipeline,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct MeshPassId(usize);
 
 pub(crate) struct MeshPassesBuilder<'a> {
     passes: MeshPasses,
     ctx: GraphicsContext,
+    lighting: &'a Lighting,
     builder: &'a mut RenderGraphBuilder<RenderGraphContext<ForwardPlus>>,
 }
 
@@ -179,6 +184,7 @@ pub(crate) struct PointLightTable {
 impl<'a> MeshPassesBuilder<'a> {
     pub fn new(
         ctx: &GraphicsContext,
+        lighting: &'a Lighting,
         builder: &'a mut RenderGraphBuilder<RenderGraphContext<ForwardPlus>>,
     ) -> Self {
         let object_info = builder.add_buffer(BufferDescriptor {
@@ -219,6 +225,20 @@ impl<'a> MeshPassesBuilder<'a> {
                     .binding(3)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // Lighting UBO
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(4)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // Shadow map
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(5)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
                     .build(),
             ];
@@ -627,6 +647,25 @@ impl<'a> MeshPassesBuilder<'a> {
             ctx.0.device.destroy_shader_module(module, None);
         }
 
+        let shadow_sampler = unsafe {
+            let create_info = vk::SamplerCreateInfo::builder()
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                .mag_filter(vk::Filter::NEAREST)
+                .min_filter(vk::Filter::NEAREST)
+                .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                .min_lod(0.0)
+                .max_lod(0.0)
+                .anisotropy_enable(false)
+                .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
+                .build();
+
+            ctx.0
+                .device
+                .create_sampler(&create_info, None)
+                .expect("unable to create shadow sampler")
+        };
+
         let passes = MeshPasses {
             ctx: ctx.clone(),
             passes: Vec::default(),
@@ -641,6 +680,7 @@ impl<'a> MeshPassesBuilder<'a> {
             depth_pyramid_gen: unsafe { DepthPyramidGenerator::new(ctx) },
             global_pool,
             draw_gen_pool,
+            shadow_sampler,
             light_clustering_pool,
             camera_pool,
             object_info,
@@ -657,6 +697,7 @@ impl<'a> MeshPassesBuilder<'a> {
         MeshPassesBuilder {
             builder,
             ctx: ctx.clone(),
+            lighting,
             passes,
         }
     }
@@ -687,6 +728,7 @@ impl<'a> MeshPassesBuilder<'a> {
         self.passes.passes.push(unsafe {
             MeshPass::new(
                 &self.ctx,
+                self.lighting,
                 self.builder,
                 create_info,
                 &mut self.passes.depth_pyramid_gen,
@@ -737,6 +779,7 @@ impl<'a> MeshPassesBuilder<'a> {
                         store: true,
                     },
                 }),
+                images: Vec::default(),
                 buffers: vec![
                     BufferAccessDescriptor {
                         buffer: self.passes.object_info,
@@ -858,13 +901,14 @@ impl<'a> MeshPassesBuilder<'a> {
                 toggleable: false,
                 color_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachmentDescriptor {
-                    image: pass.depth_image,
+                    image: pass.depth_image.image,
                     ops: Operations {
-                        load: LoadOp::Clear((1.0, 0)),
+                        load: pass.depth_image.ops.load,
                         store: true,
                     },
                 }),
                 buffers,
+                images: Vec::default(),
                 code: |ctx, state, cb, pass, resc| {
                     MeshPass::depth_prepass(ctx, state, cb, pass, resc);
                     state.mesh_passes.next_pass();
@@ -895,20 +939,22 @@ impl<'a> MeshPassesBuilder<'a> {
 
             color_rendering.pass_id = self.builder.add_pass(PassDescriptor::RenderPass {
                 toggleable: false,
-                color_attachments: vec![ColorAttachmentDescriptor {
-                    image: color_rendering.color_image,
-                    ops: Operations {
-                        load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
-                        store: true,
-                    },
-                }],
+                color_attachments: vec![color_rendering.color_image],
                 depth_stencil_attachment: Some(DepthStencilAttachmentDescriptor {
-                    image: pass.depth_image,
+                    image: pass.depth_image.image,
                     ops: Operations {
                         load: LoadOp::Load,
-                        store: false,
+                        store: pass.depth_image.ops.store,
                     },
                 }),
+                images: if let Some(shadow_map) = &pass.shadow_image {
+                    vec![ImageAccessDecriptor {
+                        image: *shadow_map,
+                        access: AccessType::Read,
+                    }]
+                } else {
+                    Vec::default()
+                },
                 buffers: vec![BufferAccessDescriptor {
                     buffer: color_rendering.point_lights_table,
                     access: AccessType::Read,
@@ -925,6 +971,16 @@ impl<'a> MeshPassesBuilder<'a> {
 }
 
 impl MeshPasses {
+    #[inline]
+    pub fn get_pass(&self, id: MeshPassId) -> &MeshPass {
+        &self.passes[id.0]
+    }
+
+    #[inline]
+    pub fn get_pass_mut(&mut self, id: MeshPassId) -> &mut MeshPass {
+        &mut self.passes[id.0]
+    }
+
     /// Helper function to move to the next pass.
     #[inline]
     fn next_pass(&mut self) {
@@ -1105,6 +1161,7 @@ impl MeshPasses {
                 pass.update_global_set(
                     device,
                     frame,
+                    state.mesh_passes.shadow_sampler,
                     resources,
                     state.mesh_passes.object_info,
                     state.mesh_passes.point_lights,
@@ -1287,6 +1344,8 @@ impl Drop for MeshPasses {
             for mut pass in self.passes.drain(..) {
                 pass.release(&mut self.depth_pyramid_gen);
             }
+
+            device.destroy_sampler(self.shadow_sampler, None);
 
             device.destroy_pipeline_layout(self.cluster_gen_pipeline_layout, None);
             device.destroy_pipeline_layout(self.draw_gen_pipeline_layout, None);

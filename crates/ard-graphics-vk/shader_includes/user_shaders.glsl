@@ -11,11 +11,15 @@
 const float PI = 3.14159265359;
 
 #ifdef ARD_VERTEX_SHADER
-layout(location = 0) flat out uint ARD_INSTANCE_IDX;
+layout(location = 16) flat out uint ARD_INSTANCE_IDX;
+layout(location = 17) out vec3 ARD_FRAG_POS;
+layout(location = 18) out vec4 ARD_FRAG_POS_LIGHT_SPACE;
 #endif
 
 #ifdef ARD_FRAGMENT_SHADER
-layout(location = 0) flat in uint ARD_INSTANCE_IDX;
+layout(location = 16) flat in uint ARD_INSTANCE_IDX;
+layout(location = 17) in vec3 ARD_FRAG_POS;
+layout(location = 18) in vec4 ARD_FRAG_POS_LIGHT_SPACE;
 #endif
 
 //////////////
@@ -37,6 +41,12 @@ layout(set = 0, binding = 2) readonly buffer ARD_InputObjectIndices {
 layout(set = 0, binding = 3) readonly buffer ARD_PointLightTable {
     PointLightTable ARD_POINT_LIGHT_TABLE;
 };
+
+layout(set = 0, binding = 4) uniform ARD_Lighting {
+    Lighting ARD_LIGHTING;
+};
+
+layout(set = 0, binding = 5) uniform sampler2D ARD_SHADOW_MAP;
 
 ////////////////
 /// TEXTURES ///
@@ -79,7 +89,9 @@ layout(set = 3, binding = 1) readonly buffer ARD_MaterialData {
 #define ARD_ENTRY(func) \
 void main() { \
     ARD_INSTANCE_IDX = gl_InstanceIndex; \
-    func(); \
+    VsOut vs_out = func(); \
+    ARD_FRAG_POS = vs_out.frag_pos; \
+    ARD_FRAG_POS_LIGHT_SPACE = ARD_LIGHTING.sun_vp * vec4(vs_out.frag_pos, 1.0); \
 } \
 
 #else
@@ -180,22 +192,42 @@ vec3 fresnel_schlick(float cos_theta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+#extension GL_EXT_debug_printf : enable
+
+float shadow_calculation(vec4 frag_pos_light_space, vec3 normal) {
+    vec3 proj_coords = frag_pos_light_space.xyz / frag_pos_light_space.w;
+    proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
+    proj_coords.y = 1.0 - proj_coords.y;
+    float closest_depth = texture(ARD_SHADOW_MAP, proj_coords.xy).r;
+    float current_depth = proj_coords.z;
+    float bias = max(
+        ARD_LIGHTING.shadow_bias_max * (1.0 - dot(normal, ARD_LIGHTING.sun_direction.xyz)), 
+        ARD_LIGHTING.shadow_bias_min
+    );
+    float shadow = current_depth - bias < closest_depth ? 1.0 : 0.0;
+
+    debugPrintfEXT("Computed %f   vs Sampled %f", current_depth, closest_depth);
+
+    return shadow;
+}
+
 /// Performs PBR lighting calculations.
 ///
 /// base_color : Albedo.
 /// roughness : Roughness factor.
 /// metallic : Metallic factor.
 /// normal : Surface normal.
-/// world_pos : The fragments world position.
 /// screen_pos : The fragments screen position BEFORE perspective divide.
 vec3 lighting(
     vec3 base_color, 
     float roughness, 
     float metallic, 
     vec3 normal, 
-    vec3 world_pos, 
     vec4 screen_pos
 ) {
+    // Compute the fragment position 
+    vec3 world_pos = ARD_FRAG_POS;
+
     // Determine which cluster the fragment is in
     vec2 uv = ((screen_pos.xy / screen_pos.w) * 0.5) + vec2(0.5);
 
@@ -225,6 +257,8 @@ vec3 lighting(
     
     vec3 Lo = vec3(0.0);
 
+    float shadow = shadow_calculation(ARD_FRAG_POS_LIGHT_SPACE, N);
+
     for (int i = 0; i < count; i++) {
         uint light_idx = ARD_POINT_LIGHT_TABLE.clusters[cluster.z][cluster.x][cluster.y][i];
         PointLight light = ARD_POINT_LIGHTS[light_idx];
@@ -238,7 +272,7 @@ vec3 lighting(
             vec3 H = normalize(V + L);
             float sqr_dist = dist_to_light * dist_to_light;
             float sqr_range = light.position_range.w * light.position_range.w;
-            float attenuation = (1.0 - (sqr_dist / sqr_range)) * light.color_intensity.w;
+            float attenuation = (1.0 - (sqr_dist / sqr_range)) * light.color_intensity.w * shadow;
             vec3 radiance = light.color_intensity.xyz * attenuation;
 
             // Cook-Torrance BRDF
@@ -273,7 +307,7 @@ vec3 lighting(
         }
     }
 
-    vec3 ambient = vec3(0.03) * base_color;    
+    vec3 ambient = ARD_LIGHTING.ambient.xyz * base_color;    
 
     return ambient + Lo;
 }

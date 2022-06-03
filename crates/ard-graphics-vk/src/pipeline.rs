@@ -12,6 +12,7 @@ use renderer::{
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum PipelineType {
     HighZRender,
+    ShadowPass,
     DepthPrepass,
     OpaquePass,
 }
@@ -27,7 +28,7 @@ pub(crate) struct PipelineInner {
     pub ctx: GraphicsContext,
     pub vertex_layout: VertexLayout,
     pub inputs: ShaderInputs,
-    pub pipelines: [vk::Pipeline; 3],
+    pub pipelines: [vk::Pipeline; 4],
 }
 
 impl PipelineApi for Pipeline {}
@@ -191,9 +192,61 @@ impl PipelineInner {
                 .0
                 .device
                 .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
-                .expect("unable to creat depth pass pipelines");
+                .expect("unable to create depth pass pipelines");
 
             (passes[0], passes[1])
+        };
+
+        let shadow_pass = {
+            let shader_stages = [vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vertex.module)
+                .name(&entry_point)
+                .build()];
+
+            let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
+                .depth_test_enable(true)
+                .depth_write_enable(true)
+                .front(stencil_state)
+                .back(stencil_state)
+                .depth_compare_op(vk::CompareOp::LESS)
+                .depth_bounds_test_enable(false)
+                .min_depth_bounds(0.0)
+                .max_depth_bounds(1.0)
+                .stencil_test_enable(false)
+                .build();
+
+            let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+                .depth_clamp_enable(true)
+                .rasterizer_discard_enable(false)
+                .polygon_mode(vk::PolygonMode::FILL)
+                .line_width(1.0)
+                .cull_mode(vk::CullModeFlags::BACK)
+                .front_face(vk::FrontFace::CLOCKWISE)
+                .depth_bias_enable(false)
+                .depth_bias_constant_factor(0.0)
+                .depth_bias_clamp(0.0)
+                .depth_bias_slope_factor(0.0)
+                .build();
+
+            let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_state)
+                .input_assembly_state(&input_assembly)
+                .viewport_state(&viewport_state)
+                .rasterization_state(&rasterizer)
+                .multisample_state(&multisampling)
+                .depth_stencil_state(&depth_stencil)
+                .dynamic_state(&dynamic_state)
+                .layout(layouts.opaque_pipeline_layout)
+                .render_pass(depth_prepass_rp)
+                .subpass(0)
+                .build()];
+
+            ctx.0
+                .device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+                .expect("unable to create shadow pass pipeline")[0]
         };
 
         let opaque_pass = {
@@ -268,7 +321,7 @@ impl PipelineInner {
 
         PipelineInner {
             ctx: ctx.clone(),
-            pipelines: [highz_render, depth_prepass, opaque_pass],
+            pipelines: [highz_render, shadow_pass, depth_prepass, opaque_pass],
             vertex_layout,
             inputs: vertex.inputs,
         }
@@ -290,8 +343,9 @@ impl PipelineType {
     pub const fn idx(self) -> usize {
         match self {
             PipelineType::HighZRender => 0,
-            PipelineType::DepthPrepass => 1,
-            PipelineType::OpaquePass => 2,
+            PipelineType::ShadowPass => 1,
+            PipelineType::DepthPrepass => 2,
+            PipelineType::OpaquePass => 3,
         }
     }
 }

@@ -52,6 +52,8 @@ pub type PassFn<C> = fn(
 pub enum PassDescriptor<C: Context> {
     RenderPass {
         toggleable: bool,
+        /// Images provided to a render pass are assumed to be sampled.
+        images: Vec<ImageAccessDecriptor>,
         color_attachments: Vec<ColorAttachmentDescriptor>,
         depth_stencil_attachment: Option<DepthStencilAttachmentDescriptor>,
         buffers: Vec<BufferAccessDescriptor>,

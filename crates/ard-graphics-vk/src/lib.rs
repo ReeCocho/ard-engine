@@ -88,17 +88,19 @@ fn late_context_creation(app: &mut App) {
 
     let (ctx, surface) = GraphicsContext::new(&app.resources, &create_info.0).unwrap();
     let renderer_settings = RendererSettings::default();
-    let (renderer, factory, static_geo, debug_drawing) = Renderer::new(&RendererCreateInfo {
-        ctx: &ctx,
-        surface: &surface,
-        settings: &renderer_settings,
-    });
+    let (renderer, factory, static_geo, debug_drawing, lighting) =
+        Renderer::new(&RendererCreateInfo {
+            ctx: &ctx,
+            surface: &surface,
+            settings: &renderer_settings,
+        });
 
     app.resources.add(static_geo);
     app.resources.add(factory);
     app.resources.add(renderer_settings);
     app.resources.add(surface);
     app.resources.add(debug_drawing);
+    app.resources.add(lighting);
     app.dispatcher.add_system(renderer);
     app.resources.add(ctx);
 }

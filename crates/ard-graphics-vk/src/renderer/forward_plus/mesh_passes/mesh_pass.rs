@@ -11,10 +11,11 @@ use crate::{
         descriptors::DescriptorPool,
         forward_plus::pick_depth_format,
         graph::RenderPass,
-        CameraLightClusters, Factory, GraphicsContext, PipelineType, StaticGeometry,
+        CameraLightClusters, Factory, GraphicsContext, Lighting, LightingUbo, PipelineType,
+        StaticGeometry,
     },
     mesh::VertexLayoutKey,
-    prelude::{graph::RenderGraphContext, CameraUBO},
+    prelude::{graph::RenderGraphContext, CameraUbo},
     renderer::graph::GraphBuffer,
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
@@ -25,7 +26,7 @@ use ard_render_graph::{
     buffer::{BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraphBuilder, RenderGraphResources},
     image::{ImageDescriptor, ImageId, SizeGroupId},
-    pass::PassId,
+    pass::{ColorAttachmentDescriptor, DepthStencilAttachmentDescriptor, PassId},
 };
 use ash::vk;
 
@@ -43,10 +44,15 @@ pub(crate) struct MeshPassCreateInfo {
     pub camera: MeshPassCamera,
     /// Indicates if high-z culling is enabled or not.
     pub highz_culling: bool,
+    /// Image to sample for shadow mapping.
+    pub shadow_image: Option<ImageId>,
     /// Required depth image.
-    pub depth_image: ImageId,
+    pub depth_image: DepthStencilAttachmentDescriptor,
+    /// The pipeline type used during depth prepass. This should only ever be values of
+    /// `PipelineType::HighZRender` or `PipelineType::ShadowPass`.
+    pub depth_pipeline_type: PipelineType,
     /// If `None`, rendering will be depth only.
-    pub color_image: Option<ImageId>,
+    pub color_image: Option<ColorRendering>,
 }
 
 /// Used by the Forward+ renderer to draw objects.
@@ -54,9 +60,14 @@ pub(crate) struct MeshPass {
     /// Layers this mesh pass renders.
     pub layers: RenderLayerFlags,
     /// Depth image rendered to by this pass.
-    pub depth_image: ImageId,
+    pub depth_image: DepthStencilAttachmentDescriptor,
     /// Pass ID for depth prepass.
     pub depth_prepass_id: PassId,
+    /// The pipeline type used during depth prepass. This should only ever be values of
+    /// `PipelineType::HighZRender` or `PipelineType::ShadowPass`.
+    pub depth_pipeline_type: PipelineType,
+    /// Image to sample for shadow mapping.
+    pub shadow_image: Option<ImageId>,
     /// The number of static objects that we rendered this frame.
     pub static_objects_rendered: usize,
     /// The number of static draw calls that we performed this frame.
@@ -95,7 +106,7 @@ pub(crate) struct ColorRenderingInfo {
     /// Pass ID for opaque rendering.
     pub pass_id: PassId,
     /// Color image rendered to by this pass.
-    pub color_image: ImageId,
+    pub color_image: ColorAttachmentDescriptor,
     /// Clustered lighting table.
     pub point_lights_table: BufferId,
     /// Set for light clustering. One per frame in flight.
@@ -123,21 +134,22 @@ pub(crate) struct MeshPassCameraInfo {
     pub needs_ssbo_regen: [bool; FRAMES_IN_FLIGHT],
 }
 
+pub(crate) struct ColorRendering {
+    pub color_image: ColorAttachmentDescriptor,
+}
+
 pub(crate) enum MeshPassCamera {
     /// Mesh pass should use the main camera.
     Main,
     /// Mesh pass uses a custom projection.
-    Custom {
-        ubo: CameraUBO,
-        /// If `true`, the cluster generation algorithm will run when neccesary.
-        gen_clusters: bool,
-    },
+    Custom { ubo: CameraUbo },
 }
 
 // Methods
 impl MeshPass {
     pub unsafe fn new(
         ctx: &GraphicsContext,
+        lighting: &Lighting,
         builder: &mut RenderGraphBuilder<RenderGraphContext<ForwardPlus>>,
         create_info: MeshPassCreateInfo,
         pyramid_gen: &mut DepthPyramidGenerator,
@@ -161,6 +173,23 @@ impl MeshPass {
         let mut global_sets = [vk::DescriptorSet::default(); FRAMES_IN_FLIGHT];
         for i in 0..FRAMES_IN_FLIGHT {
             global_sets[i] = global_pool.allocate();
+
+            // Bind the lighting UBO now since it is never recreated
+            let clusters_info = [vk::DescriptorBufferInfo::builder()
+                .offset(i as u64 * lighting.ubo.aligned_size())
+                .range(std::mem::size_of::<LightingUbo>() as vk::DeviceSize)
+                .buffer(lighting.ubo.buffer())
+                .build()];
+
+            let writes = [vk::WriteDescriptorSet::builder()
+                .dst_array_element(0)
+                .dst_binding(4)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .dst_set(global_sets[i])
+                .buffer_info(&clusters_info)
+                .build()];
+
+            ctx.0.device.update_descriptor_sets(&writes, &[]);
         }
 
         let draw_calls = builder.add_buffer(BufferDescriptor {
@@ -202,13 +231,19 @@ impl MeshPass {
         };
 
         let color_rendering = match create_info.color_image {
-            Some(id) => Some(ColorRenderingInfo::new(id, builder, light_clustering_pool)),
+            Some(color_rendering) => Some(ColorRenderingInfo::new(
+                color_rendering.color_image,
+                builder,
+                light_clustering_pool,
+            )),
             None => None,
         };
 
         Self {
             layers: create_info.layers,
+            shadow_image: create_info.shadow_image,
             depth_image: create_info.depth_image,
+            depth_pipeline_type: create_info.depth_pipeline_type,
             static_objects_rendered: 0,
             static_draw_calls: 0,
             dynamic_objects_rendered: 0,
@@ -233,6 +268,7 @@ impl MeshPass {
         &self,
         device: &ash::Device,
         frame: usize,
+        shadow_sampler: vk::Sampler,
         resources: &mut RenderGraphResources<RenderGraphContext<ForwardPlus>>,
         object_info: BufferId,
         point_lights: BufferId,
@@ -258,6 +294,26 @@ impl MeshPass {
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .dst_set(global_set)
                 .buffer_info(&clusters_info)
+                .build()];
+
+            device.update_descriptor_sets(&writes, &[]);
+        }
+
+        // Write shadow map if needed
+        if let Some(shadow_map) = &self.shadow_image {
+            let (_, shadow_map_images) = resources.get_image(*shadow_map).unwrap();
+
+            let shadow_map_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(shadow_map_images[frame].view)
+                .sampler(shadow_sampler)
+                .build()];
+
+            let writes = [vk::WriteDescriptorSet::builder()
+                .dst_set(global_set)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_binding(5)
+                .image_info(&shadow_map_info)
                 .build()];
 
             device.update_descriptor_sets(&writes, &[]);
@@ -373,23 +429,20 @@ impl MeshPass {
         let device = &state.ctx.0.device;
         let mesh_pass = state.mesh_passes.get_active_pass_mut();
 
-        // Update the camera UBO (also check if we care about the cluster SSBO)
-        let (ubo, gen_clusters) = match &mesh_pass.camera.camera {
+        // Update the camera UBO
+        let ubo = match &mesh_pass.camera.camera {
             MeshPassCamera::Main => {
                 let cameras = state.factory.0.cameras.read().expect("mutex poisoned");
                 let main_camera = cameras.get(state.factory.main_camera().id).unwrap();
                 let size_group = resources.get_size_group(mesh_pass.size_group);
 
-                (
-                    CameraUBO::new(
-                        &main_camera.descriptor,
-                        size_group.width as f32,
-                        size_group.height as f32,
-                    ),
-                    true,
+                CameraUbo::new(
+                    &main_camera.descriptor,
+                    size_group.width as f32,
+                    size_group.height as f32,
                 )
             }
-            MeshPassCamera::Custom { ubo, gen_clusters } => (*ubo, *gen_clusters),
+            MeshPassCamera::Custom { ubo } => *ubo,
         };
 
         unsafe {
@@ -397,7 +450,7 @@ impl MeshPass {
         }
 
         // Check for SSBO regen
-        if !gen_clusters || !mesh_pass.camera.needs_ssbo_regen[frame] {
+        if !mesh_pass.color_rendering.is_some() || !mesh_pass.camera.needs_ssbo_regen[frame] {
             return;
         }
 
@@ -1057,7 +1110,7 @@ impl MeshPass {
             render(RenderArgs {
                 frame_idx,
                 device,
-                pipeline_type: PipelineType::DepthPrepass.idx(),
+                pipeline_type: mesh_pass.depth_pipeline_type.idx(),
                 commands: *commands,
                 main_camera: &mesh_pass.camera,
                 factory: &state.factory,
@@ -1126,7 +1179,7 @@ impl MeshPassCameraInfo {
         camera_pool: &mut DescriptorPool,
     ) -> Self {
         // Create UBO
-        let ubo = UniformBuffer::new(ctx, CameraUBO::default());
+        let ubo = UniformBuffer::new(ctx, CameraUbo::default());
 
         // Create cluster SSBO
         let min_alignment = ctx.0.properties.limits.min_uniform_buffer_offset_alignment;
@@ -1218,7 +1271,7 @@ impl HighZCullingInfo {
 
 impl ColorRenderingInfo {
     unsafe fn new(
-        color_image: ImageId,
+        color_image: ColorAttachmentDescriptor,
         builder: &mut RenderGraphBuilder<RenderGraphContext<ForwardPlus>>,
         light_clustering_pool: &mut DescriptorPool,
     ) -> Self {

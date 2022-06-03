@@ -24,7 +24,7 @@ pub(crate) struct CameraInner {
 /// Camera data sent to shaders.
 #[repr(C)]
 #[derive(Default, Copy, Clone)]
-pub struct CameraUBO {
+pub struct CameraUbo {
     pub view: Mat4,
     pub projection: Mat4,
     pub vp: Mat4,
@@ -54,8 +54,8 @@ pub(crate) struct CameraLightClusters {
     pub frustums: [Froxel; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
 }
 
-unsafe impl Pod for CameraUBO {}
-unsafe impl Zeroable for CameraUBO {}
+unsafe impl Pod for CameraUbo {}
+unsafe impl Zeroable for CameraUbo {}
 
 unsafe impl Pod for CameraLightClusters {}
 unsafe impl Zeroable for CameraLightClusters {}
@@ -70,7 +70,7 @@ impl CameraInner {
 
 impl CameraApi for Camera {}
 
-impl CameraUBO {
+impl CameraUbo {
     pub fn new(descriptor: &CameraDescriptor, width: f32, height: f32) -> Self {
         let view = Mat4::look_at_lh(
             descriptor.position,
@@ -85,7 +85,7 @@ impl CameraUBO {
         );
         let vp = projection * view;
 
-        CameraUBO {
+        CameraUbo {
             view,
             projection,
             vp,

@@ -931,7 +931,21 @@ fn create_attachment_descriptor<V: Copy>(
                     .build(),
             );
         }
-        ImageUsage::Sampled => todo!(),
+        ImageUsage::Sampled => {
+            builder = builder.initial_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+            dependency = Some(
+                vk::SubpassDependency::builder()
+                    .src_subpass(vk::SUBPASS_EXTERNAL)
+                    .dst_subpass(0)
+                    .src_stage_mask(vk::PipelineStageFlags::ALL_GRAPHICS)
+                    .dst_stage_mask(dst_stage)
+                    .src_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+                    .dst_access_mask(dst_access)
+                    .dependency_flags(vk::DependencyFlags::BY_REGION)
+                    .build(),
+            );
+        }
         ImageUsage::Compute => {
             builder = builder.initial_layout(vk::ImageLayout::GENERAL);
 

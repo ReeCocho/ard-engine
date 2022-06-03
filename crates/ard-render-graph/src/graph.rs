@@ -301,6 +301,7 @@ impl<C: Context> RenderGraphBuilder<C> {
                     color_attachments,
                     depth_stencil_attachment,
                     buffers,
+                    images,
                     ..
                 } => {
                     for attachment in color_attachments {
@@ -310,6 +311,11 @@ impl<C: Context> RenderGraphBuilder<C> {
                             ImageUsage::ColorAttachment,
                             AccessType::ReadWrite,
                         );
+                    }
+
+                    for image in images {
+                        let states = &mut graph_state.image_states[image.image.0 as usize];
+                        update_image_state(states, ImageUsage::Sampled, image.access);
                     }
 
                     if let Some(attachment) = depth_stencil_attachment {

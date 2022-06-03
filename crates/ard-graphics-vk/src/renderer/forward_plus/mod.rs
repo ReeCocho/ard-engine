@@ -4,7 +4,10 @@ use std::sync::{atomic::Ordering, Arc, Mutex};
 
 use crate::{
     alloc::WriteStorageBuffer,
-    camera::{Camera, CameraInner, DebugDrawing, PipelineType, RawPointLight, Surface},
+    camera::{
+        Camera, CameraInner, CameraUbo, DebugDrawing, Lighting, PipelineType, RawPointLight,
+        Surface,
+    },
     context::GraphicsContext,
     factory::descriptors::DescriptorPool,
     factory::Factory,
@@ -16,7 +19,7 @@ use crate::{
 
 use ard_ecs::prelude::{ComponentQuery, Queries, Query, Read};
 use ard_graphics_api::prelude::*;
-use ard_math::{Mat4, Vec2, Vec4};
+use ard_math::{Mat4, Vec2, Vec3, Vec4};
 use ard_render_graph::{
     buffer::{BufferAccessDescriptor, BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraph, RenderGraphBuilder, RenderGraphResources},
@@ -28,8 +31,8 @@ use ash::vk;
 use bytemuck::{Pod, Zeroable};
 
 use self::mesh_passes::{
-    mesh_pass::{MeshPassCamera, MeshPassCreateInfo},
-    MeshPasses, MeshPassesBuilder,
+    mesh_pass::{ColorRendering, MeshPassCamera, MeshPassCreateInfo},
+    MeshPassId, MeshPasses, MeshPassesBuilder,
 };
 
 use super::{
@@ -54,6 +57,7 @@ pub(crate) struct ForwardPlus {
     static_geo: StaticGeometry,
     debug_drawing: DebugDrawing,
     mesh_passes: MeshPasses,
+    shadow_pass: MeshPassId,
     passes: Passes,
     canvas_size_group: SizeGroupId,
     /// Final color image that should be presented.
@@ -174,6 +178,7 @@ impl ForwardPlus {
         surface: &Surface,
         rg_ctx: &mut RenderGraphContext<Self>,
         static_geo: StaticGeometry,
+        lighting: &Lighting,
         anisotropy_level: Option<AnisotropyLevel>,
         canvas_size: vk::Extent2D,
     ) -> (GameRendererGraphRef, Factory, DebugDrawing, Self) {
@@ -184,11 +189,23 @@ impl ForwardPlus {
 
         let mut rg_builder = RenderGraphBuilder::new();
 
+        let shadow_size_group = rg_builder.add_size_group(SizeGroup {
+            width: 4096,
+            height: 4096,
+            array_layers: 1,
+            mip_levels: 1,
+        });
+
         let canvas_size_group = rg_builder.add_size_group(SizeGroup {
             width: canvas_size.width,
             height: canvas_size.height,
             array_layers: 1,
             mip_levels: 1,
+        });
+
+        let shadow_map = rg_builder.add_image(ImageDescriptor {
+            format: depth_format,
+            size_group: shadow_size_group,
         });
 
         let depth_buffer = rg_builder.add_image(ImageDescriptor {
@@ -207,14 +224,52 @@ impl ForwardPlus {
         });
 
         // Create mesh passes
-        let mut mp_builder = MeshPassesBuilder::new(ctx, &mut rg_builder);
+        let mut mp_builder = MeshPassesBuilder::new(ctx, lighting, &mut rg_builder);
+
+        // Shadow pass
+        let shadow_pass = mp_builder.add_pass(MeshPassCreateInfo {
+            size_group: shadow_size_group,
+            layers: RenderLayer::ShadowCaster.into(),
+            camera: MeshPassCamera::Custom {
+                ubo: CameraUbo::default(),
+            },
+            highz_culling: false,
+            shadow_image: None,
+            depth_image: DepthStencilAttachmentDescriptor {
+                image: shadow_map,
+                ops: Operations {
+                    load: LoadOp::Clear((1.0, 0)),
+                    store: true,
+                },
+            },
+            color_image: None,
+            depth_pipeline_type: PipelineType::ShadowPass,
+        });
+
+        // Primary mesh pass
         mp_builder.add_pass(MeshPassCreateInfo {
             size_group: canvas_size_group,
             layers: RenderLayerFlags::all(),
             camera: MeshPassCamera::Main,
             highz_culling: true,
-            depth_image: depth_buffer,
-            color_image: Some(color_image),
+            depth_pipeline_type: PipelineType::HighZRender,
+            shadow_image: Some(shadow_map),
+            depth_image: DepthStencilAttachmentDescriptor {
+                image: depth_buffer,
+                ops: Operations {
+                    load: LoadOp::Clear((1.0, 0)),
+                    store: false,
+                },
+            },
+            color_image: Some(ColorRendering {
+                color_image: ColorAttachmentDescriptor {
+                    image: color_image,
+                    ops: Operations {
+                        load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
+                        store: true,
+                    },
+                },
+            }),
         });
 
         let mesh_passes = mp_builder.build();
@@ -284,6 +339,7 @@ impl ForwardPlus {
             surface_image_idx: 0,
             work_group_size: ctx.0.properties.limits.max_compute_work_group_size[0],
             mesh_passes,
+            shadow_pass,
             color_image,
         };
 
@@ -319,6 +375,14 @@ impl ForwardPlus {
     #[inline]
     pub fn frames(&self) -> &[FrameData] {
         &self.frame_data
+    }
+
+    #[inline]
+    pub fn set_sun_camera(&mut self, camera: CameraUbo) {
+        self.mesh_passes
+            .get_pass_mut(self.shadow_pass)
+            .camera
+            .camera = MeshPassCamera::Custom { ubo: camera };
     }
 
     #[inline]

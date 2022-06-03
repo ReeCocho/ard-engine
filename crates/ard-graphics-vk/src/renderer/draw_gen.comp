@@ -1,7 +1,6 @@
 // Compile with:
 // glslc draw_gen.comp --target-env=vulkan1.2 -o draw_gen.comp.spv
 #version 450
-#extension GL_EXT_debug_printf : enable
 
 #include "data_structures.glsl"
 
@@ -125,8 +124,6 @@ void main() {
     float f = camera.far_clip;
     float n = camera.near_clip;
     depth = (-f * n / (depth * (f - n) - f));
-
-    debugPrintfEXT("Computed %f   vs Sampled %f", bb.depth, depth);
 
     if (bb.depth <= depth) {
         uint model_offset = atomicAdd(draw_calls[obj.batch_idx].instance_count, 1);

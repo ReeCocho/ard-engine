@@ -87,7 +87,7 @@ async fn main() {
             position: Vec3::new(0.0, 5.0, 15.0),
             rotation: Vec3::new(0.0, 180.0, 0.0),
             near: 0.3,
-            far: 200.0,
+            far: 100.0,
             fov: (90.0 as f32).to_radians(),
             look_speed: 0.1,
             move_speed: 30.0,

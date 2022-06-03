@@ -12,10 +12,9 @@ struct PbrMaterial {
 
 layout(location = 0) out vec4 FRAGMENT_COLOR;
 
-layout(location = 1) in vec4 SCREEN_POS;
-layout(location = 2) in vec3 WORLD_POS;
-layout(location = 3) in vec3 NORMAL;
-layout(location = 4) in vec2 UV0;
+layout(location = 0) in vec4 SCREEN_POS;
+layout(location = 1) in vec3 NORMAL;
+layout(location = 2) in vec2 UV0;
 
 const vec3 SLICE_TO_COLOR[FROXEL_TABLE_Z] = vec3[FROXEL_TABLE_Z](
     vec3(0.1),
@@ -49,7 +48,6 @@ void entry() {
         material.roughness,
         material.metallic,
         NORMAL,
-        WORLD_POS,
         SCREEN_POS
     );
 

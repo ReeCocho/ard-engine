@@ -6,7 +6,13 @@ use self::{
     graph::RenderGraphContext,
     static_geometry::StaticGeometry,
 };
-use crate::{context::GraphicsContext, factory::Factory, surface::Surface, VkBackend};
+use crate::{
+    camera::{CameraUbo, Lighting},
+    context::GraphicsContext,
+    factory::Factory,
+    surface::Surface,
+    VkBackend,
+};
 use ard_core::core::{Stopping, Tick};
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
@@ -42,17 +48,18 @@ type RenderResources = (
     Read<RendererSettings>,
     Write<Surface>,
     Read<Windows>,
-    // These two are held internally, but are requested so that no other systems write to them
+    // These four are held internally, but are requested so that no other systems write to them
     // while rendering is occuring.
     Write<Factory>,
     Write<StaticGeometry>,
     Write<DebugDrawing>,
+    Write<Lighting>,
 );
 
 impl RendererApi<VkBackend> for Renderer {
     fn new(
         create_info: &RendererCreateInfo<VkBackend>,
-    ) -> (Self, Factory, StaticGeometry, DebugDrawing) {
+    ) -> (Self, Factory, StaticGeometry, DebugDrawing, Lighting) {
         let canvas_size = if let Some((width, height)) = create_info.settings.canvas_size {
             vk::Extent2D { width, height }
         } else {
@@ -63,12 +70,15 @@ impl RendererApi<VkBackend> for Renderer {
 
         let mut rg_ctx = unsafe { RenderGraphContext::new(create_info.ctx) };
 
+        let lighting = unsafe { Lighting::new(create_info.ctx) };
+
         let (graph, factory, debug_drawing, state) = unsafe {
             ForwardPlus::new_graph(
                 create_info.ctx,
                 create_info.surface,
                 &mut rg_ctx,
                 static_geometry.clone(),
+                &lighting,
                 create_info.settings.anisotropy_level,
                 canvas_size,
             )
@@ -89,6 +99,7 @@ impl RendererApi<VkBackend> for Renderer {
             factory,
             static_geometry,
             debug_drawing,
+            lighting,
         )
     }
 }
@@ -140,6 +151,7 @@ impl Renderer {
         let surface = res.1.unwrap();
         let mut surface_lock = surface.0.lock().expect("mutex poisoned");
         let windows = res.2.unwrap();
+        let mut lighting = res.6.unwrap();
 
         let _static_geo_lock = self.static_geometry.acquire();
         let _factory_lock = self.factory.acquire();
@@ -178,7 +190,22 @@ impl Renderer {
         // Process pending resources
         self.factory.process(frame_idx);
 
+        // Update lighting
+        let camera = {
+            let surface_lock = surface.0.lock().expect("mutex poisoned");
+            let cameras = self.factory.0.cameras.read().unwrap();
+            let camera = cameras.get(self.factory.main_camera().id).unwrap();
+            CameraUbo::new(
+                &camera.descriptor,
+                surface_lock.resolution.width as f32,
+                surface_lock.resolution.height as f32,
+            )
+        };
+
+        let light_camera = lighting.update_ubo(frame_idx, &camera);
+
         // Update context with outside state
+        self.state.set_sun_camera(light_camera);
         self.state.set_dynamic_geo(&queries);
         self.state
             .set_point_light_query(queries.make::<(Read<PointLight>, Read<Model>)>());

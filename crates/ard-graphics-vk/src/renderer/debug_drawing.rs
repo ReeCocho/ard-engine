@@ -367,7 +367,7 @@ impl DebugDrawingInner {
 
                     // Convert lines from clip space to world space
                     let (width, height) = (screen_size.0 as f32, screen_size.1 as f32);
-                    let vp_inv = CameraUBO::new(&descriptor, width, height).vp.inverse();
+                    let vp_inv = CameraUbo::new(&descriptor, width, height).vp.inverse();
                     for position in &mut positions {
                         *position = vp_inv * (*position);
                         *position /= position.w;

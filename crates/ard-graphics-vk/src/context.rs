@@ -211,6 +211,7 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
                 .fill_mode_non_solid(true)
                 .draw_indirect_first_instance(true)
                 .multi_draw_indirect(true)
+                .depth_clamp(true)
                 .build();
 
             let mut indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures::builder()

@@ -101,6 +101,7 @@ mod tests {
             color_attachments: Vec::default(),
             depth_stencil_attachment: None,
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
 
@@ -209,6 +210,7 @@ mod tests {
             color_attachments: Vec::default(),
             depth_stencil_attachment: None,
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
         assert_eq!(
@@ -240,6 +242,7 @@ mod tests {
                 },
             }),
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
 
@@ -254,6 +257,7 @@ mod tests {
             }],
             depth_stencil_attachment: None,
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
 
@@ -310,6 +314,7 @@ mod tests {
             ],
             depth_stencil_attachment: None,
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
 
@@ -357,6 +362,7 @@ mod tests {
             ],
             depth_stencil_attachment: None,
             buffers: Vec::default(),
+            images: Vec::default(),
             code: |_, _, _, _, _| {},
         });
 

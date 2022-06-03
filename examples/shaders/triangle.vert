@@ -10,9 +10,12 @@ layout(location = 1) in vec4 COLOR;
 
 layout(location = 1) out vec4 VERT_COLOR;
 
-void entry() {
-    gl_Position = camera.vp * get_model_matrix() * vec4(POSITION.xyz, 1.0);
+VsOut entry() {
+    VsOut vs_out;
+    vs_out.frag_pos = (get_model_matrix() * vec4(POSITION.xyz, 1.0)).xyz;
+    gl_Position = camera.vp * vec4(vs_out.frag_pos, 1.0);
     VERT_COLOR = COLOR;
+    return vs_out;
 }
 
 ARD_ENTRY(entry)

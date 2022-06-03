@@ -9,6 +9,15 @@
 /// LIGHTING ///
 ////////////////
 
+struct Lighting {
+    mat4 sun_vp;
+    vec4 ambient;
+    vec4 sun_color_intensity;
+    vec4 sun_direction;
+    float shadow_bias_min;
+    float shadow_bias_max;
+};
+
 struct PointLight {
     vec4 color_intensity;
     vec4 position_range;
@@ -76,6 +85,10 @@ struct DrawCall {
 ////////////
 /// MISC ///
 ////////////
+
+struct VsOut {
+    vec3 frag_pos;
+};
 
 struct TransformedBoundingBox {
     /// All eight corners of the box
