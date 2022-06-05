@@ -15,6 +15,8 @@ pub trait FactoryApi<B: Backend>: Resource + Clone + Send + Sync {
 
     fn create_texture(&self, create_info: &TextureCreateInfo) -> B::Texture;
 
+    fn create_cube_map(&self, create_info: &CubeMapCreateInfo) -> B::CubeMap;
+
     /// Gets the active main camera.
     ///
     /// # Note

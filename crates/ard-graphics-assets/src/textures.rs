@@ -48,9 +48,17 @@ impl AssetLoader for TextureLoader {
         let ext = match meta.file.extension() {
             Some(ext) => match ext.to_str() {
                 Some(ext) => ext.to_lowercase(),
-                None => return Err(AssetLoadError::Unknown),
+                None => {
+                    return Err(AssetLoadError::Other(
+                        String::from("unable to get file extension for texture").into(),
+                    ))
+                }
             },
-            None => return Err(AssetLoadError::Unknown),
+            None => {
+                return Err(AssetLoadError::Other(
+                    String::from("texture has no file extension").into(),
+                ))
+            }
         };
 
         // Determine the texture codec
@@ -60,27 +68,41 @@ impl AssetLoader for TextureLoader {
             "bmp" => image::ImageFormat::Bmp,
             "tga" => image::ImageFormat::Tga,
             "tiff" => image::ImageFormat::Tiff,
-            _ => return Err(AssetLoadError::Unknown),
+            "hdr" => image::ImageFormat::Hdr,
+            _ => {
+                return Err(AssetLoadError::Other(
+                    String::from("unsupported texture codec").into(),
+                ))
+            }
         };
 
         // Read in the texture data and parse it
         let data = package.read(&meta.file).await?;
         let image = match image::load_from_memory_with_format(&data, codec) {
             Ok(image) => image,
-            Err(_) => return Err(AssetLoadError::Unknown),
+            Err(err) => return Err(AssetLoadError::Other(err.into())),
         };
 
         // Turn into RGBA8 for upload to GPU
-        let raw = match image.as_rgba8() {
-            Some(raw) => raw,
-            None => return Err(AssetLoadError::Unknown),
-        };
+        let format = graphics::TextureFormat::R8G8B8A8Srgb;
+        let raw = image.to_rgba8();
+
+        // let (raw, format, converted) = match &image {
+        //     image::DynamicImage::ImageRgb8(_) => {
+        //         let converted = Some(image.to_rgba8());
+        //         (converted.as_ref().unwrap().as_bytes(), graphics::TextureFormat::R8G8B8A8Unorm, converted)
+        //     },
+        //     image::DynamicImage::ImageRgba8(img) => (img.as_bytes(), graphics::TextureFormat::R8G8B8A8Srgb, None),
+        //     image::DynamicImage::ImageRgba16(img) => (img.as_bytes(), graphics::TextureFormat::R16G16B16A16Unorm, None),
+        //     image::DynamicImage::ImageRgba32F(img) => (img.as_bytes(), graphics::TextureFormat::R32G32B32A32Sfloat, None),
+        //     _ => return Err(AssetLoadError::Other(String::from("unsupported image type").into())),
+        // };
 
         // Create the texture
         let create_info = graphics::TextureCreateInfo {
             width: image.width(),
             height: image.height(),
-            format: graphics::TextureFormat::R8G8B8A8Srgb,
+            format,
             data: raw.as_bytes(),
             mip_type: graphics::MipType::Generate,
             mip_count: 1,

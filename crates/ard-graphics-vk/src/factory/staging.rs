@@ -30,6 +30,11 @@ pub(crate) enum StagingRequest {
         staging_buffer: Buffer,
         mip_type: MipType,
     },
+    CubeMap {
+        id: u32,
+        image_dst: Arc<Image>,
+        staging_buffer: Buffer,
+    },
     TextureMipUpload {
         id: u32,
         image_dst: Arc<Image>,
@@ -66,6 +71,7 @@ struct Upload {
 pub enum ResourceId {
     Mesh(u32),
     Texture(u32),
+    CubeMap(u32),
     TextureMip { texture_id: u32, mip_level: u32 },
 }
 
@@ -276,9 +282,11 @@ impl StagingBuffers {
                             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                             0,
                             image_dst.mip_levels(),
+                            0,
+                            1,
                         );
 
-                        buffer_to_image_copy(&device, commands, image_dst, staging_buffer, 0);
+                        buffer_to_image_copy(&device, commands, image_dst, staging_buffer, 0, 0, 1);
 
                         // Copy down the LOD chain
                         let mut mip_width = image_dst.width();
@@ -293,6 +301,8 @@ impl StagingBuffers {
                                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                                 i - 1,
+                                1,
+                                0,
                                 1,
                             );
 
@@ -355,6 +365,8 @@ impl StagingBuffers {
                             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                             image_dst.mip_levels() - 1,
                             1,
+                            0,
+                            1,
                         );
 
                         transition_image_layout(
@@ -365,6 +377,8 @@ impl StagingBuffers {
                             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                             0,
                             image_dst.mip_levels() - 1,
+                            0,
+                            1,
                         );
 
                         ResourceId::Texture(*id)
@@ -379,6 +393,8 @@ impl StagingBuffers {
                             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                             0,
                             image_dst.mip_levels(),
+                            0,
+                            1,
                         );
 
                         buffer_to_image_copy(
@@ -387,6 +403,8 @@ impl StagingBuffers {
                             image_dst,
                             staging_buffer,
                             image_dst.mip_levels().saturating_sub(1),
+                            0,
+                            1,
                         );
 
                         transition_image_layout(
@@ -397,11 +415,54 @@ impl StagingBuffers {
                             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                             0,
                             image_dst.mip_levels(),
+                            0,
+                            1,
                         );
 
                         ResourceId::Texture(*id)
                     }
                 },
+                StagingRequest::CubeMap {
+                    id,
+                    image_dst,
+                    staging_buffer,
+                } => {
+                    transition_image_layout(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        0,
+                        image_dst.mip_levels(),
+                        0,
+                        6,
+                    );
+
+                    buffer_to_image_copy(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        staging_buffer,
+                        0,
+                        0,
+                        6,
+                    );
+
+                    transition_image_layout(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        0,
+                        image_dst.mip_levels(),
+                        0,
+                        6,
+                    );
+
+                    ResourceId::CubeMap(*id)
+                }
                 StagingRequest::TextureMipUpload {
                     id,
                     image_dst,
@@ -416,6 +477,8 @@ impl StagingBuffers {
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                         *mip_level,
                         1,
+                        0,
+                        1,
                     );
 
                     buffer_to_image_copy(
@@ -424,6 +487,8 @@ impl StagingBuffers {
                         image_dst,
                         staging_buffer,
                         *mip_level,
+                        0,
+                        1,
                     );
 
                     transition_image_layout(
@@ -433,6 +498,8 @@ impl StagingBuffers {
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                         *mip_level,
+                        1,
+                        0,
                         1,
                     );
 
@@ -591,6 +658,8 @@ pub(crate) unsafe fn buffer_to_image_copy(
     image: &Image,
     buffer: &Buffer,
     mip_level: u32,
+    base_layer: u32,
+    layer_count: u32,
 ) {
     let regions = [vk::BufferImageCopy::builder()
         .buffer_offset(0)
@@ -599,8 +668,8 @@ pub(crate) unsafe fn buffer_to_image_copy(
         .image_subresource(vk::ImageSubresourceLayers {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             mip_level,
-            base_array_layer: 0,
-            layer_count: 1,
+            base_array_layer: base_layer,
+            layer_count,
         })
         .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
         .image_extent(vk::Extent3D {
@@ -627,8 +696,10 @@ pub(crate) unsafe fn transition_image_layout(
     new_layout: vk::ImageLayout,
     base_mip: u32,
     mip_count: u32,
+    base_layer: u32,
+    layer_count: u32,
 ) {
-    if mip_count == 0 {
+    if mip_count == 0 || layer_count == 0 {
         return;
     }
 
@@ -642,8 +713,8 @@ pub(crate) unsafe fn transition_image_layout(
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: base_mip,
             level_count: mip_count,
-            base_array_layer: 0,
-            layer_count: 1,
+            base_array_layer: base_layer,
+            layer_count: layer_count,
         })
         .build();
 

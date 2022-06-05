@@ -108,6 +108,23 @@ fn setup(app: &mut App) {
         .unwrap()
         .render_time = None;
 
+    // Load the skybox
+    let skybox_handle =
+        assets.load::<graphics_assets::TextureAsset>(AssetName::new("milkyway_sky.tex"));
+
+    let skybox_ird_handle =
+        assets.load::<graphics_assets::TextureAsset>(AssetName::new("milkyway_ird.tex"));
+
+    assets.wait_for_load(&skybox_handle);
+    assets.wait_for_load(&skybox_ird_handle);
+
+    let mut lighting = app.resources.get_mut::<Lighting>().unwrap();
+
+    lighting.set_skybox_texture(Some(assets.get(&skybox_handle).unwrap().texture.clone()));
+    lighting.set_irradiance_texture(Some(
+        assets.get(&skybox_ird_handle).unwrap().texture.clone(),
+    ));
+
     // Load the model
     let model_handle = assets.load::<graphics_assets::ModelAsset>(AssetName::new("test_scene.mdl"));
     assets.wait_for_load(&model_handle);
@@ -157,7 +174,7 @@ fn setup(app: &mut App) {
     });
 
     // Create lights
-    const LIGHT_COUNT: usize = 200;
+    const LIGHT_COUNT: usize = 100;
     let LIGHT_VOLUME_MIN: Vec3 = Vec3::new(-50.0, 1.0, -50.0);
     let LIGHT_VOLUME_MAX: Vec3 = Vec3::new(50.0, 16.0, 50.0);
     const LIGHT_RANGE: f32 = 16.0;

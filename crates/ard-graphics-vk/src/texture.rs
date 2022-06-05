@@ -149,6 +149,8 @@ pub(crate) fn ard_to_vk_format(format: TextureFormat) -> vk::Format {
     match format {
         TextureFormat::R8G8B8A8Srgb => vk::Format::R8G8B8A8_SRGB,
         TextureFormat::R8G8B8A8Unorm => vk::Format::R8G8B8A8_UNORM,
+        TextureFormat::R16G16B16A16Unorm => vk::Format::R16G16B16A16_UNORM,
+        TextureFormat::R32G32B32A32Sfloat => vk::Format::R32G32B32A32_SFLOAT,
     }
 }
 

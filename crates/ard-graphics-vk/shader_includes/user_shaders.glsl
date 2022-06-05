@@ -58,6 +58,12 @@ layout(set = 0, binding = 5) uniform sampler2D[MAX_SHADOW_CASCADES] ARD_SHADOW_M
 
 layout(set = 0, binding = 6) uniform sampler3D ARD_POISSON_DISK;
 
+layout(set = 0, binding = 7) uniform sampler2D ARD_SKYBOX;
+
+layout(set = 0, binding = 8) uniform sampler2D ARD_SKYBOX_IRRADIANCE;
+
+layout(set = 0, binding = 9) uniform sampler2D IBL_BRDF_LUT;
+
 ////////////////
 /// TEXTURES ///
 ////////////////
@@ -207,6 +213,10 @@ vec3 fresnel_schlick(float cos_theta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}  
+
 #extension GL_EXT_debug_printf : enable
 
 // PCSS code here:
@@ -307,7 +317,7 @@ vec3 lighting_general(
     // Cook-Torrance BRDF
     float NDF = distribution_GGX(N, H, roughness);
     float G = geometry_smith(N, V, L, roughness);
-    vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+    vec3 F = fresnel_schlick_roughness(max(dot(H, V), 0.0), F0, roughness);
 
     // Bias to avoid divide by 0
     vec3 numerator = NDF * G * F;
@@ -333,6 +343,53 @@ vec3 lighting_general(
     // NOTE: We already multiplied the BRDF by the Fresnel (kS) so we won't multiply
     // by kS again
     return (kD * base_color / PI + specular) * radiance * NdotL;
+}
+
+vec3 irradiance_ambient(
+    vec3 base_color,
+    float roughness,
+    float metallic,
+    vec3 V,
+    vec3 N,
+    vec3 R,
+    vec3 F0
+) {
+    const vec2 inv_atan = vec2(0.1591, 0.3183);
+    vec2 uv = vec2(atan(N.z, N.x), asin(N.y));
+    uv *= inv_atan;
+    uv += 0.5;
+    uv.y = 1.0 - uv.y;
+
+    vec2 uvR = vec2(atan(R.z, R.x), asin(R.y));
+    uvR *= inv_atan;
+    uvR += 0.5;
+    uvR.y = 1.0 - uvR.y;
+
+    vec3 sky = texture(ARD_SKYBOX, uvR).rgb;
+    sky = sky / (sky + vec3(1.0));
+    sky = pow(sky, vec3(1.0/2.2));
+
+    vec3 sky_blur = texture(ARD_SKYBOX_IRRADIANCE, uvR).rgb;
+    sky_blur = sky_blur / (sky_blur + vec3(1.0));
+    sky_blur = pow(sky_blur, vec3(1.0/2.2));
+
+    vec3 prefiltered_color = mix(sky, sky_blur, sqrt(roughness));
+
+    vec3 F = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
+    vec2 env_brdf = texture(IBL_BRDF_LUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    vec3 specular = prefiltered_color * (F * env_brdf.x + env_brdf.y);
+
+    vec3 kS = F;
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;
+
+    vec3 irradiance = texture(ARD_SKYBOX_IRRADIANCE, uv).rgb;
+    irradiance = irradiance / (irradiance + vec3(1.0));
+    irradiance = pow(irradiance, vec3(1.0/2.2));
+    
+    vec3 diffuse = irradiance * base_color;
+    
+    return (kD * diffuse) + specular;
 }
 
 /// Performs PBR lighting calculations.
@@ -373,6 +430,9 @@ vec3 lighting(
 
     // Vector from fragment to the camera
     vec3 V = normalize(camera.position.xyz - world_pos);
+
+    // Reflectance vector
+    vec3 R = reflect(-V, N);
 
     // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
@@ -425,7 +485,18 @@ vec3 lighting(
         }
     }
 
-    vec3 ambient = ARD_LIGHTING.ambient.xyz * base_color;    
+    vec3 ambient = 
+        ARD_LIGHTING.ambient.xyz * 
+        ARD_LIGHTING.ambient.w * 
+        irradiance_ambient(
+            base_color,
+            roughness,
+            metallic,
+            V,
+            N,
+            R,
+            F0
+        );
 
     return ambient + Lo;
 }

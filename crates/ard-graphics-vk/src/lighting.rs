@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::{
     alloc::UniformBuffer,
-    camera::{CameraUbo, GraphicsContext},
+    camera::{CameraUbo, GraphicsContext, Texture},
     shader_constants::MAX_SHADOW_CASCADES,
     VkBackend,
 };
@@ -16,6 +16,9 @@ pub struct Lighting {
     pub(crate) ubo_data: LightingUbo,
     /// Shared UBO containing lighting information.
     pub(crate) ubo: UniformBuffer,
+    /// Skybox texture.
+    pub(crate) skybox: Option<Texture>,
+    pub(crate) irradiance: Option<Texture>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -54,7 +57,7 @@ impl Default for LightingUbo {
     fn default() -> Self {
         Self {
             cascades: [ShadowCascadeInfo::default(); MAX_SHADOW_CASCADES],
-            ambient: Vec4::new(0.03, 0.03, 0.03, 1.0),
+            ambient: Vec4::ONE,
             sun_color_intensity: Vec4::new(1.0, 1.0, 1.0, 2.0),
             sun_direction: Vec4::new(1.0, -1.0, 1.0, 0.0).normalize(),
             sun_size: 0.5,
@@ -84,6 +87,8 @@ impl Lighting {
         Self {
             ubo,
             ubo_data: LightingUbo::default(),
+            skybox: None,
+            irradiance: None,
         }
     }
 
@@ -184,7 +189,15 @@ impl Lighting {
     }
 }
 
-impl LightingApi<VkBackend> for Lighting {}
+impl LightingApi<VkBackend> for Lighting {
+    fn set_skybox_texture(&mut self, texture: Option<Texture>) {
+        self.skybox = texture;
+    }
+
+    fn set_irradiance_texture(&mut self, texture: Option<Texture>) {
+        self.irradiance = texture;
+    }
+}
 
 unsafe impl Pod for RawPointLight {}
 unsafe impl Zeroable for RawPointLight {}

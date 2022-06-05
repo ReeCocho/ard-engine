@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod context;
+pub mod cube_map;
 pub mod factory;
 pub mod lighting;
 pub mod material;
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 pub mod prelude {
     pub use crate::camera::*;
     pub use crate::context::*;
+    pub use crate::cube_map::*;
     pub use crate::factory::*;
     pub use crate::lighting::*;
     pub use crate::material::*;
@@ -30,7 +32,7 @@ pub mod prelude {
 }
 
 use ard_math::{Mat4, Vec4};
-use prelude::*;
+use prelude::{cube_map::CubeMapApi, *};
 use std::{any::Any, hash::Hash};
 
 /// Implemented by the backend. Wraps all graphics types into one trait.
@@ -41,6 +43,7 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + Any + Send + Sync {
     const MAX_MATERIALS: usize;
     const MAX_CAMERA: usize;
     const MAX_TEXTURES: usize;
+    const MAX_CUBE_MAPS: usize;
     const MAX_TEXTURES_PER_MATERIAL: usize;
 
     type GraphicsContext: GraphicsContextApi<Self>;
@@ -56,12 +59,15 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + Any + Send + Sync {
     type Material: MaterialApi;
     type Camera: CameraApi;
     type Texture: TextureApi;
+    type CubeMap: CubeMapApi;
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TextureFormat {
     R8G8B8A8Unorm,
     R8G8B8A8Srgb,
+    R16G16B16A16Unorm,
+    R32G32B32A32Sfloat,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]

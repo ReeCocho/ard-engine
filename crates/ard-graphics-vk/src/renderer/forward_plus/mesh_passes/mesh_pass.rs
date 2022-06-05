@@ -150,6 +150,7 @@ impl MeshPass {
     pub unsafe fn new(
         ctx: &GraphicsContext,
         lighting: &Lighting,
+        brdf: (vk::ImageView, vk::Sampler),
         builder: &mut RenderGraphBuilder<RenderGraphContext<ForwardPlus>>,
         create_info: MeshPassCreateInfo,
         pyramid_gen: &mut DepthPyramidGenerator,
@@ -174,20 +175,35 @@ impl MeshPass {
         for i in 0..FRAMES_IN_FLIGHT {
             global_sets[i] = global_pool.allocate();
 
-            // Bind the lighting UBO now since it is never recreated
+            // Bind stuff now that it is never recreated
             let clusters_info = [vk::DescriptorBufferInfo::builder()
                 .offset(i as u64 * lighting.ubo.aligned_size())
                 .range(std::mem::size_of::<LightingUbo>() as vk::DeviceSize)
                 .buffer(lighting.ubo.buffer())
                 .build()];
 
-            let writes = [vk::WriteDescriptorSet::builder()
-                .dst_array_element(0)
-                .dst_binding(4)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .dst_set(global_sets[i])
-                .buffer_info(&clusters_info)
+            let brdf_lut_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(brdf.0)
+                .sampler(brdf.1)
                 .build()];
+
+            let writes = [
+                vk::WriteDescriptorSet::builder()
+                    .dst_array_element(0)
+                    .dst_binding(4)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .dst_set(global_sets[i])
+                    .buffer_info(&clusters_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_array_element(0)
+                    .dst_binding(9)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .dst_set(global_sets[i])
+                    .image_info(&brdf_lut_info)
+                    .build(),
+            ];
 
             ctx.0.device.update_descriptor_sets(&writes, &[]);
         }
@@ -558,6 +574,8 @@ impl MeshPass {
                     pipeline_type: PipelineType::HighZRender.idx(),
                     commands: *commands,
                     main_camera: &mesh_pass.camera,
+                    skybox_pipeline: state.mesh_passes.skybox_pipeline,
+                    skybox_pipeline_layout: state.mesh_passes.skybox_pipeline_layout,
                     factory: &state.factory,
                     global_set: mesh_pass.global_sets[frame],
                     draw_calls: resources
@@ -1137,6 +1155,8 @@ impl MeshPass {
                 commands: *commands,
                 main_camera: &mesh_pass.camera,
                 factory: &state.factory,
+                skybox_pipeline: state.mesh_passes.skybox_pipeline,
+                skybox_pipeline_layout: state.mesh_passes.skybox_pipeline_layout,
                 global_set: mesh_pass.global_sets[frame_idx],
                 draw_calls: resources
                     .get_buffer(mesh_pass.draw_calls)
@@ -1168,6 +1188,8 @@ impl MeshPass {
                 frame_idx,
                 device,
                 pipeline_type: PipelineType::OpaquePass.idx(),
+                skybox_pipeline: state.mesh_passes.skybox_pipeline,
+                skybox_pipeline_layout: state.mesh_passes.skybox_pipeline_layout,
                 commands: *commands,
                 main_camera: &mesh_pass.camera,
                 factory: &state.factory,
@@ -1321,6 +1343,8 @@ struct RenderArgs<'a> {
     frame_idx: usize,
     device: &'a ash::Device,
     pipeline_type: usize,
+    skybox_pipeline_layout: vk::PipelineLayout,
+    skybox_pipeline: vk::Pipeline,
     commands: vk::CommandBuffer,
     main_camera: &'a MeshPassCameraInfo,
     factory: &'a Factory,
@@ -1351,6 +1375,33 @@ unsafe fn render(args: RenderArgs) {
     let mut sub_offset = 0;
     let mut sub_count = 0;
     let mut needs_draw = false;
+
+    // Draw the skybox first if we are using a color pass
+    if args.pipeline_type == PipelineType::OpaquePass.idx() {
+        let sets = [args.global_set, args.main_camera.set];
+
+        let offsets = [
+            args.main_camera.ubo.aligned_size() as u32 * args.frame_idx as u32,
+            args.main_camera.aligned_cluster_size as u32 * args.frame_idx as u32,
+        ];
+
+        args.device.cmd_bind_descriptor_sets(
+            args.commands,
+            vk::PipelineBindPoint::GRAPHICS,
+            args.skybox_pipeline_layout,
+            0,
+            &sets,
+            &offsets,
+        );
+
+        args.device.cmd_bind_pipeline(
+            args.commands,
+            vk::PipelineBindPoint::GRAPHICS,
+            args.skybox_pipeline,
+        );
+
+        args.device.cmd_draw(args.commands, 36, 1, 0, 0);
+    }
 
     // Bind global sets
     let sets = [

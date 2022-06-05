@@ -46,6 +46,7 @@ pub struct FactoryInner {
     pub(crate) materials: RwLock<ResourceContainer<MaterialInner>>,
     pub(crate) cameras: RwLock<ResourceContainer<CameraInner>>,
     pub(crate) textures: RwLock<ResourceContainer<TextureInner>>,
+    pub(crate) cube_maps: RwLock<ResourceContainer<CubeMapInner>>,
 }
 
 impl Factory {
@@ -88,6 +89,7 @@ impl Factory {
             materials: RwLock::new(ResourceContainer::new()),
             cameras: RwLock::new(ResourceContainer::new()),
             textures: RwLock::new(ResourceContainer::new()),
+            cube_maps: RwLock::new(ResourceContainer::new()),
         }));
 
         let camera = factory.create_camera(&CameraCreateInfo {
@@ -109,6 +111,7 @@ impl Factory {
         let mut pipelines = self.0.pipelines.write().expect("mutex poisoned");
         let mut cameras = self.0.cameras.write().expect("mutex poisoned");
         let mut textures = self.0.textures.write().expect("mutex poisoned");
+        let mut cube_maps = self.0.cube_maps.write().expect("mutex poisoned");
         let mut mesh_buffers = self.0.mesh_buffers.lock().expect("mutex poisoned");
         let mut material_buffers = self.0.material_buffers.lock().expect("mutex poisoned");
 
@@ -120,6 +123,7 @@ impl Factory {
                 }
             }
             ResourceId::Texture(id) => texture_sets.texture_ready(id),
+            ResourceId::CubeMap(_) => {}
             ResourceId::TextureMip {
                 texture_id,
                 mip_level,
@@ -168,6 +172,7 @@ impl Factory {
         });
         cameras.drop_pending(frame, &mut |_, _| {});
         textures.drop_pending(frame, &mut |id, _| texture_sets.texture_dropped(id));
+        cube_maps.drop_pending(frame, &mut |_, _| {});
 
         // Any texture uploads that are complete should signal to the texture sets that they are
         // available and must be bound to the primary set. Any dropped textures should signal
@@ -358,6 +363,32 @@ impl FactoryApi<VkBackend> for Factory {
             });
 
         Texture {
+            id: escaper.id(),
+            escaper,
+        }
+    }
+
+    fn create_cube_map(&self, create_info: &CubeMapCreateInfo) -> CubeMap {
+        let _lock = self.0.exclusive.read().expect("lock poisoned");
+        let mut cube_maps = self.0.cube_maps.write().expect("mutex poisoned");
+
+        let (cube_map_inner, staging_buffer) =
+            unsafe { CubeMapInner::new(&self.0.ctx, create_info) };
+        let image_dst = cube_map_inner.image.clone();
+
+        let escaper = cube_maps.insert(cube_map_inner);
+
+        self.0
+            .staging
+            .lock()
+            .expect("mutex poisoned")
+            .add(StagingRequest::CubeMap {
+                id: escaper.id(),
+                image_dst,
+                staging_buffer,
+            });
+
+        CubeMap {
             id: escaper.id(),
             escaper,
         }

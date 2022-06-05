@@ -83,9 +83,16 @@ pub(crate) struct MeshPasses {
     // Camera cluster generation pipeline.
     pub cluster_gen_pipeline_layout: vk::PipelineLayout,
     pub cluster_gen_pipeline: vk::Pipeline,
+    // Skybox rendering pipeline.
+    pub skybox_pipeline_layout: vk::PipelineLayout,
+    pub skybox_pipeline: vk::Pipeline,
     // Poisson disk image info.
     pub poisson_disk: Image,
     pub poisson_disk_view: vk::ImageView,
+    // BRDF look up texture.
+    pub brdf_lut_sampler: vk::Sampler,
+    pub brdf_lut: Image,
+    pub brdf_lut_view: vk::ImageView,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -252,6 +259,27 @@ impl<'a> MeshPassesBuilder<'a> {
                 // Poisson disk
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(6)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // Skybox
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(7)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // Skybox irradiance
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(8)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // IBL BRDF LUT
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(9)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
@@ -700,7 +728,28 @@ impl<'a> MeshPassesBuilder<'a> {
                 .expect("unable to create poisson disk sampler")
         };
 
+        let brdf_lut_sampler = unsafe {
+            let create_info = vk::SamplerCreateInfo::builder()
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .min_lod(0.0)
+                .max_lod(0.0)
+                .anisotropy_enable(false)
+                .build();
+
+            ctx.0
+                .device
+                .create_sampler(&create_info, None)
+                .expect("unable to create brdf lut sampler")
+        };
+
         let (poisson_disk, poisson_disk_view) = unsafe { create_disk(ctx) };
+
+        let (brdf_lut, brdf_lut_view) = unsafe { create_brdf_lut(ctx) };
 
         let passes = MeshPasses {
             ctx: ctx.clone(),
@@ -729,8 +778,13 @@ impl<'a> MeshPassesBuilder<'a> {
             point_light_gen_pipeline,
             cluster_gen_pipeline_layout,
             cluster_gen_pipeline,
+            skybox_pipeline_layout: vk::PipelineLayout::null(),
+            skybox_pipeline: vk::Pipeline::null(),
             poisson_disk,
             poisson_disk_view,
+            brdf_lut,
+            brdf_lut_view,
+            brdf_lut_sampler,
         };
 
         MeshPassesBuilder {
@@ -768,6 +822,7 @@ impl<'a> MeshPassesBuilder<'a> {
             MeshPass::new(
                 &self.ctx,
                 self.lighting,
+                (self.passes.brdf_lut_view, self.passes.brdf_lut_sampler),
                 self.builder,
                 create_info,
                 &mut self.passes.depth_pyramid_gen,
@@ -1145,6 +1200,189 @@ impl MeshPasses {
         &mut self.passes[self.stages[self.active_stage.as_idx()][self.active_pass]]
     }
 
+    /// Initializes the skybox pipeline with the given renderpass.
+    pub fn initialize_skybox(&mut self, render_pass: vk::RenderPass) {
+        let vert_module = unsafe {
+            let create_info = vk::ShaderModuleCreateInfo {
+                p_code: SKYBOX_VERT_CODE.as_ptr() as *const u32,
+                code_size: SKYBOX_VERT_CODE.len(),
+                ..Default::default()
+            };
+
+            self.ctx
+                .0
+                .device
+                .create_shader_module(&create_info, None)
+                .expect("Unable to create skybox vertex shader module")
+        };
+
+        let frag_module = unsafe {
+            let create_info = vk::ShaderModuleCreateInfo {
+                p_code: SKYBOX_FRAG_CODE.as_ptr() as *const u32,
+                code_size: SKYBOX_FRAG_CODE.len(),
+                ..Default::default()
+            };
+
+            self.ctx
+                .0
+                .device
+                .create_shader_module(&create_info, None)
+                .expect("Unable to create skybox fragment shader module")
+        };
+
+        self.skybox_pipeline_layout = unsafe {
+            let layouts = [self.global_pool.layout(), self.camera_pool.layout()];
+
+            let create_info = vk::PipelineLayoutCreateInfo::builder()
+                .set_layouts(&layouts)
+                .build();
+
+            self.ctx
+                .0
+                .device
+                .create_pipeline_layout(&create_info, None)
+                .expect("Unable to create skybox pipeline layout")
+        };
+
+        self.skybox_pipeline = unsafe {
+            let entry_name = std::ffi::CString::new("main").unwrap();
+
+            let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder().build();
+
+            let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
+                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+                .primitive_restart_enable(false)
+                .build();
+
+            let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+                .depth_clamp_enable(false)
+                .rasterizer_discard_enable(false)
+                .polygon_mode(vk::PolygonMode::FILL)
+                .line_width(1.0)
+                .cull_mode(vk::CullModeFlags::NONE)
+                .front_face(vk::FrontFace::CLOCKWISE)
+                .depth_bias_enable(false)
+                .depth_bias_constant_factor(0.0)
+                .depth_bias_clamp(0.0)
+                .depth_bias_slope_factor(0.0)
+                .build();
+
+            let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
+                .sample_shading_enable(false)
+                .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+                .min_sample_shading(1.0)
+                .alpha_to_coverage_enable(false)
+                .alpha_to_one_enable(false)
+                .build();
+
+            let stencil_state = vk::StencilOpState::builder()
+                .fail_op(vk::StencilOp::KEEP)
+                .pass_op(vk::StencilOp::KEEP)
+                .depth_fail_op(vk::StencilOp::KEEP)
+                .compare_op(vk::CompareOp::ALWAYS)
+                .build();
+
+            // NOTE: For the viewport and scissor the width and height doesn't really matter
+            // because the dynamic stage can change them.
+            let viewports = [vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }];
+
+            let scissors = [vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: vk::Extent2D {
+                    width: 1,
+                    height: 1,
+                },
+            }];
+
+            let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+                .viewports(&viewports)
+                .scissors(&scissors)
+                .build();
+
+            let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+            let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
+                .dynamic_states(&dynamic_states)
+                .build();
+
+            let shader_stages = [
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(vert_module)
+                    .name(&entry_name)
+                    .build(),
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(frag_module)
+                    .name(&entry_name)
+                    .build(),
+            ];
+
+            let color_blend_attachment = [vk::PipelineColorBlendAttachmentState::builder()
+                .color_write_mask(vk::ColorComponentFlags::RGBA)
+                .blend_enable(false)
+                .src_color_blend_factor(vk::BlendFactor::ONE)
+                .dst_color_blend_factor(vk::BlendFactor::ZERO)
+                .color_blend_op(vk::BlendOp::ADD)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+                .alpha_blend_op(vk::BlendOp::ADD)
+                .build()];
+
+            let color_blending = vk::PipelineColorBlendStateCreateInfo::builder()
+                .logic_op_enable(false)
+                .logic_op(vk::LogicOp::COPY)
+                .attachments(&color_blend_attachment)
+                .blend_constants([0.0, 0.0, 0.0, 0.0])
+                .build();
+
+            let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
+                .depth_test_enable(false)
+                .depth_write_enable(false)
+                .front(stencil_state)
+                .back(stencil_state)
+                .depth_compare_op(vk::CompareOp::EQUAL)
+                .depth_bounds_test_enable(false)
+                .min_depth_bounds(0.0)
+                .max_depth_bounds(1.0)
+                .stencil_test_enable(false)
+                .build();
+
+            let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_state)
+                .input_assembly_state(&input_assembly)
+                .viewport_state(&viewport_state)
+                .rasterization_state(&rasterizer)
+                .multisample_state(&multisampling)
+                .depth_stencil_state(&depth_stencil)
+                .color_blend_state(&color_blending)
+                .dynamic_state(&dynamic_state)
+                .layout(self.skybox_pipeline_layout)
+                .render_pass(render_pass)
+                .subpass(0)
+                .build()];
+
+            self.ctx
+                .0
+                .device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+                .expect("unable to create skybox pipeline")[0]
+        };
+
+        unsafe {
+            self.ctx.0.device.destroy_shader_module(vert_module, None);
+            self.ctx.0.device.destroy_shader_module(frag_module, None);
+        }
+    }
+
     /// Expands object buffers to the maximum size that could be required.
     fn expand_object_buffers(
         ctx: &mut RenderGraphContext<ForwardPlus>,
@@ -1393,15 +1631,19 @@ impl Drop for MeshPasses {
                 pass.release(&mut self.depth_pyramid_gen);
             }
 
+            device.destroy_image_view(self.brdf_lut_view, None);
             device.destroy_image_view(self.poisson_disk_view, None);
 
             device.destroy_sampler(self.shadow_sampler, None);
             device.destroy_sampler(self.poisson_disk_sampler, None);
+            device.destroy_sampler(self.brdf_lut_sampler, None);
 
+            device.destroy_pipeline_layout(self.skybox_pipeline_layout, None);
             device.destroy_pipeline_layout(self.cluster_gen_pipeline_layout, None);
             device.destroy_pipeline_layout(self.draw_gen_pipeline_layout, None);
             device.destroy_pipeline_layout(self.point_light_gen_pipeline_layout, None);
 
+            device.destroy_pipeline(self.skybox_pipeline, None);
             device.destroy_pipeline(self.cluster_gen_pipeline, None);
             device.destroy_pipeline(self.draw_gen_no_highz_pipeline, None);
             device.destroy_pipeline(self.draw_gen_pipeline, None);
@@ -1575,6 +1817,138 @@ unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
     (poisson_disk_image, poisson_disk_image_view)
 }
 
+/// Helper function to create the brdf look up texture.
+unsafe fn create_brdf_lut(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
+    let brdf_lut_image = {
+        let create_info = ImageCreateInfo {
+            ctx: ctx.clone(),
+            ty: vk::ImageType::TYPE_2D,
+            width: IBL_LUT_DIMS,
+            height: IBL_LUT_DIMS,
+            depth: 1,
+            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
+            image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            mip_levels: 1,
+            array_layers: 1,
+            format: vk::Format::R8G8_UNORM,
+        };
+
+        Image::new(&create_info)
+    };
+
+    let brdf_lut_view = {
+        let create_info = vk::ImageViewCreateInfo::builder()
+            .image(brdf_lut_image.image())
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::R8G8_UNORM)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .build();
+
+        ctx.0
+            .device
+            .create_image_view(&create_info, None)
+            .expect("unable to create brdf lut image view")
+    };
+
+    let staging_buffer = Buffer::new_staging_buffer(ctx, IBL_LUT);
+
+    // Upload staging buffer to error image
+    let (command_pool, commands) = ctx
+        .0
+        .create_single_use_pool(ctx.0.queue_family_indices.transfer);
+
+    let barrier = [vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::UNDEFINED)
+        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+        .image(brdf_lut_image.image())
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .build()];
+
+    ctx.0.device.cmd_pipeline_barrier(
+        commands,
+        vk::PipelineStageFlags::TOP_OF_PIPE,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::DependencyFlags::BY_REGION,
+        &[],
+        &[],
+        &barrier,
+    );
+
+    let regions = [vk::BufferImageCopy::builder()
+        .buffer_offset(0)
+        .buffer_row_length(0)
+        .buffer_image_height(0)
+        .image_subresource(vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+        .image_extent(vk::Extent3D {
+            width: IBL_LUT_DIMS,
+            height: IBL_LUT_DIMS,
+            depth: 1,
+        })
+        .build()];
+
+    ctx.0.device.cmd_copy_buffer_to_image(
+        commands,
+        staging_buffer.buffer(),
+        brdf_lut_image.image(),
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &regions,
+    );
+
+    let barrier = [vk::ImageMemoryBarrier::builder()
+        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .src_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+        .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
+        .image(brdf_lut_image.image())
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .build()];
+
+    ctx.0.device.cmd_pipeline_barrier(
+        commands,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+        vk::DependencyFlags::BY_REGION,
+        &[],
+        &[],
+        &barrier,
+    );
+
+    ctx.0
+        .submit_single_use_pool(ctx.0.transfer, command_pool, commands);
+
+    (brdf_lut_image, brdf_lut_view)
+}
+
 const DRAW_GEN_CODE: &[u8] = include_bytes!("../../draw_gen.comp.spv");
 
 const DRAW_GEN_NO_HIGHZ_CODE: &[u8] = include_bytes!("../../draw_gen_no_highz.comp.spv");
@@ -1583,6 +1957,14 @@ const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("../../point_light_gen.comp.s
 
 const CLUSTER_GEN_CODE: &[u8] = include_bytes!("../../cluster_gen.comp.spv");
 
+const SKYBOX_FRAG_CODE: &[u8] = include_bytes!("../../skybox.frag.spv");
+
+const SKYBOX_VERT_CODE: &[u8] = include_bytes!("../../skybox.vert.spv");
+
 const POISSON_DISK_DIMS: u32 = 32;
 
 const POISSON_DISK_ANGLES: &[u8] = include_bytes!("./random_disk.bin");
+
+const IBL_LUT_DIMS: u32 = 400;
+
+const IBL_LUT: &[u8] = include_bytes!("./ibl_brdf_lut.bin");

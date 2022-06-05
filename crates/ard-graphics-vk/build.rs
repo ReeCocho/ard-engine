@@ -111,6 +111,16 @@ fn main() {
         Path::new("./src/renderer/cluster_gen.comp.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/renderer/skybox.frag"),
+        Path::new("./src/renderer/skybox.frag.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/renderer/skybox.vert"),
+        Path::new("./src/renderer/skybox.vert.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

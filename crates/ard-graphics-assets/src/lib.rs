@@ -1,7 +1,8 @@
 use ard_assets::prelude::*;
 use ard_core::prelude::*;
-use ard_graphics_vk::prelude as graphics;
+use ard_graphics_vk::{camera::CubeMap, prelude as graphics};
 
+pub mod cube_maps;
 pub mod model;
 pub mod pbr;
 pub mod pipelines;
@@ -9,7 +10,7 @@ pub mod shaders;
 pub mod textures;
 
 pub mod prelude {
-    pub use crate::{model::*, pbr::*, pipelines::*, shaders::*, textures::*, *};
+    pub use crate::{cube_maps::*, model::*, pbr::*, pipelines::*, shaders::*, textures::*, *};
 }
 
 use prelude::*;
@@ -36,6 +37,9 @@ fn late_loader_register(app: &mut App) {
         .get::<Assets>()
         .expect("assets plugin required");
 
+    assets.register::<CubeMapAsset>(CubeMapLoader {
+        factory: factory.clone(),
+    });
     assets.register::<TextureAsset>(TextureLoader {
         factory: factory.clone(),
     });

@@ -95,6 +95,8 @@ impl TextureSets {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             0,
             1,
+            0,
+            1,
         );
         super::staging::buffer_to_image_copy(
             &ctx.0.device,
@@ -102,6 +104,8 @@ impl TextureSets {
             &error_image,
             &staging_buffer,
             0,
+            0,
+            1,
         );
         super::staging::transition_image_layout(
             &ctx.0.device,
@@ -109,6 +113,8 @@ impl TextureSets {
             &error_image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            0,
+            1,
             0,
             1,
         );

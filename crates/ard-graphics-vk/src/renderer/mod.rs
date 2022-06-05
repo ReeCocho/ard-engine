@@ -232,6 +232,23 @@ impl Renderer {
         let light_cameras = lighting.update_ubo(frame_idx, &vp_invs, &far_planes);
 
         // Update context with outside state
+        if let Some(skybox) = &lighting.skybox {
+            let textures = self.factory.0.textures.read().unwrap();
+            let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
+            let texture = textures.get(skybox.id).unwrap();
+            let sampler = texture_sets.get_sampler(&texture.sampler);
+            self.state.set_skybox_texture(frame_idx, texture, sampler);
+        }
+
+        if let Some(irradiance) = &lighting.irradiance {
+            let textures = self.factory.0.textures.read().unwrap();
+            let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
+            let texture = textures.get(irradiance.id).unwrap();
+            let sampler = texture_sets.get_sampler(&texture.sampler);
+            self.state
+                .set_irradiance_texture(frame_idx, texture, sampler);
+        }
+
         self.state.set_sun_cameras(&light_cameras);
         self.state.set_dynamic_geo(&queries);
         self.state

@@ -6,7 +6,7 @@ use crate::{
     alloc::WriteStorageBuffer,
     camera::{
         Camera, CameraInner, CameraUbo, DebugDrawing, Lighting, PipelineType, RawPointLight,
-        Surface,
+        Surface, TextureInner,
     },
     context::GraphicsContext,
     factory::descriptors::DescriptorPool,
@@ -283,7 +283,7 @@ impl ForwardPlus {
             }),
         });
 
-        let mesh_passes = mp_builder.build();
+        let mut mesh_passes = mp_builder.build();
 
         let _surface_blit = rg_builder.add_pass(PassDescriptor::CPUPass {
             toggleable: false,
@@ -306,6 +306,11 @@ impl ForwardPlus {
             depth_prepass: mesh_passes.get_depth_prepass_id().unwrap(),
             opaque_pass: mesh_passes.get_opaque_pass_id().unwrap(),
         };
+
+        mesh_passes.initialize_skybox(match graph.lock().unwrap().get_pass(passes.opaque_pass) {
+            RenderPass::Graphics { pass, .. } => *pass,
+            _ => panic!("invalid render pass type"),
+        });
 
         // Create the factory
         let factory = Factory::new(
@@ -386,6 +391,56 @@ impl ForwardPlus {
     #[inline]
     pub fn frames(&self) -> &[FrameData] {
         &self.frame_data
+    }
+
+    #[inline]
+    pub unsafe fn set_skybox_texture(
+        &self,
+        frame: usize,
+        texture: &TextureInner,
+        sampler: vk::Sampler,
+    ) {
+        let image_info = [vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(sampler)
+            .build()];
+
+        for pass in &self.mesh_passes.passes {
+            let write = [vk::WriteDescriptorSet::builder()
+                .dst_set(pass.global_sets[frame])
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_binding(7)
+                .image_info(&image_info)
+                .build()];
+
+            self.ctx.0.device.update_descriptor_sets(&write, &[]);
+        }
+    }
+
+    #[inline]
+    pub unsafe fn set_irradiance_texture(
+        &self,
+        frame: usize,
+        texture: &TextureInner,
+        sampler: vk::Sampler,
+    ) {
+        let image_info = [vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(sampler)
+            .build()];
+
+        for pass in &self.mesh_passes.passes {
+            let write = [vk::WriteDescriptorSet::builder()
+                .dst_set(pass.global_sets[frame])
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_binding(8)
+                .image_info(&image_info)
+                .build()];
+
+            self.ctx.0.device.update_descriptor_sets(&write, &[]);
+        }
     }
 
     #[inline]

@@ -1,6 +1,7 @@
 mod alloc;
 pub mod camera;
 pub mod context;
+pub mod cube_map;
 pub mod factory;
 pub mod lighting;
 pub mod material;
@@ -22,6 +23,7 @@ use prelude::*;
 pub mod prelude {
     pub use crate::camera::*;
     pub use crate::context::*;
+    pub use crate::cube_map::*;
     pub use crate::factory::*;
     pub use crate::lighting::*;
     pub use crate::material::*;
@@ -54,6 +56,7 @@ impl Backend for VkBackend {
     type StaticGeometry = StaticGeometry;
     type DebugDrawing = DebugDrawing;
     type Texture = Texture;
+    type CubeMap = CubeMap;
 
     const MAX_MESHES: usize = 2048;
     const MAX_SHADERS: usize = 4096;
@@ -61,6 +64,7 @@ impl Backend for VkBackend {
     const MAX_MATERIALS: usize = 2048;
     const MAX_CAMERA: usize = 64;
     const MAX_TEXTURES: usize = 2048;
+    const MAX_CUBE_MAPS: usize = 128;
     const MAX_TEXTURES_PER_MATERIAL: usize = shader_constants::MAX_TEXTURES_PER_MATERIAL;
 }
 
