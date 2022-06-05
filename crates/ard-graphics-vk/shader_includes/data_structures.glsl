@@ -9,17 +9,23 @@
 /// LIGHTING ///
 ////////////////
 
+struct ShadowCascadeInfo {
+    mat4 vp;
+    mat4 view;
+    mat4 proj;
+    vec2 uv_size;
+    float far_plane;
+    float min_bias;
+    float max_bias;
+    float depth_range;
+};
+
 struct Lighting {
-    mat4 sun_vp;
-    mat4 sun_view;
-    mat4 sun_proj;
+    ShadowCascadeInfo cascades[MAX_SHADOW_CASCADES];
     vec4 ambient;
     vec4 sun_color_intensity;
     vec4 sun_direction;
-    vec2 sun_size_uv;
     float sun_size;
-    float shadow_bias_min;
-    float shadow_bias_max;
 };
 
 struct PointLight {

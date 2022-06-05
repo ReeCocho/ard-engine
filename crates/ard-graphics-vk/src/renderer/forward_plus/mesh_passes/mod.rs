@@ -13,7 +13,9 @@ use crate::{
         GraphicsContext, Lighting, RawPointLight,
     },
     prelude::graph::RenderGraphContext,
-    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL},
+    shader_constants::{
+        FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL, MAX_SHADOW_CASCADES,
+    },
 };
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
@@ -86,7 +88,7 @@ pub(crate) struct MeshPasses {
     pub poisson_disk_view: vk::ImageView,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct MeshPassId(usize);
 
 pub(crate) struct MeshPassesBuilder<'a> {
@@ -240,10 +242,10 @@ impl<'a> MeshPassesBuilder<'a> {
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
                     .build(),
-                // Shadow map
+                // Shadow maps
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(5)
-                    .descriptor_count(1)
+                    .descriptor_count(MAX_SHADOW_CASCADES as u32)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
                     .build(),
@@ -974,6 +976,20 @@ impl<'a> MeshPassesBuilder<'a> {
                 access: AccessType::Read,
             });
 
+            let shadow_images = match &pass.shadow_images {
+                Some(images) => {
+                    let mut descriptors = Vec::with_capacity(images.len());
+                    for image in images {
+                        descriptors.push(ImageAccessDecriptor {
+                            image: *image,
+                            access: AccessType::Read,
+                        })
+                    }
+                    descriptors
+                }
+                None => Vec::default(),
+            };
+
             color_rendering.pass_id = self.builder.add_pass(PassDescriptor::RenderPass {
                 toggleable: false,
                 color_attachments: vec![color_rendering.color_image],
@@ -984,14 +1000,7 @@ impl<'a> MeshPassesBuilder<'a> {
                         store: pass.depth_image.ops.store,
                     },
                 }),
-                images: if let Some(shadow_map) = &pass.shadow_image {
-                    vec![ImageAccessDecriptor {
-                        image: *shadow_map,
-                        access: AccessType::Read,
-                    }]
-                } else {
-                    Vec::default()
-                },
+                images: shadow_images,
                 buffers: vec![BufferAccessDescriptor {
                     buffer: color_rendering.point_lights_table,
                     access: AccessType::Read,
@@ -1447,7 +1456,7 @@ unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
             image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
             mip_levels: 1,
             array_layers: 1,
-            format: vk::Format::R32G32_SFLOAT,
+            format: vk::Format::R32G32B32A32_SFLOAT,
         };
 
         Image::new(&create_info)
@@ -1457,7 +1466,7 @@ unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
         let create_info = vk::ImageViewCreateInfo::builder()
             .image(poisson_disk_image.image())
             .view_type(vk::ImageViewType::TYPE_3D)
-            .format(vk::Format::R32G32_SFLOAT)
+            .format(vk::Format::R32G32B32A32_SFLOAT)
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
                 base_mip_level: 0,

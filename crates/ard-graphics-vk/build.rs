@@ -8,6 +8,7 @@ struct Constants {
     pub froxel_table_dims: (usize, usize, usize),
     pub max_point_lights_per_froxel: usize,
     pub max_textures_per_material: usize,
+    pub max_shadow_cascades: usize,
 }
 
 fn main() {
@@ -26,6 +27,7 @@ fn main() {
             pub(crate) const MAX_POINT_LIGHTS_PER_FROXEL: usize = {};\n\
             pub(crate) const MAX_TEXTURES_PER_MATERIAL: usize = {};\n\
             pub(crate) const NO_TEXTURE: u32 = {};\n\
+            pub(crate) const MAX_SHADOW_CASCADES: usize = {};\n\
             ",
             constants.frames_in_flight,
             constants.froxel_table_dims.0,
@@ -34,6 +36,7 @@ fn main() {
             constants.max_point_lights_per_froxel,
             constants.max_textures_per_material,
             u32::MAX,
+            constants.max_shadow_cascades,
         ),
     )
     .unwrap();
@@ -51,6 +54,7 @@ fn main() {
             #define MAX_POINT_LIGHTS_PER_FROXEL {}\n\
             #define MAX_TEXTURES_PER_MATERIAL {} \n\
             #define NO_TEXTURE {}\n\
+            #define MAX_SHADOW_CASCADES {}\n\
             #endif\n\
             ",
             constants.froxel_table_dims.0,
@@ -59,6 +63,7 @@ fn main() {
             constants.max_point_lights_per_froxel,
             constants.max_textures_per_material,
             u32::MAX,
+            constants.max_shadow_cascades,
         ),
     )
     .unwrap();

@@ -17,7 +17,7 @@ use crate::{
     mesh::VertexLayoutKey,
     prelude::{graph::RenderGraphContext, CameraUbo},
     renderer::graph::GraphBuffer,
-    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
+    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_SHADOW_CASCADES},
 };
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
@@ -45,7 +45,7 @@ pub(crate) struct MeshPassCreateInfo {
     /// Indicates if high-z culling is enabled or not.
     pub highz_culling: bool,
     /// Image to sample for shadow mapping.
-    pub shadow_image: Option<ImageId>,
+    pub shadow_images: Option<[ImageId; MAX_SHADOW_CASCADES]>,
     /// Required depth image.
     pub depth_image: DepthStencilAttachmentDescriptor,
     /// The pipeline type used during depth prepass. This should only ever be values of
@@ -66,8 +66,8 @@ pub(crate) struct MeshPass {
     /// The pipeline type used during depth prepass. This should only ever be values of
     /// `PipelineType::HighZRender` or `PipelineType::ShadowPass`.
     pub depth_pipeline_type: PipelineType,
-    /// Image to sample for shadow mapping.
-    pub shadow_image: Option<ImageId>,
+    /// Images to sample for shadow mapping.
+    pub shadow_images: Option<[ImageId; MAX_SHADOW_CASCADES]>,
     /// The number of static objects that we rendered this frame.
     pub static_objects_rendered: usize,
     /// The number of static draw calls that we performed this frame.
@@ -241,7 +241,7 @@ impl MeshPass {
 
         Self {
             layers: create_info.layers,
-            shadow_image: create_info.shadow_image,
+            shadow_images: create_info.shadow_images,
             depth_image: create_info.depth_image,
             depth_pipeline_type: create_info.depth_pipeline_type,
             static_objects_rendered: 0,
@@ -301,37 +301,43 @@ impl MeshPass {
             device.update_descriptor_sets(&writes, &[]);
         }
 
-        // Write shadow map and poisson disk if needed
-        if let Some(shadow_map) = &self.shadow_image {
-            let (_, shadow_map_images) = resources.get_image(*shadow_map).unwrap();
+        // Write shadow maps and poisson disk if needed
+        if let Some(shadow_maps) = &self.shadow_images {
+            let mut image_infos = [vk::DescriptorImageInfo::default(); MAX_SHADOW_CASCADES + 1];
 
-            let image_infos = [
-                vk::DescriptorImageInfo::builder()
+            image_infos[0] = vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(poisson_disk_view)
+                .sampler(poisson_disk_sampler)
+                .build();
+
+            for i in 1..=MAX_SHADOW_CASCADES {
+                let (_, shadow_map_images) = resources.get_image(shadow_maps[i - 1]).unwrap();
+                image_infos[i] = vk::DescriptorImageInfo::builder()
                     .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .image_view(shadow_map_images[frame].view)
                     .sampler(shadow_sampler)
-                    .build(),
-                vk::DescriptorImageInfo::builder()
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(poisson_disk_view)
-                    .sampler(poisson_disk_sampler)
-                    .build(),
-            ];
+                    .build();
+            }
 
-            let writes = [
-                vk::WriteDescriptorSet::builder()
+            let mut writes = [vk::WriteDescriptorSet::default(); MAX_SHADOW_CASCADES + 1];
+
+            writes[0] = vk::WriteDescriptorSet::builder()
+                .dst_set(global_set)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_binding(6)
+                .image_info(&image_infos[0..1])
+                .build();
+
+            for i in 1..=MAX_SHADOW_CASCADES {
+                writes[i] = vk::WriteDescriptorSet::builder()
                     .dst_set(global_set)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .dst_binding(5)
-                    .image_info(&image_infos[0..1])
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(global_set)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .dst_binding(6)
-                    .image_info(&image_infos[1..2])
-                    .build(),
-            ];
+                    .dst_array_element(i as u32 - 1)
+                    .image_info(&image_infos[i..(i + 1)])
+                    .build();
+            }
 
             device.update_descriptor_sets(&writes, &[]);
         }

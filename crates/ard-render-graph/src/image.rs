@@ -2,10 +2,10 @@ use std::fmt::Display;
 
 use crate::{context::Context, AccessType};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ImageId(pub(crate) u32);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct SizeGroupId(pub(crate) u32);
 
 #[derive(Clone)]

@@ -13,7 +13,9 @@ use crate::{
     factory::Factory,
     mesh::VertexLayoutKey,
     renderer::StaticGeometry,
-    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL},
+    shader_constants::{
+        FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL, MAX_SHADOW_CASCADES,
+    },
     VkBackend,
 };
 
@@ -57,7 +59,7 @@ pub(crate) struct ForwardPlus {
     static_geo: StaticGeometry,
     debug_drawing: DebugDrawing,
     mesh_passes: MeshPasses,
-    shadow_pass: MeshPassId,
+    shadow_passes: [MeshPassId; MAX_SHADOW_CASCADES],
     passes: Passes,
     canvas_size_group: SizeGroupId,
     /// Final color image that should be presented.
@@ -189,13 +191,6 @@ impl ForwardPlus {
 
         let mut rg_builder = RenderGraphBuilder::new();
 
-        let shadow_size_group = rg_builder.add_size_group(SizeGroup {
-            width: 4096,
-            height: 4096,
-            array_layers: 1,
-            mip_levels: 1,
-        });
-
         let canvas_size_group = rg_builder.add_size_group(SizeGroup {
             width: canvas_size.width,
             height: canvas_size.height,
@@ -203,10 +198,23 @@ impl ForwardPlus {
             mip_levels: 1,
         });
 
-        let shadow_map = rg_builder.add_image(ImageDescriptor {
-            format: depth_format,
-            size_group: shadow_size_group,
-        });
+        let mut shadow_size_groups = [SizeGroupId::default(); MAX_SHADOW_CASCADES];
+        for i in 0..MAX_SHADOW_CASCADES {
+            shadow_size_groups[i] = rg_builder.add_size_group(SizeGroup {
+                width: (4096 / 2_u32.pow(i as u32)).max(2048),
+                height: (4096 / 2_u32.pow(i as u32)).max(2048),
+                array_layers: 1,
+                mip_levels: 1,
+            });
+        }
+
+        let mut shadow_images = [ImageId::default(); MAX_SHADOW_CASCADES];
+        for i in 0..MAX_SHADOW_CASCADES {
+            shadow_images[i] = rg_builder.add_image(ImageDescriptor {
+                format: depth_format,
+                size_group: shadow_size_groups[i],
+            });
+        }
 
         let depth_buffer = rg_builder.add_image(ImageDescriptor {
             format: depth_format,
@@ -226,25 +234,28 @@ impl ForwardPlus {
         // Create mesh passes
         let mut mp_builder = MeshPassesBuilder::new(ctx, lighting, &mut rg_builder);
 
-        // Shadow pass
-        let shadow_pass = mp_builder.add_pass(MeshPassCreateInfo {
-            size_group: shadow_size_group,
-            layers: RenderLayer::ShadowCaster.into(),
-            camera: MeshPassCamera::Custom {
-                ubo: CameraUbo::default(),
-            },
-            highz_culling: false,
-            shadow_image: None,
-            depth_image: DepthStencilAttachmentDescriptor {
-                image: shadow_map,
-                ops: Operations {
-                    load: LoadOp::Clear((1.0, 0)),
-                    store: true,
+        // Shadow passes (one per cascade)
+        let mut shadow_passes = [MeshPassId::default(); MAX_SHADOW_CASCADES];
+        for (i, pass) in shadow_passes.iter_mut().enumerate() {
+            *pass = mp_builder.add_pass(MeshPassCreateInfo {
+                size_group: shadow_size_groups[i],
+                layers: RenderLayer::ShadowCaster.into(),
+                camera: MeshPassCamera::Custom {
+                    ubo: CameraUbo::default(),
                 },
-            },
-            color_image: None,
-            depth_pipeline_type: PipelineType::ShadowPass,
-        });
+                highz_culling: false,
+                shadow_images: None,
+                depth_image: DepthStencilAttachmentDescriptor {
+                    image: shadow_images[i],
+                    ops: Operations {
+                        load: LoadOp::Clear((1.0, 0)),
+                        store: true,
+                    },
+                },
+                color_image: None,
+                depth_pipeline_type: PipelineType::ShadowPass,
+            });
+        }
 
         // Primary mesh pass
         mp_builder.add_pass(MeshPassCreateInfo {
@@ -253,7 +264,7 @@ impl ForwardPlus {
             camera: MeshPassCamera::Main,
             highz_culling: true,
             depth_pipeline_type: PipelineType::HighZRender,
-            shadow_image: Some(shadow_map),
+            shadow_images: Some(shadow_images),
             depth_image: DepthStencilAttachmentDescriptor {
                 image: depth_buffer,
                 ops: Operations {
@@ -339,7 +350,7 @@ impl ForwardPlus {
             surface_image_idx: 0,
             work_group_size: ctx.0.properties.limits.max_compute_work_group_size[0],
             mesh_passes,
-            shadow_pass,
+            shadow_passes,
             color_image,
         };
 
@@ -378,11 +389,15 @@ impl ForwardPlus {
     }
 
     #[inline]
-    pub fn set_sun_camera(&mut self, camera: CameraUbo) {
-        self.mesh_passes
-            .get_pass_mut(self.shadow_pass)
-            .camera
-            .camera = MeshPassCamera::Custom { ubo: camera };
+    pub fn set_sun_cameras(&mut self, cameras: &[CameraUbo]) {
+        assert_eq!(cameras.len(), MAX_SHADOW_CASCADES);
+
+        for i in 0..MAX_SHADOW_CASCADES {
+            self.mesh_passes
+                .get_pass_mut(self.shadow_passes[i])
+                .camera
+                .camera = MeshPassCamera::Custom { ubo: cameras[i] };
+        }
     }
 
     #[inline]

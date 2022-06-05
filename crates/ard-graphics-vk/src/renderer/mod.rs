@@ -10,12 +10,14 @@ use crate::{
     camera::{CameraUbo, Lighting},
     context::GraphicsContext,
     factory::Factory,
+    shader_constants::MAX_SHADOW_CASCADES,
     surface::Surface,
     VkBackend,
 };
 use ard_core::core::{Stopping, Tick};
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
+use ard_math::{Mat4, Vec3};
 use ard_render_graph::image::SizeGroup;
 use ard_window::windows::Windows;
 use ash::vk;
@@ -190,22 +192,47 @@ impl Renderer {
         // Process pending resources
         self.factory.process(frame_idx);
 
-        // Update lighting
-        let camera = {
+        // Update lighting. Compute projection matrix slices for shadow cascades
+        let (vp_invs, far_planes) = {
             let surface_lock = surface.0.lock().expect("mutex poisoned");
             let cameras = self.factory.0.cameras.read().unwrap();
             let camera = cameras.get(self.factory.main_camera().id).unwrap();
-            CameraUbo::new(
-                &camera.descriptor,
-                surface_lock.resolution.width as f32,
-                surface_lock.resolution.height as f32,
-            )
+
+            let view = Mat4::look_at_lh(
+                camera.descriptor.position,
+                camera.descriptor.center,
+                camera.descriptor.up.try_normalize().unwrap_or(Vec3::Y),
+            );
+
+            let aspect_ratio =
+                surface_lock.resolution.width as f32 / surface_lock.resolution.height as f32;
+            let fmn = camera.descriptor.far - camera.descriptor.near;
+            let mut projs = [Mat4::IDENTITY; MAX_SHADOW_CASCADES];
+            let mut far_planes = [0.0; MAX_SHADOW_CASCADES];
+
+            for i in 0..MAX_SHADOW_CASCADES {
+                let lin_n = (i as f32 / MAX_SHADOW_CASCADES as f32).powf(2.0);
+                let lin_f = ((i + 1) as f32 / MAX_SHADOW_CASCADES as f32).powf(2.0);
+
+                far_planes[i] = camera.descriptor.near + (fmn * lin_f);
+
+                let proj = Mat4::perspective_lh(
+                    camera.descriptor.fov,
+                    aspect_ratio,
+                    camera.descriptor.near + (fmn * lin_n),
+                    far_planes[i],
+                );
+
+                projs[i] = (proj * view).inverse();
+            }
+
+            (projs, far_planes)
         };
 
-        let light_camera = lighting.update_ubo(frame_idx, &camera);
+        let light_cameras = lighting.update_ubo(frame_idx, &vp_invs, &far_planes);
 
         // Update context with outside state
-        self.state.set_sun_camera(light_camera);
+        self.state.set_sun_cameras(&light_cameras);
         self.state.set_dynamic_geo(&queries);
         self.state
             .set_point_light_query(queries.make::<(Read<PointLight>, Read<Model>)>());

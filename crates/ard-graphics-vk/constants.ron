@@ -3,4 +3,5 @@
     max_point_lights_per_froxel: 256,
     froxel_table_dims: (32, 18, 16),
     max_textures_per_material: 8,
+    max_shadow_cascades: 3
 )

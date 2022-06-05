@@ -10,53 +10,24 @@
 
 const float PI = 3.14159265359;
 
-const vec2 poisson_offsets[32] = vec2[32](
-	vec2(0.06407013, 0.05409927),
-	vec2(0.7366577, 0.5789394),
-	vec2(-0.6270542, -0.5320278),
-	vec2(-0.4096107, 0.8411095),
-	vec2(0.6849564, -0.4990818),
-	vec2(-0.874181, -0.04579735),
-	vec2(0.9989998, 0.0009880066),
-	vec2(-0.004920578, -0.9151649),
-	vec2(0.1805763, 0.9747483),
-	vec2(-0.2138451, 0.2635818),
-	vec2(0.109845, 0.3884785),
-	vec2(0.06876755, -0.3581074),
-	vec2(0.374073, -0.7661266),
-	vec2(0.3079132, -0.1216763),
-	vec2(-0.3794335, -0.8271583),
-	vec2(-0.203878, -0.07715034),
-	vec2(0.5912697, 0.1469799),
-	vec2(-0.88069, 0.3031784),
-	vec2(0.5040108, 0.8283722),
-	vec2(-0.5844124, 0.5494877),
-	vec2(0.6017799, -0.1726654),
-	vec2(-0.5554981, 0.1559997),
-	vec2(-0.3016369, -0.3900928),
-	vec2(-0.5550632, -0.1723762),
-	vec2(0.925029, 0.2995041),
-	vec2(-0.2473137, 0.5538505),
-	vec2(0.9183037, -0.2862392),
-	vec2(0.2469421, 0.6718712),
-	vec2(0.3916397, -0.4328209),
-	vec2(-0.03576927, -0.6220032),
-	vec2(-0.04661255, 0.7995201),
-	vec2(0.4402924, 0.3640312)
-);
+#define SHADOW_SAMPLES_COUNT 32
+#define SHADOW_SAMPLES_COUNT_DIV2 16
+#define SHADOW_SAMPLES_COUNT_INV (1.0 / SHADOW_SAMPLES_COUNT)
 
 #ifdef ARD_VERTEX_SHADER
 layout(location = 16) flat out uint ARD_INSTANCE_IDX;
 layout(location = 17) out vec3 ARD_FRAG_POS;
-layout(location = 18) out vec4 ARD_FRAG_POS_LIGHT_SPACE;
-layout(location = 19) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE;
+layout(location = 18) out vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 19) out vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 19 + MAX_SHADOW_CASCADES) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 #ifdef ARD_FRAGMENT_SHADER
 layout(location = 16) flat in uint ARD_INSTANCE_IDX;
 layout(location = 17) in vec3 ARD_FRAG_POS;
-layout(location = 18) in vec4 ARD_FRAG_POS_LIGHT_SPACE;
-layout(location = 19) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE;
+layout(location = 18) in vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 19) in vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 19 + MAX_SHADOW_CASCADES) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 //////////////
@@ -83,7 +54,7 @@ layout(set = 0, binding = 4) uniform ARD_Lighting {
     Lighting ARD_LIGHTING;
 };
 
-layout(set = 0, binding = 5) uniform sampler2D ARD_SHADOW_MAP;
+layout(set = 0, binding = 5) uniform sampler2D[MAX_SHADOW_CASCADES] ARD_SHADOW_MAPS;
 
 layout(set = 0, binding = 6) uniform sampler3D ARD_POISSON_DISK;
 
@@ -130,8 +101,12 @@ void main() { \
     ARD_INSTANCE_IDX = gl_InstanceIndex; \
     VsOut vs_out = func(); \
     ARD_FRAG_POS = vs_out.frag_pos; \
-    ARD_FRAG_POS_LIGHT_VIEW_SPACE = vec3(ARD_LIGHTING.sun_view * vec4(vs_out.frag_pos, 1.0)); \
-    ARD_FRAG_POS_LIGHT_SPACE = ARD_LIGHTING.sun_vp * vec4(vs_out.frag_pos, 1.0); \
+    ARD_FRAG_POS_VIEW_SPACE = vec3(camera.view * vec4(vs_out.frag_pos, 1.0)); \
+    for (int i = 0; i < MAX_SHADOW_CASCADES; ++i) { \
+        ARD_FRAG_POS_LIGHT_VIEW_SPACE[i] = \
+            vec3(ARD_LIGHTING.cascades[i].view * vec4(vs_out.frag_pos, 1.0)); \
+        ARD_FRAG_POS_LIGHT_SPACE[i] = ARD_LIGHTING.cascades[i].vp * vec4(vs_out.frag_pos, 1.0); \
+    } \
 } \
 
 #else
@@ -237,36 +212,72 @@ vec3 fresnel_schlick(float cos_theta, vec3 F0) {
 // PCSS code here:
 // https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf
 
-float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv) {
-    float sum = 0.0;
-    for (int i = 0; i < 32; ++i) {
-        vec2 offset = poisson_offsets[i] * filter_radius_uv;
-        float shadow_depth = texture(ARD_SHADOW_MAP, uv + offset).r;
-        sum += z_receiver - bias < shadow_depth ? 1.0 : 0.0;
-    }
-    return sum / 32.0;
+float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv, int layer) {
+    float shadow = 0.0;
+    vec3 jcoord = vec3(ARD_FRAG_POS.xy, 0.0);
+    vec2 sm_coord = uv;
+    vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
+
+    // // Perform cheap tests first
+    // for (int i = 0; i < 4; i++) {
+    //     vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
+    //     jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
+    //     
+    //     shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.xy).r ? (1.0 / 8) : 0.0;
+    //     shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? (1.0 / 8) : 0.0;
+    // }
+
+    // If all test samples are either 0's or 1's, we can skip expensive filtering
+    //if ((shadow - 1) * shadow != 0) {
+        //shadow *= 8.0 / SHADOW_SAMPLES_COUNT;
+        
+        for (int i = 0; i < SHADOW_SAMPLES_COUNT; ++i) {
+            vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
+            jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
+
+            shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.xy).r ? 
+                SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
+
+            shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? 
+                SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
+        }
+    //}
+    
+    return shadow;
 }
 
-float shadow_calculation(
-    vec4 frag_pos_light_space, 
-    float light_space_depth,
-    vec3 normal
-) {
+float shadow_calculation(vec3 normal) {
+    // Determine which cascade to use
+    int layer = MAX_SHADOW_CASCADES - 1;
+    for (int i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        if (ARD_FRAG_POS_VIEW_SPACE.z < ARD_LIGHTING.cascades[i].far_plane) {
+            layer = i;
+            break;
+        }
+    }
+
+    vec4 frag_pos_light_space = ARD_FRAG_POS_LIGHT_SPACE[layer]; 
+
     float NoL = dot(normal, ARD_LIGHTING.sun_direction.xyz);
     float bias = max(
-        ARD_LIGHTING.shadow_bias_max * (1.0 - NoL), 
-        ARD_LIGHTING.shadow_bias_min
-    );
+        ARD_LIGHTING.cascades[layer].max_bias * (1.0 - NoL), 
+        ARD_LIGHTING.cascades[layer].min_bias
+    ) * (1.0 / ARD_LIGHTING.cascades[layer].depth_range);
 
-    // blocker search
     vec3 proj_coords = frag_pos_light_space.xyz / frag_pos_light_space.w;
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
     proj_coords.y = 1.0 - proj_coords.y;
 
-    vec2 filter_radius_uv = 0.05 * ARD_LIGHTING.sun_size_uv;
+    vec2 filter_radius_uv = 0.05 * ARD_LIGHTING.cascades[layer].uv_size;
 
 	// Filtering
-	return pcf_filter(proj_coords.xy, proj_coords.z, bias, filter_radius_uv);
+	return pcf_filter(
+        proj_coords.xy, 
+        proj_coords.z, 
+        bias, 
+        filter_radius_uv, 
+        layer
+    );
 }
 
 /// light_color - As named.
@@ -371,7 +382,7 @@ vec3 lighting(
     vec3 Lo = vec3(0.0);
 
     // Directional light
-    float shadow = shadow_calculation(ARD_FRAG_POS_LIGHT_SPACE, ARD_FRAG_POS_LIGHT_VIEW_SPACE.z, N);
+    float shadow = shadow_calculation(N);
     float sun_attenuation = shadow;
 
     Lo += lighting_general(

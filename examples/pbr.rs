@@ -9,6 +9,7 @@ use ard_engine::{
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
 use ard_graphics_assets::prelude::PbrMaterialData;
+use rand::prelude::*;
 use util::{CameraMovement, FrameRate, MainCameraState};
 
 #[derive(SystemState)]
@@ -87,8 +88,8 @@ async fn main() {
             position: Vec3::new(0.0, 5.0, 15.0),
             rotation: Vec3::new(0.0, 180.0, 0.0),
             near: 0.3,
-            far: 100.0,
-            fov: (90.0 as f32).to_radians(),
+            far: 300.0,
+            fov: (100.0 as f32).to_radians(),
             look_speed: 0.1,
             move_speed: 30.0,
             cursor_locked: false,
@@ -156,28 +157,39 @@ fn setup(app: &mut App) {
     });
 
     // Create lights
-    const LIGHT_COUNT: usize = 1;
-    const LIGHT_RING_RADIUS: f32 = 0.0;
-    const LIGHT_RANGE: f32 = 80.0;
-    const LIGHT_INTENSITY: f32 = 6.0;
+    const LIGHT_COUNT: usize = 200;
+    let LIGHT_VOLUME_MIN: Vec3 = Vec3::new(-50.0, 1.0, -50.0);
+    let LIGHT_VOLUME_MAX: Vec3 = Vec3::new(50.0, 16.0, 50.0);
+    const LIGHT_RANGE: f32 = 16.0;
+    const LIGHT_INTENSITY: f32 = 2.0;
 
     let mut lights = (
         Vec::with_capacity(LIGHT_COUNT),
         Vec::with_capacity(LIGHT_COUNT),
     );
 
+    let mut rng = rand::thread_rng();
+
     for i in 0..LIGHT_COUNT {
-        let angle = (i as f32 / LIGHT_COUNT as f32) * 2.0 * std::f32::consts::PI;
-        let pos = Vec3::new(0.0, 32.0, 0.0)
-            + (Vec3::new(angle.sin(), 0.0, angle.cos()) * LIGHT_RING_RADIUS);
+        let pos = Vec3::new(
+            rng.gen_range(LIGHT_VOLUME_MIN.x..LIGHT_VOLUME_MAX.x),
+            rng.gen_range(LIGHT_VOLUME_MIN.y..LIGHT_VOLUME_MAX.y),
+            rng.gen_range(LIGHT_VOLUME_MIN.z..LIGHT_VOLUME_MAX.z),
+        );
+
+        let color = Vec3::new(
+            rng.gen_range(0.1..1.0),
+            rng.gen_range(0.1..1.0),
+            rng.gen_range(0.1..1.0),
+        );
 
         lights.0.push(Model(Mat4::from_translation(pos)));
         lights.1.push(PointLight {
-            color: Vec3::new(1.0, 1.0, 1.0),
+            color,
             intensity: LIGHT_INTENSITY,
             radius: LIGHT_RANGE,
         });
     }
 
-    // app.world.entities().commands().create(lights, &mut []);
+    app.world.entities().commands().create(lights, &mut []);
 }
