@@ -1,0 +1,14 @@
+(
+	generate_mips: false,
+	dimensions: (128, 128),
+	mips: [
+		CubeFaces(
+			east: "appartment/irradiance/output_iem_posx.tga",
+			west: "appartment/irradiance/output_iem_negx.tga",
+			top: "appartment/irradiance/output_iem_posy.tga",
+			bottom: "appartment/irradiance/output_iem_negy.tga",
+			north: "appartment/irradiance/output_iem_posz.tga",
+			south: "appartment/irradiance/output_iem_negz.tga",
+		)
+	],
+)

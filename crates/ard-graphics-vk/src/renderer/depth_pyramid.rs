@@ -551,6 +551,7 @@ impl DepthPyramid {
             mip_levels,
             array_layers: 1,
             format: DEPTH_PYRAMID_FORMAT,
+            flags: vk::ImageCreateFlags::empty(),
         };
 
         let image = Image::new(&create_info);

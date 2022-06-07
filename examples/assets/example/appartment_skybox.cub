@@ -1,0 +1,14 @@
+(
+	generate_mips: false,
+	dimensions: (400, 400),
+	mips: [
+		CubeFaces(					
+			east: "appartment/skybox/output_skybox_posx.tga",
+			west: "appartment/skybox/output_skybox_negx.tga",
+			top: "appartment/skybox/output_skybox_posy.tga",
+			bottom: "appartment/skybox/output_skybox_negy.tga",
+			north: "appartment/skybox/output_skybox_posz.tga",
+			south: "appartment/skybox/output_skybox_negz.tga",
+		)
+	]
+)

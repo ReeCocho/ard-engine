@@ -24,6 +24,7 @@ pub struct ImageCreateInfo {
     pub mip_levels: u32,
     pub array_layers: u32,
     pub format: vk::Format,
+    pub flags: vk::ImageCreateFlags,
 }
 
 pub struct Buffer {
@@ -221,6 +222,7 @@ impl Image {
             .usage(create_info.image_usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1)
+            .flags(create_info.flags)
             .build();
 
         let image = create_info

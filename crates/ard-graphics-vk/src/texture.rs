@@ -48,6 +48,7 @@ impl TextureInner {
             mip_levels: create_info.mip_count as u32,
             array_layers: 1,
             format: ard_to_vk_format(create_info.format),
+            flags: vk::ImageCreateFlags::empty(),
         };
 
         let image = Image::new(&img_create_info);
@@ -113,7 +114,10 @@ impl TextureInner {
     pub unsafe fn create_new_view(&mut self, device: &ash::Device) -> vk::ImageView {
         // Determine how many consecutive mips are ready, starting from the least
         // detailed level
-        let loaded_mips = (self.loaded_mips << (u32::BITS - self.mip_levels)).leading_ones();
+        let mut loaded_mips = self.loaded_mips << (u32::BITS - self.mip_levels);
+        let lz = loaded_mips.leading_zeros();
+        let loaded_mips = (loaded_mips << lz).leading_ones();
+        let base_mip_level = self.mip_levels - (lz + loaded_mips);
 
         let create_info = vk::ImageViewCreateInfo::builder()
             .image(self.image.image())
@@ -121,7 +125,7 @@ impl TextureInner {
             .format(self.image.format())
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: self.mip_levels - loaded_mips,
+                base_mip_level,
                 level_count: loaded_mips,
                 base_array_layer: 0,
                 layer_count: 1,

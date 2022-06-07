@@ -198,7 +198,7 @@ impl MeshPass {
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_array_element(0)
-                    .dst_binding(9)
+                    .dst_binding(10)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .dst_set(global_sets[i])
                     .image_info(&brdf_lut_info)

@@ -680,6 +680,7 @@ impl RenderTarget {
             mip_levels: size_group.mip_levels,
             array_layers: size_group.array_layers,
             format: descriptor.format,
+            flags: vk::ImageCreateFlags::empty(),
         };
 
         let image = Image::new(&create_info);

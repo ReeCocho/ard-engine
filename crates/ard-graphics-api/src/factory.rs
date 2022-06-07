@@ -36,4 +36,6 @@ pub trait FactoryApi<B: Backend>: Resource + Clone + Send + Sync {
 
     /// Load a particular mip level for a texture created with `MipType::UploadLater`.
     fn load_texture_mip(&self, texture: &B::Texture, level: usize, data: &[u8]);
+
+    fn load_cube_map_mip(&self, cube_map: &B::CubeMap, level: usize, data: &[u8]);
 }

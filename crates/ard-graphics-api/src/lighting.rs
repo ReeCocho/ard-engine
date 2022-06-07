@@ -5,9 +5,11 @@ use bytemuck::{Pod, Zeroable};
 use crate::Backend;
 
 pub trait LightingApi<B: Backend>: Resource + Send + Sync {
-    fn set_skybox_texture(&mut self, texture: Option<B::Texture>);
+    fn set_skybox_texture(&mut self, texture: Option<B::CubeMap>);
 
-    fn set_irradiance_texture(&mut self, texture: Option<B::Texture>);
+    fn set_irradiance_texture(&mut self, texture: Option<B::CubeMap>);
+
+    fn set_radiance_texture(&mut self, texture: Option<B::CubeMap>);
 }
 
 /// A point light attached to an entity.

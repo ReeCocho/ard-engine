@@ -24,6 +24,8 @@ pub(crate) struct TextureSets {
 
 #[derive(Copy, Clone)]
 pub(crate) struct MipUpdate {
+    /// Indicates that the mip is a cube map mip and thus does not need an update.
+    pub cube_map: bool,
     /// ID of the texture that had its mip updated.
     pub id: u32,
     /// Old image view to be dropped.
@@ -55,6 +57,7 @@ impl TextureSets {
                 mip_levels: 1,
                 array_layers: 1,
                 format: vk::Format::R8G8B8A8_UNORM,
+                flags: vk::ImageCreateFlags::empty(),
             };
 
             Image::new(&create_info)
@@ -351,22 +354,24 @@ impl TextureSets {
         }
 
         while let Some(mip_update) = self.mip_updates[frame].pop() {
-            if let Some(tex) = textures.get(mip_update.id) {
-                img_info.push([vk::DescriptorImageInfo::builder()
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(tex.view)
-                    .sampler(self.get_sampler(&tex.sampler))
-                    .build()]);
+            if !mip_update.cube_map {
+                if let Some(tex) = textures.get(mip_update.id) {
+                    img_info.push([vk::DescriptorImageInfo::builder()
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image_view(tex.view)
+                        .sampler(self.get_sampler(&tex.sampler))
+                        .build()]);
 
-                writes.push(
-                    vk::WriteDescriptorSet::builder()
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .dst_array_element(mip_update.id)
-                        .dst_binding(0)
-                        .dst_set(self.sets[frame])
-                        .image_info(&img_info[img_info.len() - 1])
-                        .build(),
-                );
+                    writes.push(
+                        vk::WriteDescriptorSet::builder()
+                            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                            .dst_array_element(mip_update.id)
+                            .dst_binding(0)
+                            .dst_set(self.sets[frame])
+                            .image_info(&img_info[img_info.len() - 1])
+                            .build(),
+                    );
+                }
             }
 
             if frame == mip_update.frame_to_drop {

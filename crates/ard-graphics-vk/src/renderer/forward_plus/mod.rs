@@ -5,8 +5,8 @@ use std::sync::{atomic::Ordering, Arc, Mutex};
 use crate::{
     alloc::WriteStorageBuffer,
     camera::{
-        Camera, CameraInner, CameraUbo, DebugDrawing, Lighting, PipelineType, RawPointLight,
-        Surface, TextureInner,
+        Camera, CameraInner, CameraUbo, CubeMapInner, DebugDrawing, Lighting, PipelineType,
+        RawPointLight, Surface, TextureInner,
     },
     context::GraphicsContext,
     factory::descriptors::DescriptorPool,
@@ -397,7 +397,7 @@ impl ForwardPlus {
     pub unsafe fn set_skybox_texture(
         &self,
         frame: usize,
-        texture: &TextureInner,
+        texture: &CubeMapInner,
         sampler: vk::Sampler,
     ) {
         let image_info = [vk::DescriptorImageInfo::builder()
@@ -422,7 +422,7 @@ impl ForwardPlus {
     pub unsafe fn set_irradiance_texture(
         &self,
         frame: usize,
-        texture: &TextureInner,
+        texture: &CubeMapInner,
         sampler: vk::Sampler,
     ) {
         let image_info = [vk::DescriptorImageInfo::builder()
@@ -436,6 +436,31 @@ impl ForwardPlus {
                 .dst_set(pass.global_sets[frame])
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .dst_binding(8)
+                .image_info(&image_info)
+                .build()];
+
+            self.ctx.0.device.update_descriptor_sets(&write, &[]);
+        }
+    }
+
+    #[inline]
+    pub unsafe fn set_radiance_texture(
+        &self,
+        frame: usize,
+        texture: &CubeMapInner,
+        sampler: vk::Sampler,
+    ) {
+        let image_info = [vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(sampler)
+            .build()];
+
+        for pass in &self.mesh_passes.passes {
+            let write = [vk::WriteDescriptorSet::builder()
+                .dst_set(pass.global_sets[frame])
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_binding(9)
                 .image_info(&image_info)
                 .build()];
 

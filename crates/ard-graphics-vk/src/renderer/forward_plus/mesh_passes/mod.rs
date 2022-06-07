@@ -277,9 +277,16 @@ impl<'a> MeshPassesBuilder<'a> {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
                     .build(),
-                // IBL BRDF LUT
+                // Skybox radiance
                 vk::DescriptorSetLayoutBinding::builder()
                     .binding(9)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+                    .build(),
+                // IBL BRDF LUT
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(10)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
@@ -1699,6 +1706,7 @@ unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
             mip_levels: 1,
             array_layers: 1,
             format: vk::Format::R32G32B32A32_SFLOAT,
+            flags: vk::ImageCreateFlags::empty(),
         };
 
         Image::new(&create_info)
@@ -1831,6 +1839,7 @@ unsafe fn create_brdf_lut(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
             mip_levels: 1,
             array_layers: 1,
             format: vk::Format::R8G8_UNORM,
+            flags: vk::ImageCreateFlags::empty(),
         };
 
         Image::new(&create_info)

@@ -72,7 +72,7 @@ impl RendererApi<VkBackend> for Renderer {
 
         let mut rg_ctx = unsafe { RenderGraphContext::new(create_info.ctx) };
 
-        let lighting = unsafe { Lighting::new(create_info.ctx) };
+        let mut lighting = unsafe { Lighting::new(create_info.ctx) };
 
         let (graph, factory, debug_drawing, state) = unsafe {
             ForwardPlus::new_graph(
@@ -85,6 +85,8 @@ impl RendererApi<VkBackend> for Renderer {
                 canvas_size,
             )
         };
+
+        lighting.factory = Some(factory.clone());
 
         (
             Self {
@@ -233,20 +235,29 @@ impl Renderer {
 
         // Update context with outside state
         if let Some(skybox) = &lighting.skybox {
-            let textures = self.factory.0.textures.read().unwrap();
+            let cube_maps = self.factory.0.cube_maps.read().unwrap();
             let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
-            let texture = textures.get(skybox.id).unwrap();
-            let sampler = texture_sets.get_sampler(&texture.sampler);
-            self.state.set_skybox_texture(frame_idx, texture, sampler);
+            let cube_map = cube_maps.get(skybox.id).unwrap();
+            let sampler = texture_sets.get_sampler(&cube_map.sampler);
+            self.state.set_skybox_texture(frame_idx, cube_map, sampler);
         }
 
         if let Some(irradiance) = &lighting.irradiance {
-            let textures = self.factory.0.textures.read().unwrap();
+            let cube_maps = self.factory.0.cube_maps.read().unwrap();
             let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
-            let texture = textures.get(irradiance.id).unwrap();
-            let sampler = texture_sets.get_sampler(&texture.sampler);
+            let cube_map = cube_maps.get(irradiance.id).unwrap();
+            let sampler = texture_sets.get_sampler(&cube_map.sampler);
             self.state
-                .set_irradiance_texture(frame_idx, texture, sampler);
+                .set_irradiance_texture(frame_idx, cube_map, sampler);
+        }
+
+        if let Some(radiance) = &lighting.radiance {
+            let cube_maps = self.factory.0.cube_maps.read().unwrap();
+            let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
+            let cube_map = cube_maps.get(radiance.id).unwrap();
+            let sampler = texture_sets.get_sampler(&cube_map.sampler);
+            self.state
+                .set_radiance_texture(frame_idx, cube_map, sampler);
         }
 
         self.state.set_sun_cameras(&light_cameras);

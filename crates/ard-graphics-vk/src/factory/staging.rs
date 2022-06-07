@@ -34,8 +34,15 @@ pub(crate) enum StagingRequest {
         id: u32,
         image_dst: Arc<Image>,
         staging_buffer: Buffer,
+        mip_type: MipType,
     },
     TextureMipUpload {
+        id: u32,
+        image_dst: Arc<Image>,
+        staging_buffer: Buffer,
+        mip_level: u32,
+    },
+    CubeMapMipUpload {
         id: u32,
         image_dst: Arc<Image>,
         staging_buffer: Buffer,
@@ -73,6 +80,7 @@ pub enum ResourceId {
     Texture(u32),
     CubeMap(u32),
     TextureMip { texture_id: u32, mip_level: u32 },
+    CubeMapMip { cube_map_id: u32, mip_level: u32 },
 }
 
 impl StagingBuffers {
@@ -426,43 +434,166 @@ impl StagingBuffers {
                     id,
                     image_dst,
                     staging_buffer,
-                } => {
-                    transition_image_layout(
-                        &device,
-                        upload.transfer.0,
-                        image_dst,
-                        vk::ImageLayout::UNDEFINED,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        0,
-                        image_dst.mip_levels(),
-                        0,
-                        6,
-                    );
+                    mip_type,
+                } => match mip_type {
+                    MipType::Generate => {
+                        let commands = match upload.graphics.as_ref() {
+                            Some((commands, _)) => *commands,
+                            None => {
+                                let new_commands = self.graphics_commands.allocate(device, true);
+                                upload.graphics = Some(new_commands);
+                                new_commands.0
+                            }
+                        };
 
-                    buffer_to_image_copy(
-                        &device,
-                        upload.transfer.0,
-                        image_dst,
-                        staging_buffer,
-                        0,
-                        0,
-                        6,
-                    );
+                        // Copy image to LOD0 mip
+                        transition_image_layout(
+                            &device,
+                            commands,
+                            image_dst,
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            0,
+                            image_dst.mip_levels(),
+                            0,
+                            6,
+                        );
 
-                    transition_image_layout(
-                        &device,
-                        upload.transfer.0,
-                        image_dst,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        0,
-                        image_dst.mip_levels(),
-                        0,
-                        6,
-                    );
+                        buffer_to_image_copy(&device, commands, image_dst, staging_buffer, 0, 0, 1);
 
-                    ResourceId::CubeMap(*id)
-                }
+                        // Copy down the LOD chain
+                        let mut mip_width = image_dst.width();
+                        let mut mip_height = image_dst.height();
+
+                        for i in 1..image_dst.mip_levels() {
+                            // Transition previous LOD to be a transfer source
+                            transition_image_layout(
+                                &device,
+                                commands,
+                                image_dst,
+                                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                                i - 1,
+                                1,
+                                0,
+                                6,
+                            );
+
+                            // Blit from previous LOD to current LOD
+                            let blit = [vk::ImageBlit::builder()
+                                .src_offsets([
+                                    vk::Offset3D::default(),
+                                    vk::Offset3D {
+                                        x: mip_width as i32,
+                                        y: mip_height as i32,
+                                        z: 1,
+                                    },
+                                ])
+                                .src_subresource(
+                                    vk::ImageSubresourceLayers::builder()
+                                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                        .mip_level(i - 1)
+                                        .base_array_layer(0)
+                                        .layer_count(6)
+                                        .build(),
+                                )
+                                .dst_offsets([
+                                    vk::Offset3D::default(),
+                                    vk::Offset3D {
+                                        x: mip_width.div(2).max(1) as i32,
+                                        y: mip_height.div(2).max(1) as i32,
+                                        z: 1,
+                                    },
+                                ])
+                                .dst_subresource(
+                                    vk::ImageSubresourceLayers::builder()
+                                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                        .mip_level(i)
+                                        .base_array_layer(0)
+                                        .layer_count(6)
+                                        .build(),
+                                )
+                                .build()];
+
+                            device.cmd_blit_image(
+                                commands,
+                                image_dst.image(),
+                                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                                image_dst.image(),
+                                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                                &blit,
+                                vk::Filter::LINEAR,
+                            );
+
+                            mip_width = (mip_width / 2).max(1);
+                            mip_height = (mip_height / 2).max(1);
+                        }
+
+                        // Final transition
+                        transition_image_layout(
+                            &device,
+                            commands,
+                            image_dst,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            image_dst.mip_levels() - 1,
+                            1,
+                            0,
+                            6,
+                        );
+
+                        transition_image_layout(
+                            &device,
+                            commands,
+                            image_dst,
+                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            0,
+                            image_dst.mip_levels() - 1,
+                            0,
+                            6,
+                        );
+
+                        ResourceId::CubeMap(*id)
+                    }
+                    MipType::Upload => {
+                        transition_image_layout(
+                            &device,
+                            upload.transfer.0,
+                            image_dst,
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            0,
+                            image_dst.mip_levels(),
+                            0,
+                            6,
+                        );
+
+                        buffer_to_image_copy(
+                            &device,
+                            upload.transfer.0,
+                            image_dst,
+                            staging_buffer,
+                            image_dst.mip_levels().saturating_sub(1),
+                            0,
+                            6,
+                        );
+
+                        transition_image_layout(
+                            &device,
+                            upload.transfer.0,
+                            image_dst,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            0,
+                            image_dst.mip_levels(),
+                            0,
+                            6,
+                        );
+
+                        ResourceId::CubeMap(*id)
+                    }
+                },
                 StagingRequest::TextureMipUpload {
                     id,
                     image_dst,
@@ -506,6 +637,51 @@ impl StagingBuffers {
                     ResourceId::TextureMip {
                         mip_level: *mip_level,
                         texture_id: *id,
+                    }
+                }
+                StagingRequest::CubeMapMipUpload {
+                    id,
+                    image_dst,
+                    staging_buffer,
+                    mip_level,
+                } => {
+                    transition_image_layout(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        *mip_level,
+                        1,
+                        0,
+                        6,
+                    );
+
+                    buffer_to_image_copy(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        staging_buffer,
+                        *mip_level,
+                        0,
+                        6,
+                    );
+
+                    transition_image_layout(
+                        &device,
+                        upload.transfer.0,
+                        image_dst,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        *mip_level,
+                        1,
+                        0,
+                        6,
+                    );
+
+                    ResourceId::CubeMapMip {
+                        mip_level: *mip_level,
+                        cube_map_id: *id,
                     }
                 }
             };

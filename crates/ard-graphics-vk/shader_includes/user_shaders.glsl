@@ -58,11 +58,13 @@ layout(set = 0, binding = 5) uniform sampler2D[MAX_SHADOW_CASCADES] ARD_SHADOW_M
 
 layout(set = 0, binding = 6) uniform sampler3D ARD_POISSON_DISK;
 
-layout(set = 0, binding = 7) uniform sampler2D ARD_SKYBOX;
+layout(set = 0, binding = 7) uniform samplerCube ARD_SKYBOX;
 
-layout(set = 0, binding = 8) uniform sampler2D ARD_SKYBOX_IRRADIANCE;
+layout(set = 0, binding = 8) uniform samplerCube ARD_IRRADIANCE_MAP;
 
-layout(set = 0, binding = 9) uniform sampler2D IBL_BRDF_LUT;
+layout(set = 0, binding = 9) uniform samplerCube ARD_RADIANCE_MAP;
+
+layout(set = 0, binding = 10) uniform sampler2D IBL_BRDF_LUT;
 
 ////////////////
 /// TEXTURES ///
@@ -317,7 +319,7 @@ vec3 lighting_general(
     // Cook-Torrance BRDF
     float NDF = distribution_GGX(N, H, roughness);
     float G = geometry_smith(N, V, L, roughness);
-    vec3 F = fresnel_schlick_roughness(max(dot(H, V), 0.0), F0, roughness);
+    vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
     // Bias to avoid divide by 0
     vec3 numerator = NDF * G * F;
@@ -354,41 +356,19 @@ vec3 irradiance_ambient(
     vec3 R,
     vec3 F0
 ) {
-    const vec2 inv_atan = vec2(0.1591, 0.3183);
-    vec2 uv = vec2(atan(N.z, N.x), asin(N.y));
-    uv *= inv_atan;
-    uv += 0.5;
-    uv.y = 1.0 - uv.y;
-
-    vec2 uvR = vec2(atan(R.z, R.x), asin(R.y));
-    uvR *= inv_atan;
-    uvR += 0.5;
-    uvR.y = 1.0 - uvR.y;
-
-    vec3 sky = texture(ARD_SKYBOX, uvR).rgb;
-    sky = sky / (sky + vec3(1.0));
-    sky = pow(sky, vec3(1.0/2.2));
-
-    vec3 sky_blur = texture(ARD_SKYBOX_IRRADIANCE, uvR).rgb;
-    sky_blur = sky_blur / (sky_blur + vec3(1.0));
-    sky_blur = pow(sky_blur, vec3(1.0/2.2));
-
-    vec3 prefiltered_color = mix(sky, sky_blur, sqrt(roughness));
-
     vec3 F = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
-    vec2 env_brdf = texture(IBL_BRDF_LUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
-    vec3 specular = prefiltered_color * (F * env_brdf.x + env_brdf.y);
 
     vec3 kS = F;
     vec3 kD = 1.0 - kS;
     kD *= 1.0 - metallic;
 
-    vec3 irradiance = texture(ARD_SKYBOX_IRRADIANCE, uv).rgb;
-    irradiance = irradiance / (irradiance + vec3(1.0));
-    irradiance = pow(irradiance, vec3(1.0/2.2));
-    
+    vec3 irradiance = texture(ARD_IRRADIANCE_MAP, N).rgb;
     vec3 diffuse = irradiance * base_color;
-    
+
+    vec3 radiance = textureLod(ARD_RADIANCE_MAP, R, roughness * float(ARD_LIGHTING.radiance_mip_count)).rgb;
+    vec2 env_brdf = texture(IBL_BRDF_LUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    vec3 specular = radiance * (F * env_brdf.x + env_brdf.y);
+
     return (kD * diffuse) + specular;
 }
 

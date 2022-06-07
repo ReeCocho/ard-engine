@@ -110,19 +110,26 @@ fn setup(app: &mut App) {
 
     // Load the skybox
     let skybox_handle =
-        assets.load::<graphics_assets::TextureAsset>(AssetName::new("milkyway_sky.tex"));
+        assets.load::<graphics_assets::CubeMapAsset>(AssetName::new("appartment_skybox.cub"));
 
     let skybox_ird_handle =
-        assets.load::<graphics_assets::TextureAsset>(AssetName::new("milkyway_ird.tex"));
+        assets.load::<graphics_assets::CubeMapAsset>(AssetName::new("appartment_irradiance.cub"));
+
+    let skybox_rd_handle =
+        assets.load::<graphics_assets::CubeMapAsset>(AssetName::new("appartment_radiance.cub"));
 
     assets.wait_for_load(&skybox_handle);
     assets.wait_for_load(&skybox_ird_handle);
+    assets.wait_for_load(&skybox_rd_handle);
 
     let mut lighting = app.resources.get_mut::<Lighting>().unwrap();
 
-    lighting.set_skybox_texture(Some(assets.get(&skybox_handle).unwrap().texture.clone()));
+    lighting.set_skybox_texture(Some(assets.get(&skybox_handle).unwrap().cube_map.clone()));
     lighting.set_irradiance_texture(Some(
-        assets.get(&skybox_ird_handle).unwrap().texture.clone(),
+        assets.get(&skybox_ird_handle).unwrap().cube_map.clone(),
+    ));
+    lighting.set_radiance_texture(Some(
+        assets.get(&skybox_rd_handle).unwrap().cube_map.clone(),
     ));
 
     // Load the model

@@ -26,6 +26,7 @@ struct Lighting {
     vec4 sun_color_intensity;
     vec4 sun_direction;
     float sun_size;
+    uint radiance_mip_count;
 };
 
 struct PointLight {

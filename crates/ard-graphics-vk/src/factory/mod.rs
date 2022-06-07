@@ -138,7 +138,29 @@ impl Factory {
                     // Tell texture set about the new view and pass ownership of the old view to it
                     // so the old view can be dropped.
                     texture_sets.texture_mip_update(MipUpdate {
+                        cube_map: false,
                         id: texture_id,
+                        old_view,
+                        frame_to_drop: (frame + (FRAMES_IN_FLIGHT - 1)) % FRAMES_IN_FLIGHT,
+                    });
+                }
+            }
+            ResourceId::CubeMapMip {
+                cube_map_id,
+                mip_level,
+            } => {
+                if let Some(cube_map) = cube_maps.get_mut(cube_map_id) {
+                    // Update mip level
+                    cube_map.loaded_mips |= 1 << mip_level;
+
+                    // Create a new image view for the updated mip
+                    let old_view = cube_map.create_new_view(&self.0.ctx.0.device);
+
+                    // Tell texture set about the new view and pass ownership of the old view to it
+                    // so the old view can be dropped.
+                    texture_sets.texture_mip_update(MipUpdate {
+                        cube_map: true,
+                        id: u32::MAX,
                         old_view,
                         frame_to_drop: (frame + (FRAMES_IN_FLIGHT - 1)) % FRAMES_IN_FLIGHT,
                     });
@@ -386,6 +408,7 @@ impl FactoryApi<VkBackend> for Factory {
                 id: escaper.id(),
                 image_dst,
                 staging_buffer,
+                mip_type: create_info.mip_type,
             });
 
         CubeMap {
@@ -430,6 +453,30 @@ impl FactoryApi<VkBackend> for Factory {
         staging.add(StagingRequest::TextureMipUpload {
             id: texture.id,
             image_dst: texture_inner.image.clone(),
+            mip_level: level as u32,
+            staging_buffer,
+        });
+    }
+
+    fn load_cube_map_mip(&self, cube_map: &CubeMap, level: usize, data: &[u8]) {
+        let _lock = self.0.exclusive.read().expect("lock poisoned");
+        let cube_maps = self.0.cube_maps.write().expect("mutex poisoned");
+        let mut staging = self.0.staging.lock().expect("mutex poisoned");
+
+        let cube_map_inner = cube_maps
+            .get(cube_map.id)
+            .expect("cube map points to invalid image");
+
+        // Mip level must not already be loaded
+        assert!(cube_map_inner.loaded_mips & (1 << level) == 0);
+
+        // Create staging buffer for image data
+        let staging_buffer = unsafe { Buffer::new_staging_buffer(&self.0.ctx, data) };
+
+        // Send request to upload new mip
+        staging.add(StagingRequest::CubeMapMipUpload {
+            id: cube_map.id,
+            image_dst: cube_map_inner.image.clone(),
             mip_level: level as u32,
             staging_buffer,
         });

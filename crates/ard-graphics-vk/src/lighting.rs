@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::{
     alloc::UniformBuffer,
-    camera::{CameraUbo, GraphicsContext, Texture},
+    camera::{CameraUbo, CubeMap, Factory, GraphicsContext, Texture},
     shader_constants::MAX_SHADOW_CASCADES,
     VkBackend,
 };
@@ -16,9 +16,11 @@ pub struct Lighting {
     pub(crate) ubo_data: LightingUbo,
     /// Shared UBO containing lighting information.
     pub(crate) ubo: UniformBuffer,
+    pub(crate) factory: Option<Factory>,
     /// Skybox texture.
-    pub(crate) skybox: Option<Texture>,
-    pub(crate) irradiance: Option<Texture>,
+    pub(crate) skybox: Option<CubeMap>,
+    pub(crate) irradiance: Option<CubeMap>,
+    pub(crate) radiance: Option<CubeMap>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -38,6 +40,7 @@ pub(crate) struct LightingUbo {
     pub sun_color_intensity: Vec4,
     pub sun_direction: Vec4,
     pub sun_size: f32,
+    pub radiance_mip_count: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -61,6 +64,7 @@ impl Default for LightingUbo {
             sun_color_intensity: Vec4::new(1.0, 1.0, 1.0, 2.0),
             sun_direction: Vec4::new(1.0, -1.0, 1.0, 0.0).normalize(),
             sun_size: 0.5,
+            radiance_mip_count: 0,
         }
     }
 }
@@ -89,6 +93,8 @@ impl Lighting {
             ubo_data: LightingUbo::default(),
             skybox: None,
             irradiance: None,
+            radiance: None,
+            factory: None,
         }
     }
 
@@ -190,12 +196,36 @@ impl Lighting {
 }
 
 impl LightingApi<VkBackend> for Lighting {
-    fn set_skybox_texture(&mut self, texture: Option<Texture>) {
+    fn set_skybox_texture(&mut self, texture: Option<CubeMap>) {
         self.skybox = texture;
     }
 
-    fn set_irradiance_texture(&mut self, texture: Option<Texture>) {
+    fn set_irradiance_texture(&mut self, texture: Option<CubeMap>) {
         self.irradiance = texture;
+    }
+
+    fn set_radiance_texture(&mut self, texture: Option<CubeMap>) {
+        match texture {
+            Some(texture) => {
+                self.ubo_data.radiance_mip_count = self
+                    .factory
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .cube_maps
+                    .read()
+                    .unwrap()
+                    .get(texture.id)
+                    .unwrap()
+                    .loaded_mips;
+
+                self.radiance = Some(texture);
+            }
+            None => {
+                self.radiance = None;
+                self.ubo_data.radiance_mip_count = 0;
+            }
+        }
     }
 }
 
