@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 /// The UBO size must be equal to the size of `PbrMaterialData`.
 ///
 /// # Textures
-/// There must be a single texture for the base color.
+/// The texture at slot 0 is for the base color.
+/// The texture at slot 1 is for the metallic and roughness.
 ///
 pub struct PbrMaterialAsset {
     /// Handle to the material object.

@@ -68,6 +68,7 @@ pub enum TextureFormat {
     R8G8B8A8Srgb,
     R16G16B16A16Unorm,
     R32G32B32A32Sfloat,
+    R8G8Unorm,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]

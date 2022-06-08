@@ -571,6 +571,7 @@ impl MeshPass {
                 render(RenderArgs {
                     frame_idx: frame,
                     device,
+                    draw_sky: false,
                     pipeline_type: PipelineType::HighZRender.idx(),
                     commands: *commands,
                     main_camera: &mesh_pass.camera,
@@ -1151,6 +1152,7 @@ impl MeshPass {
             render(RenderArgs {
                 frame_idx,
                 device,
+                draw_sky: false,
                 pipeline_type: mesh_pass.depth_pipeline_type.idx(),
                 commands: *commands,
                 main_camera: &mesh_pass.camera,
@@ -1188,6 +1190,7 @@ impl MeshPass {
                 frame_idx,
                 device,
                 pipeline_type: PipelineType::OpaquePass.idx(),
+                draw_sky: state.mesh_passes.draw_sky,
                 skybox_pipeline: state.mesh_passes.skybox_pipeline,
                 skybox_pipeline_layout: state.mesh_passes.skybox_pipeline_layout,
                 commands: *commands,
@@ -1345,6 +1348,7 @@ struct RenderArgs<'a> {
     pipeline_type: usize,
     skybox_pipeline_layout: vk::PipelineLayout,
     skybox_pipeline: vk::Pipeline,
+    draw_sky: bool,
     commands: vk::CommandBuffer,
     main_camera: &'a MeshPassCameraInfo,
     factory: &'a Factory,
@@ -1377,7 +1381,7 @@ unsafe fn render(args: RenderArgs) {
     let mut needs_draw = false;
 
     // Draw the skybox first if we are using a color pass
-    if args.pipeline_type == PipelineType::OpaquePass.idx() {
+    if args.draw_sky && args.pipeline_type == PipelineType::OpaquePass.idx() {
         let sets = [args.global_set, args.main_camera.set];
 
         let offsets = [

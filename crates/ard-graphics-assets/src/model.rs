@@ -139,14 +139,21 @@ impl AssetLoader for ModelLoader {
                 },
             };
 
-            let raw = match image.as_rgba8() {
-                Some(raw) => raw,
-                None => {
-                    return Err(AssetLoadError::Other(
-                        String::from("unable to convert image to rgba8").into(),
-                    ))
-                }
-            };
+            match image {
+                image::DynamicImage::ImageLuma8(_) => println!("1"),
+                image::DynamicImage::ImageLumaA8(_) => println!("2"),
+                image::DynamicImage::ImageRgb8(_) => println!("3"),
+                image::DynamicImage::ImageRgba8(_) => println!("4"),
+                image::DynamicImage::ImageLuma16(_) => println!("5"),
+                image::DynamicImage::ImageLumaA16(_) => println!("6"),
+                image::DynamicImage::ImageRgb16(_) => println!("7"),
+                image::DynamicImage::ImageRgba16(_) => println!("8"),
+                image::DynamicImage::ImageRgb32F(_) => println!("9"),
+                image::DynamicImage::ImageRgba32F(_) => println!("10"),
+                _ => println!("11"),
+            }
+
+            let raw = image.to_rgba8();
 
             let max = gltf_to_ard_mag_filter(
                 texture
@@ -167,7 +174,7 @@ impl AssetLoader for ModelLoader {
             let create_info = graphics::TextureCreateInfo {
                 width: image.width(),
                 height: image.height(),
-                format: graphics::TextureFormat::R8G8B8A8Srgb,
+                format: graphics::TextureFormat::R8G8B8A8Unorm,
                 data: &raw,
                 mip_type: if mip.is_some() {
                     graphics::MipType::Generate
@@ -219,6 +226,14 @@ impl AssetLoader for ModelLoader {
                     &material,
                     Some(&model.textures[tex.texture().index()]),
                     0,
+                );
+            }
+
+            if let Some(tex) = info.metallic_roughness_texture() {
+                self.factory.update_material_texture(
+                    &material,
+                    Some(&model.textures[tex.texture().index()]),
+                    1,
                 );
             }
 

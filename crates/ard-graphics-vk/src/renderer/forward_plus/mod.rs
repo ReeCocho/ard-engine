@@ -185,7 +185,7 @@ impl ForwardPlus {
         canvas_size: vk::Extent2D,
     ) -> (GameRendererGraphRef, Factory, DebugDrawing, Self) {
         // Create the graph
-        let color_format = vk::Format::R8G8B8A8_SRGB;
+        let color_format = vk::Format::R8G8B8A8_UNORM;
         let depth_format =
             pick_depth_format(ctx).expect("unable to find a compatible depth format");
 
@@ -395,11 +395,13 @@ impl ForwardPlus {
 
     #[inline]
     pub unsafe fn set_skybox_texture(
-        &self,
+        &mut self,
         frame: usize,
         texture: &CubeMapInner,
         sampler: vk::Sampler,
     ) {
+        self.mesh_passes.draw_sky = true;
+
         let image_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .image_view(texture.view)
@@ -575,6 +577,8 @@ fn begin_recording(
     let begin_info = vk::CommandBufferBeginInfo::builder()
         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
         .build();
+
+    state.mesh_passes.draw_sky = false;
 
     unsafe {
         state

@@ -16,18 +16,22 @@ const float PI = 3.14159265359;
 
 #ifdef ARD_VERTEX_SHADER
 layout(location = 16) flat out uint ARD_INSTANCE_IDX;
-layout(location = 17) out vec3 ARD_FRAG_POS;
-layout(location = 18) out vec3 ARD_FRAG_POS_VIEW_SPACE;
-layout(location = 19) out vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
-layout(location = 19 + MAX_SHADOW_CASCADES) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 17) flat out uint ARD_MATERIAL_IDX;
+layout(location = 18) flat out uint ARD_TEXTURES_IDX;
+layout(location = 19) out vec3 ARD_FRAG_POS;
+layout(location = 20) out vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 21) out vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 21 + MAX_SHADOW_CASCADES) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 #ifdef ARD_FRAGMENT_SHADER
 layout(location = 16) flat in uint ARD_INSTANCE_IDX;
-layout(location = 17) in vec3 ARD_FRAG_POS;
-layout(location = 18) in vec3 ARD_FRAG_POS_VIEW_SPACE;
-layout(location = 19) in vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
-layout(location = 19 + MAX_SHADOW_CASCADES) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 17) flat in uint ARD_MATERIAL_IDX;
+layout(location = 18) flat in uint ARD_TEXTURES_IDX;
+layout(location = 19) in vec3 ARD_FRAG_POS;
+layout(location = 20) in vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 21) in vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 21 + MAX_SHADOW_CASCADES) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 //////////////
@@ -107,6 +111,8 @@ layout(set = 3, binding = 1) readonly buffer ARD_MaterialData {
 #define ARD_ENTRY(func) \
 void main() { \
     ARD_INSTANCE_IDX = gl_InstanceIndex; \
+    ARD_MATERIAL_IDX = ARD_OBJECT_INFO[ARD_OBJECT_INDICES[gl_InstanceIndex]].material; \
+    ARD_TEXTURES_IDX = ARD_OBJECT_INFO[ARD_OBJECT_INDICES[gl_InstanceIndex]].textures; \
     VsOut vs_out = func(); \
     ARD_FRAG_POS = vs_out.frag_pos; \
     ARD_FRAG_POS_VIEW_SPACE = vec3(camera.view * vec4(vs_out.frag_pos, 1.0)); \
@@ -128,29 +134,13 @@ void main() { \
 
 /// Gets the model matrix for object.
 mat4 get_model_matrix() {
-    #ifdef ARD_VERTEX_SHADER
-    uint idx = gl_InstanceIndex;
-    #endif
-
-    #ifdef ARD_FRAGMENT_SHADER
-    uint idx = ARD_INSTANCE_IDX;
-    #endif
-
-    return ARD_OBJECT_INFO[ARD_OBJECT_INDICES[idx]].model;
+    return ARD_OBJECT_INFO[ARD_INSTANCE_IDX].model;
 }
 
 /// Samples a texture at a given slot. If the texture is unbound, the provided default will
 /// be returned.
 vec4 sample_texture_default(uint slot, vec2 uv, vec4 def) {
-    #ifdef ARD_VERTEX_SHADER
-    uint idx = gl_InstanceIndex;
-    #endif
-
-    #ifdef ARD_FRAGMENT_SHADER
-    uint idx = ARD_INSTANCE_IDX;
-    #endif
-
-    uint tex = ARD_MATERIAL_TEXTURES[ARD_OBJECT_INFO[ARD_OBJECT_INDICES[idx]].textures][slot];
+    uint tex = ARD_MATERIAL_TEXTURES[ARD_TEXTURES_IDX][slot];
 
     if (tex == NO_TEXTURE) {
         return def;
@@ -167,15 +157,7 @@ vec4 sample_texture(uint slot, vec2 uv) {
 #ifdef ARD_MATERIAL
 /// Gets the material data for the object.
 ARD_MATERIAL get_material_data() {
-    #ifdef ARD_VERTEX_SHADER
-    uint idx = gl_InstanceIndex;
-    #endif
-
-    #ifdef ARD_FRAGMENT_SHADER
-    uint idx = ARD_INSTANCE_IDX;
-    #endif
-
-    return ARD_MATERIALS[ARD_OBJECT_INFO[ARD_OBJECT_INDICES[idx]].material];
+    return ARD_MATERIALS[ARD_MATERIAL_IDX];
 }
 #endif
 
@@ -364,8 +346,7 @@ vec3 irradiance_ambient(
 
     vec3 irradiance = texture(ARD_IRRADIANCE_MAP, N).rgb;
     vec3 diffuse = irradiance * base_color;
-
-    vec3 radiance = textureLod(ARD_RADIANCE_MAP, R, roughness * float(ARD_LIGHTING.radiance_mip_count)).rgb;
+    vec3 radiance = textureLod(ARD_RADIANCE_MAP, R, roughness * float(ARD_LIGHTING.radiance_mip_count - 1.0)).rgb;
     vec2 env_brdf = texture(IBL_BRDF_LUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
     vec3 specular = radiance * (F * env_brdf.x + env_brdf.y);
 

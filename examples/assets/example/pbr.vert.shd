@@ -12,6 +12,6 @@
     ),
     inputs: ShaderInputs(
         ubo_size: 32,
-        texture_count: 1,
+        texture_count: 2,
     ),
 )

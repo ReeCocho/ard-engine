@@ -11,7 +11,5 @@ layout(set = 0, binding = 7) uniform samplerCube sky_box;
 
 void main() {
     vec3 color = texture(sky_box, normalize(LOCAL_POS)).rgb;
-    // color = color / (color + vec3(1.0));
-    // color = pow(color, vec3(1.0/2.2));
     FRAGMENT_COLOR = vec4(color, 1.0);
 }

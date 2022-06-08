@@ -38,6 +38,7 @@ const vec3 SLICE_TO_COLOR[FROXEL_TABLE_Z] = vec3[FROXEL_TABLE_Z](
 void entry() {
     // Sample our albedo texture
     vec3 albedo = sample_texture_default(0, UV0, vec4(1)).xyz;
+    vec2 metallic_roughness = sample_texture_default(1, UV0, vec4(1.0)).xy;
 
     // Get our material
     PbrMaterial material = get_material_data();
@@ -45,8 +46,8 @@ void entry() {
     // Compute lighting
     albedo = lighting(
         albedo.xyz * material.base_color.xyz,
-        material.roughness,
-        material.metallic,
+        material.roughness * metallic_roughness.y,
+        material.metallic * metallic_roughness.x,
         NORMAL,
         SCREEN_POS
     );

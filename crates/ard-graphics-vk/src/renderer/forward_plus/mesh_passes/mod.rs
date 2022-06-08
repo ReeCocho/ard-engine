@@ -48,6 +48,8 @@ pub(crate) struct MeshPasses {
     pub active_pass: usize,
     /// Total number of objects that can be rendered.
     pub total_objects: usize,
+    /// Flag indicating if the skybox should be drawn.
+    pub draw_sky: bool,
     /// Dynamic geometry query to look through when rendering.
     pub dynamic_geo_query: Option<ComponentQuery<(Read<Renderable<VkBackend>>, Read<Model>)>>,
     /// Query of point lights to read through.
@@ -762,6 +764,7 @@ impl<'a> MeshPassesBuilder<'a> {
             ctx: ctx.clone(),
             passes: Vec::default(),
             stages: Default::default(),
+            draw_sky: false,
             active_stage: MeshPassStage::CameraSetup,
             active_pass: 0,
             total_objects: 0,
@@ -1838,7 +1841,7 @@ unsafe fn create_brdf_lut(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
             image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
             mip_levels: 1,
             array_layers: 1,
-            format: vk::Format::R8G8_UNORM,
+            format: vk::Format::R16G16_SFLOAT,
             flags: vk::ImageCreateFlags::empty(),
         };
 
@@ -1849,7 +1852,7 @@ unsafe fn create_brdf_lut(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
         let create_info = vk::ImageViewCreateInfo::builder()
             .image(brdf_lut_image.image())
             .view_type(vk::ImageViewType::TYPE_2D)
-            .format(vk::Format::R8G8_UNORM)
+            .format(vk::Format::R16G16_SFLOAT)
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
                 base_mip_level: 0,
@@ -1974,6 +1977,6 @@ const POISSON_DISK_DIMS: u32 = 32;
 
 const POISSON_DISK_ANGLES: &[u8] = include_bytes!("./random_disk.bin");
 
-const IBL_LUT_DIMS: u32 = 400;
+const IBL_LUT_DIMS: u32 = 512;
 
 const IBL_LUT: &[u8] = include_bytes!("./ibl_brdf_lut.bin");
