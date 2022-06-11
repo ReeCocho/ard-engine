@@ -362,6 +362,11 @@ impl<T: Pod> BufferArray<T> {
         self.buffer.size
     }
 
+    #[inline]
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+
     /// Write a singe object to the buffer.
     #[inline]
     pub unsafe fn write(&mut self, offset: usize, data: T) {

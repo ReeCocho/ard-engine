@@ -2,6 +2,7 @@ mod alloc;
 pub mod camera;
 pub mod context;
 pub mod cube_map;
+pub mod debug_gui;
 pub mod factory;
 pub mod lighting;
 pub mod material;
@@ -24,6 +25,7 @@ pub mod prelude {
     pub use crate::camera::*;
     pub use crate::context::*;
     pub use crate::cube_map::*;
+    pub use crate::debug_gui::*;
     pub use crate::factory::*;
     pub use crate::lighting::*;
     pub use crate::material::*;
@@ -56,6 +58,7 @@ impl Backend for VkBackend {
     type StaticGeometry = StaticGeometry;
     type DebugDrawing = DebugDrawing;
     type Texture = Texture;
+    type DebugGui = DebugGui;
     type CubeMap = CubeMap;
 
     const MAX_MESHES: usize = 2048;
@@ -92,7 +95,7 @@ fn late_context_creation(app: &mut App) {
 
     let (ctx, surface) = GraphicsContext::new(&app.resources, &create_info.0).unwrap();
     let renderer_settings = RendererSettings::default();
-    let (renderer, factory, static_geo, debug_drawing, lighting) =
+    let (renderer, factory, static_geo, debug_drawing, debug_gui, lighting) =
         Renderer::new(&RendererCreateInfo {
             ctx: &ctx,
             surface: &surface,
@@ -104,6 +107,7 @@ fn late_context_creation(app: &mut App) {
     app.resources.add(renderer_settings);
     app.resources.add(surface);
     app.resources.add(debug_drawing);
+    app.resources.add(debug_gui);
     app.resources.add(lighting);
     app.dispatcher.add_system(renderer);
     app.resources.add(ctx);

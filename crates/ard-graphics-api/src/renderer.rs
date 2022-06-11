@@ -63,6 +63,7 @@ pub trait RendererApi<B: Backend>: SystemState + Sized {
         B::Factory,
         B::StaticGeometry,
         B::DebugDrawing,
+        B::DebugGui,
         B::Lighting,
     );
 }

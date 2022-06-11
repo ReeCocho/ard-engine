@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use self::{
     debug_drawing::DebugDrawing,
@@ -7,7 +7,7 @@ use self::{
     static_geometry::StaticGeometry,
 };
 use crate::{
-    camera::{CameraUbo, Lighting},
+    camera::{CameraUbo, DebugGui, Lighting},
     context::GraphicsContext,
     factory::Factory,
     shader_constants::MAX_SHADOW_CASCADES,
@@ -17,6 +17,7 @@ use crate::{
 use ard_core::core::{Stopping, Tick};
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
+use ard_input::{InputState, MouseButton};
 use ard_math::{Mat4, Vec3};
 use ard_render_graph::image::SizeGroup;
 use ard_window::windows::Windows;
@@ -30,7 +31,7 @@ pub mod static_geometry;
 
 /// Internal render event.
 #[derive(Debug, Event, Copy, Clone)]
-struct Render;
+struct Render(Duration);
 
 #[derive(SystemState)]
 pub struct Renderer {
@@ -50,18 +51,27 @@ type RenderResources = (
     Read<RendererSettings>,
     Write<Surface>,
     Read<Windows>,
-    // These four are held internally, but are requested so that no other systems write to them
+    Write<Lighting>,
+    Write<DebugGui>,
+    Read<InputState>,
+    // These three are held internally, but are requested so that no other systems write to them
     // while rendering is occuring.
     Write<Factory>,
     Write<StaticGeometry>,
     Write<DebugDrawing>,
-    Write<Lighting>,
 );
 
 impl RendererApi<VkBackend> for Renderer {
     fn new(
         create_info: &RendererCreateInfo<VkBackend>,
-    ) -> (Self, Factory, StaticGeometry, DebugDrawing, Lighting) {
+    ) -> (
+        Self,
+        Factory,
+        StaticGeometry,
+        DebugDrawing,
+        DebugGui,
+        Lighting,
+    ) {
         let canvas_size = if let Some((width, height)) = create_info.settings.canvas_size {
             vk::Extent2D { width, height }
         } else {
@@ -74,7 +84,7 @@ impl RendererApi<VkBackend> for Renderer {
 
         let mut lighting = unsafe { Lighting::new(create_info.ctx) };
 
-        let (graph, factory, debug_drawing, state) = unsafe {
+        let (graph, factory, debug_drawing, debug_gui, state) = unsafe {
             ForwardPlus::new_graph(
                 create_info.ctx,
                 create_info.surface,
@@ -103,6 +113,7 @@ impl RendererApi<VkBackend> for Renderer {
             factory,
             static_geometry,
             debug_drawing,
+            debug_gui,
             lighting,
         )
     }
@@ -114,7 +125,7 @@ impl Renderer {
         _: Tick,
         commands: Commands,
         _: Queries<()>,
-        res: Res<(Read<RendererSettings>,)>,
+        res: Res<(Read<RendererSettings>, Write<DebugGui>, Read<InputState>)>,
     ) {
         let res = res.get();
         let settings = res.0.unwrap();
@@ -127,12 +138,22 @@ impl Renderer {
             true
         };
 
+        // Update input events
+        if let Some(input) = res.2 {
+            let mut debug_gui = res.1.unwrap();
+            let mut io = debug_gui.context.io_mut();
+
+            io.mouse_down[0] = io.mouse_down[0] || input.mouse_button(MouseButton::Left);
+            io.mouse_down[1] = io.mouse_down[1] || input.mouse_button(MouseButton::Right);
+            io.mouse_down[2] = io.mouse_down[2] || input.mouse_button(MouseButton::Middle);
+        }
+
         // Send events
         if do_render {
             let dur = now.duration_since(self.last_render_time);
             self.last_render_time = now;
             commands.events.submit(PreRender(dur));
-            commands.events.submit(Render);
+            commands.events.submit(Render(dur));
             commands.events.submit(PostRender(dur));
         }
     }
@@ -145,17 +166,18 @@ impl Renderer {
 
     unsafe fn render(
         &mut self,
-        _: Render,
+        evt: Render,
         _: Commands,
         queries: Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
         res: Res<RenderResources>,
     ) {
-        let res = res.get();
+        let mut res = res.get();
         let settings = res.0.unwrap();
         let surface = res.1.unwrap();
         let mut surface_lock = surface.0.lock().expect("mutex poisoned");
         let windows = res.2.unwrap();
-        let mut lighting = res.6.unwrap();
+        let mut lighting = res.3.unwrap();
+        let mut debug_gui = res.4.unwrap();
 
         let _static_geo_lock = self.static_geometry.acquire();
         let _factory_lock = self.factory.acquire();
@@ -233,7 +255,28 @@ impl Renderer {
 
         let light_cameras = lighting.update_ubo(frame_idx, &vp_invs, &far_planes);
 
+        // Update IMGUI data
+        {
+            let graph = self.graph.lock().unwrap();
+            let canvas_size = graph
+                .resources()
+                .get_size_group(self.state.canvas_size_group());
+            let io = debug_gui.context.io_mut();
+            io.delta_time = evt.0.as_secs_f32();
+            io.display_size = [canvas_size.width as f32, canvas_size.height as f32];
+
+            // Update keys if input exists
+            if let Some(input) = res.5.as_mut() {
+                let mouse_pos = input.mouse_pos();
+                io.mouse_pos = [mouse_pos.0 as f32, mouse_pos.1 as f32];
+            }
+        }
+
         // Update context with outside state
+        if let Some(draw_data) = debug_gui.finish_draw() {
+            self.state.set_gui_draw_data(frame_idx, draw_data);
+        }
+
         if let Some(skybox) = &lighting.skybox {
             let cube_maps = self.factory.0.cube_maps.read().unwrap();
             let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
@@ -321,6 +364,13 @@ impl Renderer {
 
             self.state.resize_canvas(graph.resources_mut());
         }
+
+        // Reset imgui input state
+        let mut io = debug_gui.context.io_mut();
+
+        io.mouse_down[0] = false;
+        io.mouse_down[1] = false;
+        io.mouse_down[2] = false;
     }
 }
 

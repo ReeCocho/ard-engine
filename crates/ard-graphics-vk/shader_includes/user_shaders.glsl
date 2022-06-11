@@ -208,7 +208,7 @@ vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
 
 float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv, int layer) {
     float shadow = 0.0;
-    vec3 jcoord = vec3(ARD_FRAG_POS.xy, 0.0);
+    vec3 jcoord = vec3(ARD_FRAG_POS.xz * 100.0, 0.0);
     vec2 sm_coord = uv;
     vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
 

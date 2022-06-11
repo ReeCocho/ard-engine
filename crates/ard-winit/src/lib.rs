@@ -8,7 +8,7 @@ pub mod prelude {
 use std::time::Instant;
 
 use ard_core::prelude::*;
-use ard_input::{InputState, Key};
+use ard_input::{InputState, Key, MouseButton};
 use ard_window::prelude::*;
 
 use prelude::WinitWindows;
@@ -69,6 +69,21 @@ fn winit_runner(mut app: App) {
                 // Dispatch event
                 match event {
                     WindowEvent::CloseRequested => dispatcher.submit(WindowClosed(ard_id)),
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input.signal_mouse_pos((position.x, position.y));
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        if let Some(button) = winit_to_ard_mouse_button(button) {
+                            match state {
+                                winit::event::ElementState::Pressed => {
+                                    input.signal_mouse_button_down(button)
+                                }
+                                winit::event::ElementState::Released => {
+                                    input.signal_mouse_button_up(button)
+                                }
+                            }
+                        }
+                    }
                     WindowEvent::Resized(dims) => {
                         dispatcher.submit(WindowResized {
                             id: ard_id,
@@ -327,4 +342,16 @@ fn winit_to_ard_key(key: winit::event::VirtualKeyCode) -> Option<Key> {
     };
 
     Some(ard_key)
+}
+
+#[inline]
+fn winit_to_ard_mouse_button(button: winit::event::MouseButton) -> Option<MouseButton> {
+    let ard_button = match button {
+        winit::event::MouseButton::Left => MouseButton::Left,
+        winit::event::MouseButton::Right => MouseButton::Right,
+        winit::event::MouseButton::Middle => MouseButton::Middle,
+        _ => return None,
+    };
+
+    Some(ard_button)
 }

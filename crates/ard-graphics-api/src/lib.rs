@@ -1,6 +1,7 @@
 pub mod camera;
 pub mod context;
 pub mod cube_map;
+pub mod debug_gui;
 pub mod factory;
 pub mod lighting;
 pub mod material;
@@ -19,6 +20,7 @@ pub mod prelude {
     pub use crate::camera::*;
     pub use crate::context::*;
     pub use crate::cube_map::*;
+    pub use crate::debug_gui::*;
     pub use crate::factory::*;
     pub use crate::lighting::*;
     pub use crate::material::*;
@@ -53,6 +55,7 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + Any + Send + Sync {
     type Lighting: LightingApi<Self>;
     type StaticGeometry: StaticGeometryApi<Self>;
     type DebugDrawing: DebugDrawingApi<Self>;
+    type DebugGui: DebugGuiApi<Self>;
     type Mesh: MeshApi;
     type Shader: ShaderApi;
     type Pipeline: PipelineApi;

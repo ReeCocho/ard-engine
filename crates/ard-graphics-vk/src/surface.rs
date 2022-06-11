@@ -93,7 +93,7 @@ impl SurfaceInner {
 
         self.swapchain_loader
             .queue_present(self.ctx.0.present, &present_info)
-            .unwrap_or_else(|_| unsafe {
+            .unwrap_or_else(|_| {
                 self.ctx.0.device.device_wait_idle().unwrap();
                 let window = windows
                     .get(self.window)
@@ -227,10 +227,8 @@ unsafe fn pick_best_surface_format(
 
     for format in surface_formats {
         let new_precedence = match format.format {
-            vk::Format::B8G8R8A8_SRGB => 0,
-            vk::Format::R8G8B8A8_SRGB => 1,
-            vk::Format::B8G8R8A8_UNORM => 2,
-            vk::Format::R8G8B8A8_UNORM => 3,
+            vk::Format::B8G8R8A8_UNORM => 0,
+            vk::Format::R8G8B8A8_UNORM => 1,
             // No-op for unsupported formats
             _ => continue,
         };

@@ -121,6 +121,16 @@ fn main() {
         Path::new("./src/renderer/skybox.vert.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/renderer/gui.vert"),
+        Path::new("./src/renderer/gui.vert.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/renderer/gui.frag"),
+        Path::new("./src/renderer/gui.frag.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

@@ -756,9 +756,25 @@ impl<'a> MeshPassesBuilder<'a> {
                 .expect("unable to create brdf lut sampler")
         };
 
-        let (poisson_disk, poisson_disk_view) = unsafe { create_disk(ctx) };
+        let (poisson_disk, poisson_disk_view) = unsafe {
+            ctx.create_image(
+                POISSON_DISK_ANGLES,
+                POISSON_DISK_DIMS,
+                vk::Format::R32G32B32A32_SFLOAT,
+                vk::ImageUsageFlags::SAMPLED,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            )
+        };
 
-        let (brdf_lut, brdf_lut_view) = unsafe { create_brdf_lut(ctx) };
+        let (brdf_lut, brdf_lut_view) = unsafe {
+            ctx.create_image(
+                IBL_LUT,
+                IBL_LUT_DIMS,
+                vk::Format::R16G16_SFLOAT,
+                vk::ImageUsageFlags::SAMPLED,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            )
+        };
 
         let passes = MeshPasses {
             ctx: ctx.clone(),
@@ -1695,272 +1711,6 @@ impl MeshPassStage {
     }
 }
 
-/// Helper function to create the poisson disk.
-unsafe fn create_disk(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
-    let poisson_disk_image = {
-        let create_info = ImageCreateInfo {
-            ctx: ctx.clone(),
-            ty: vk::ImageType::TYPE_3D,
-            width: POISSON_DISK_DIMS,
-            height: POISSON_DISK_DIMS,
-            depth: POISSON_DISK_DIMS,
-            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
-            image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
-            mip_levels: 1,
-            array_layers: 1,
-            format: vk::Format::R32G32B32A32_SFLOAT,
-            flags: vk::ImageCreateFlags::empty(),
-        };
-
-        Image::new(&create_info)
-    };
-
-    let poisson_disk_image_view = {
-        let create_info = vk::ImageViewCreateInfo::builder()
-            .image(poisson_disk_image.image())
-            .view_type(vk::ImageViewType::TYPE_3D)
-            .format(vk::Format::R32G32B32A32_SFLOAT)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .build();
-
-        ctx.0
-            .device
-            .create_image_view(&create_info, None)
-            .expect("unable to create poisson disk image view")
-    };
-
-    let staging_buffer = Buffer::new_staging_buffer(ctx, POISSON_DISK_ANGLES);
-
-    // Upload staging buffer to error image
-    let (command_pool, commands) = ctx
-        .0
-        .create_single_use_pool(ctx.0.queue_family_indices.transfer);
-
-    let barrier = [vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
-        .image(poisson_disk_image.image())
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .build()];
-
-    ctx.0.device.cmd_pipeline_barrier(
-        commands,
-        vk::PipelineStageFlags::TOP_OF_PIPE,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::DependencyFlags::BY_REGION,
-        &[],
-        &[],
-        &barrier,
-    );
-
-    let regions = [vk::BufferImageCopy::builder()
-        .buffer_offset(0)
-        .buffer_row_length(0)
-        .buffer_image_height(0)
-        .image_subresource(vk::ImageSubresourceLayers {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            mip_level: 0,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-        .image_extent(vk::Extent3D {
-            width: POISSON_DISK_DIMS,
-            height: POISSON_DISK_DIMS,
-            depth: POISSON_DISK_DIMS,
-        })
-        .build()];
-
-    ctx.0.device.cmd_copy_buffer_to_image(
-        commands,
-        staging_buffer.buffer(),
-        poisson_disk_image.image(),
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        &regions,
-    );
-
-    let barrier = [vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
-        .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
-        .image(poisson_disk_image.image())
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .build()];
-
-    ctx.0.device.cmd_pipeline_barrier(
-        commands,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-        vk::DependencyFlags::BY_REGION,
-        &[],
-        &[],
-        &barrier,
-    );
-
-    ctx.0
-        .submit_single_use_pool(ctx.0.transfer, command_pool, commands);
-
-    (poisson_disk_image, poisson_disk_image_view)
-}
-
-/// Helper function to create the brdf look up texture.
-unsafe fn create_brdf_lut(ctx: &GraphicsContext) -> (Image, vk::ImageView) {
-    let brdf_lut_image = {
-        let create_info = ImageCreateInfo {
-            ctx: ctx.clone(),
-            ty: vk::ImageType::TYPE_2D,
-            width: IBL_LUT_DIMS,
-            height: IBL_LUT_DIMS,
-            depth: 1,
-            memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
-            image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
-            mip_levels: 1,
-            array_layers: 1,
-            format: vk::Format::R16G16_SFLOAT,
-            flags: vk::ImageCreateFlags::empty(),
-        };
-
-        Image::new(&create_info)
-    };
-
-    let brdf_lut_view = {
-        let create_info = vk::ImageViewCreateInfo::builder()
-            .image(brdf_lut_image.image())
-            .view_type(vk::ImageViewType::TYPE_2D)
-            .format(vk::Format::R16G16_SFLOAT)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .build();
-
-        ctx.0
-            .device
-            .create_image_view(&create_info, None)
-            .expect("unable to create brdf lut image view")
-    };
-
-    let staging_buffer = Buffer::new_staging_buffer(ctx, IBL_LUT);
-
-    // Upload staging buffer to error image
-    let (command_pool, commands) = ctx
-        .0
-        .create_single_use_pool(ctx.0.queue_family_indices.transfer);
-
-    let barrier = [vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
-        .image(brdf_lut_image.image())
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .build()];
-
-    ctx.0.device.cmd_pipeline_barrier(
-        commands,
-        vk::PipelineStageFlags::TOP_OF_PIPE,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::DependencyFlags::BY_REGION,
-        &[],
-        &[],
-        &barrier,
-    );
-
-    let regions = [vk::BufferImageCopy::builder()
-        .buffer_offset(0)
-        .buffer_row_length(0)
-        .buffer_image_height(0)
-        .image_subresource(vk::ImageSubresourceLayers {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            mip_level: 0,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-        .image_extent(vk::Extent3D {
-            width: IBL_LUT_DIMS,
-            height: IBL_LUT_DIMS,
-            depth: 1,
-        })
-        .build()];
-
-    ctx.0.device.cmd_copy_buffer_to_image(
-        commands,
-        staging_buffer.buffer(),
-        brdf_lut_image.image(),
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        &regions,
-    );
-
-    let barrier = [vk::ImageMemoryBarrier::builder()
-        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .src_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
-        .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
-        .image(brdf_lut_image.image())
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        })
-        .build()];
-
-    ctx.0.device.cmd_pipeline_barrier(
-        commands,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-        vk::DependencyFlags::BY_REGION,
-        &[],
-        &[],
-        &barrier,
-    );
-
-    ctx.0
-        .submit_single_use_pool(ctx.0.transfer, command_pool, commands);
-
-    (brdf_lut_image, brdf_lut_view)
-}
-
 const DRAW_GEN_CODE: &[u8] = include_bytes!("../../draw_gen.comp.spv");
 
 const DRAW_GEN_NO_HIGHZ_CODE: &[u8] = include_bytes!("../../draw_gen_no_highz.comp.spv");
@@ -1973,10 +1723,10 @@ const SKYBOX_FRAG_CODE: &[u8] = include_bytes!("../../skybox.frag.spv");
 
 const SKYBOX_VERT_CODE: &[u8] = include_bytes!("../../skybox.vert.spv");
 
-const POISSON_DISK_DIMS: u32 = 32;
+const POISSON_DISK_DIMS: (u32, u32, u32) = (32, 32, 32);
 
 const POISSON_DISK_ANGLES: &[u8] = include_bytes!("./random_disk.bin");
 
-const IBL_LUT_DIMS: u32 = 512;
+const IBL_LUT_DIMS: (u32, u32, u32) = (512, 512, 1);
 
 const IBL_LUT: &[u8] = include_bytes!("./ibl_brdf_lut.bin");

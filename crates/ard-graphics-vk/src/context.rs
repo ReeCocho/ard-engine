@@ -16,7 +16,11 @@ use ash::{
 };
 use gpu_allocator::vulkan::*;
 
-use crate::{surface::Surface, VkBackend};
+use crate::{
+    alloc::{Buffer, Image, ImageCreateInfo},
+    surface::Surface,
+    VkBackend,
+};
 
 #[derive(Resource, Clone)]
 pub struct GraphicsContext(pub(crate) Arc<GraphicsContextInner>);
@@ -297,10 +301,164 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
     }
 }
 
+impl GraphicsContext {
+    /// Initializes an image and view from some data source.
+    ///
+    /// # Note
+    /// This should ONLY be used during initialization functions, or when stalling the rendering
+    /// pipeline is required. Using this WILL stall the entire GPU while work is performed.
+    pub(crate) unsafe fn create_image(
+        &self,
+        data: &[u8],
+        dims: (u32, u32, u32),
+        format: vk::Format,
+        usage: vk::ImageUsageFlags,
+        final_layout: vk::ImageLayout,
+    ) -> (Image, vk::ImageView) {
+        let image = {
+            let create_info = ImageCreateInfo {
+                ctx: self.clone(),
+                ty: if dims.2 == 1 {
+                    vk::ImageType::TYPE_2D
+                } else {
+                    vk::ImageType::TYPE_3D
+                },
+                width: dims.0,
+                height: dims.1,
+                depth: dims.2,
+                memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
+                image_usage: usage | vk::ImageUsageFlags::TRANSFER_DST,
+                mip_levels: 1,
+                array_layers: 1,
+                format,
+                flags: vk::ImageCreateFlags::empty(),
+            };
+
+            Image::new(&create_info)
+        };
+
+        let view = {
+            let create_info = vk::ImageViewCreateInfo::builder()
+                .image(image.image())
+                .view_type(if dims.2 == 1 {
+                    vk::ImageViewType::TYPE_2D
+                } else {
+                    vk::ImageViewType::TYPE_3D
+                })
+                .format(format)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .build();
+
+            self.0
+                .device
+                .create_image_view(&create_info, None)
+                .expect("unable to create image view")
+        };
+
+        let staging_buffer = Buffer::new_staging_buffer(self, data);
+
+        // Upload staging buffer to error image
+        let (command_pool, commands) = self
+            .0
+            .create_single_use_pool(self.0.queue_family_indices.transfer);
+
+        let barrier = [vk::ImageMemoryBarrier::builder()
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+            .image(image.image())
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .build()];
+
+        self.0.device.cmd_pipeline_barrier(
+            commands,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::BY_REGION,
+            &[],
+            &[],
+            &barrier,
+        );
+
+        let regions = [vk::BufferImageCopy::builder()
+            .buffer_offset(0)
+            .buffer_row_length(0)
+            .buffer_image_height(0)
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(vk::Extent3D {
+                width: dims.0,
+                height: dims.1,
+                depth: dims.2,
+            })
+            .build()];
+
+        self.0.device.cmd_copy_buffer_to_image(
+            commands,
+            staging_buffer.buffer(),
+            image.image(),
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &regions,
+        );
+
+        let barrier = [vk::ImageMemoryBarrier::builder()
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(final_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .src_access_mask(vk::AccessFlags::TRANSFER_READ | vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
+            .image(image.image())
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .build()];
+
+        self.0.device.cmd_pipeline_barrier(
+            commands,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::DependencyFlags::BY_REGION,
+            &[],
+            &[],
+            &barrier,
+        );
+
+        self.0
+            .submit_single_use_pool(self.0.transfer, command_pool, commands);
+
+        (image, view)
+    }
+}
+
 impl GraphicsContextInner {
     /// Allocates a command pool and command buffer to be used for single time events.
     ///
-    /// ## Note
+    /// # Note
     /// This should ONLY be used during initialization functions, or when stalling the rendering
     /// pipeline is required. Using this WILL stall the entire GPU while work is performed.
     pub unsafe fn create_single_use_pool(
@@ -341,7 +499,7 @@ impl GraphicsContextInner {
 
     /// Submits a single use command and waits for it to complete.
     ///
-    /// ## Note
+    /// # Note
     /// This should ONLY be used during initialization functions, or when stalling the rendering
     /// pipeline is required. Using this WILL stall the entire GPU while work is performed.
     pub unsafe fn submit_single_use_pool(

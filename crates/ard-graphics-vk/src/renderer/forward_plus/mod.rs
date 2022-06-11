@@ -1,3 +1,4 @@
+pub mod gui;
 pub mod mesh_passes;
 
 use std::sync::{atomic::Ordering, Arc, Mutex};
@@ -5,8 +6,8 @@ use std::sync::{atomic::Ordering, Arc, Mutex};
 use crate::{
     alloc::WriteStorageBuffer,
     camera::{
-        Camera, CameraInner, CameraUbo, CubeMapInner, DebugDrawing, Lighting, PipelineType,
-        RawPointLight, Surface, TextureInner,
+        Camera, CameraInner, CameraUbo, CubeMapInner, DebugDrawing, DebugGui, Lighting,
+        PipelineType, RawPointLight, Surface, TextureInner,
     },
     context::GraphicsContext,
     factory::descriptors::DescriptorPool,
@@ -32,9 +33,12 @@ use ard_render_graph::{
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 
-use self::mesh_passes::{
-    mesh_pass::{ColorRendering, MeshPassCamera, MeshPassCreateInfo},
-    MeshPassId, MeshPasses, MeshPassesBuilder,
+use self::{
+    gui::GuiRender,
+    mesh_passes::{
+        mesh_pass::{ColorRendering, MeshPassCamera, MeshPassCreateInfo},
+        MeshPassId, MeshPasses, MeshPassesBuilder,
+    },
 };
 
 use super::{
@@ -59,6 +63,7 @@ pub(crate) struct ForwardPlus {
     static_geo: StaticGeometry,
     debug_drawing: DebugDrawing,
     mesh_passes: MeshPasses,
+    gui: GuiRender,
     shadow_passes: [MeshPassId; MAX_SHADOW_CASCADES],
     passes: Passes,
     canvas_size_group: SizeGroupId,
@@ -183,7 +188,7 @@ impl ForwardPlus {
         lighting: &Lighting,
         anisotropy_level: Option<AnisotropyLevel>,
         canvas_size: vk::Extent2D,
-    ) -> (GameRendererGraphRef, Factory, DebugDrawing, Self) {
+    ) -> (GameRendererGraphRef, Factory, DebugDrawing, DebugGui, Self) {
         // Create the graph
         let color_format = vk::Format::R8G8B8A8_UNORM;
         let depth_format =
@@ -285,6 +290,22 @@ impl ForwardPlus {
 
         let mut mesh_passes = mp_builder.build();
 
+        // Render pass for GUI rendering
+        let gui_pass = rg_builder.add_pass(PassDescriptor::RenderPass {
+            toggleable: false,
+            images: Vec::default(),
+            color_attachments: vec![ColorAttachmentDescriptor {
+                image: color_image,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+            buffers: Vec::default(),
+            code: GuiRender::render,
+        });
+
         let _surface_blit = rg_builder.add_pass(PassDescriptor::CPUPass {
             toggleable: false,
             code: surface_blit,
@@ -335,6 +356,16 @@ impl ForwardPlus {
             },
         );
 
+        // Create gui renderer
+        let (gui, debug_gui) = GuiRender::new(
+            ctx,
+            factory.0.texture_sets.lock().unwrap().layout(),
+            match graph.lock().unwrap().get_pass(gui_pass) {
+                RenderPass::Graphics { pass, .. } => *pass,
+                _ => panic!("incorrect pass type for gui render"),
+            },
+        );
+
         let mut frame_data = Vec::with_capacity(FRAMES_IN_FLIGHT);
         for _ in 0..FRAMES_IN_FLIGHT {
             frame_data.push(FrameData::new(ctx, (canvas_size.width, canvas_size.height)));
@@ -349,6 +380,7 @@ impl ForwardPlus {
             static_geo,
             factory: factory.clone(),
             debug_drawing: debug_drawing.clone(),
+            gui,
             passes,
             canvas_size_group,
             frame_data,
@@ -359,7 +391,7 @@ impl ForwardPlus {
             color_image,
         };
 
-        (graph, factory, debug_drawing, forward_plus)
+        (graph, factory, debug_drawing, debug_gui, forward_plus)
     }
 
     #[inline]
@@ -391,6 +423,11 @@ impl ForwardPlus {
     #[inline]
     pub fn frames(&self) -> &[FrameData] {
         &self.frame_data
+    }
+
+    #[inline]
+    pub fn set_gui_draw_data(&mut self, frame: usize, draw_data: &imgui::DrawData) {
+        self.gui.prepare(frame, draw_data);
     }
 
     #[inline]
@@ -578,8 +615,6 @@ fn begin_recording(
         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
         .build();
 
-    state.mesh_passes.draw_sky = false;
-
     unsafe {
         state
             .ctx
@@ -721,6 +756,8 @@ fn end_recording(
     _pass: &mut RenderPass<ForwardPlus>,
     _resources: &mut RenderGraphResources<RenderGraphContext<ForwardPlus>>,
 ) {
+    state.mesh_passes.draw_sky = false;
+
     // End commands and submit
     unsafe {
         state
