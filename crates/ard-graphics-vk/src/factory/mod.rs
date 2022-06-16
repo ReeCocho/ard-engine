@@ -18,7 +18,6 @@ use ard_graphics_api::prelude::*;
 
 use self::{
     container::ResourceContainer,
-    descriptors::DescriptorPool,
     materials::MaterialBuffers,
     meshes::MeshBuffers,
     staging::*,
@@ -175,26 +174,36 @@ impl Factory {
         material_buffers.flush(&materials, frame);
 
         // Drop any resources that are no longer referenced
-        meshes.drop_pending(frame, &mut |_, mesh| {
-            mesh_buffers.get_index_buffer().free(mesh.index_block);
-            mesh_buffers
-                .get_vertex_buffer(&mesh.layout)
-                .free(mesh.vertex_block);
-        });
-        shaders.drop_pending(frame, &mut |_, _| {});
-        pipelines.drop_pending(frame, &mut |_, _| {});
-        materials.drop_pending(frame, &mut |_, material| {
-            if let Some(idx) = material.material_slot {
-                material_buffers.free_ubo(material.pipeline.inputs.ubo_size, idx);
-            }
+        meshes.drop_pending(
+            frame,
+            &mut |_, mesh| {
+                mesh_buffers.get_index_buffer().free(mesh.index_block);
+                mesh_buffers
+                    .get_vertex_buffer(&mesh.layout)
+                    .free(mesh.vertex_block);
+            },
+            &mut |_, _| {},
+        );
+        shaders.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
+        pipelines.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
+        materials.drop_pending(
+            frame,
+            &mut |_, material| {
+                if let Some(idx) = material.material_slot {
+                    material_buffers.free_ubo(material.pipeline.inputs.ubo_size, idx);
+                }
 
-            if let Some(idx) = material.texture_slot {
-                material_buffers.free_textures(idx);
-            }
+                if let Some(idx) = material.texture_slot {
+                    material_buffers.free_textures(idx);
+                }
+            },
+            &mut |_, _| {},
+        );
+        cameras.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
+        textures.drop_pending(frame, &mut |_, _| {}, &mut |id, _| {
+            texture_sets.texture_dropped(id)
         });
-        cameras.drop_pending(frame, &mut |_, _| {});
-        textures.drop_pending(frame, &mut |id, _| texture_sets.texture_dropped(id));
-        cube_maps.drop_pending(frame, &mut |_, _| {});
+        cube_maps.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
 
         // Any texture uploads that are complete should signal to the texture sets that they are
         // available and must be bound to the primary set. Any dropped textures should signal

@@ -4,7 +4,7 @@ use ard_render_graph::{
     buffer::{BufferAccessDescriptor, BufferDescriptor, BufferUsage},
     context::Context,
     graph::{self, ImageState, ImageUsage, RenderGraphBuildState, RenderGraphResources},
-    image::{ImageDescriptor, ImageId, SizeGroup, SizeGroupId},
+    image::{ImageAccessDecriptor, ImageDescriptor, ImageId, SizeGroup, SizeGroupId},
     pass::{Pass, PassDescriptor, PassFn},
     LoadOp, Operations,
 };
@@ -35,7 +35,7 @@ pub(crate) enum RenderPass<T> {
         /// Vulkan render pass to begin.
         pass: vk::RenderPass,
         /// Memory barriers for buffers used during rendering.
-        buffer_barriers: Vec<BufferBarrier>,
+        barriers: Vec<Barrier>,
         /// Clear values for the frame buffer.
         clear_values: Vec<vk::ClearValue>,
         /// Frame buffer containing all images in the render pass.
@@ -54,7 +54,7 @@ pub(crate) enum RenderPass<T> {
     Compute {
         code: PassFn<RenderGraphContext<T>>,
         /// Memory barriers for buffers used during rendering.
-        buffer_barriers: Vec<BufferBarrier>,
+        buffer_barriers: Vec<Barrier>,
     },
     Cpu {
         code: PassFn<RenderGraphContext<T>>,
@@ -81,14 +81,14 @@ pub(crate) struct RenderTarget {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct BufferBarrier {
+pub(crate) struct Barrier {
     /// NOTE: Held in an array for easy Vulkan usage.
     memory_barriers: [vk::MemoryBarrier; 1],
     src_stage: vk::PipelineStageFlags,
     dst_stage: vk::PipelineStageFlags,
 }
 
-impl Hash for BufferBarrier {
+impl Hash for Barrier {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.memory_barriers[0].dst_access_mask.hash(state);
         self.memory_barriers[0].src_access_mask.hash(state);
@@ -97,7 +97,7 @@ impl Hash for BufferBarrier {
     }
 }
 
-impl PartialEq for BufferBarrier {
+impl PartialEq for Barrier {
     fn eq(&self, other: &Self) -> bool {
         self.memory_barriers[0].src_access_mask == other.memory_barriers[0].src_access_mask
             && self.memory_barriers[0].dst_access_mask == other.memory_barriers[0].dst_access_mask
@@ -106,10 +106,10 @@ impl PartialEq for BufferBarrier {
     }
 }
 
-impl Eq for BufferBarrier {}
+impl Eq for Barrier {}
 
-unsafe impl Send for BufferBarrier {}
-unsafe impl Sync for BufferBarrier {}
+unsafe impl Send for Barrier {}
+unsafe impl Sync for Barrier {}
 
 impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
     fn run(
@@ -160,13 +160,13 @@ impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
                 clear_values,
                 frame_buffers,
                 size_group,
-                buffer_barriers,
+                barriers,
                 ..
             } => {
                 let size_group = resources.get_size_group(*size_group);
 
                 // Signal buffer barriers
-                for barrier in buffer_barriers {
+                for barrier in barriers {
                     unsafe {
                         device.cmd_pipeline_barrier(
                             *command_buffer,
@@ -313,6 +313,7 @@ impl<T> Context for RenderGraphContext<T> {
                 color_attachments,
                 depth_stencil_attachment,
                 buffers,
+                images,
                 code,
                 ..
             } => {
@@ -327,8 +328,8 @@ impl<T> Context for RenderGraphContext<T> {
                 let mut attachment_refs = Vec::with_capacity(total_attachments);
                 let mut dependencies = Vec::with_capacity(total_attachments);
                 let mut clear_values = Vec::with_capacity(total_attachments);
-                let buffer_barriers =
-                    create_buffer_barriers(buffers, state, depth_stencil_attachment.is_some());
+                let barriers =
+                    create_barriers(buffers, images, state, depth_stencil_attachment.is_some());
 
                 // Create depth attachment
                 if let Some(attachment) = depth_stencil_attachment {
@@ -466,7 +467,7 @@ impl<T> Context for RenderGraphContext<T> {
                         .as_ref()
                         .map(|attachment| attachment.image),
                     color_attachments: rp_color_attachments,
-                    buffer_barriers,
+                    barriers,
                 };
 
                 unsafe {
@@ -475,8 +476,13 @@ impl<T> Context for RenderGraphContext<T> {
 
                 render_pass
             }
-            PassDescriptor::ComputePass { buffers, code, .. } => {
-                let buffer_barriers = create_buffer_barriers(buffers, state, false);
+            PassDescriptor::ComputePass {
+                buffers,
+                images,
+                code,
+                ..
+            } => {
+                let buffer_barriers = create_barriers(buffers, images, state, false);
                 RenderPass::Compute {
                     code: *code,
                     buffer_barriers,
@@ -761,12 +767,13 @@ impl GraphBuffer {
 }
 
 /// Helper to create buffer barriers.
-fn create_buffer_barriers(
+fn create_barriers(
     buffers: &[BufferAccessDescriptor],
+    images: &[ImageAccessDecriptor],
     state: &RenderGraphBuildState,
     has_depth: bool,
-) -> Vec<BufferBarrier> {
-    let mut buffer_barriers = HashSet::<BufferBarrier>::default();
+) -> Vec<Barrier> {
+    let mut barriers = HashSet::<Barrier>::default();
 
     // Create buffer barriers
     for buffer in buffers {
@@ -824,7 +831,7 @@ fn create_buffer_barriers(
             ),
         };
 
-        buffer_barriers.insert(BufferBarrier {
+        barriers.insert(Barrier {
             memory_barriers: [vk::MemoryBarrier::builder()
                 .src_access_mask(src_access)
                 .dst_access_mask(dst_access)
@@ -834,7 +841,84 @@ fn create_buffer_barriers(
         });
     }
 
-    buffer_barriers.into_iter().collect()
+    // Create image barriers
+    for image in images {
+        let image_state = state.get_image_state(image.image).unwrap();
+
+        // No barrier needed if not yet used
+        if image_state.last.0 == graph::ImageUsage::Unused {
+            continue;
+        }
+
+        let (src_access, src_stage) = match image_state.last.0 {
+            graph::ImageUsage::Unused => unreachable!(),
+            graph::ImageUsage::ColorAttachment => (
+                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ),
+            graph::ImageUsage::Compute => (
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+            ),
+            ImageUsage::DepthStencilAttachment => (
+                vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                    | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            ),
+            ImageUsage::Sampled => (
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+            ),
+        };
+
+        let (dst_access, dst_stage) = match image_state.current.0 {
+            graph::ImageUsage::Unused => unreachable!(),
+            graph::ImageUsage::ColorAttachment => (
+                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ),
+            graph::ImageUsage::Compute => (
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+            ),
+            ImageUsage::DepthStencilAttachment => (
+                vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                    | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+            ),
+            ImageUsage::Sampled => (
+                vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::VERTEX_SHADER,
+            ),
+        };
+
+        barriers.insert(Barrier {
+            memory_barriers: [vk::MemoryBarrier::builder()
+                .src_access_mask(src_access)
+                .dst_access_mask(dst_access)
+                .build()],
+            src_stage,
+            dst_stage,
+        });
+    }
+
+    let mut barriers: Vec<Barrier> = barriers.into_iter().collect();
+
+    let mut i = 0;
+    while i < barriers.len() {
+        let mut j = i + 1;
+        while j < barriers.len() {
+            if barriers[j] == barriers[i] {
+                barriers.remove(j);
+            } else {
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+
+    barriers
 }
 
 /// Helper to create attachment descriptor given operations and an image.

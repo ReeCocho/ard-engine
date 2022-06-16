@@ -139,20 +139,6 @@ impl AssetLoader for ModelLoader {
                 },
             };
 
-            match image {
-                image::DynamicImage::ImageLuma8(_) => println!("1"),
-                image::DynamicImage::ImageLumaA8(_) => println!("2"),
-                image::DynamicImage::ImageRgb8(_) => println!("3"),
-                image::DynamicImage::ImageRgba8(_) => println!("4"),
-                image::DynamicImage::ImageLuma16(_) => println!("5"),
-                image::DynamicImage::ImageLumaA16(_) => println!("6"),
-                image::DynamicImage::ImageRgb16(_) => println!("7"),
-                image::DynamicImage::ImageRgba16(_) => println!("8"),
-                image::DynamicImage::ImageRgb32F(_) => println!("9"),
-                image::DynamicImage::ImageRgba32F(_) => println!("10"),
-                _ => println!("11"),
-            }
-
             let raw = image.to_rgba8();
 
             let max = gltf_to_ard_mag_filter(

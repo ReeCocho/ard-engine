@@ -17,7 +17,7 @@ use crate::{
 use ard_core::core::{Stopping, Tick};
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
-use ard_input::{InputState, MouseButton};
+use ard_input::{InputState, Key, MouseButton};
 use ard_math::{Mat4, Vec3};
 use ard_render_graph::image::SizeGroup;
 use ard_window::windows::Windows;
@@ -93,6 +93,7 @@ impl RendererApi<VkBackend> for Renderer {
                 &lighting,
                 create_info.settings.anisotropy_level,
                 canvas_size,
+                create_info.settings.render_scene,
             )
         };
 
@@ -143,9 +144,59 @@ impl Renderer {
             let mut debug_gui = res.1.unwrap();
             let mut io = debug_gui.context.io_mut();
 
+            let scroll = input.mouse_scroll();
+            io.mouse_wheel += scroll.1 as f32;
+            io.mouse_wheel_h += scroll.0 as f32;
+
             io.mouse_down[0] = io.mouse_down[0] || input.mouse_button(MouseButton::Left);
             io.mouse_down[1] = io.mouse_down[1] || input.mouse_button(MouseButton::Right);
             io.mouse_down[2] = io.mouse_down[2] || input.mouse_button(MouseButton::Middle);
+
+            io.keys_down[Key::Tab as usize] =
+                io.keys_down[Key::Tab as usize] || input.key(Key::Tab);
+            io.keys_down[Key::Right as usize] =
+                io.keys_down[Key::Right as usize] || input.key(Key::Right);
+            io.keys_down[Key::Left as usize] =
+                io.keys_down[Key::Left as usize] || input.key(Key::Left);
+            io.keys_down[Key::Up as usize] = io.keys_down[Key::Up as usize] || input.key(Key::Up);
+            io.keys_down[Key::Down as usize] =
+                io.keys_down[Key::Down as usize] || input.key(Key::Down);
+            io.keys_down[Key::PageUp as usize] =
+                io.keys_down[Key::PageUp as usize] || input.key(Key::PageUp);
+            io.keys_down[Key::PageDown as usize] =
+                io.keys_down[Key::PageDown as usize] || input.key(Key::PageDown);
+            io.keys_down[Key::Home as usize] =
+                io.keys_down[Key::Home as usize] || input.key(Key::Home);
+            io.keys_down[Key::End as usize] =
+                io.keys_down[Key::End as usize] || input.key(Key::End);
+            io.keys_down[Key::Insert as usize] =
+                io.keys_down[Key::Insert as usize] || input.key(Key::Insert);
+            io.keys_down[Key::Delete as usize] =
+                io.keys_down[Key::Delete as usize] || input.key(Key::Delete);
+            io.keys_down[Key::Back as usize] =
+                io.keys_down[Key::Back as usize] || input.key(Key::Back);
+            io.keys_down[Key::Space as usize] =
+                io.keys_down[Key::Space as usize] || input.key(Key::Space);
+            io.keys_down[Key::Return as usize] =
+                io.keys_down[Key::Return as usize] || input.key(Key::Return);
+            io.keys_down[Key::Escape as usize] =
+                io.keys_down[Key::Escape as usize] || input.key(Key::Escape);
+            io.keys_down[Key::NumEnter as usize] =
+                io.keys_down[Key::NumEnter as usize] || input.key(Key::NumEnter);
+            io.keys_down[Key::A as usize] = io.keys_down[Key::A as usize] || input.key(Key::A);
+            io.keys_down[Key::C as usize] = io.keys_down[Key::C as usize] || input.key(Key::C);
+            io.keys_down[Key::V as usize] = io.keys_down[Key::V as usize] || input.key(Key::V);
+            io.keys_down[Key::X as usize] = io.keys_down[Key::X as usize] || input.key(Key::X);
+            io.keys_down[Key::Y as usize] = io.keys_down[Key::Y as usize] || input.key(Key::Y);
+            io.keys_down[Key::Z as usize] = io.keys_down[Key::Z as usize] || input.key(Key::Z);
+
+            io.key_shift = io.key_shift || input.key(Key::LShift) || input.key(Key::RShift);
+            io.key_ctrl = io.key_ctrl || input.key(Key::LCtrl) || input.key(Key::RCtrl);
+            io.key_alt = io.key_alt || input.key(Key::LAlt) || input.key(Key::RAlt);
+
+            for c in input.input_string().chars() {
+                io.add_input_character(c);
+            }
         }
 
         // Send events
@@ -202,6 +253,38 @@ impl Renderer {
         // Wait for rendering to finish
         self.state.wait(frame_idx);
 
+        // Process pending resources
+        self.factory.process(frame_idx);
+
+        // If we have a custom canvas size, resize if it has changed
+        if let Some(canvas_size) = &settings.canvas_size {
+            let mut graph = self.graph.lock().expect("mutex poisoned");
+            let size_group = graph
+                .resources()
+                .get_size_group(self.state.canvas_size_group());
+
+            if size_group.width != canvas_size.0 || size_group.height != canvas_size.1 {
+                // Wait for all graphics operations to complete so we are safe to resize
+                self.ctx.0.device.device_wait_idle().unwrap();
+
+                graph.update_size_group(
+                    &mut self.rg_ctx,
+                    self.state.canvas_size_group(),
+                    SizeGroup {
+                        width: canvas_size.0,
+                        height: canvas_size.1,
+                        mip_levels: 1,
+                        array_layers: 1,
+                    },
+                );
+
+                self.state.resize_canvas(graph.resources_mut());
+            }
+        }
+
+        // Scene rendering check
+        self.state.set_scene_render(settings.render_scene);
+
         // Update anisotropy setting if needed
         {
             let mut texture_sets = self.factory.0.texture_sets.lock().expect("mutex poisoned");
@@ -213,12 +296,12 @@ impl Renderer {
             }
         }
 
-        // Process pending resources
-        self.factory.process(frame_idx);
-
         // Update lighting. Compute projection matrix slices for shadow cascades
         let (vp_invs, far_planes) = {
-            let surface_lock = surface.0.lock().expect("mutex poisoned");
+            let graph = self.graph.lock().unwrap();
+            let canvas_size = graph
+                .resources()
+                .get_size_group(self.state.surface_size_group());
             let cameras = self.factory.0.cameras.read().unwrap();
             let camera = cameras.get(self.factory.main_camera().id).unwrap();
 
@@ -228,8 +311,7 @@ impl Renderer {
                 camera.descriptor.up.try_normalize().unwrap_or(Vec3::Y),
             );
 
-            let aspect_ratio =
-                surface_lock.resolution.width as f32 / surface_lock.resolution.height as f32;
+            let aspect_ratio = canvas_size.width as f32 / canvas_size.height as f32;
             let fmn = camera.descriptor.far - camera.descriptor.near;
             let mut projs = [Mat4::IDENTITY; MAX_SHADOW_CASCADES];
             let mut far_planes = [0.0; MAX_SHADOW_CASCADES];
@@ -260,7 +342,7 @@ impl Renderer {
             let graph = self.graph.lock().unwrap();
             let canvas_size = graph
                 .resources()
-                .get_size_group(self.state.canvas_size_group());
+                .get_size_group(self.state.surface_size_group());
             let io = debug_gui.context.io_mut();
             io.delta_time = evt.0.as_secs_f32();
             io.display_size = [canvas_size.width as f32, canvas_size.height as f32];
@@ -345,15 +427,31 @@ impl Renderer {
         if surface_lock.present(image_idx, &graphics_signals, &windows)
             && self.canvas_size.is_none()
         {
+            let mut graph = self.graph.lock().expect("mutex poisoned");
+            let resolution = surface_lock.resolution;
+
             // Surface was invalidated. If we have a surface depenent resolution, regenerate
             // the frames. No need to wait since a wait is performed if the surface is
             // invalidated.
-            let resolution = surface_lock.resolution;
-            let mut graph = self.graph.lock().expect("mutex poisoned");
+            if self.canvas_size.is_none() {
+                graph.update_size_group(
+                    &mut self.rg_ctx,
+                    self.state.canvas_size_group(),
+                    SizeGroup {
+                        width: resolution.width,
+                        height: resolution.height,
+                        mip_levels: 1,
+                        array_layers: 1,
+                    },
+                );
 
+                self.state.resize_canvas(graph.resources_mut());
+            }
+
+            // Notify canvas size group always
             graph.update_size_group(
                 &mut self.rg_ctx,
-                self.state.canvas_size_group(),
+                self.state.surface_size_group(),
                 SizeGroup {
                     width: resolution.width,
                     height: resolution.height,
@@ -361,8 +459,6 @@ impl Renderer {
                     array_layers: 1,
                 },
             );
-
-            self.state.resize_canvas(graph.resources_mut());
         }
 
         // Reset imgui input state
@@ -371,6 +467,33 @@ impl Renderer {
         io.mouse_down[0] = false;
         io.mouse_down[1] = false;
         io.mouse_down[2] = false;
+
+        io.keys_down[Key::Tab as usize] = false;
+        io.keys_down[Key::Right as usize] = false;
+        io.keys_down[Key::Left as usize] = false;
+        io.keys_down[Key::Up as usize] = false;
+        io.keys_down[Key::Down as usize] = false;
+        io.keys_down[Key::PageUp as usize] = false;
+        io.keys_down[Key::PageDown as usize] = false;
+        io.keys_down[Key::Home as usize] = false;
+        io.keys_down[Key::End as usize] = false;
+        io.keys_down[Key::Insert as usize] = false;
+        io.keys_down[Key::Delete as usize] = false;
+        io.keys_down[Key::Back as usize] = false;
+        io.keys_down[Key::Space as usize] = false;
+        io.keys_down[Key::Return as usize] = false;
+        io.keys_down[Key::Escape as usize] = false;
+        io.keys_down[Key::NumEnter as usize] = false;
+        io.keys_down[Key::A as usize] = false;
+        io.keys_down[Key::C as usize] = false;
+        io.keys_down[Key::V as usize] = false;
+        io.keys_down[Key::X as usize] = false;
+        io.keys_down[Key::Y as usize] = false;
+        io.keys_down[Key::Z as usize] = false;
+
+        io.key_shift = false;
+        io.key_ctrl = false;
+        io.key_alt = false;
     }
 }
 

@@ -14,6 +14,13 @@ pub struct Handle<T: Asset> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+/// A handle to a generic asset. Useful for when you need to keep an asset alive but don't know
+/// it's type.
+pub struct AnyHandle {
+    raw: RawHandle,
+    escaper: Arc<HandleEscaper>,
+}
+
 pub struct HandleEscaper {
     assets: Assets,
     id: u32,
@@ -69,6 +76,15 @@ impl<T: Asset> Clone for Handle<T> {
     }
 }
 
+impl Clone for AnyHandle {
+    fn clone(&self) -> Self {
+        AnyHandle {
+            raw: self.raw,
+            escaper: self.escaper.clone(),
+        }
+    }
+}
+
 impl<T: Asset> Hash for Handle<T> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -85,10 +101,20 @@ impl<T: Asset> PartialEq for Handle<T> {
 
 impl<T: Asset> Eq for Handle<T> {}
 
+impl<T: Asset> Into<AnyHandle> for Handle<T> {
+    fn into(self) -> AnyHandle {
+        AnyHandle {
+            raw: self.raw,
+            escaper: self.escaper,
+        }
+    }
+}
+
 impl Drop for HandleEscaper {
     #[inline]
     fn drop(&mut self) {
-        let asset_data = &self.assets.0.assets[self.id as usize];
+        let guard = self.assets.0.assets.guard();
+        let asset_data = self.assets.0.assets.get(&self.id, &guard).unwrap();
         let mut asset = asset_data.asset.write().unwrap();
         if asset_data.decrement_handle_counter() {
             *asset = None;

@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
-
 use crate::prelude::AssetLoader;
+use std::path::{Path, PathBuf};
 
 pub type AssetName = Path;
 
@@ -13,4 +12,8 @@ pub trait Asset: Send {
 
     /// Loader used for this asset type.
     type Loader: AssetLoader + 'static;
+
+    /// GUI interface for modifying this asset.
+    #[cfg(feature = "editor")]
+    fn gui(&mut self, ui: &imgui::Ui, assets: &crate::manager::Assets) {}
 }

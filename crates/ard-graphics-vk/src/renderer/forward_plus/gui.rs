@@ -20,7 +20,7 @@ pub(crate) struct GuiRender {
     font_image: Image,
     font_view: vk::ImageView,
     font_pool: DescriptorPool,
-    font_set: vk::DescriptorSet,
+    sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
     font_sampler: vk::Sampler,
     gui_pipeline_layout: vk::PipelineLayout,
     gui_pipeline: vk::Pipeline,
@@ -81,12 +81,12 @@ impl GuiRender {
         // Upload font texture
         let (font_image, font_view) = {
             let mut fonts = debug_gui.context.fonts();
-            let font_atlas = fonts.build_alpha8_texture();
+            let font_atlas = fonts.build_rgba32_texture();
 
             let ret = ctx.create_image(
                 font_atlas.data,
                 (font_atlas.width, font_atlas.height, 1),
-                vk::Format::R8_UNORM,
+                vk::Format::R8G8B8A8_UNORM,
                 vk::ImageUsageFlags::SAMPLED,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
@@ -124,35 +124,46 @@ impl GuiRender {
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT)
                     .build(),
+                // Scene view
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(1)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                    .build(),
             ];
 
             let layout_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
                 .bindings(&bindings)
                 .build();
 
-            DescriptorPool::new(ctx, &layout_create_info, 1)
+            DescriptorPool::new(ctx, &layout_create_info, FRAMES_IN_FLIGHT)
         };
 
-        let font_set = {
-            let set = font_pool.allocate();
+        let sets = {
+            let mut sets = [vk::DescriptorSet::default(); FRAMES_IN_FLIGHT];
 
-            let img = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(font_view)
-                .sampler(font_sampler)
-                .build()];
+            for set in &mut sets {
+                *set = font_pool.allocate();
 
-            let write = [vk::WriteDescriptorSet::builder()
-                .dst_array_element(0)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .dst_set(set)
-                .image_info(&img)
-                .build()];
+                let img = [vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(font_view)
+                    .sampler(font_sampler)
+                    .build()];
 
-            ctx.0.device.update_descriptor_sets(&write, &[]);
+                let write = [vk::WriteDescriptorSet::builder()
+                    .dst_array_element(0)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .dst_set(*set)
+                    .image_info(&img)
+                    .build()];
 
-            set
+                ctx.0.device.update_descriptor_sets(&write, &[]);
+            }
+
+            sets
         };
 
         let gui_pipeline_layout = {
@@ -389,7 +400,7 @@ impl GuiRender {
                 gui_pipeline,
                 render_data,
                 font_sampler,
-                font_set,
+                sets,
             },
             debug_gui,
         )
@@ -406,12 +417,33 @@ impl GuiRender {
         let render_data = &mut state.gui.render_data[frame];
         let device = &state.ctx.0.device;
 
-        let canvas_size = resources.get_size_group(state.canvas_size_group);
+        let canvas_size = resources.get_size_group(state.surface_size_group);
+
+        // Update scene view image
+        unsafe {
+            let set = state.gui.sets[frame];
+
+            let img = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(resources.get_image(state.scene_image).unwrap().1[frame].view)
+                .sampler(state.gui.font_sampler)
+                .build()];
+
+            let write = [vk::WriteDescriptorSet::builder()
+                .dst_array_element(0)
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .dst_set(set)
+                .image_info(&img)
+                .build()];
+
+            device.update_descriptor_sets(&write, &[]);
+        }
 
         // Set up state
         unsafe {
             let sets = [
-                state.gui.font_set,
+                state.gui.sets[frame],
                 state.factory.0.texture_sets.lock().unwrap().get_set(frame),
             ];
 
@@ -480,7 +512,7 @@ impl GuiRender {
                         *commands,
                         state.gui.gui_pipeline_layout,
                         vk::ShaderStageFlags::ALL_GRAPHICS,
-                        std::mem::size_of::<Mat4>() as u32,
+                        std::mem::size_of::<Vec2>() as u32 * 2,
                         bytemuck::cast_slice(&id),
                     );
                 }

@@ -45,84 +45,14 @@ const DEFAULT_SAMPLER: SamplerDescriptor = SamplerDescriptor {
 
 impl TextureSets {
     pub unsafe fn new(ctx: &GraphicsContext, anisotropy: Option<AnisotropyLevel>) -> Self {
-        let error_image = {
-            let create_info = ImageCreateInfo {
-                ctx: ctx.clone(),
-                ty: vk::ImageType::TYPE_2D,
-                width: 1,
-                height: 1,
-                depth: 1,
-                memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
-                image_usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
-                mip_levels: 1,
-                array_layers: 1,
-                format: vk::Format::R8G8B8A8_UNORM,
-                flags: vk::ImageCreateFlags::empty(),
-            };
-
-            Image::new(&create_info)
-        };
-
-        let error_image_view = {
-            let create_info = vk::ImageViewCreateInfo::builder()
-                .image(error_image.image())
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
-                .build();
-
-            ctx.0
-                .device
-                .create_image_view(&create_info, None)
-                .expect("unable to create error image view")
-        };
-
         let magenta = [255u8, 0, 255, 255];
-        let staging_buffer = Buffer::new_staging_buffer(ctx, &magenta);
-
-        // Upload staging buffer to error image
-        let (command_pool, commands) = ctx
-            .0
-            .create_single_use_pool(ctx.0.queue_family_indices.transfer);
-        super::staging::transition_image_layout(
-            &ctx.0.device,
-            commands,
-            &error_image,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            0,
-            1,
-            0,
-            1,
-        );
-        super::staging::buffer_to_image_copy(
-            &ctx.0.device,
-            commands,
-            &error_image,
-            &staging_buffer,
-            0,
-            0,
-            1,
-        );
-        super::staging::transition_image_layout(
-            &ctx.0.device,
-            commands,
-            &error_image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        let (error_image, error_image_view) = ctx.create_image(
+            &magenta,
+            (1, 1, 1),
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageUsageFlags::SAMPLED,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            0,
-            1,
-            0,
-            1,
         );
-        ctx.0
-            .submit_single_use_pool(ctx.0.transfer, command_pool, commands);
 
         let pool = {
             let bindings = [vk::DescriptorSetLayoutBinding::builder()
@@ -328,10 +258,11 @@ impl TextureSets {
 
     /// Binds ready textures to the main set for the given frame and unbinds destroyed textures.
     pub unsafe fn update_sets(&mut self, frame: usize, textures: &ResourceContainer<TextureInner>) {
-        let mut img_info =
-            Vec::with_capacity(self.new_textures[frame].len() + self.dropped_textures[frame].len());
-        let mut writes =
-            Vec::with_capacity(self.new_textures[frame].len() + self.dropped_textures[frame].len());
+        let cap = self.new_textures[frame].len()
+            + self.mip_updates[frame].len()
+            + self.dropped_textures[frame].len();
+        let mut img_info = Vec::with_capacity(cap);
+        let mut writes = Vec::with_capacity(cap);
 
         while let Some(id) = self.new_textures[frame].pop() {
             if let Some(tex) = textures.get(id) {

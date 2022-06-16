@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 ard-core = { version = "0.1", path = "../ard-core" }
+ard-log = { version = "0.1", path = "../ard-log" }
 ard-ecs = { version = "0.1", path = "../ard-ecs" }
 async-trait = "0.1"
 thiserror = "1"
@@ -19,3 +20,8 @@ crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
 flurry = "0.4"
 fxhash = "0.2"
+imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://github.com/imgui-rs/imgui-rs", optional = true }
+
+[features]
+default = []
+editor = [ "dep:imgui" ]

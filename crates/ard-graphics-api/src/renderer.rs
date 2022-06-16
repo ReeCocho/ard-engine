@@ -36,6 +36,9 @@ pub struct StaticRenderable(u32);
 /// Renderer system settings.
 #[derive(Debug, Resource)]
 pub struct RendererSettings {
+    /// Flag to enable drawing the game scene. For games, this should be `true` all the time. This
+    /// is useful for things like editors where you only want a GUI.
+    pub render_scene: bool,
     /// Time between frame draws. `None` indicates no render limiting.
     pub render_time: Option<Duration>,
     /// Width and height of the renderer image. `None` indicates the dimensions should match that
@@ -106,6 +109,7 @@ pub trait DebugDrawingApi<B: Backend>: Resource + Send + Sync {
 impl Default for RendererSettings {
     fn default() -> Self {
         RendererSettings {
+            render_scene: true,
             render_time: Some(Duration::from_secs_f32(1.0 / 60.0)),
             canvas_size: None,
             anisotropy_level: None,

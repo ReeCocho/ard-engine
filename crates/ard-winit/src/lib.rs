@@ -5,7 +5,7 @@ pub mod prelude {
     pub use crate::*;
 }
 
-use std::time::Instant;
+use std::{cmp::Ordering, time::Instant};
 
 use ard_core::prelude::*;
 use ard_input::{InputState, Key, MouseButton};
@@ -14,7 +14,7 @@ use ard_window::prelude::*;
 use prelude::WinitWindows;
 use winit::{
     dpi::{LogicalPosition, Position},
-    event::{Event, WindowEvent},
+    event::{Event, TouchPhase, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
 };
 
@@ -84,6 +84,28 @@ fn winit_runner(mut app: App) {
                             }
                         }
                     }
+                    WindowEvent::MouseWheel {
+                        delta,
+                        phase: TouchPhase::Moved,
+                        ..
+                    } => match delta {
+                        winit::event::MouseScrollDelta::LineDelta(h, v) => {
+                            input.signal_scroll((h as f64, v as f64));
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            let pos = pos.to_logical::<f64>(window.scale_factor());
+                            match pos.x.partial_cmp(&0.0) {
+                                Some(Ordering::Greater) => input.signal_scroll((1.0, 0.0)),
+                                Some(Ordering::Less) => input.signal_scroll((-1.0, 0.0)),
+                                _ => (),
+                            }
+                            match pos.y.partial_cmp(&0.0) {
+                                Some(Ordering::Greater) => input.signal_scroll((0.0, 1.0)),
+                                Some(Ordering::Less) => input.signal_scroll((0.0, -1.0)),
+                                _ => (),
+                            }
+                        }
+                    },
                     WindowEvent::Resized(dims) => {
                         dispatcher.submit(WindowResized {
                             id: ard_id,
@@ -91,6 +113,13 @@ fn winit_runner(mut app: App) {
                             height: dims.height,
                         });
                         window.update_actual_size_from_backend(dims.width, dims.height)
+                    }
+                    WindowEvent::ReceivedCharacter(ch) => {
+                        // Exclude the backspace key ('\u{7f}'). Otherwise we will insert this char and then
+                        // delete it.
+                        if ch != '\u{7f}' {
+                            input.signal_character(ch);
+                        }
                     }
                     _ => {}
                 }
@@ -315,6 +344,7 @@ fn winit_to_ard_key(key: winit::event::VirtualKeyCode) -> Option<Key> {
         winit::event::VirtualKeyCode::NumpadDecimal => Key::NumDecimal,
         winit::event::VirtualKeyCode::NumpadMultiply => Key::NumMultiply,
         winit::event::VirtualKeyCode::NumpadSubtract => Key::NumSubtract,
+        winit::event::VirtualKeyCode::NumpadEnter => Key::NumEnter,
         winit::event::VirtualKeyCode::Apostrophe => Key::Apostrophe,
         winit::event::VirtualKeyCode::Backslash => Key::Backslash,
         winit::event::VirtualKeyCode::Comma => Key::Comma,

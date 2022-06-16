@@ -131,6 +131,11 @@ fn main() {
         Path::new("./src/renderer/gui.frag.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/renderer/composite.frag"),
+        Path::new("./src/renderer/composite.frag.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

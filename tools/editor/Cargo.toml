@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
-ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window" ] }
+futures = "0.3"
+imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://github.com/imgui-rs/imgui-rs" }
+ard-engine = { path = "../../", version = "0.1", features = [ "editor", "input", "assets", "graphics_assets", "graphics_vk", "window" ] }

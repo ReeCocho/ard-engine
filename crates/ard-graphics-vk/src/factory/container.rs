@@ -44,8 +44,14 @@ impl<T> ResourceContainer<T> {
     }
 
     /// Drops pending resources for the provided frame and puts newly dropped resources in the
-    /// container for next time. Runs a closure for each dropped resource.
-    pub fn drop_pending(&mut self, frame: usize, on_drop: &mut impl FnMut(u32, &mut T)) {
+    /// container for next time. Runs a closure for each dropped resource when they are dropped
+    /// and also when they are first found.
+    pub fn drop_pending(
+        &mut self,
+        frame: usize,
+        on_drop: &mut impl FnMut(u32, &mut T),
+        on_found: &mut impl FnMut(u32, &mut T),
+    ) {
         // Drop everything that needs dropping now
         for id in self.pending_drop[frame][0].drain(..) {
             on_drop(
@@ -63,6 +69,12 @@ impl<T> ResourceContainer<T> {
 
         // Move things that are just now being dropped to the "later" spot
         for id in self.receiver.try_iter() {
+            on_found(
+                id,
+                self.resources[id as usize]
+                    .as_mut()
+                    .expect("invalid resource id"),
+            );
             self.pending_drop[frame][1].push(id);
         }
     }

@@ -5,8 +5,10 @@ use ard_ecs::prelude::*;
 pub struct InputState {
     mouse_delta: (f64, f64),
     mouse_position: (f64, f64),
+    mouse_scroll: (f64, f64),
     key_state: [KeyState; u8::MAX as usize],
     mouse_state: [MouseState; u8::MAX as usize],
+    input_string: String,
 }
 
 #[repr(u8)]
@@ -121,6 +123,7 @@ pub enum Key {
     NumSubtract,
     NumAdd,
     NumDecimal,
+    NumEnter,
     LBracket,
     RBracket,
     Backslash,
@@ -159,8 +162,10 @@ impl Default for InputState {
         Self {
             mouse_delta: (0.0, 0.0),
             mouse_position: (0.0, 0.0),
+            mouse_scroll: (0.0, 0.0),
             key_state: [KeyState::default(); u8::MAX as usize],
             mouse_state: [MouseState::default(); u8::MAX as usize],
+            input_string: String::default(),
         }
     }
 }
@@ -170,10 +175,20 @@ impl InputState {
         Self::default()
     }
 
+    #[inline]
+    pub fn input_string(&self) -> &str {
+        &self.input_string
+    }
+
     /// Current mouse position in screen coordinates.
     #[inline]
     pub fn mouse_pos(&self) -> (f64, f64) {
         self.mouse_position
+    }
+
+    #[inline]
+    pub fn mouse_scroll(&self) -> (f64, f64) {
+        self.mouse_scroll
     }
 
     /// Relative position of the mouse from last frame.
@@ -235,6 +250,12 @@ impl InputState {
         self.mouse_delta.1 += delta.1;
     }
 
+    #[inline]
+    pub fn signal_scroll(&mut self, delta: (f64, f64)) {
+        self.mouse_scroll.0 += delta.0;
+        self.mouse_scroll.1 += delta.1;
+    }
+
     /// Signal that a key was just pressed down.
     #[inline]
     pub fn signal_key_down(&mut self, key: Key) {
@@ -273,10 +294,17 @@ impl InputState {
         self.mouse_state[button as usize].held = false;
     }
 
+    #[inline]
+    pub fn signal_character(&mut self, c: char) {
+        self.input_string.push(c);
+    }
+
     /// Indicates that input state should be reset for the next tick.
     #[inline]
     pub fn flush(&mut self) {
         self.mouse_delta = (0.0, 0.0);
+        self.mouse_scroll = (0.0, 0.0);
+        self.input_string.clear();
 
         for key in &mut self.key_state {
             key.down = false;

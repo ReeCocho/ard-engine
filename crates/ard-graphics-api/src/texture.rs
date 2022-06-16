@@ -30,4 +30,7 @@ pub enum MipType {
     Upload,
 }
 
-pub trait TextureApi: Clone + Send + Sync {}
+pub trait TextureApi: Clone + Send + Sync {
+    /// Gets an ID for the texture to use in the debug gui.
+    fn ui_id(&self) -> imgui::TextureId;
+}

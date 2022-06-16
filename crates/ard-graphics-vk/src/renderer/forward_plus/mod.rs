@@ -1,32 +1,24 @@
+pub mod composite;
 pub mod gui;
 pub mod mesh_passes;
 
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 use crate::{
-    alloc::WriteStorageBuffer,
-    camera::{
-        Camera, CameraInner, CameraUbo, CubeMapInner, DebugDrawing, DebugGui, Lighting,
-        PipelineType, RawPointLight, Surface, TextureInner,
-    },
+    camera::{CameraUbo, CubeMapInner, DebugDrawing, DebugGui, Lighting, PipelineType, Surface},
     context::GraphicsContext,
-    factory::descriptors::DescriptorPool,
     factory::Factory,
-    mesh::VertexLayoutKey,
     renderer::StaticGeometry,
-    shader_constants::{
-        FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_POINT_LIGHTS_PER_FROXEL, MAX_SHADOW_CASCADES,
-    },
+    shader_constants::{FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES},
     VkBackend,
 };
 
-use ard_ecs::prelude::{ComponentQuery, Queries, Query, Read};
+use ard_ecs::prelude::{ComponentQuery, Queries, Read};
 use ard_graphics_api::prelude::*;
-use ard_math::{Mat4, Vec2, Vec3, Vec4};
+use ard_math::{Mat4, Vec2};
 use ard_render_graph::{
-    buffer::{BufferAccessDescriptor, BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraph, RenderGraphBuilder, RenderGraphResources},
-    image::{ImageDescriptor, ImageId, SizeGroup, SizeGroupId},
+    image::{ImageAccessDecriptor, ImageDescriptor, ImageId, SizeGroup, SizeGroupId},
     pass::{ColorAttachmentDescriptor, DepthStencilAttachmentDescriptor, PassDescriptor, PassId},
     AccessType, LoadOp, Operations,
 };
@@ -34,6 +26,7 @@ use ash::vk;
 use bytemuck::{Pod, Zeroable};
 
 use self::{
+    composite::Composite,
     gui::GuiRender,
     mesh_passes::{
         mesh_pass::{ColorRendering, MeshPassCamera, MeshPassCreateInfo},
@@ -41,19 +34,10 @@ use self::{
     },
 };
 
-use super::{
-    depth_pyramid::{DepthPyramid, DepthPyramidGenerator},
-    graph::{GraphBuffer, RenderGraphContext, RenderPass},
-};
+use super::graph::{RenderGraphContext, RenderPass};
 
 /// Packs together the id's of a pipeline, material, and mesh. Used to sort draw calls.
 pub(crate) type DrawKey = u64;
-
-pub(crate) const DEFAULT_INFO_BUFFER_CAP: usize = 1;
-pub(crate) const DEFAULT_OBJECT_ID_BUFFER_CAP: usize = 1;
-pub(crate) const DEFAULT_DRAW_CALL_CAP: usize = 1;
-pub(crate) const DEFAULT_POINT_LIGHT_CAP: usize = 1;
-pub(crate) const SETS_PER_POOL: usize = FRAMES_IN_FLIGHT;
 
 /// Forward plus internals for render graph.
 pub(crate) struct ForwardPlus {
@@ -64,11 +48,18 @@ pub(crate) struct ForwardPlus {
     debug_drawing: DebugDrawing,
     mesh_passes: MeshPasses,
     gui: GuiRender,
+    composite: Composite,
     shadow_passes: [MeshPassId; MAX_SHADOW_CASCADES],
     passes: Passes,
+    /// Size group used by images that the game is rendered to. This may not be the same size as
+    /// the surface.
     canvas_size_group: SizeGroupId,
-    /// Final color image that should be presented.
-    color_image: ImageId,
+    /// Size group that always matches the surface size.
+    surface_size_group: SizeGroupId,
+    /// Imagine that contains the game scene view.
+    scene_image: ImageId,
+    /// Final composite imagine to draw to the screen.
+    final_image: ImageId,
     frame_data: Vec<FrameData>,
     surface_image_idx: usize,
     work_group_size: u32,
@@ -135,8 +126,6 @@ pub(crate) struct InputObjectId {
 unsafe impl Zeroable for InputObjectId {}
 unsafe impl Pod for InputObjectId {}
 
-pub(crate) type OutputObjectId = u32;
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct ObjectInfo {
@@ -148,20 +137,6 @@ pub(crate) struct ObjectInfo {
 
 unsafe impl Zeroable for ObjectInfo {}
 unsafe impl Pod for ObjectInfo {}
-
-/// The render area is partitioned into a grid. Each grid contains a list of point lights that
-/// influence it. Shaders determine which grid they are in to consider only the lights that
-/// influence their current fragment.
-#[repr(C)]
-pub(crate) struct PointLightTable {
-    /// NOTE: Light counts must be a signed integer because GLSL has no `atomicSub`. So, we must
-    /// simulate it by adding a negative number which means the values must be signed.
-    light_count: [i32; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
-    light_indices: [u32; FROXEL_TABLE_DIMS.0
-        * FROXEL_TABLE_DIMS.1
-        * FROXEL_TABLE_DIMS.2
-        * MAX_POINT_LIGHTS_PER_FROXEL],
-}
 
 /// Container for Vulkan render passes used in the forward plus renderer.
 #[derive(Copy, Clone)]
@@ -188,8 +163,10 @@ impl ForwardPlus {
         lighting: &Lighting,
         anisotropy_level: Option<AnisotropyLevel>,
         canvas_size: vk::Extent2D,
+        draw_scene: bool,
     ) -> (GameRendererGraphRef, Factory, DebugDrawing, DebugGui, Self) {
         // Create the graph
+        let surface_format = surface.0.lock().unwrap().format.format;
         let color_format = vk::Format::R8G8B8A8_UNORM;
         let depth_format =
             pick_depth_format(ctx).expect("unable to find a compatible depth format");
@@ -202,6 +179,17 @@ impl ForwardPlus {
             array_layers: 1,
             mip_levels: 1,
         });
+
+        let surface_size_group = {
+            let surface = surface.0.lock().unwrap();
+
+            rg_builder.add_size_group(SizeGroup {
+                width: surface.resolution.width,
+                height: surface.resolution.height,
+                array_layers: 1,
+                mip_levels: 1,
+            })
+        };
 
         let mut shadow_size_groups = [SizeGroupId::default(); MAX_SHADOW_CASCADES];
         for i in 0..MAX_SHADOW_CASCADES {
@@ -226,9 +214,14 @@ impl ForwardPlus {
             size_group: canvas_size_group,
         });
 
-        let color_image = rg_builder.add_image(ImageDescriptor {
+        let scene_image = rg_builder.add_image(ImageDescriptor {
             format: color_format,
             size_group: canvas_size_group,
+        });
+
+        let final_image = rg_builder.add_image(ImageDescriptor {
+            format: surface_format,
+            size_group: surface_size_group,
         });
 
         let _begin_recording = rg_builder.add_pass(PassDescriptor::CPUPass {
@@ -279,7 +272,7 @@ impl ForwardPlus {
             },
             color_image: Some(ColorRendering {
                 color_image: ColorAttachmentDescriptor {
-                    image: color_image,
+                    image: scene_image,
                     ops: Operations {
                         load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
                         store: true,
@@ -290,12 +283,31 @@ impl ForwardPlus {
 
         let mut mesh_passes = mp_builder.build();
 
+        // Copies the scene view onto the final image
+        let composite = rg_builder.add_pass(PassDescriptor::RenderPass {
+            toggleable: false,
+            images: vec![ImageAccessDecriptor {
+                image: scene_image,
+                access: AccessType::Read,
+            }],
+            color_attachments: vec![ColorAttachmentDescriptor {
+                image: final_image,
+                ops: Operations {
+                    load: LoadOp::Clear([0.0, 0.0, 0.0, 0.0]),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+            buffers: Vec::default(),
+            code: Composite::compose,
+        });
+
         // Render pass for GUI rendering
         let gui_pass = rg_builder.add_pass(PassDescriptor::RenderPass {
             toggleable: false,
             images: Vec::default(),
             color_attachments: vec![ColorAttachmentDescriptor {
-                image: color_image,
+                image: final_image,
                 ops: Operations {
                     load: LoadOp::Load,
                     store: true,
@@ -366,9 +378,19 @@ impl ForwardPlus {
             },
         );
 
+        // Create composite system
+        let composite = Composite::new(
+            ctx,
+            match graph.lock().unwrap().get_pass(composite) {
+                RenderPass::Graphics { pass, .. } => *pass,
+                _ => panic!("incorrect pass type for composite pass"),
+            },
+            draw_scene,
+        );
+
         let mut frame_data = Vec::with_capacity(FRAMES_IN_FLIGHT);
         for _ in 0..FRAMES_IN_FLIGHT {
-            frame_data.push(FrameData::new(ctx, (canvas_size.width, canvas_size.height)));
+            frame_data.push(FrameData::new(ctx));
         }
 
         // Transition the highz image from undefined to transfer src for the culling pass in the first frame
@@ -381,14 +403,17 @@ impl ForwardPlus {
             factory: factory.clone(),
             debug_drawing: debug_drawing.clone(),
             gui,
+            composite,
             passes,
             canvas_size_group,
+            surface_size_group,
             frame_data,
             surface_image_idx: 0,
             work_group_size: ctx.0.properties.limits.max_compute_work_group_size[0],
             mesh_passes,
             shadow_passes,
-            color_image,
+            scene_image,
+            final_image,
         };
 
         (graph, factory, debug_drawing, debug_gui, forward_plus)
@@ -397,6 +422,11 @@ impl ForwardPlus {
     #[inline]
     pub fn canvas_size_group(&self) -> SizeGroupId {
         self.canvas_size_group
+    }
+
+    #[inline]
+    pub fn surface_size_group(&self) -> SizeGroupId {
+        self.surface_size_group
     }
 
     /// Wait for rendering to complete on the given frame.
@@ -423,6 +453,11 @@ impl ForwardPlus {
     #[inline]
     pub fn frames(&self) -> &[FrameData] {
         &self.frame_data
+    }
+
+    #[inline]
+    pub fn set_scene_render(&mut self, enabled: bool) {
+        self.composite.render_scene = enabled;
     }
 
     #[inline]
@@ -574,7 +609,7 @@ impl ForwardPlus {
 }
 
 impl FrameData {
-    unsafe fn new(ctx: &GraphicsContext, canvas_size: (u32, u32)) -> Self {
+    unsafe fn new(ctx: &GraphicsContext) -> Self {
         let create_info = vk::FenceCreateInfo::builder()
             .flags(vk::FenceCreateFlags::SIGNALED)
             .build();
@@ -667,7 +702,7 @@ fn surface_blit(
     }
 
     // Perform blit
-    let canvas_size_group = resources.get_size_group(state.canvas_size_group);
+    let surface_size_group = resources.get_size_group(state.surface_size_group);
 
     let region = [vk::ImageBlit::builder()
         .src_subresource(
@@ -681,8 +716,8 @@ fn surface_blit(
         .src_offsets([
             vk::Offset3D { x: 0, y: 0, z: 0 },
             vk::Offset3D {
-                x: canvas_size_group.width as i32,
-                y: canvas_size_group.height as i32,
+                x: surface_size_group.width as i32,
+                y: surface_size_group.height as i32,
                 z: 1,
             },
         ])
@@ -707,7 +742,7 @@ fn surface_blit(
     unsafe {
         device.cmd_blit_image(
             *commands,
-            resources.get_image(state.color_image).unwrap().1[frame_idx]
+            resources.get_image(state.final_image).unwrap().1[frame_idx]
                 .image
                 .image(),
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -805,9 +840,3 @@ pub(crate) fn pick_depth_format(ctx: &GraphicsContext) -> Option<vk::Format> {
 
     None
 }
-
-const DRAW_GEN_CODE: &[u8] = include_bytes!("../draw_gen.comp.spv");
-
-const POINT_LIGHT_GEN_CODE: &[u8] = include_bytes!("../point_light_gen.comp.spv");
-
-const CLUSTER_GEN_CODE: &[u8] = include_bytes!("../cluster_gen.comp.spv");

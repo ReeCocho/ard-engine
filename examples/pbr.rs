@@ -24,10 +24,14 @@ impl BoundingBoxSystem {
         pre_render: PreRender,
         _: Commands,
         _: Queries<()>,
-        res: Res<(Read<Factory>,)>,
+        res: Res<(Read<Factory>, Write<DebugGui>)>,
     ) {
         let res = res.get();
         let factory = res.0.unwrap();
+        let mut gui = res.1.unwrap();
+
+        let mut opened = true;
+        gui.ui().show_demo_window(&mut opened);
 
         self.timer += pre_render.0.as_secs_f32();
 
@@ -56,8 +60,7 @@ struct CameraHolder {
     _camera: Camera,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     AppBuilder::new(ard_log::LevelFilter::Info)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {

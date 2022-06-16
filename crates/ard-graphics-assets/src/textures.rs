@@ -20,6 +20,7 @@ pub struct TextureLoader {
 struct TextureMeta {
     /// Path to the actual texture file. Relative to the package.
     pub file: AssetNameBuf,
+    pub format: TextureFormat,
 }
 
 impl Asset for TextureAsset {
@@ -84,8 +85,14 @@ impl AssetLoader for TextureLoader {
         };
 
         // Turn into RGBA8 for upload to GPU
-        let format = graphics::TextureFormat::R8G8B8A8Srgb;
-        let raw = image.to_rgba8();
+        let raw = match meta.format {
+            TextureFormat::R8G8B8A8Unorm | TextureFormat::R8G8B8A8Srgb => {
+                image::DynamicImage::from(image.to_rgba8())
+            }
+            TextureFormat::R16G16B16A16Unorm => image::DynamicImage::from(image.to_rgba16()),
+            TextureFormat::R32G32B32A32Sfloat => image::DynamicImage::from(image.to_rgba32f()),
+            _ => todo!(),
+        };
 
         // let (raw, format, converted) = match &image {
         //     image::DynamicImage::ImageRgb8(_) => {
@@ -102,7 +109,7 @@ impl AssetLoader for TextureLoader {
         let create_info = graphics::TextureCreateInfo {
             width: image.width(),
             height: image.height(),
-            format,
+            format: meta.format,
             data: raw.as_bytes(),
             mip_type: graphics::MipType::Generate,
             mip_count: 1,

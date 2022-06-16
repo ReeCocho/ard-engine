@@ -107,14 +107,19 @@ impl TextureInner {
     }
 }
 
-impl TextureApi for Texture {}
+impl TextureApi for Texture {
+    #[inline]
+    fn ui_id(&self) -> imgui::TextureId {
+        imgui::TextureId::new(self.id as usize)
+    }
+}
 
 impl TextureInner {
     /// Creates a new image view based on the number of loaded mips and return the old view.
     pub unsafe fn create_new_view(&mut self, device: &ash::Device) -> vk::ImageView {
         // Determine how many consecutive mips are ready, starting from the least
         // detailed level
-        let mut loaded_mips = self.loaded_mips << (u32::BITS - self.mip_levels);
+        let loaded_mips = self.loaded_mips << (u32::BITS - self.mip_levels);
         let lz = loaded_mips.leading_zeros();
         let loaded_mips = (loaded_mips << lz).leading_ones();
         let base_mip_level = self.mip_levels - (lz + loaded_mips);
