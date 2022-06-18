@@ -1,21 +1,17 @@
-use core::num;
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::path::PathBuf;
 
-use ard_engine::assets::prelude::{AnyHandle, Asset, AssetName, AssetNameBuf, Assets};
+use ard_engine::assets::prelude::{AnyHandle, Asset, AssetName, AssetNameBuf, Assets, Handle};
 use ard_engine::ecs::id_map::TypeIdMap;
 use ard_engine::ecs::prelude::*;
-use ard_engine::graphics::prelude::Texture;
 use ard_engine::graphics_assets::prelude::TextureAsset;
-use futures::FutureExt;
 use std::thread::JoinHandle;
+
+use super::asset_meta::AssetMeta;
 
 pub struct Inspector {
     /// Current item being inspected.
     item: Option<ActiveInspectorItem>,
-    /// Maps the type ids of assets to the function that draws their inspector.
-    displays:
-        TypeIdMap<fn(&imgui::Ui, &AssetName, &mut Assets) -> (Option<JoinHandle<()>>, AnyHandle)>,
 }
 
 /// Event that signals a new item was selected for inspection.
@@ -25,44 +21,77 @@ pub enum InspectorItem {
 }
 
 enum ActiveInspectorItem {
-    Asset {
-        // The actual asset to inspect
+    Asset(AssetInspectorItem),
+}
+
+enum AssetInspectorItem {
+    /// The asset did not have an associated meta file, and it needs to be created.
+    CreatingMeta {
         asset: AssetNameBuf,
-        /// Handle to the asset.
-        handle: Option<AnyHandle>,
-        // An error has occured during load of an asset.
-        error_loading: bool,
-        // An asynconronous task that indicates when the asset is done loading.
+        asset_meta: AssetNameBuf,
         wait_for_load: Option<JoinHandle<()>>,
     },
+    /// The asset has a meta file and it is being loaded.
+    LoadingMeta {
+        asset: AssetNameBuf,
+        handle: Handle<AssetMeta>,
+        wait_for_load: Option<JoinHandle<()>>,
+    },
+    Loaded {
+        asset: AssetNameBuf,
+        handle: Handle<AssetMeta>,
+    },
+    /// There was an error loading/creating the meta file.
+    Error,
 }
 
 impl Inspector {
     pub fn new() -> Self {
-        let mut displays = TypeIdMap::<
-            fn(&imgui::Ui, &AssetName, &mut Assets) -> (Option<JoinHandle<()>>, AnyHandle),
-        >::default();
-        displays.insert(
-            TypeId::of::<TextureAsset>(),
-            draw_asset_inspector::<TextureAsset>,
-        );
-
-        Self {
-            item: None,
-            displays,
-        }
+        Self { item: None }
     }
 
-    pub fn set_inspected_item(&mut self, item: Option<InspectorItem>) {
+    pub fn set_inspected_item(&mut self, assets: &Assets, item: Option<InspectorItem>) {
         match item {
             Some(item) => match item {
                 InspectorItem::Asset(asset) => {
-                    self.item = Some(ActiveInspectorItem::Asset {
-                        asset,
-                        error_loading: false,
-                        handle: None,
-                        wait_for_load: None,
-                    })
+                    let meta_name = AssetMeta::make_meta_name(&asset);
+
+                    // Check if the meta file exists for the asset
+                    let mut path_to_meta = PathBuf::from("./assets/game/");
+                    path_to_meta.push(&meta_name);
+
+                    // The meta file exists. We must load it.
+                    if path_to_meta.exists() {
+                        let handle = assets.load::<AssetMeta>(&meta_name);
+
+                        let assets_cl = assets.clone();
+                        let handle_cl = handle.clone();
+
+                        self.item = Some(ActiveInspectorItem::Asset(
+                            AssetInspectorItem::LoadingMeta {
+                                asset,
+                                handle,
+                                wait_for_load: Some(std::thread::spawn(move || {
+                                    assets_cl.wait_for_load(&handle_cl);
+                                })),
+                            },
+                        ));
+                    }
+                    // Meta file doesn't exist. We must load the actual asset and generate it
+                    else {
+                        let assets_cl = assets.clone();
+                        let asset_cl = asset.clone();
+
+                        self.item = Some(ActiveInspectorItem::Asset(
+                            AssetInspectorItem::CreatingMeta {
+                                asset,
+                                asset_meta: meta_name,
+                                wait_for_load: Some(std::thread::spawn(move || {
+                                    AssetMeta::initialize_for(assets_cl, asset_cl)
+                                })),
+                            },
+                        ));
+                    }
                 }
             },
             None => self.item = None,
@@ -79,103 +108,96 @@ impl Inspector {
             };
 
             match item {
-                ActiveInspectorItem::Asset {
-                    asset,
-                    error_loading,
-                    handle,
-                    wait_for_load
-                } => {
-                    // If the asset doesn't exist, we deselect it and stop displaying
-                    if !assets.exists(asset) {
-                        self.item = None;
-                        return;
-                    }
-
-                    // Draw the header
-                    ui.text(asset.file_stem().unwrap_or_default().to_str().unwrap_or_default());
-                    ui.separator();
-
-                    // If there is an error loading, notify
-                    if *error_loading {
-                        ui.text("There was an error when trying to load the asset. Please check the logs.");
-                        return;
-                    }
-
-                    // If we are waiting for load, check if it's complete
-                    if let Some(waiting) = wait_for_load {
-                        ui.text("Loading...");
-                        ui.same_line();
-
-                        throbber(
-                            ui,
-                            8.0,
-                            4.0,
-                            8,
-                            2.0,
-                            style[imgui::StyleColor::Button]
-                        );
-
-                        // Check if we are finished waiting
-                        if waiting.is_finished() {
-                            *wait_for_load = None;
-
-                            // If the asset is still not loaded, there must have been an error
-                            if !assets.loaded(asset) {
-                                *error_loading = true;
-                                return;
+                ActiveInspectorItem::Asset(asset_item) => match asset_item {
+                    AssetInspectorItem::CreatingMeta { asset, asset_meta, wait_for_load } => {
+                        // Check if we've finished loading the meta asset
+                        let finished = match wait_for_load {
+                            Some(waiting) => waiting.is_finished(),
+                            None => {
+                                *asset_item = AssetInspectorItem::Error;
+                                return
                             }
-                        }
-                        else {
+                        };
+
+                        if !finished {
+                            ui.text("Loading...");
+                            ui.same_line();
+                            throbber(
+                                ui,
+                                8.0,
+                                4.0,
+                                8,
+                                1.0,
+                                style[imgui::StyleColor::Button]
+                            );
                             return;
                         }
-                    }
 
-                    // Determine what asset type we're dealing with
-                    match assets.ty_id(asset) {
-                        Some(id) => match self.displays.get(&id) {
-                            Some(display) => {
-                                let (needs_wait, new_handle) = display(ui, asset, assets);
-                                if let Some(needs_wait) = needs_wait {
-                                    *wait_for_load = Some(needs_wait);
-                                }
-                                *handle = Some(new_handle);
+                        // Check if the load was successful
+                        match wait_for_load.take().unwrap().join() {
+                            Ok(_) => {
+                                *asset_item = AssetInspectorItem::Loaded {
+                                    asset: asset.clone(),
+                                    handle: assets.get_handle::<AssetMeta>(asset_meta).unwrap()
+                                };
                             },
-                            None => ui.text("Unknown asset type."),
-                        },
-                        None => {
-                            ui.text("Unknown asset type.");
-                        },
-                    }
+                            Err(_) => {
+                                *asset_item = AssetInspectorItem::Error;
+                            },
+                        }
+                    },
+                    AssetInspectorItem::LoadingMeta { asset, handle, wait_for_load } => {
+                        // Check if we've finished loading the meta asset
+                        let finished = match wait_for_load {
+                            Some(waiting) => waiting.is_finished(),
+                            None => {
+                                *asset_item = AssetInspectorItem::Error;
+                                return
+                            }
+                        };
+
+                        if !finished {
+                            ui.text("Loading...");
+                            ui.same_line();
+                            throbber(
+                                ui,
+                                8.0,
+                                4.0,
+                                8,
+                                1.0,
+                                style[imgui::StyleColor::Button]
+                            );
+                            return;
+                        }
+
+                        // Check if the load was successful
+                        match wait_for_load.take().unwrap().join() {
+                            Ok(_) => {
+                                *asset_item = AssetInspectorItem::Loaded {
+                                    asset: asset.clone(),
+                                    handle: handle.clone()
+                                };
+                            },
+                            Err(_) => {
+                                *asset_item = AssetInspectorItem::Error;
+                            },
+                        }
+                    },
+                    AssetInspectorItem::Loaded { asset, handle } => {
+                        // Draw the header
+                        ui.text(asset.file_stem().unwrap_or_default().to_str().unwrap_or_default());
+                        ui.separator();
+
+                        // Draw the asset inspector
+                        assets.get_mut(handle).unwrap().draw(ui);
+                    },
+                    AssetInspectorItem::Error => {
+                        ui.text("There was an error when trying to load the asset. Please check the logs.");
+                    },
                 },
             }
         });
     }
-}
-
-fn draw_asset_inspector<A: Asset + 'static>(
-    ui: &imgui::Ui,
-    name: &AssetName,
-    assets: &mut Assets,
-) -> (Option<JoinHandle<()>>, AnyHandle) {
-    // Load the asset
-    let handle = assets.load::<A>(name);
-
-    // If we can't get the asset now, we will wait for load
-    let join = match assets.get_mut(&handle) {
-        Some(mut asset) => {
-            asset.gui(ui, assets);
-            None
-        }
-        None => {
-            let assets_cl = assets.clone();
-            let handle_cl = handle.clone();
-            Some(std::thread::spawn(move || {
-                assets_cl.wait_for_load(&handle_cl);
-            }))
-        }
-    };
-
-    (join, handle.into())
 }
 
 fn throbber(

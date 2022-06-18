@@ -9,4 +9,7 @@ edition = "2021"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 futures = "0.3"
 imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://github.com/imgui-rs/imgui-rs" }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+ron = "0.7"
 ard-engine = { path = "../../", version = "0.1", features = [ "editor", "input", "assets", "graphics_assets", "graphics_vk", "window" ] }

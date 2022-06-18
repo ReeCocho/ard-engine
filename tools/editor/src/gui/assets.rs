@@ -161,6 +161,13 @@ impl Folder {
                 continue;
             }
 
+            // Skip if meta file
+            if let Some(ext) = asset.name().extension() {
+                if ext == "meta" {
+                    continue;
+                }
+            }
+
             // First, construct all the folders of the asset
             let mut current_dir = &mut root;
 
@@ -180,7 +187,7 @@ impl Folder {
                 for (i, cur_folder) in current_dir.folders.iter().enumerate() {
                     if cur_folder.name == folder_name {
                         current_dir = &mut current_dir.folders[i];
-                        break 'outer;
+                        continue 'outer;
                     }
                 }
 

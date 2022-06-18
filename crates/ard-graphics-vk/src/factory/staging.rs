@@ -9,10 +9,14 @@ use std::{
 
 use crate::{
     alloc::{Buffer, Image},
+    camera::{CubeMap, CubeMapInner, Texture, TextureInner},
     context::GraphicsContext,
 };
 
-use super::meshes::{Block, MeshBuffers};
+use super::{
+    container::ResourceContainer,
+    meshes::{Block, MeshBuffers},
+};
 
 pub(crate) enum StagingRequest {
     Mesh {
@@ -26,25 +30,25 @@ pub(crate) enum StagingRequest {
     },
     Texture {
         id: u32,
-        image_dst: Arc<Image>,
+        image_dst: Texture,
         staging_buffer: Buffer,
         mip_type: MipType,
     },
     CubeMap {
         id: u32,
-        image_dst: Arc<Image>,
+        image_dst: CubeMap,
         staging_buffer: Buffer,
         mip_type: MipType,
     },
     TextureMipUpload {
         id: u32,
-        image_dst: Arc<Image>,
+        image_dst: Texture,
         staging_buffer: Buffer,
         mip_level: u32,
     },
     CubeMapMipUpload {
         id: u32,
-        image_dst: Arc<Image>,
+        image_dst: CubeMap,
         staging_buffer: Buffer,
         mip_level: u32,
     },
@@ -163,7 +167,12 @@ impl StagingBuffers {
     }
 
     /// Begin pending uploads.
-    pub unsafe fn upload(&mut self, mesh_buffers: &mut MeshBuffers) {
+    pub unsafe fn upload(
+        &mut self,
+        mesh_buffers: &mut MeshBuffers,
+        textures: &ResourceContainer<TextureInner>,
+        cube_maps: &ResourceContainer<CubeMapInner>,
+    ) {
         let device = &self.ctx.0.device;
 
         if self.pending_requests.is_empty() {
@@ -269,6 +278,7 @@ impl StagingBuffers {
                     image_dst,
                     staging_buffer,
                     mip_type,
+                    ..
                 } => match mip_type {
                     // Mip levels must be generated from LOD0 contained in the staging buffer.
                     MipType::Generate => {
@@ -280,6 +290,9 @@ impl StagingBuffers {
                                 new_commands.0
                             }
                         };
+
+                        let image_dst = textures.get(*id).unwrap();
+                        let image_dst = &image_dst.image;
 
                         // Copy image to LOD0 mip
                         transition_image_layout(
@@ -393,6 +406,9 @@ impl StagingBuffers {
                     }
                     // Only the highest level LOD is contained in the staging buffer.
                     MipType::Upload => {
+                        let image_dst = textures.get(*id).unwrap();
+                        let image_dst = &image_dst.image;
+
                         transition_image_layout(
                             &device,
                             upload.transfer.0,
@@ -445,6 +461,9 @@ impl StagingBuffers {
                                 new_commands.0
                             }
                         };
+
+                        let image_dst = cube_maps.get(*id).unwrap();
+                        let image_dst = &image_dst.image;
 
                         // Copy image to LOD0 mip
                         transition_image_layout(
@@ -557,6 +576,9 @@ impl StagingBuffers {
                         ResourceId::CubeMap(*id)
                     }
                     MipType::Upload => {
+                        let image_dst = cube_maps.get(*id).unwrap();
+                        let image_dst = &image_dst.image;
+
                         transition_image_layout(
                             &device,
                             upload.transfer.0,
@@ -599,7 +621,11 @@ impl StagingBuffers {
                     image_dst,
                     staging_buffer,
                     mip_level,
+                    ..
                 } => {
+                    let image_dst = textures.get(*id).unwrap();
+                    let image_dst = &image_dst.image;
+
                     transition_image_layout(
                         &device,
                         upload.transfer.0,
@@ -645,6 +671,9 @@ impl StagingBuffers {
                     staging_buffer,
                     mip_level,
                 } => {
+                    let image_dst = cube_maps.get(*id).unwrap();
+                    let image_dst = &image_dst.image;
+
                     transition_image_layout(
                         &device,
                         upload.transfer.0,

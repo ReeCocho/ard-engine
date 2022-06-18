@@ -168,7 +168,7 @@ impl Factory {
         });
 
         // Check for any new upload requests and send them to the transfer queue
-        staging.upload(&mut mesh_buffers);
+        staging.upload(&mut mesh_buffers, &textures, &cube_maps);
 
         // Flush material UBOs
         material_buffers.flush(&materials, frame);
@@ -201,7 +201,7 @@ impl Factory {
         );
         cameras.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
         textures.drop_pending(frame, &mut |_, _| {}, &mut |id, _| {
-            texture_sets.texture_dropped(id)
+            texture_sets.texture_dropped(id);
         });
         cube_maps.drop_pending(frame, &mut |_, _| {}, &mut |_, _| {});
 
@@ -378,25 +378,26 @@ impl FactoryApi<VkBackend> for Factory {
 
         let (texture_inner, staging_buffer) =
             unsafe { TextureInner::new(&self.0.ctx, create_info) };
-        let image_dst = texture_inner.image.clone();
 
         let escaper = textures.insert(texture_inner);
+
+        let handle = Texture {
+            id: escaper.id(),
+            escaper,
+        };
 
         self.0
             .staging
             .lock()
             .expect("mutex poisoned")
             .add(StagingRequest::Texture {
-                id: escaper.id(),
-                image_dst,
+                id: handle.id,
+                image_dst: handle.clone(),
                 staging_buffer,
                 mip_type: create_info.mip_type,
             });
 
-        Texture {
-            id: escaper.id(),
-            escaper,
-        }
+        handle
     }
 
     fn create_cube_map(&self, create_info: &CubeMapCreateInfo) -> CubeMap {
@@ -405,25 +406,26 @@ impl FactoryApi<VkBackend> for Factory {
 
         let (cube_map_inner, staging_buffer) =
             unsafe { CubeMapInner::new(&self.0.ctx, create_info) };
-        let image_dst = cube_map_inner.image.clone();
 
         let escaper = cube_maps.insert(cube_map_inner);
+
+        let handle = CubeMap {
+            id: escaper.id(),
+            escaper,
+        };
 
         self.0
             .staging
             .lock()
             .expect("mutex poisoned")
             .add(StagingRequest::CubeMap {
-                id: escaper.id(),
-                image_dst,
+                id: handle.id,
+                image_dst: handle.clone(),
                 staging_buffer,
                 mip_type: create_info.mip_type,
             });
 
-        CubeMap {
-            id: escaper.id(),
-            escaper,
-        }
+        handle
     }
 
     fn main_camera(&self) -> Camera {
@@ -461,7 +463,7 @@ impl FactoryApi<VkBackend> for Factory {
         // Send request to upload new mip
         staging.add(StagingRequest::TextureMipUpload {
             id: texture.id,
-            image_dst: texture_inner.image.clone(),
+            image_dst: texture.clone(),
             mip_level: level as u32,
             staging_buffer,
         });
@@ -485,7 +487,7 @@ impl FactoryApi<VkBackend> for Factory {
         // Send request to upload new mip
         staging.add(StagingRequest::CubeMapMipUpload {
             id: cube_map.id,
-            image_dst: cube_map_inner.image.clone(),
+            image_dst: cube_map.clone(),
             mip_level: level as u32,
             staging_buffer,
         });

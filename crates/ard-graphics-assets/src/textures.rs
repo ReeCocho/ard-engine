@@ -2,13 +2,16 @@ use ard_assets::prelude::*;
 use ard_graphics_api::prelude::*;
 use ard_graphics_vk::prelude as graphics;
 use async_trait::async_trait;
-use image::EncodableLayout;
 use serde::{Deserialize, Serialize};
 
 /// A texture that can be loaded from disk.
 pub struct TextureAsset {
     /// The texture handle.
     pub texture: graphics::Texture,
+    /// Texture dimensions
+    dims: (u32, u32),
+    /// Format used by the texture.
+    format: graphics::TextureFormat,
 }
 
 pub struct TextureLoader {
@@ -21,6 +24,18 @@ struct TextureMeta {
     /// Path to the actual texture file. Relative to the package.
     pub file: AssetNameBuf,
     pub format: TextureFormat,
+}
+
+impl TextureAsset {
+    #[inline]
+    pub fn dims(&self) -> (u32, u32) {
+        self.dims
+    }
+
+    #[inline]
+    pub fn format(&self) -> graphics::TextureFormat {
+        self.format
+    }
 }
 
 impl Asset for TextureAsset {
@@ -126,7 +141,11 @@ impl AssetLoader for TextureLoader {
         let texture = self.factory.create_texture(&create_info);
 
         Ok(AssetLoadResult::Loaded {
-            asset: TextureAsset { texture },
+            asset: TextureAsset {
+                texture,
+                format: meta.format,
+                dims: (image.width(), image.height()),
+            },
             persistent: false,
         })
     }

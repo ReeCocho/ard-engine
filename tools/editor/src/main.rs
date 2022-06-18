@@ -4,6 +4,7 @@ use ard_engine::{assets::prelude::*, core::prelude::*, graphics::prelude::*, win
 
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
+use gui::asset_meta::{AssetMeta, AssetMetaLoader};
 use gui::EditorGui;
 
 fn main() {
@@ -34,6 +35,10 @@ fn main() {
 }
 
 fn setup(app: &mut App) {
+    // Register meta loader
+    let assets = app.resources.get::<Assets>().unwrap();
+    assets.register::<AssetMeta>(AssetMetaLoader);
+
     let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
 
     // Don't use the canvas size

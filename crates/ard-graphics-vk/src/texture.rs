@@ -13,7 +13,7 @@ pub struct Texture {
 }
 
 pub(crate) struct TextureInner {
-    pub image: Arc<Image>,
+    pub image: Image,
     pub sampler: SamplerDescriptor,
     pub mip_levels: u32,
     /// Bit mask that indicates which mip levels of the texture are loaded into memory. The least
@@ -96,7 +96,7 @@ impl TextureInner {
 
         (
             Self {
-                image: Arc::new(image),
+                image,
                 sampler: create_info.sampler,
                 mip_levels: create_info.mip_count as u32,
                 view,

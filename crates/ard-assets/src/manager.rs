@@ -428,6 +428,36 @@ impl Assets {
         handle
     }
 
+    /// Submits a request to reload an asset.
+    #[inline]
+    pub fn reload<A: Asset + 'static>(&self, handle: &Handle<A>) {
+        // No op if we're already loading
+        let guard = self.0.assets.guard();
+        let asset_data = self.0.assets.get(&handle.id(), &guard).unwrap();
+
+        if asset_data.loading.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Spawn a task to load the asset
+        let req = LoadRequest::<A> {
+            assets: self.clone(),
+            handle: handle.clone(),
+        };
+
+        // NOTE: It's safe to drop the join handle here because we're guaranteed to only have one
+        // thread loading an asset at a time (see `get_and_mark_for_load`). This means the handle
+        // being replaced points to a task that has already completed.
+        let guard = self.0.loading.guard();
+        self.0.loading.insert(
+            handle.id(),
+            self.0.runtime.spawn(async move {
+                load_asset::<A>(req).await;
+            }),
+            &guard,
+        );
+    }
+
     /// Checks if an asset has been loaded or not.
     #[inline]
     pub fn loaded(&self, name: &AssetName) -> bool {
@@ -442,6 +472,49 @@ impl Assets {
         let asset_data = self.0.assets.get(&id, &guard).unwrap();
         let loaded = asset_data.asset.read().unwrap().is_some();
         loaded
+    }
+
+    /// Scans for a new asset by name. Returns `true` if the asset was found.
+    #[inline]
+    pub fn scan_for(&self, name: &AssetName) -> bool {
+        // No-op if it already exists
+        {
+            let guard = self.0.name_to_id.guard();
+            if self.0.name_to_id.contains_key(name, &guard) {
+                return true;
+            }
+        }
+
+        // Scan packages in reverse order. The first package to have the asset is the one we care
+        // about.
+        for (i, package) in self.0.packages.iter().enumerate().rev() {
+            if package.register_asset(name) {
+                // Package contained the asset. Add it to our list
+                let id = self.0.id_counter.fetch_add(1, Ordering::Relaxed);
+
+                let guard = self.0.name_to_id.guard();
+                self.0
+                    .name_to_id
+                    .insert(AssetNameBuf::from(name), id, &guard);
+
+                let guard = self.0.assets.guard();
+                self.0.assets.insert(
+                    id,
+                    AssetData {
+                        asset: ShardedLock::new(None),
+                        name: AssetNameBuf::from(name),
+                        package: i,
+                        loading: AtomicBool::new(false),
+                        outstanding_handles: AtomicU32::new(0),
+                    },
+                    &guard,
+                );
+
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Checks if a particular asset exists.

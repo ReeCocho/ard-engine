@@ -1,6 +1,6 @@
 PackageList(
     packages: [
-		"EDITOR",
+		"editor",
 		"game"
 	]
 )

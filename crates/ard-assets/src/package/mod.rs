@@ -4,8 +4,11 @@ pub mod manifest;
 use std::path::Path;
 
 use async_trait::async_trait;
+use crossbeam_utils::sync::{ShardedLockReadGuard, ShardedLockWriteGuard};
 use enum_dispatch::enum_dispatch;
 use thiserror::Error;
+
+use crate::prelude::AssetName;
 
 use self::{folder::FolderPackage, manifest::Manifest};
 
@@ -38,8 +41,18 @@ pub enum PackageReadError {
 #[async_trait]
 #[enum_dispatch(Package)]
 pub trait PackageInterface: Clone + Send {
+    /// Path to the package.
+    fn path(&self) -> &Path;
+
+    /// Attempt to add a register an asset with the package. If the asset exists and was added,
+    /// 'true' is returned.
+    fn register_asset(&self, name: &AssetName) -> bool;
+
     /// Retrieve a manifest of all assets within the package.
-    fn manifest(&self) -> &Manifest;
+    fn manifest(&self) -> ShardedLockReadGuard<Manifest>;
+
+    /// Retrieve a manifest of all assets within the package mutably.
+    fn manifest_mut(&self) -> ShardedLockWriteGuard<Manifest>;
 
     /// Reads the contents of a file within the package and returns the bytes.
     async fn read(&self, file: &Path) -> Result<Vec<u8>, PackageReadError>;

@@ -1,3 +1,4 @@
+pub mod asset_meta;
 pub mod assets;
 pub mod inspector;
 pub mod scene_view;
@@ -38,8 +39,15 @@ impl EditorGui {
         });
     }
 
-    fn inspect_item(&mut self, item: InspectorItem, _: Commands, _: Queries<()>, _: Res<()>) {
-        self.inspector.set_inspected_item(Some(item));
+    fn inspect_item(
+        &mut self,
+        item: InspectorItem,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<(Read<Assets>,)>,
+    ) {
+        self.inspector
+            .set_inspected_item(&res.get().0.unwrap(), Some(item));
     }
 
     fn pre_render(
