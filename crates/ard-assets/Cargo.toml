@@ -20,8 +20,3 @@ crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
 flurry = "0.4"
 fxhash = "0.2"
-imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://github.com/imgui-rs/imgui-rs", optional = true }
-
-[features]
-default = []
-editor = [ "dep:imgui" ]

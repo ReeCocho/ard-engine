@@ -1,10 +1,12 @@
+pub mod asset_meta;
 pub mod gui;
+pub mod par_task;
 
 use ard_engine::{assets::prelude::*, core::prelude::*, graphics::prelude::*, window::prelude::*};
 
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
-use gui::asset_meta::{AssetMeta, AssetMetaLoader};
+use asset_meta::{AssetMeta, AssetMetaLoader};
 use gui::EditorGui;
 
 fn main() {

@@ -1,6 +1,6 @@
 use ard_assets::prelude::*;
 use ard_graphics_api::prelude::*;
-use ard_graphics_vk::prelude as graphics;
+use ard_graphics_vk::{camera::Factory, prelude as graphics};
 use ard_math::Vec4;
 use async_trait::async_trait;
 use bytemuck::{Pod, Zeroable};
@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub struct PbrMaterialAsset {
     /// Handle to the material object.
     pub material: graphics::Material,
+    /// Actual PBR material data.
+    data: PbrMaterialData,
 }
 
 /// Data sent to the GPU that represents the PBR materials data.
@@ -46,6 +48,18 @@ struct PbrMaterialMeta {
     pub pipeline: AssetNameBuf,
     /// Actual PBR material data.
     pub data: PbrMaterialData,
+}
+
+impl PbrMaterialAsset {
+    #[inline]
+    pub fn data(&self) -> &PbrMaterialData {
+        &self.data
+    }
+
+    #[inline]
+    pub fn set_data(&mut self, factory: &Factory, data: PbrMaterialData) {
+        factory.update_material_data(&self.material, &bytemuck::bytes_of(&data));
+    }
 }
 
 impl Asset for PbrMaterialAsset {
@@ -89,7 +103,10 @@ impl AssetLoader for PbrMaterialLoader {
             .update_material_data(&material, bytemuck::bytes_of(&meta.data));
 
         Ok(AssetLoadResult::Loaded {
-            asset: PbrMaterialAsset { material },
+            asset: PbrMaterialAsset {
+                material,
+                data: meta.data,
+            },
             persistent: false,
         })
     }

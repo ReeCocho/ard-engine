@@ -1,7 +1,7 @@
-pub mod asset_meta;
 pub mod assets;
 pub mod inspector;
 pub mod scene_view;
+pub mod util;
 
 use ard_engine::{
     assets::prelude::*, core::prelude::*, ecs::prelude::*, graphics::prelude::*, input::*,
@@ -73,7 +73,7 @@ impl EditorGui {
         self.scene_view
             .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
         self.assets.draw(ui, &commands);
-        self.inspector.draw(ui, &mut assets);
+        self.inspector.draw(ui, &mut assets, &factory);
     }
 }
 

@@ -1,0 +1,17 @@
+(
+    file: "fallback/pbr.frag.spv",
+    ty: Fragment,
+    vertex_layout: VertexLayout(
+        normals: false,
+        tangents: false,
+        colors: false,
+        uv0: false,
+        uv1: false,
+        uv2: false,
+        uv3: false,
+    ),
+    inputs: ShaderInputs(
+        ubo_size: 32,
+        texture_count: 2,
+    ),
+)

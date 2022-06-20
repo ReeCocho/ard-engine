@@ -1,0 +1,4 @@
+(
+    vertex: "fallback/pbr.vert.shd",
+    fragment: "fallback/pbr.frag.shd",
+)

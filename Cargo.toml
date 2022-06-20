@@ -15,7 +15,6 @@ assets = [ "ard-assets" ]
 graphics_assets = [ "ard-graphics-assets" ]
 graphics_vk = [ "window", "ard-graphics-api", "ard-graphics-vk" ]
 window = [ "ard-window", "ard-winit" ]
-editor = [ "ard-assets/editor", "ard-graphics-assets/editor" ]
 
 [dependencies]
 # Required

@@ -1,7 +1,11 @@
 use std::path::PathBuf;
+use thiserror::Error;
 
 use ard_engine::{
-    assets::prelude::*, graphics::TextureFormat, graphics_assets::prelude::TextureAsset,
+    assets::prelude::*,
+    graphics::{prelude::Factory, TextureFormat},
+    graphics_assets::prelude::{PbrMaterialAsset, TextureAsset},
+    math::{Vec3, Vec4},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -13,6 +17,29 @@ pub enum AssetMeta {
         height: u32,
         format: TextureFormat,
     },
+    CubeMap {
+        width: u32,
+        height: u32,
+        format: TextureFormat,
+    },
+    Shader,
+    Pipeline,
+    Model,
+    PbrMaterial {
+        asset: AssetNameBuf,
+        #[serde(skip)]
+        handle: Option<Handle<PbrMaterialAsset>>,
+        base_color_texture: Option<AssetNameBuf>,
+        roughness_metallic_texture: Option<AssetNameBuf>,
+    },
+    Unknown,
+}
+
+#[derive(Debug, Error, Copy, Clone)]
+pub enum AssetMetaError {
+    #[error("asset type could not be determined")]
+    NoExt,
+    #[error("unknown asset meta error")]
     Unknown,
 }
 
@@ -25,7 +52,7 @@ impl Asset for AssetMeta {
 }
 
 impl AssetMeta {
-    pub fn draw(&mut self, ui: &imgui::Ui) {
+    pub fn draw(&mut self, ui: &imgui::Ui, assets: &Assets, factory: &Factory) {
         match self {
             AssetMeta::Texture {
                 width,
@@ -36,9 +63,35 @@ impl AssetMeta {
                 ui.text(format!("Height: {}", *height));
                 ui.text(format!("Format: {:?}", *format));
             }
+            AssetMeta::PbrMaterial {
+                asset,
+                handle,
+                base_color_texture,
+                roughness_metallic_texture,
+            } => {
+                /*
+                let mut asset = assets.get_mut(asset.as_mut().unwrap()).unwrap();
+                let mut data = asset.data().clone();
+
+                // Color
+                let mut base_color_arr = [data.base_color.x, data.base_color.y, data.base_color.z];
+                ui.color_edit3("Base Color", &mut base_color_arr );
+                data.base_color = Vec4::new(base_color_arr[0], base_color_arr[1], base_color_arr[2], 1.0);
+
+                // Roughness
+                ui.slider("Roughness", 0.0, 1.0, &mut data.roughness);
+
+                // Metallic
+                ui.slider("Metallic", 0.0, 1.0, &mut data.metallic);
+
+                // Update the data
+                asset.set_data(factory, data);
+                */
+            }
             AssetMeta::Unknown => {
                 ui.text("Unknown asset type.");
             }
+            _ => {}
         }
     }
 
@@ -55,10 +108,13 @@ impl AssetMeta {
     }
 
     /// Initiailizes an asset meta file.
-    pub fn initialize_for(assets: Assets, asset: AssetNameBuf) {
+    pub fn initialize_for(
+        assets: Assets,
+        asset: AssetNameBuf,
+    ) -> Result<Handle<AssetMeta>, AssetMetaError> {
         let ext = match asset.extension() {
             Some(ext) => String::from(ext.to_str().unwrap()),
-            None => return,
+            None => return Err(AssetMetaError::NoExt),
         };
 
         let meta_name = AssetMeta::make_meta_name(&asset);
@@ -81,6 +137,18 @@ impl AssetMeta {
                 })
                 .unwrap()
             }
+            PbrMaterialAsset::EXTENSION => {
+                let handle = assets.load::<PbrMaterialAsset>(&asset);
+                assets.wait_for_load(&handle);
+
+                ron::to_string(&AssetMeta::PbrMaterial {
+                    asset: asset.clone(),
+                    handle: Some(handle),
+                    base_color_texture: None,
+                    roughness_metallic_texture: None,
+                })
+                .unwrap()
+            }
             _ => ron::to_string(&AssetMeta::Unknown).unwrap(),
         };
 
@@ -93,6 +161,8 @@ impl AssetMeta {
         // Load the meta file
         let handle = assets.load::<AssetMeta>(&meta_name);
         assets.wait_for_load(&handle);
+
+        Ok(handle)
     }
 }
 
