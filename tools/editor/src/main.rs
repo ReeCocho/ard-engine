@@ -1,4 +1,5 @@
 pub mod asset_meta;
+pub mod editor_job;
 pub mod gui;
 pub mod par_task;
 
@@ -7,7 +8,7 @@ use ard_engine::{assets::prelude::*, core::prelude::*, graphics::prelude::*, win
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
 use asset_meta::{AssetMeta, AssetMetaLoader};
-use gui::EditorGui;
+use gui::Editor;
 
 fn main() {
     AppBuilder::new(ard_engine::log::LevelFilter::Info)
@@ -31,7 +32,7 @@ fn main() {
         })
         .add_plugin(AssetsPlugin)
         .add_plugin(graphics_assets::GraphicsAssetsPlugin)
-        .add_startup_function(EditorGui::startup)
+        .add_startup_function(Editor::startup)
         .add_startup_function(setup)
         .run();
 }

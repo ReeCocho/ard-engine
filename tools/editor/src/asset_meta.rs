@@ -4,11 +4,14 @@ use thiserror::Error;
 use ard_engine::{
     assets::prelude::*,
     graphics::{prelude::Factory, TextureFormat},
-    graphics_assets::prelude::{PbrMaterialAsset, TextureAsset},
-    math::{Vec3, Vec4},
+    graphics_assets::prelude::{PbrMaterialAsset, PbrMaterialDescriptor, TextureAsset},
+    log::warn,
+    math::Vec4,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+use crate::par_task::ParTask;
 
 #[derive(Serialize, Deserialize)]
 pub enum AssetMeta {
@@ -28,7 +31,7 @@ pub enum AssetMeta {
     PbrMaterial {
         asset: AssetNameBuf,
         #[serde(skip)]
-        handle: Option<Handle<PbrMaterialAsset>>,
+        task: ParTask<Handle<PbrMaterialAsset>, AssetMetaError>,
         base_color_texture: Option<AssetNameBuf>,
         roughness_metallic_texture: Option<AssetNameBuf>,
     },
@@ -52,7 +55,8 @@ impl Asset for AssetMeta {
 }
 
 impl AssetMeta {
-    pub fn draw(&mut self, ui: &imgui::Ui, assets: &Assets, factory: &Factory) {
+    /// Draws the inspector editor for an asset. Returns `true` if the asset was modified.
+    pub fn draw(&mut self, ui: &imgui::Ui, assets: &Assets, factory: &Factory) -> bool {
         match self {
             AssetMeta::Texture {
                 width,
@@ -62,34 +66,118 @@ impl AssetMeta {
                 ui.text(format!("Width: {}", *width));
                 ui.text(format!("Height: {}", *height));
                 ui.text(format!("Format: {:?}", *format));
+                false
             }
             AssetMeta::PbrMaterial {
                 asset,
-                handle,
+                task,
                 base_color_texture,
                 roughness_metallic_texture,
             } => {
-                /*
-                let mut asset = assets.get_mut(asset.as_mut().unwrap()).unwrap();
-                let mut data = asset.data().clone();
+                // Update task if needed
+                if !task.has_task() {
+                    let assets_cl = assets.clone();
+                    let asset_cl = asset.clone();
+                    *task = ParTask::new(move || {
+                        let handle = assets_cl.load::<PbrMaterialAsset>(&asset_cl);
+                        assets_cl.wait_for_load(&handle);
+                        Ok(handle)
+                    });
+                }
 
-                // Color
-                let mut base_color_arr = [data.base_color.x, data.base_color.y, data.base_color.z];
-                ui.color_edit3("Base Color", &mut base_color_arr );
-                data.base_color = Vec4::new(base_color_arr[0], base_color_arr[1], base_color_arr[2], 1.0);
+                let mut modified = false;
 
-                // Roughness
-                ui.slider("Roughness", 0.0, 1.0, &mut data.roughness);
+                task.ui(ui, |handle| {
+                    let mut asset = match assets.get_mut(handle) {
+                        Some(asset) => asset,
+                        None => {
+                            ui.text("There was an error loading the material. Check the logs.");
+                            return;
+                        }
+                    };
 
-                // Metallic
-                ui.slider("Metallic", 0.0, 1.0, &mut data.metallic);
+                    let mut data = asset.data().clone();
 
-                // Update the data
-                asset.set_data(factory, data);
-                */
+                    // Color
+                    let mut base_color_arr =
+                        [data.base_color.x, data.base_color.y, data.base_color.z];
+                    modified = ui.color_edit3("Base Color", &mut base_color_arr) || modified;
+                    data.base_color =
+                        Vec4::new(base_color_arr[0], base_color_arr[1], base_color_arr[2], 1.0);
+
+                    // Roughness
+                    modified = ui.slider("Roughness", 0.0, 1.0, &mut data.roughness) || modified;
+
+                    // Metallic
+                    modified = ui.slider("Metallic", 0.0, 1.0, &mut data.metallic) || modified;
+
+                    // Update the data
+                    asset.set_data(factory, data);
+                });
+
+                modified
             }
             AssetMeta::Unknown => {
                 ui.text("Unknown asset type.");
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Saves the asset meta and associated asset to disk.
+    pub fn save(&mut self, assets: &Assets) {
+        match self {
+            AssetMeta::PbrMaterial {
+                asset,
+                task,
+                base_color_texture,
+                roughness_metallic_texture,
+            } => {
+                let handle = match task.get() {
+                    crate::par_task::ParTaskGet::Ok(handle) => handle,
+                    _ => {
+                        warn!(
+                            "attempt to save pbr material `{:?}` failed because it was not loaded",
+                            &asset
+                        );
+                        return;
+                    }
+                };
+
+                let asset_data = match assets.get(handle) {
+                    Some(asset_data) => asset_data,
+                    None => {
+                        warn!(
+                            "attempt to save pbr material `{:?}` failed because it was not loaded",
+                            &asset
+                        );
+                        return;
+                    }
+                };
+
+                let descriptor = PbrMaterialDescriptor {
+                    pipeline: asset_data.pipeline().into(),
+                    data: *asset_data.data(),
+                };
+
+                let descriptor = match ron::to_string(&descriptor) {
+                    Ok(descriptor) => descriptor,
+                    Err(err) => {
+                        warn!(
+                            "attempt to seralize pbr material `{:?}` failed : {:?}",
+                            &asset, err
+                        );
+                        return;
+                    }
+                };
+
+                let mut path = PathBuf::from("./assets/game/");
+                path.push(&asset);
+
+                if let Err(err) = std::fs::write(path, descriptor) {
+                    warn!("error saving pbr material `{:?}` : {:?}", asset, err);
+                }
             }
             _ => {}
         }
@@ -143,7 +231,7 @@ impl AssetMeta {
 
                 ron::to_string(&AssetMeta::PbrMaterial {
                     asset: asset.clone(),
-                    handle: Some(handle),
+                    task: ParTask::default(),
                     base_color_texture: None,
                     roughness_metallic_texture: None,
                 })

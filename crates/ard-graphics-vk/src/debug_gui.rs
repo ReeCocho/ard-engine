@@ -127,15 +127,15 @@ impl DebugGui {
 
 impl DebugGuiApi<VkBackend> for DebugGui {
     #[inline]
-    fn ui(&mut self) -> &mut Ui {
+    fn ui(&mut self) -> &Ui {
         unsafe {
             match self.ui.clone() {
-                Some(mut ui) => ui.as_mut(),
+                Some(ui) => ui.as_ref(),
                 None => {
                     self.ui = Some(NonNull::new_unchecked(
                         self.context.new_frame() as *mut imgui::Ui
                     ));
-                    self.ui.clone().unwrap().as_mut()
+                    self.ui.clone().unwrap().as_ref()
                 }
             }
         }

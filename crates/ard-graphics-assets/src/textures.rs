@@ -20,7 +20,7 @@ pub struct TextureLoader {
 
 /// A meta data file that describes a texture.
 #[derive(Debug, Serialize, Deserialize)]
-struct TextureMeta {
+pub struct TextureDescriptor {
     /// Path to the actual texture file. Relative to the package.
     pub file: AssetNameBuf,
     pub format: TextureFormat,
@@ -56,7 +56,7 @@ impl AssetLoader for TextureLoader {
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
         // Read in the meta file
         let meta = package.read_str(asset).await?;
-        let meta = match ron::from_str::<TextureMeta>(&meta) {
+        let meta = match ron::from_str::<TextureDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };

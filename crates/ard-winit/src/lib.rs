@@ -84,6 +84,12 @@ fn winit_runner(mut app: App) {
                             }
                         }
                     }
+                    WindowEvent::DroppedFile(path) => {
+                        dispatcher.event_sender().submit(WindowFileDropped {
+                            window: ard_id,
+                            file: path,
+                        });
+                    }
                     WindowEvent::MouseWheel {
                         delta,
                         phase: TouchPhase::Moved,

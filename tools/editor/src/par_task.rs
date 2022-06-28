@@ -71,6 +71,11 @@ impl<V: Send + 'static, E: Error + Send + 'static> ParTask<V, E> {
     #[inline]
     pub fn has_task(&self) -> bool {
         self.task.is_some()
+            || self.handle.is_some()
+            || match &self.value {
+                ParTaskInnerValue::None => false,
+                _ => true,
+            }
     }
 
     #[inline]

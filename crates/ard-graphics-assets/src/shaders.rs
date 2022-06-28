@@ -16,7 +16,7 @@ pub struct ShaderLoader {
 
 /// A meta data file that describes a shader.
 #[derive(Debug, Serialize, Deserialize)]
-struct ShaderMeta {
+pub struct ShaderDescriptor {
     /// Path to the actual shader file. Relative to the package.
     pub file: AssetNameBuf,
     pub ty: ShaderType,
@@ -42,7 +42,7 @@ impl AssetLoader for ShaderLoader {
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
         // Read in the meta file
         let meta = package.read_str(asset).await?;
-        let meta = match ron::from_str::<ShaderMeta>(&meta) {
+        let meta = match ron::from_str::<ShaderDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };

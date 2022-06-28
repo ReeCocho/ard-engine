@@ -7,6 +7,8 @@ pub mod prelude {
     pub use crate::*;
 }
 
+use std::path::PathBuf;
+
 use ard_core::prelude::*;
 use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 use prelude::WindowId;
@@ -20,6 +22,13 @@ pub struct WindowPlugin {
 /// Event that is sent when a window is closed.
 #[derive(Debug, Event, Copy, Clone)]
 pub struct WindowClosed(pub window::WindowId);
+
+/// Event that is sent when a file is dropped onto a window.
+#[derive(Debug, Event, Clone)]
+pub struct WindowFileDropped {
+    pub window: window::WindowId,
+    pub file: PathBuf,
+}
 
 /// A window was resized.
 #[derive(Debug, Event, Copy, Clone)]

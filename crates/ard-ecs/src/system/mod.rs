@@ -40,7 +40,7 @@ pub struct SystemBuilder<S: SystemState> {
 
 /// A system is the logical component of the ECS. A system operates on a subset of components,
 /// a subset of optional tags, and a set of resources.
-pub trait SystemState: Send + Sync {
+pub trait SystemState: Send {
     /// Request that the system run on the main thread.
     const MAIN_THREAD: bool = false;
 
@@ -55,7 +55,7 @@ pub trait SystemState: Send + Sync {
 
 /// # Note
 /// This trait is automatically implemented for all systems. Do NOT manually implement this trait.
-pub trait SystemStateExt: Send + Sync {
+pub trait SystemStateExt: Send {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn debug_name(&self) -> &'static str;

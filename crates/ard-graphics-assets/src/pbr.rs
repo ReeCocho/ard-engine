@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub struct PbrMaterialAsset {
     /// Handle to the material object.
     pub material: graphics::Material,
+    /// Name of the pipeline the material uses.
+    pipeline: AssetNameBuf,
     /// Actual PBR material data.
     data: PbrMaterialData,
 }
@@ -43,7 +45,7 @@ pub struct PbrMaterialLoader {
 
 /// A meta data file that describes a PBR material.
 #[derive(Debug, Serialize, Deserialize)]
-struct PbrMaterialMeta {
+pub struct PbrMaterialDescriptor {
     /// Name of the pipeline to use for the material.
     pub pipeline: AssetNameBuf,
     /// Actual PBR material data.
@@ -52,6 +54,11 @@ struct PbrMaterialMeta {
 
 impl PbrMaterialAsset {
     #[inline]
+    pub fn pipeline(&self) -> &AssetName {
+        &self.pipeline
+    }
+
+    #[inline]
     pub fn data(&self) -> &PbrMaterialData {
         &self.data
     }
@@ -59,6 +66,7 @@ impl PbrMaterialAsset {
     #[inline]
     pub fn set_data(&mut self, factory: &Factory, data: PbrMaterialData) {
         factory.update_material_data(&self.material, &bytemuck::bytes_of(&data));
+        self.data = data;
     }
 }
 
@@ -81,7 +89,7 @@ impl AssetLoader for PbrMaterialLoader {
         // Read in the meta file
         let meta = package.read_str(asset).await?;
 
-        let meta = match ron::from_str::<PbrMaterialMeta>(&meta) {
+        let meta = match ron::from_str::<PbrMaterialDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };
@@ -105,6 +113,7 @@ impl AssetLoader for PbrMaterialLoader {
         Ok(AssetLoadResult::Loaded {
             asset: PbrMaterialAsset {
                 material,
+                pipeline: meta.pipeline,
                 data: meta.data,
             },
             persistent: false,

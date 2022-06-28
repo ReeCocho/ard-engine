@@ -22,7 +22,7 @@ pub struct PipelineLoader {
 
 /// A meta data file that describes a pipeline.
 #[derive(Debug, Serialize, Deserialize)]
-struct PipelineMeta {
+pub struct PipelineDescriptor {
     /// Name of the vertex shader.
     pub vertex: AssetNameBuf,
     /// Name of the fragment shader.
@@ -48,7 +48,7 @@ impl AssetLoader for PipelineLoader {
         // Read in the meta file
         let meta = package.read_str(asset).await?;
 
-        let meta = match ron::from_str::<PipelineMeta>(&meta) {
+        let meta = match ron::from_str::<PipelineDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };

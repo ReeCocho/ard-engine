@@ -12,5 +12,6 @@ imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://gith
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 ron = "0.7"
+crossbeam-channel = "0.5"
 thiserror = "1.0"
 ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window" ] }

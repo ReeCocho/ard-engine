@@ -1,6 +1,8 @@
 pub mod assets;
+pub mod dirty_assets;
 pub mod inspector;
 pub mod scene_view;
+pub mod toolbar;
 pub mod util;
 
 use ard_engine::{
@@ -11,10 +13,19 @@ use ard_engine::{
 use assets::*;
 use scene_view::*;
 
-use self::inspector::{Inspector, InspectorItem};
+use crate::editor_job::EditorJobQueue;
+
+use self::{
+    dirty_assets::DirtyAssets,
+    inspector::{Inspector, InspectorItem},
+    toolbar::ToolBar,
+};
 
 #[derive(SystemState)]
-pub struct EditorGui {
+pub struct Editor {
+    dirty: DirtyAssets,
+    jobs: EditorJobQueue,
+    tool_bar: ToolBar,
     scene_view: SceneView,
     assets: AssetViewer,
     inspector: Inspector,
@@ -29,14 +40,21 @@ type EditorGuiResources = (
     Write<Assets>,
 );
 
-impl EditorGui {
+impl Editor {
     pub fn startup(app: &mut App) {
         let assets = app.resources.get::<Assets>().unwrap();
-        app.dispatcher.add_system(EditorGui {
+        app.dispatcher.add_system(Editor {
+            dirty: DirtyAssets::default(),
+            jobs: EditorJobQueue::default(),
+            tool_bar: ToolBar::default(),
             scene_view: SceneView::default(),
             assets: AssetViewer::new(&assets),
             inspector: Inspector::new(),
         });
+    }
+
+    fn file_dropped(&mut self, evt: WindowFileDropped, _: Commands, _: Queries<()>, _: Res<()>) {
+        println!("{:?}", &evt.file);
     }
 
     fn inspect_item(
@@ -68,20 +86,27 @@ impl EditorGui {
         let mut assets = res.5.unwrap();
 
         gui.begin_dock();
-
         let ui = gui.ui();
-        self.scene_view
-            .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
-        self.assets.draw(ui, &commands);
-        self.inspector.draw(ui, &mut assets, &factory);
+
+        let disabled = self.jobs.poll(ui);
+        ui.disabled(disabled, || {
+            self.tool_bar
+                .draw(ui, &assets, &mut self.dirty, &mut self.jobs);
+            self.scene_view
+                .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
+            self.assets.draw(ui, &commands);
+            self.inspector
+                .draw(ui, &mut assets, &mut self.dirty, &factory);
+        });
     }
 }
 
-impl Into<System> for EditorGui {
+impl Into<System> for Editor {
     fn into(self) -> System {
         SystemBuilder::new(self)
-            .with_handler(EditorGui::pre_render)
-            .with_handler(EditorGui::inspect_item)
+            .with_handler(Editor::file_dropped)
+            .with_handler(Editor::pre_render)
+            .with_handler(Editor::inspect_item)
             .build()
     }
 }

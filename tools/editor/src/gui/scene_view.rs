@@ -31,7 +31,7 @@ impl SceneView {
         factory: &Factory,
         input: &InputState,
         windows: &mut Windows,
-        ui: &mut imgui::Ui,
+        ui: &imgui::Ui,
         settings: &mut RendererSettings,
     ) {
         let mut opened = true;

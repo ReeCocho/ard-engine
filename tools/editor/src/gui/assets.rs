@@ -9,6 +9,7 @@ use super::inspector::InspectorItem;
 const MAX_CHARS_IN_ASSET: usize = 12;
 const ASSET_ICON_SIZE: f32 = 80.0;
 const EDITOR_ASSET_FOLDER_NAME: &'static str = "EDITOR_ASSETS";
+const FALLBACK_FOLDER_NAME: &'static str = "fallback";
 
 pub struct AssetViewer {
     assets: Assets,
@@ -51,7 +52,7 @@ impl AssetViewer {
         }
     }
 
-    pub fn draw(&mut self, ui: &mut imgui::Ui, commands: &Commands) {
+    pub fn draw(&mut self, ui: &imgui::Ui, commands: &Commands) {
         let style = unsafe { ui.style() };
 
         let mut new_folder = None;
@@ -156,8 +157,12 @@ impl Folder {
         for asset in assets.assets().values() {
             let name = asset.name().file_name().unwrap();
 
-            // Skip if editor assets
+            // Skip if editor assets or fallback
             if asset.name().iter().next().unwrap() == EDITOR_ASSET_FOLDER_NAME {
+                continue;
+            }
+
+            if asset.name().iter().next().unwrap() == FALLBACK_FOLDER_NAME {
                 continue;
             }
 

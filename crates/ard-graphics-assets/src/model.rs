@@ -40,7 +40,7 @@ pub struct ModelLoader {
 
 /// A meta data file that describes a model.
 #[derive(Debug, Serialize, Deserialize)]
-struct ModelMeta {
+pub struct ModelDescriptor {
     /// Name of the pipeline to use for PBR materials.
     pub pbr_pipeline: AssetNameBuf,
     /// Path to the model file.
@@ -65,7 +65,7 @@ impl AssetLoader for ModelLoader {
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
         // Read in the meta data
         let meta = package.read_str(asset).await?;
-        let meta = match ron::from_str::<ModelMeta>(&meta) {
+        let meta = match ron::from_str::<ModelDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };

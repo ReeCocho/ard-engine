@@ -16,7 +16,7 @@ pub struct CubeMapLoader {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CubeMapMeta {
+pub struct CubeMapDescriptor {
     pub generate_mips: bool,
     pub dimensions: (u32, u32),
     /// Mips should be in order from most detailed to least detailed.
@@ -24,7 +24,7 @@ struct CubeMapMeta {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CubeFaces {
+pub struct CubeFaces {
     pub east: AssetNameBuf,
     pub west: AssetNameBuf,
     pub top: AssetNameBuf,
@@ -51,7 +51,7 @@ impl AssetLoader for CubeMapLoader {
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
         // Read in the meta file
         let meta = package.read_str(asset).await?;
-        let mut meta = match ron::from_str::<CubeMapMeta>(&meta) {
+        let mut meta = match ron::from_str::<CubeMapDescriptor>(&meta) {
             Ok(meta) => meta,
             Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
         };
