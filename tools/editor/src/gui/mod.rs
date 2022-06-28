@@ -53,8 +53,16 @@ impl Editor {
         });
     }
 
-    fn file_dropped(&mut self, evt: WindowFileDropped, _: Commands, _: Queries<()>, _: Res<()>) {
-        println!("{:?}", &evt.file);
+    fn file_dropped(
+        &mut self,
+        evt: WindowFileDropped,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<(Read<Assets>,)>,
+    ) {
+        let res = res.get();
+        let assets = res.0.unwrap();
+        self.assets.import(&evt.file, &assets);
     }
 
     fn inspect_item(
@@ -94,7 +102,7 @@ impl Editor {
                 .draw(ui, &assets, &mut self.dirty, &mut self.jobs);
             self.scene_view
                 .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
-            self.assets.draw(ui, &commands);
+            self.assets.draw(ui, &assets, &commands);
             self.inspector
                 .draw(ui, &mut assets, &mut self.dirty, &factory);
         });
