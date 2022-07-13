@@ -14,6 +14,10 @@ pub mod math {
     pub use ard_math::*;
 }
 
+pub mod game {
+    pub use ard_game::*;
+}
+
 #[cfg(feature = "assets")]
 pub mod assets {
     pub use ard_assets::*;

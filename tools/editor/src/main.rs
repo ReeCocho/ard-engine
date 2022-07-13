@@ -2,13 +2,18 @@ pub mod asset_meta;
 pub mod editor_job;
 pub mod gui;
 pub mod par_task;
+pub mod scene_graph;
 
-use ard_engine::{assets::prelude::*, core::prelude::*, graphics::prelude::*, window::prelude::*};
+use ard_engine::{
+    assets::prelude::*, core::prelude::*, game::GamePlugin, graphics::prelude::*,
+    window::prelude::*,
+};
 
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
 use asset_meta::{AssetMeta, AssetMetaLoader};
 use gui::Editor;
+use scene_graph::SceneGraph;
 
 fn main() {
     AppBuilder::new(ard_engine::log::LevelFilter::Info)
@@ -31,7 +36,9 @@ fn main() {
             },
         })
         .add_plugin(AssetsPlugin)
+        .add_plugin(GamePlugin)
         .add_plugin(graphics_assets::GraphicsAssetsPlugin)
+        .add_resource(SceneGraph::default())
         .add_startup_function(Editor::startup)
         .add_startup_function(setup)
         .run();

@@ -8,3 +8,18 @@ edition = "2021"
 [dependencies]
 ard-math = { version = "0.1", path = "../ard-math" }
 ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-core = { version = "0.1", path = "../ard-core" }
+ard-assets = { version = "0.1", path = "../ard-assets" }
+ard-graphics-vk = { path = "../ard-graphics-vk", version = "0.1" }
+ard-graphics-api = { path = "../ard-graphics-api", version = "0.1" }
+ard-graphics-assets = { version = "0.1", path = "../ard-graphics-assets" }
+crossbeam-channel = "0.5"
+smallvec = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_with = "1"
+enum_dispatch = "0.3"
+paste = "1"
+ard-game-derive = { path = "./ard-game-derive/" }
+
+[features]
+editor = []

@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod dirty_assets;
+pub mod hierarchy;
 pub mod inspector;
 pub mod scene_view;
 pub mod toolbar;
@@ -13,10 +14,11 @@ use ard_engine::{
 use assets::*;
 use scene_view::*;
 
-use crate::editor_job::EditorJobQueue;
+use crate::{editor_job::EditorJobQueue, scene_graph::SceneGraph};
 
 use self::{
     dirty_assets::DirtyAssets,
+    hierarchy::Hierarchy,
     inspector::{Inspector, InspectorItem},
     toolbar::ToolBar,
 };
@@ -27,6 +29,7 @@ pub struct Editor {
     jobs: EditorJobQueue,
     tool_bar: ToolBar,
     scene_view: SceneView,
+    hierarchy: Hierarchy,
     assets: AssetViewer,
     inspector: Inspector,
 }
@@ -38,6 +41,7 @@ type EditorGuiResources = (
     Write<DebugGui>,
     Write<RendererSettings>,
     Write<Assets>,
+    Write<SceneGraph>,
 );
 
 impl Editor {
@@ -48,6 +52,7 @@ impl Editor {
             jobs: EditorJobQueue::default(),
             tool_bar: ToolBar::default(),
             scene_view: SceneView::default(),
+            hierarchy: Hierarchy::default(),
             assets: AssetViewer::new(&assets),
             inspector: Inspector::new(),
         });
@@ -80,7 +85,7 @@ impl Editor {
         &mut self,
         evt: PreRender,
         commands: Commands,
-        _: Queries<()>,
+        queries: Queries<Everything>,
         res: Res<EditorGuiResources>,
     ) {
         let dt = evt.0.as_secs_f32();
@@ -92,19 +97,28 @@ impl Editor {
         let mut gui = res.3.unwrap();
         let mut settings = res.4.unwrap();
         let mut assets = res.5.unwrap();
+        let mut scene_graph = res.6.unwrap();
 
         gui.begin_dock();
         let ui = gui.ui();
 
         let disabled = self.jobs.poll(ui);
         ui.disabled(disabled, || {
-            self.tool_bar
-                .draw(ui, &assets, &mut self.dirty, &mut self.jobs);
+            self.tool_bar.draw(
+                ui,
+                &queries,
+                &mut scene_graph,
+                &assets,
+                &commands.entities,
+                &mut self.dirty,
+                &mut self.jobs,
+            );
             self.scene_view
                 .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
             self.assets.draw(ui, &assets, &commands);
             self.inspector
                 .draw(ui, &mut assets, &mut self.dirty, &factory);
+            self.hierarchy.draw(ui, &scene_graph);
         });
     }
 }

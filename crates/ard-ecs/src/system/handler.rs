@@ -3,7 +3,7 @@ use crate::{
     component::filter::ComponentFilter,
     dispatcher::Events,
     key::TypeKey,
-    prelude::{EntityCommands, Event, EventExt, Queries, ResourceFilter, Resources},
+    prelude::{Entities, EntityCommands, Event, EventExt, Queries, ResourceFilter, Resources},
     resource::res::Res,
     tag::{filter::TagFilter, Tags},
 };
@@ -12,6 +12,7 @@ use super::{commands::Commands, data::SystemData, SystemState, SystemStateExt};
 
 /// Describes the data accesses of a handler.
 pub struct HandlerAccesses {
+    pub everything: bool,
     pub all_components: TypeKey,
     pub read_components: TypeKey,
     pub write_components: TypeKey,
@@ -30,6 +31,7 @@ pub trait EventHandler: Send + Sync {
         state: &mut dyn SystemStateExt,
         tags: &Tags,
         archetypes: &Archetypes,
+        entities: &Entities,
         commands: EntityCommands,
         events: Events,
         resources: &Resources,
@@ -51,7 +53,8 @@ impl<
         state: &mut dyn SystemStateExt,
         tags: &Tags,
         archetypes: &Archetypes,
-        entities: EntityCommands,
+        entities: &Entities,
+        commands: EntityCommands,
         events: Events,
         resources: &Resources,
         event: &dyn EventExt,
@@ -67,19 +70,23 @@ impl<
             .expect("event handler given incorrect event type")
             .clone();
 
-        let commands = Commands { entities, events };
+        let commands = Commands {
+            entities: commands,
+            events,
+        };
 
         self(
             state,
             event,
             commands,
-            Queries::new(tags, archetypes),
+            Queries::new(tags, archetypes, entities),
             Res::new(resources),
         );
     }
 
     fn accesses(&self) -> HandlerAccesses {
         HandlerAccesses {
+            everything: C::EVERYTHING,
             all_components: <C::Components as ComponentFilter>::type_key(),
             read_components: <C::Components as ComponentFilter>::read_type_key(),
             write_components: <C::Components as ComponentFilter>::mut_type_key(),
@@ -97,7 +104,9 @@ impl HandlerAccesses {
     /// Returns `true` if this access does not access data in an incompatible with another.
     #[inline]
     pub fn compatible(&self, other: &HandlerAccesses) -> bool {
-        self.write_components.none_of(&other.all_components)
+        !self.everything
+            && !other.everything
+            && self.write_components.none_of(&other.all_components)
             && self.write_resources.none_of(&other.all_resources)
             && self.write_tags.none_of(&other.all_tags)
             && other.write_components.none_of(&self.all_components)

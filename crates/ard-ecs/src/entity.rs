@@ -1,11 +1,20 @@
-use std::num::NonZeroU32;
+use std::{
+    hash::{Hash, Hasher},
+    num::NonZeroU32,
+};
+
+use bytemuck::{Pod, Zeroable};
 
 /// An entity is an identifier that is associated with a set of components in a world.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct Entity {
     id: u32,
     ver: NonZeroU32,
 }
+
+unsafe impl Pod for Entity {}
+unsafe impl Zeroable for Entity {}
 
 impl Default for Entity {
     #[inline]
@@ -43,5 +52,19 @@ impl Entity {
     #[inline]
     pub fn ver(&self) -> u32 {
         self.ver.get()
+    }
+}
+
+impl Hash for Entity {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        u64::from(*self).hash(state);
+    }
+}
+
+impl From<Entity> for u64 {
+    #[inline]
+    fn from(entity: Entity) -> Self {
+        bytemuck::cast(entity)
     }
 }

@@ -13,7 +13,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::{
     archetype::Archetypes,
     id_map::{FastIntHasher, TypeIdMap},
-    prelude::{EntityCommands, Event, EventExt, System},
+    prelude::{Entities, EntityCommands, Event, EventExt, System},
     resource::Resources,
     system::{
         handler::{EventHandler, HandlerAccesses},
@@ -101,6 +101,8 @@ struct SystemPacket {
     archetypes: NonNull<Archetypes>,
     /// Tags the system must use.
     tags: NonNull<Tags>,
+    /// Entities of the world.
+    entities: NonNull<Entities>,
     /// Resources the systems must use.
     resources: NonNull<Resources>,
     event: NonNull<dyn EventExt>,
@@ -288,6 +290,9 @@ impl Dispatcher {
                                 archetypes: NonNull::new_unchecked(
                                     (&world.archetypes) as *const _ as *mut _,
                                 ),
+                                entities: NonNull::new_unchecked(
+                                    (&world.entities) as *const _ as *mut _,
+                                ),
                                 thread_sender: dispatcher_state.states[idx].thread_sender.clone(),
                                 handler: NonNull::new_unchecked(
                                     primary_sys.handlers.get(&event_id).unwrap().as_ref()
@@ -311,6 +316,7 @@ impl Dispatcher {
                                 packet.system.as_mut(),
                                 packet.tags.as_ref(),
                                 packet.archetypes.as_ref(),
+                                packet.entities.as_ref(),
                                 packet.commands,
                                 packet.events,
                                 packet.resources.as_ref(),

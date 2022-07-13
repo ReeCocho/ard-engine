@@ -2,7 +2,7 @@ use crate::prelude::{Asset, Assets};
 use std::{hash::Hash, sync::Arc};
 
 /// Raw asset handle.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RawHandle {
     pub id: u32,
 }

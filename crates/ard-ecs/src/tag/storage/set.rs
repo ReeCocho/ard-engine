@@ -14,7 +14,7 @@ pub trait TagStorageSet {
     fn from_tags(tags: &Tags) -> Self;
 
     /// Creates an instance of the tag set given an entity.
-    fn make_set(&mut self, entity: Entity) -> Self::TagSet;
+    fn make_set(&self, entity: Entity) -> Self::TagSet;
 }
 
 impl TagStorageSet for () {
@@ -24,7 +24,7 @@ impl TagStorageSet for () {
     fn from_tags(_: &Tags) -> Self {}
 
     #[inline]
-    fn make_set(&mut self, _: Entity) -> Self::TagSet {}
+    fn make_set(&self, _: Entity) -> Self::TagSet {}
 }
 
 macro_rules! tag_storage_set_impl {
@@ -40,7 +40,7 @@ macro_rules! tag_storage_set_impl {
             }
 
             #[inline]
-            fn make_set(&mut self, entity: Entity) -> Self::TagSet {
+            fn make_set(&self, entity: Entity) -> Self::TagSet {
                 paste! {
                     #[allow(non_snake_case)]
                     let ($([<$name _storage>],)*) = self;

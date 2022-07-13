@@ -77,7 +77,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: true,
+                debug: false,
             },
         })
         .add_plugin(AssetsPlugin)

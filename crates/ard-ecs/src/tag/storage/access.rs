@@ -16,7 +16,7 @@ pub trait TagStorageAccess: Sized {
     fn from_tags(tags: &Tags) -> Self;
 
     /// Get a tag access from the storage. Returns `None` if the entity does not contain the tag.
-    fn get_tag(&mut self, entity: Entity) -> Option<Self::TagAccess>;
+    fn get_tag(&self, entity: Entity) -> Option<Self::TagAccess>;
 }
 
 // Sad time raw pointers :(
@@ -55,7 +55,7 @@ impl<S: TagStorage<T> + 'static, T: Tag<Storage = S>> TagStorageAccess for ReadT
     }
 
     #[inline]
-    fn get_tag(&mut self, entity: Entity) -> Option<Self::TagAccess> {
+    fn get_tag(&self, entity: Entity) -> Option<Self::TagAccess> {
         if self.lock.is_some() {
             unsafe { (*self.storage).get(entity) }
         } else {
@@ -84,7 +84,7 @@ impl<S: TagStorage<T> + 'static, T: Tag<Storage = S>> TagStorageAccess for Write
     }
 
     #[inline]
-    fn get_tag(&mut self, entity: Entity) -> Option<Self::TagAccess> {
+    fn get_tag(&self, entity: Entity) -> Option<Self::TagAccess> {
         if self.lock.is_some() {
             unsafe { (*self.storage).get_mut(entity) }
         } else {

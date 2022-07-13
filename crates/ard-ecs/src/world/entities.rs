@@ -12,7 +12,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use crate::{
     archetype::{ArchetypeId, Archetypes},
-    component::pack::ComponentPack,
+    component::pack::{ComponentPack, EmptyComponentPack},
     entity::Entity,
     prelude::{Component, ComponentExt},
     tag::{pack::TagPack, Tag, TagCollectionId, TagExt, Tags},
@@ -22,10 +22,6 @@ use crate::{
 pub struct Entities {
     /// List of entity descriptions.
     entities: Vec<EntityInfo>,
-    /// List of entities to create when processing.
-    to_create: Vec<EntityCreateInfo>,
-    /// List of entities to destroy when processing.
-    to_destroy: Vec<Entity>,
     entity_commands: EntityCommands,
     commands_receiver: Receiver<EntityCommand>,
     construction_data: Arc<EntityConstructionData>,
@@ -62,6 +58,10 @@ pub(crate) enum EntityCommand {
         entity: Entity,
         id: TypeId,
     },
+    SetComponents {
+        entities: Vec<Entity>,
+        components: Box<dyn ComponentPack>,
+    },
     AddComponent {
         entity: Entity,
         component: Box<dyn ComponentExt>,
@@ -92,16 +92,6 @@ pub(crate) struct EntityInfo {
     pub collection: Option<TagCollectionId>,
 }
 
-/// A pack of data used to create a set of entities.
-struct EntityCreateInfo {
-    /// Component pack used to initialize the entities.  
-    components: Box<dyn ComponentPack>,
-    /// Optional tag pack used to initialize the entities.
-    tags: Option<Box<dyn TagPack>>,
-    /// Handles of the generated entities.
-    entities: Vec<Entity>,
-}
-
 impl Default for Entities {
     fn default() -> Self {
         let (sender, receiver) = unbounded();
@@ -122,20 +112,13 @@ impl Default for Entities {
             commands_receiver: receiver,
             entities: Vec::default(),
             entity_commands,
-            to_create: Vec::default(),
-            to_destroy: Vec::default(),
             construction_data,
         }
     }
 }
 
 impl Entities {
-    /// Determines the number of active entities.
     #[inline]
-    pub fn count(&self) -> usize {
-        self.entities.len() - self.construction_data.free_recv.len() - self.to_destroy.len()
-    }
-
     pub fn commands(&self) -> &EntityCommands {
         &self.entity_commands
     }
@@ -146,8 +129,8 @@ impl Entities {
         for command in self.commands_receiver.clone().try_iter() {
             match command {
                 EntityCommand::Create {
-                    components,
-                    tags,
+                    mut components,
+                    tags: tag_pack,
                     entities,
                 } => {
                     // No need to verify components and tags because they must have been verified
@@ -165,7 +148,7 @@ impl Entities {
                         self.entities.resize(
                             max_id as usize + 1,
                             EntityInfo {
-                                ver: unsafe { NonZeroU32::new_unchecked(1) },
+                                ver: NonZeroU32::new(1).unwrap(),
                                 archetype: ArchetypeId::default(),
                                 index: 0,
                                 collection: None,
@@ -173,33 +156,59 @@ impl Entities {
                         );
                     }
 
-                    // For defered initialization
-                    self.to_create.push(EntityCreateInfo {
-                        components,
-                        tags,
-                        entities,
-                    });
+                    // Move the components into their archetype
+                    let (archetype, begin) = components.move_into(&entities, archetypes);
+
+                    // Move tags into their storages if needed
+                    let collection = if let Some(mut tag_pack) = tag_pack {
+                        Some(tag_pack.move_into(&entities, tags))
+                    } else {
+                        None
+                    };
+
+                    // Update the created entities archetypes
+                    for (i, entity) in entities.iter().enumerate() {
+                        let mut info = &mut self.entities[entity.id() as usize];
+                        info.archetype = archetype;
+                        info.collection = collection;
+                        info.index = (begin + i) as u32;
+                    }
                 }
                 EntityCommand::Destroy { entities } => {
-                    for entity in &entities {
+                    for entity in entities {
                         let ind = entity.id() as usize;
 
                         // Verify that the entity handles are valid
-                        if ind >= self.entities.len()
-                            || self.entities[ind].ver.get() != entity.ver().as_u32()
-                        {
-                            panic!("attempt to delete an invalid entity handle");
-                        }
+                        debug_assert!(ind < self.entities.len());
 
-                        // Add to list
-                        self.to_destroy.push(*entity);
+                        let mut info = &mut self.entities[ind];
+                        debug_assert!(info.ver.get() == entity.ver().as_u32());
 
                         // Update version counter
-                        self.entities[ind].ver = unsafe {
-                            NonZeroU32::new_unchecked(
-                                self.entities[ind].ver.get().wrapping_add(1).max(1),
-                            )
+                        info.ver = unsafe {
+                            NonZeroU32::new_unchecked(info.ver.get().wrapping_add(1).max(1))
                         };
+
+                        // Remove tags if needed
+                        if let Some(id) = &info.collection {
+                            let collection = tags
+                                .get_collection(*id)
+                                .expect("Tag collection does not exist for entity");
+                            for id in collection.type_key.iter() {
+                                let storage = tags.get_storage_id(*id).unwrap();
+                                tags.get_storage_by_id(storage).remove(&[entity]);
+                            }
+                        }
+
+                        // Remove components and swap the moved entity if needed
+                        if let Some(moved_entity) =
+                            archetypes.remove_entity(info.archetype, info.index as usize)
+                        {
+                            self.entities[moved_entity.id() as usize].index = info.index;
+                        }
+
+                        // Add entity to the free list
+                        self.construction_data.free_send.send(entity).unwrap();
                     }
                 }
                 EntityCommand::RemoveComponent { entity, id } => {
@@ -216,6 +225,38 @@ impl Entities {
                         if let Some(moved_entity) = moved_entity {
                             self.entities[moved_entity.id() as usize].index = old_idx;
                         }
+                    }
+                }
+                EntityCommand::SetComponents {
+                    entities,
+                    mut components,
+                } => {
+                    // "Delete" all the entities so they have no components
+                    for entity in &entities {
+                        let ind = entity.id() as usize;
+
+                        // Verify that the entity handles are valid
+                        debug_assert!(ind < self.entities.len());
+
+                        let info = &mut self.entities[ind];
+                        debug_assert!(info.ver.get() == entity.ver().as_u32());
+
+                        // Remove components and swap the moved entity if needed
+                        if let Some(moved_entity) =
+                            archetypes.remove_entity(info.archetype, info.index as usize)
+                        {
+                            self.entities[moved_entity.id() as usize].index = info.index;
+                        }
+                    }
+
+                    // Move the components into their archetype
+                    let (archetype, begin) = components.move_into(&entities, archetypes);
+
+                    // Update the entities archetypes
+                    for (i, entity) in entities.iter().enumerate() {
+                        let mut info = &mut self.entities[entity.id() as usize];
+                        info.archetype = archetype;
+                        info.index = (begin + i) as u32;
                     }
                 }
                 EntityCommand::AddComponent { entity, component } => {
@@ -248,53 +289,11 @@ impl Entities {
                 }
             }
         }
+    }
 
-        // Process to create
-        for mut pack in self.to_create.drain(..) {
-            // Move the components into their archetype
-            let (archetype, begin) = pack.components.move_into(&pack.entities, archetypes);
-
-            // Move tags into their storages if needed
-            let collection = if let Some(mut tag_pack) = pack.tags {
-                Some(tag_pack.move_into(&pack.entities, tags))
-            } else {
-                None
-            };
-
-            // Update the created entities archetypes
-            for (i, entity) in pack.entities.iter().enumerate() {
-                let mut info = &mut self.entities[entity.id() as usize];
-                info.archetype = archetype;
-                info.collection = collection;
-                info.index = (begin + i) as u32;
-            }
-        }
-
-        // Process to destroy
-        for entity in self.to_destroy.drain(..) {
-            let info = &mut self.entities[entity.id() as usize];
-
-            // Remove tags if needed
-            if let Some(id) = &info.collection {
-                let collection = tags
-                    .get_collection(*id)
-                    .expect("Tag collection does not exist for entity");
-                for id in collection.type_key.iter() {
-                    let storage = tags.get_storage_id(*id).unwrap();
-                    tags.get_storage_by_id(storage).remove(&[entity]);
-                }
-            }
-
-            // Remove components and swap the moved entity if needed
-            if let Some(moved_entity) =
-                archetypes.remove_entity(info.archetype, info.index as usize)
-            {
-                self.entities[moved_entity.id() as usize].index = info.index;
-            }
-
-            // Add entity to the free list
-            self.construction_data.free_send.send(entity).unwrap();
-        }
+    #[inline]
+    pub(crate) fn entities(&self) -> &[EntityInfo] {
+        &self.entities
     }
 }
 
@@ -313,6 +312,17 @@ impl EntityCommands {
         let _ = self.sender.send(EntityCommand::Destroy {
             entities: Vec::from(entities),
         });
+    }
+
+    /// Creates enough entities to fill in the slice. The created entities have no components.
+    #[inline]
+    pub fn create_empty(&self, entities: &mut [Entity]) {
+        self.create(
+            EmptyComponentPack {
+                count: entities.len(),
+            },
+            entities,
+        );
     }
 
     /// An alias for `EntityCommands::create_with_tags(components, (), entities)`.
@@ -389,6 +399,17 @@ impl EntityCommands {
                 Some(Box::new(tags))
             },
             entities: new_entities,
+        });
+    }
+
+    #[inline]
+    pub fn set_components(&self, entities: &[Entity], components: impl ComponentPack + 'static) {
+        debug_assert!(components.is_valid());
+        debug_assert_eq!(entities.len(), components.len());
+
+        let _ = self.sender.send(EntityCommand::SetComponents {
+            entities: Vec::from(entities),
+            components: Box::new(components),
         });
     }
 

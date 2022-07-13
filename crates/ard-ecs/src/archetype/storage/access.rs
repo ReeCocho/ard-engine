@@ -31,7 +31,7 @@ pub trait StorageBufferAccess: Default {
     ///
     /// # Safety
     /// No bounds checking is performed. It is left up to the caller to not read out of bounds.
-    unsafe fn fetch(&mut self, idx: usize) -> Self::ComponentAccess;
+    unsafe fn fetch(&self, idx: usize) -> Self::ComponentAccess;
 }
 
 // Sad time raw pointers :(
@@ -96,7 +96,7 @@ impl<T: Component + 'static> StorageBufferAccess for ReadStorageBuffer<T> {
     }
 
     #[inline]
-    unsafe fn fetch(&mut self, idx: usize) -> Self::ComponentAccess {
+    unsafe fn fetch(&self, idx: usize) -> Self::ComponentAccess {
         self.ptr.as_ptr().add(idx).as_ref().unsafe_unwrap()
     }
 }
@@ -160,7 +160,7 @@ impl<T: Component + 'static> StorageBufferAccess for WriteStorageBuffer<T> {
     }
 
     #[inline]
-    unsafe fn fetch(&mut self, idx: usize) -> Self::ComponentAccess {
+    unsafe fn fetch(&self, idx: usize) -> Self::ComponentAccess {
         self.ptr.as_ptr().add(idx).as_mut().unsafe_unwrap()
     }
 }

@@ -1,3 +1,11 @@
+use ard_engine::{assets::prelude::RawHandle, ecs::prelude::Entity};
+
+#[derive(Debug, Copy, Clone)]
+pub enum DragDropPayload {
+    Entity(Entity),
+    Asset(RawHandle),
+}
+
 pub fn throbber(
     ui: &imgui::Ui,
     radius: f32,

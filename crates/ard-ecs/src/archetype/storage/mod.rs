@@ -6,7 +6,7 @@ use std::any::Any;
 use crate::prw_lock::{PrwLock, PrwReadLock, PrwWriteLock};
 
 /// Holds lists of components of a single type for archetypes.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ArchetypeStorage<T: Send + Sync> {
     /// The actual component buffers.
     ///
@@ -44,12 +44,19 @@ pub trait AnyArchetypeStorage: Send + Sync {
     fn replace(&mut self, object: Box<dyn Any>, buffer: usize, index: usize);
 }
 
+impl<T: Send + Sync> Default for ArchetypeStorage<T> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            buffers: Vec::with_capacity(1),
+        }
+    }
+}
+
 impl<T: Send + Sync> ArchetypeStorage<T> {
     #[inline]
     pub fn new() -> Self {
-        Self {
-            buffers: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Requests immutable access to a buffer within the storage.
@@ -74,7 +81,7 @@ impl<T: Send + Sync> ArchetypeStorage<T> {
 impl<T: Send + Sync + 'static> AnyArchetypeStorage for ArchetypeStorage<T> {
     #[inline]
     fn create(&mut self) -> usize {
-        self.buffers.push(PrwLock::new(Vec::default(), ""));
+        self.buffers.push(PrwLock::new(Vec::with_capacity(1), ""));
         self.buffers.len() - 1
     }
 

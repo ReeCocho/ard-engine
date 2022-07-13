@@ -15,4 +15,4 @@ ron = "0.7"
 crossbeam-channel = "0.5"
 thiserror = "1.0"
 fs_extra = "1"
-ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window" ] }
+ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window", "editor" ] }

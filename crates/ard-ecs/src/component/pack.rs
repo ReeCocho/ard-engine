@@ -37,6 +37,78 @@ pub trait ComponentPack: Send + Sync {
     ) -> (ArchetypeId, usize);
 }
 
+pub(crate) struct EmptyComponentPack {
+    pub count: usize,
+}
+
+/// Implementation of component pack for empty tuple. Used for entity creation without components.
+impl ComponentPack for EmptyComponentPack {
+    #[inline]
+    fn is_valid(&self) -> bool {
+        true
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.count
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    #[inline]
+    fn move_into(
+        &mut self,
+        entities: &[Entity],
+        archetypes: &mut Archetypes,
+    ) -> (ArchetypeId, usize) {
+        assert!(self.is_valid());
+        assert!(entities.len() >= self.len());
+
+        // Get the archetype for the pack
+        let type_key = self.type_key();
+        let (archetype, index) = if let Some(archetype) = archetypes.get_archetype(&type_key) {
+            archetype
+        } else {
+            // Archetype doesn't exist, so we need to make one
+            let mut archetype = Archetype {
+                type_key: type_key.clone(),
+                map: HashMap::default(),
+                entities: 0,
+            };
+
+            // Create entity buffer
+            archetype.entities = archetypes.get_entity_storage_mut().create();
+
+            // Create the archetype
+            archetypes.add_archetype(archetype);
+
+            // Safe to unwrap since we just added it
+            archetypes.get_archetype(&type_key).unwrap()
+        };
+
+        let archetype: &Archetype = archetype;
+
+        // Move all entities into the entity buffer (and store the beginning index for the entities)
+        let begin_ind = {
+            let mut entity_buffer = archetypes.get_entity_storage().get_mut(archetype.entities);
+            let begin = entity_buffer.len();
+            entity_buffer.extend_from_slice(entities);
+            begin
+        };
+
+        // Return index of the archetype and beginning index within the buffer
+        (index, begin_ind)
+    }
+
+    #[inline]
+    fn type_key(&self) -> TypeKey {
+        TypeKey::default()
+    }
+}
+
 /// Macro to help implement the `ComponentPack` trait for tuples of component vectors.
 macro_rules! component_pack_impl {
     ( $n:expr, $( $name:ident )+ ) => {
@@ -61,13 +133,13 @@ macro_rules! component_pack_impl {
 
             #[inline]
             fn len(&self) -> usize {
-                assert!(self.is_valid());
+                debug_assert!(self.is_valid());
                 self.0.len()
             }
 
             #[inline]
             fn is_empty(&self) -> bool {
-                assert!(self.is_valid());
+                debug_assert!(self.is_valid());
                 self.0.is_empty()
             }
 
@@ -86,8 +158,8 @@ macro_rules! component_pack_impl {
                 archetypes: &mut Archetypes,
             ) -> (ArchetypeId, usize)
             {
-                assert!(self.is_valid());
-                assert!(entities.len() >= self.len());
+                debug_assert!(self.is_valid());
+                debug_assert!(entities.len() >= self.len());
 
                 // Get the archetype for the pack
                 let type_key = self.type_key();

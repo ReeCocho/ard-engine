@@ -11,7 +11,7 @@ use ard_engine::{
 
 use crate::par_task::ParTask;
 
-use super::inspector::InspectorItem;
+use super::{inspector::InspectorItem, util::DragDropPayload};
 
 const MAX_CHARS_IN_ASSET: usize = 12;
 const ASSET_ICON_SIZE: f32 = 80.0;
@@ -157,7 +157,15 @@ impl AssetViewer {
                     let image = folder_icon_id;
 
                     // Move to next folder if selected
-                    if asset_button(ui, style, image, &folder.display_name, &folder.name, last) {
+                    if asset_button(
+                        ui,
+                        style,
+                        image,
+                        None,
+                        &folder.display_name,
+                        &folder.name,
+                        last,
+                    ) {
                         new_folder = Some(folder.name.clone());
                     }
                 }
@@ -168,10 +176,15 @@ impl AssetViewer {
                     let last = i == current_folder.assets.len() - 1;
                     let image = file_icon_id;
 
+                    let id = assets
+                        .get_id_by_name(&asset.asset_name)
+                        .map(|id| RawHandle { id });
+
                     if asset_button(
                         ui,
                         style,
                         image,
+                        id,
                         &asset.display_name,
                         asset.asset_name.to_str().unwrap(),
                         last,
@@ -435,6 +448,7 @@ fn asset_button(
     ui: &imgui::Ui,
     style: &imgui::Style,
     image: imgui::TextureId,
+    asset: Option<RawHandle>,
     name: &str,
     id: &str,
     last_button: bool,
@@ -457,6 +471,17 @@ fn asset_button(
         ui.set_cursor_screen_pos([indent, ui.cursor_pos()[1] + ui.window_pos()[1]]);
         ui.text(&name);
     });
+
+    if let Some(asset) = asset {
+        if let Some(tooltip) = ui
+            .drag_drop_source_config("Asset")
+            .flags(imgui::DragDropFlags::SOURCE_ALLOW_NULL_ID)
+            .begin_payload(DragDropPayload::Asset(asset))
+        {
+            ui.text(name);
+            tooltip.end();
+        }
+    }
 
     let window_visible_x2 = ui.window_pos()[0] + ui.window_content_region_max()[0];
     let last_button_x2 = ui.item_rect_max()[0];

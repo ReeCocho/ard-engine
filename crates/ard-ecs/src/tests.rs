@@ -162,6 +162,7 @@ fn create_entities() {
     let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
     let mut count = 0;
     for (qa, qb, qc) in gen.make::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>() {
@@ -203,6 +204,7 @@ fn destroy_entities() {
     let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
     for (_, _, _) in gen.make::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>() {
         panic!();
@@ -228,6 +230,7 @@ fn create_with_tags() {
     let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>,))>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
     let mut has_tag = false;
     let mut no_tag = false;
@@ -325,6 +328,7 @@ fn remove_components() {
     let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
 
     let mut count = 0;
@@ -359,7 +363,7 @@ fn remove_components() {
     let gen = Queries::<(
         Entity,
         (Read<ComponentA>, Read<ComponentB>, Read<ComponentC>),
-    )>::new(world.tags(), world.archetypes());
+    )>::new(world.tags(), world.archetypes(), world.entities());
 
     let mut count = 0;
     let mut seen = std::collections::HashSet::<Entity>::default();
@@ -405,6 +409,7 @@ fn add_components() {
     let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
 
     let mut count = 0;
@@ -444,6 +449,53 @@ fn add_components() {
     assert_eq!(count, 1);
 }
 
+/// Setting components at runtime.
+#[test]
+fn set_components() {
+    let mut world = World::new();
+
+    let a = ComponentA { x: 1, y: 2 };
+    let b = ComponentB { x: 3, y: 4 };
+    let c = ComponentC { x: 5, y: 6 };
+
+    let mut entities = vec![Entity::null(); 4];
+    world
+        .entities()
+        .commands()
+        .create((vec![a; 4],), &mut entities);
+    world.process_entities();
+
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
+        world.tags(),
+        world.archetypes(),
+        world.entities(),
+    );
+
+    let count = gen.make::<Read<ComponentA>>().count();
+    assert_eq!(count, 4);
+
+    std::mem::drop(gen);
+
+    world
+        .entities()
+        .commands()
+        .set_components(&entities, (vec![b; 4], vec![c; 4]));
+
+    world.process_entities();
+
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
+        world.tags(),
+        world.archetypes(),
+        world.entities(),
+    );
+
+    let count = gen.make::<Read<ComponentA>>().count();
+    assert_eq!(count, 0);
+
+    let count = gen.make::<(Read<ComponentB>, Read<ComponentC>)>().count();
+    assert_eq!(count, 4);
+}
+
 /// Adding tags at runtime.
 #[test]
 fn add_tags() {
@@ -470,6 +522,7 @@ fn add_tags() {
     let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
 
     let mut has_a = 0;
@@ -531,6 +584,7 @@ fn remove_tags() {
     let gen = Queries::<(Entity, (Read<ComponentA>,), (Read<TagA>, Read<TagB>))>::new(
         world.tags(),
         world.archetypes(),
+        world.entities(),
     );
 
     let mut has_a = 0;
@@ -675,4 +729,69 @@ fn circular_dependency() {
     let resources = Resources::default();
 
     dispatcher.run(&mut world, &resources);
+}
+
+/// Should be able to filter out component types.
+#[test]
+fn query_filter() {
+    let mut world = World::new();
+
+    let a = ComponentA { x: 1, y: 2 };
+    let b = ComponentB { x: 3, y: 4 };
+    let c = ComponentC { x: 5, y: 6 };
+
+    world.entities().commands().create((vec![a; 4],), &mut []);
+
+    world
+        .entities()
+        .commands()
+        .create((vec![a; 4], vec![b; 4]), &mut []);
+
+    world
+        .entities()
+        .commands()
+        .create((vec![a; 4], vec![b; 4], vec![c; 4]), &mut []);
+
+    world.process_entities();
+
+    let gen = Queries::<(Read<ComponentA>, Read<ComponentB>, Read<ComponentC>)>::new(
+        world.tags(),
+        world.archetypes(),
+        world.entities(),
+    );
+
+    assert_eq!(gen.filter().make::<Read<ComponentA>>().count(), 12);
+
+    assert_eq!(
+        gen.filter()
+            .with::<ComponentB>()
+            .make::<Read<ComponentA>>()
+            .count(),
+        8
+    );
+
+    assert_eq!(
+        gen.filter()
+            .with::<ComponentC>()
+            .make::<Read<ComponentA>>()
+            .count(),
+        4
+    );
+
+    assert_eq!(
+        gen.filter()
+            .without::<ComponentC>()
+            .make::<Read<ComponentA>>()
+            .count(),
+        8
+    );
+
+    assert_eq!(
+        gen.filter()
+            .without::<ComponentB>()
+            .without::<ComponentC>()
+            .make::<Read<ComponentA>>()
+            .count(),
+        4
+    );
 }

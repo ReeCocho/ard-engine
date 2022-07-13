@@ -3,21 +3,16 @@ use std::{
     ops::{Add, AddAssign},
 };
 
+use smallvec::SmallVec;
+
+const INLINE_KEYS: usize = 8;
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct TypeKey {
-    types: Vec<TypeId>,
+    types: SmallVec<[TypeId; INLINE_KEYS]>,
 }
 
 impl TypeKey {
-    /// Initialize a type key from a presorted vec of type ids.
-    ///
-    /// # Safety
-    /// It is up to the caller to ensure that the vec is already sorted.
-    #[inline]
-    pub unsafe fn pre_sorted(types: Vec<TypeId>) -> TypeKey {
-        TypeKey { types }
-    }
-
     #[inline]
     pub fn iter(&self) -> std::slice::Iter<TypeId> {
         self.types.iter()
@@ -138,7 +133,7 @@ impl Add for TypeKey {
 impl AddAssign for TypeKey {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
-        let mut merged = Vec::with_capacity(self.types.len() + rhs.types.len());
+        let mut merged = SmallVec::with_capacity(self.types.len() + rhs.types.len());
         let (end1, end2) = (self.types.len(), rhs.types.len());
         let (mut i1, mut i2) = (0usize, 0usize);
         while i1 < end1 && i2 < end2 {
@@ -152,11 +147,21 @@ impl AddAssign for TypeKey {
             });
         }
 
-        merged.extend(if i1 < end1 {
-            &self.types[i1..]
+        if i1 < end1 {
+            for i in &self.types[i1..self.types.len()] {
+                merged.push(*i);
+            }
         } else {
-            &rhs.types[i2..]
-        });
+            for i in &rhs.types[i2..rhs.types.len()] {
+                merged.push(*i);
+            }
+        }
+
+        // merged.extend(if i1 < end1 {
+        //     self.types[i1..].iter()
+        // } else {
+        //     rhs.types[i2..].iter()
+        // });
 
         self.types = merged;
     }

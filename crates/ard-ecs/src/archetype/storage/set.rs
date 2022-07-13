@@ -18,7 +18,31 @@ pub trait ArchetypeStorageSet: Default {
     ///
     /// # Safety
     /// No bounds check is performed. It is up to the caller to ensure the set is valid.
-    unsafe fn fetch(&mut self, idx: usize) -> Self::Filter;
+    unsafe fn fetch(&self, idx: usize) -> Self::Filter;
+}
+
+impl<T: StorageBufferAccess> ArchetypeStorageSet for T {
+    type Filter = T::ComponentAccess;
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline]
+    fn is_valid(&self, idx: usize) -> bool {
+        self.is_valid(idx)
+    }
+
+    #[inline]
+    unsafe fn fetch(&self, idx: usize) -> Self::Filter {
+        self.fetch(idx)
+    }
 }
 
 macro_rules! archetype_storage_set_impl {
@@ -42,7 +66,7 @@ macro_rules! archetype_storage_set_impl {
             }
 
             #[inline]
-            unsafe fn fetch(&mut self, idx: usize) -> Self::Filter {
+            unsafe fn fetch(&self, idx: usize) -> Self::Filter {
                 paste! {
                     #[allow(non_snake_case)]
                     let ($([<$name _storage>],)*) = self;

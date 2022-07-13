@@ -1,26 +1,30 @@
-use ard_ecs::prelude::*;
-use ard_math::*;
+pub mod components;
+pub mod destroy;
+pub mod object;
+pub mod scene;
+pub mod serialization;
+pub mod systems;
 
-#[derive(Debug, Component, Copy, Clone)]
-pub struct Transform {
-    position: Vec3A,
-    rotation: Quat,
-    scale: Vec3A,
+use ard_core::prelude::*;
+use destroy::Destroyer;
+use object::static_object::{StaticObject, StaticObjectDescriptor};
+use serde::{Deserialize, Serialize};
+use systems::{renderable::ApplyRenderableData, transform::TransformUpdate};
+
+/// Plugin to allow for asset management.
+#[derive(Default)]
+pub struct GamePlugin;
+
+// Scene definition.
+scene_definition! {
+    Scene,
+    StaticObject
 }
 
-impl Transform {
-    #[inline]
-    pub fn position(&self) -> Vec3 {
-        self.position.into()
-    }
-
-    #[inline]
-    pub fn rotation(&self) -> Quat {
-        self.rotation
-    }
-
-    #[inline]
-    pub fn scale(&self) -> Vec3 {
-        self.scale.into()
+impl Plugin for GamePlugin {
+    fn build(&mut self, app: &mut AppBuilder) {
+        app.add_system(Destroyer::default());
+        app.add_system(TransformUpdate::default());
+        app.add_system(ApplyRenderableData);
     }
 }

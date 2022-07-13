@@ -1,3 +1,4 @@
+use core::arch;
 use std::any::TypeId;
 
 use crate::{
@@ -31,6 +32,42 @@ where
     ///
     /// Panics if the filter isn't a subset of the archetype.
     fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes) -> Self::StorageSet;
+}
+
+impl<T: ComponentAccess> ComponentFilter for T {
+    type StorageSet = T::Storage;
+
+    fn type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        descriptor.add::<T::Component>();
+        descriptor
+    }
+
+    fn read_type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        if !T::MUT_ACCESS {
+            descriptor.add::<T::Component>();
+        }
+        descriptor
+    }
+
+    fn mut_type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        if T::MUT_ACCESS {
+            descriptor.add::<T::Component>();
+        }
+        descriptor
+    }
+
+    fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes) -> Self::StorageSet {
+        T::Storage::new(
+            archetypes,
+            *archetype
+                .map
+                .get(&TypeId::of::<T::Component>())
+                .expect("Provided archetype does not contain component in filter."),
+        )
+    }
 }
 
 macro_rules! component_filter_impl {

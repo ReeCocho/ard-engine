@@ -544,6 +544,33 @@ impl Assets {
         }
     }
 
+    /// Gets the name associated with the asset handle.
+    #[inline]
+    pub fn get_name<A: Asset + 'static>(&self, handle: &Handle<A>) -> AssetNameBuf {
+        let guard = self.0.assets.guard();
+        self.0
+            .assets
+            .get(&handle.id(), &guard)
+            .unwrap()
+            .name
+            .clone()
+    }
+
+    #[inline]
+    pub fn get_name_by_id(&self, id: u32) -> Option<AssetNameBuf> {
+        let guard = self.0.assets.guard();
+        self.0
+            .assets
+            .get(&id, &guard)
+            .map(|asset| asset.name.clone())
+    }
+
+    #[inline]
+    pub fn get_id_by_name(&self, name: &AssetName) -> Option<u32> {
+        let guard = self.0.name_to_id.guard();
+        self.0.name_to_id.get(name, &guard).map(|id| *id)
+    }
+
     /// Helper function to verify that an asset name points to the correct type. Returns the id
     /// of the asset.
     #[inline]
