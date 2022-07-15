@@ -1,0 +1,20 @@
+(
+    nodes: [],
+    scene: (
+        field_StaticObject: (
+            entity_count: 0,
+            field_Transform: [],
+            field_Parent: [],
+            field_Children: [],
+            field_Model: [],
+            field_RenderableData: [],
+        ),
+        field_EmptyObject: (
+            entity_count: 0,
+            field_Transform: [],
+            field_Parent: [],
+            field_Children: [],
+            field_Model: [],
+        ),
+    ),
+)

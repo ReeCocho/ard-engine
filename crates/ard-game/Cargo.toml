@@ -20,6 +20,3 @@ serde_with = "1"
 enum_dispatch = "0.3"
 paste = "1"
 ard-game-derive = { path = "./ard-game-derive/" }
-
-[features]
-editor = []

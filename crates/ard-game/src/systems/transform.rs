@@ -1,11 +1,12 @@
+use std::process::Child;
+
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
+use ard_graphics_api::prelude::*;
 use ard_math::*;
 
 use crate::{
-    components::transform::{
-        Children, DynamicTransformMark, GlobalTransform, Parent, PrevParent, Transform,
-    },
+    components::transform::{Children, Parent, PrevParent, Transform},
     destroy::{Destroy, Destroyer},
 };
 
@@ -24,8 +25,8 @@ impl TransformUpdate {
             Read<Transform>,
             Read<Parent>,
             Read<Destroy>,
-            Write<DynamicTransformMark>,
-            Write<GlobalTransform>,
+            Write<Children>,
+            Write<Model>,
             Write<PrevParent>,
         )>,
         _: Res<()>,
@@ -54,10 +55,10 @@ impl TransformUpdate {
             commands.entities.remove_component::<PrevParent>(entity);
         }
 
-        let current = queries.filter().without::<Destroy>().make::<(
-            Entity,
-            (Read<Parent>, Read<Transform>, Write<GlobalTransform>),
-        )>();
+        let current = queries
+            .filter()
+            .without::<Destroy>()
+            .make::<(Entity, (Read<Parent>, Read<Transform>, Write<Model>))>();
 
         self.hierarchy.clear();
         self.hierarchy.reserve(current.len());
@@ -77,7 +78,7 @@ impl TransformUpdate {
         // Construct the tree from roots to leaves breadth first
         let mut i = 0;
         while i != self.hierarchy.len() {
-            let parent_global = match queries.get::<Read<GlobalTransform>>(self.hierarchy[i]) {
+            let parent_global = match queries.get::<Read<Model>>(self.hierarchy[i]) {
                 Some(parent) => parent.0,
                 None => {
                     i += 1;
@@ -98,9 +99,7 @@ impl TransformUpdate {
             // parent
             for child in children.0.iter() {
                 self.hierarchy.push(*child);
-                if let Some(mut query) =
-                    queries.get::<(Read<Transform>, Write<GlobalTransform>)>(*child)
-                {
+                if let Some(mut query) = queries.get::<(Read<Transform>, Write<Model>)>(*child) {
                     query.1 .0 = parent_global
                         * Mat4::from_scale_rotation_translation(
                             query.0.scale(),

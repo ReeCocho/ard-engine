@@ -1,4 +1,19 @@
-use ard_engine::{graphics::prelude::*, input::*, math::*, window::prelude::*};
+use ard_engine::{
+    assets::prelude::{Asset, Assets},
+    ecs::prelude::*,
+    graphics::prelude::*,
+    graphics_assets::prelude::ModelAsset,
+    input::*,
+    math::*,
+    window::prelude::*,
+};
+
+use crate::{
+    editor_job::{EditorJob, EditorJobQueue},
+    scene_graph::SceneGraph,
+};
+
+use super::util::DragDropPayload;
 
 pub struct SceneView {
     pub fov: f32,
@@ -30,6 +45,10 @@ impl SceneView {
         dt: f32,
         factory: &Factory,
         input: &InputState,
+        assets: &Assets,
+        scene_graph: &SceneGraph,
+        jobs: &mut EditorJobQueue,
+        commands: &EntityCommands,
         windows: &mut Windows,
         ui: &imgui::Ui,
         settings: &mut RendererSettings,
@@ -42,6 +61,65 @@ impl SceneView {
             let size = ui.content_region_avail();
             settings.canvas_size = Some(((size[0] as u32).max(1), (size[1] as u32).max(1)));
             imgui::Image::new(DebugGui::scene_view(), size).build(ui);
+
+            // Drag and drop for assets onto the scene
+            if let Some(target) = ui.drag_drop_target() {
+                if let Some(Ok(payload_data)) = target.accept_payload::<DragDropPayload, _>(
+                    "Asset",
+                    imgui::DragDropFlags::SOURCE_ALLOW_NULL_ID,
+                ) {
+                    // Fuggly, but we can make this nicer once if-let chains are stable
+                    if payload_data.delivery {
+                        if let DragDropPayload::Asset(handle) = payload_data.data {
+                            if let Some(name) = assets.get_name_by_id(handle.id) {
+                                if let Some(ext) = name.extension() {
+                                    match ext.to_str().unwrap() {
+                                        <ModelAsset as Asset>::EXTENSION => {
+                                            let handle = assets.load::<ModelAsset>(&name);
+                                            let assets_cl = assets.clone();
+                                            let commands_cl = commands.clone();
+                                            let send = scene_graph.new_node_channel();
+                                            jobs.add(EditorJob::new(
+                                                "Instantiate Model",
+                                                None,
+                                                move || {
+                                                    assets_cl.wait_for_load(&handle);
+
+                                                    if let Some(model) = assets_cl.get(&handle) {
+                                                        let node = super::util::instantiate_model(
+                                                            &model,
+                                                            &handle,
+                                                            &commands_cl,
+                                                        );
+
+                                                        let _ = send.send(node);
+                                                    }
+                                                },
+                                                |ui| {
+                                                    let style = unsafe { ui.style() };
+                                                    ui.text("Loading...");
+                                                    ui.same_line();
+                                                    crate::gui::util::throbber(
+                                                        ui,
+                                                        8.0,
+                                                        4.0,
+                                                        8,
+                                                        1.0,
+                                                        style[imgui::StyleColor::Button],
+                                                    );
+                                                },
+                                            ));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                target.pop();
+            }
 
             // Transform camera
             let window = windows.get_mut(WindowId::primary()).unwrap();

@@ -62,7 +62,7 @@ macro_rules! scene_definition {
                 )*
             }
 
-            #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
             pub enum [<$name GameObject>] {
                 $(
                     $field,
@@ -91,7 +91,7 @@ macro_rules! scene_definition {
                     entities: [<$name Entities>],
                     queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
                     assets: &ard_assets::manager::Assets,
-                ) -> Self {
+                ) -> (Self, crate::scene::EntityMap) {
                     use crate::object::GameObject;
 
                     // Create the entity map
@@ -116,7 +116,49 @@ macro_rules! scene_definition {
                         );
                     )*
 
-                    descriptor
+                    (descriptor, mapping)
+                }
+
+                #[inline]
+                pub fn entity_count(&self) -> usize {
+                    let mut entity_count = 0;
+                    $(
+                        entity_count += self.[<field_ $field>].entity_count;
+                    )*
+                    entity_count
+                }
+
+                pub fn load(
+                    mut self,
+                    commands: &ard_ecs::prelude::EntityCommands,
+                    assets: &ard_assets::manager::Assets
+                ) -> crate::scene::EntityMap {
+                    use crate::object::GameObject;
+
+                    // Create entity mapping
+                    let mut entity_count = 0;
+                    $(
+                        entity_count += self.[<field_ $field>].entity_count;
+                    )*
+
+                    let mut entities = vec![ard_ecs::prelude::Entity::null(); entity_count];
+                    commands.create_empty(&mut entities);
+
+                    let mut mapping = crate::scene::EntityMap::default();
+                    for entity in &entities {
+                        mapping.register(*entity);
+                    }
+
+                    // Load each game object type
+                    $(
+                        $field::load_from_pack(
+                            std::mem::take(&mut self.[<field_ $field>]),
+                            &mapping,
+                            assets,
+                        );
+                    )*
+
+                    mapping
                 }
             }
         }

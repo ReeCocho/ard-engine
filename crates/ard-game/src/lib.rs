@@ -7,7 +7,10 @@ pub mod systems;
 
 use ard_core::prelude::*;
 use destroy::Destroyer;
-use object::static_object::{StaticObject, StaticObjectDescriptor};
+use object::{
+    empty::{EmptyObject, EmptyObjectDescriptor},
+    static_object::{StaticObject, StaticObjectDescriptor},
+};
 use serde::{Deserialize, Serialize};
 use systems::{renderable::ApplyRenderableData, transform::TransformUpdate};
 
@@ -19,6 +22,7 @@ pub struct GamePlugin;
 scene_definition! {
     Scene,
     StaticObject
+    EmptyObject
 }
 
 impl Plugin for GamePlugin {

@@ -48,9 +48,11 @@ impl TextureSets {
         let magenta = [255u8, 0, 255, 255];
         let (error_image, error_image_view) = ctx.create_image(
             &magenta,
+            1,
             (1, 1, 1),
             vk::Format::R8G8B8A8_UNORM,
             vk::ImageUsageFlags::SAMPLED,
+            vk::ImageCreateFlags::empty(),
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         );
 

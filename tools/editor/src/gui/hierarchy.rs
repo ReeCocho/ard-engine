@@ -1,5 +1,7 @@
+use ard_engine::ecs::prelude::Events;
+
 use crate::{
-    gui::util::DragDropPayload,
+    gui::{inspector::InspectorItem, util::DragDropPayload},
     scene_graph::{SceneGraph, SceneGraphNode},
 };
 
@@ -7,12 +9,21 @@ use crate::{
 pub struct Hierarchy {}
 
 impl Hierarchy {
-    pub fn draw(&mut self, ui: &imgui::Ui, scene_graph: &SceneGraph) {
+    pub fn draw(&mut self, ui: &imgui::Ui, events: &Events, scene_graph: &SceneGraph) {
         ui.window("Hierarchy").build(|| {
-            fn build_tree(ui: &imgui::Ui, node: &SceneGraphNode) {
+            fn build_tree(ui: &imgui::Ui, events: &Events, node: &SceneGraphNode) {
                 let name = format!("Entity {}", node.entity.id());
 
-                let tree_node = ui.tree_node_config(&name).push();
+                let tree_node = ui
+                    .tree_node_config(&name)
+                    .open_on_arrow(true)
+                    .leaf(node.children.is_empty())
+                    .push();
+
+                // Select the entity in the inspector
+                if ui.is_item_clicked() {
+                    events.submit(InspectorItem::Entity(node.entity));
+                }
 
                 // Drag/drop for entities
                 if let Some(tooltip) = ui
@@ -38,14 +49,14 @@ impl Hierarchy {
                 // If the node is expanded, draw children
                 if let Some(tree_node) = tree_node {
                     for child in &node.children {
-                        build_tree(ui, child);
+                        build_tree(ui, events, child);
                     }
                     tree_node.pop();
                 }
             }
 
             for root in scene_graph.roots() {
-                build_tree(ui, root);
+                build_tree(ui, events, root);
             }
         });
     }

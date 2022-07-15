@@ -373,7 +373,19 @@ impl Renderer {
             let cube_map = cube_maps.get(irradiance.id).unwrap();
             let sampler = texture_sets.get_sampler(&cube_map.sampler);
             self.state
-                .set_irradiance_texture(frame_idx, cube_map, sampler);
+                .set_irradiance_texture(frame_idx, Some(cube_map.view), sampler);
+        } else {
+            let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
+            let sampler = texture_sets.get_sampler(&SamplerDescriptor {
+                min_filter: TextureFilter::Nearest,
+                max_filter: TextureFilter::Nearest,
+                mip_filter: TextureFilter::Nearest,
+                x_tiling: TextureTiling::ClampToEdge,
+                y_tiling: TextureTiling::ClampToEdge,
+                anisotropic_filtering: false,
+            });
+
+            self.state.set_irradiance_texture(frame_idx, None, sampler);
         }
 
         if let Some(radiance) = &lighting.radiance {
@@ -382,7 +394,19 @@ impl Renderer {
             let cube_map = cube_maps.get(radiance.id).unwrap();
             let sampler = texture_sets.get_sampler(&cube_map.sampler);
             self.state
-                .set_radiance_texture(frame_idx, cube_map, sampler);
+                .set_radiance_texture(frame_idx, Some(cube_map.view), sampler);
+        } else {
+            let mut texture_sets = self.factory.0.texture_sets.lock().unwrap();
+            let sampler = texture_sets.get_sampler(&SamplerDescriptor {
+                min_filter: TextureFilter::Nearest,
+                max_filter: TextureFilter::Nearest,
+                mip_filter: TextureFilter::Nearest,
+                x_tiling: TextureTiling::ClampToEdge,
+                y_tiling: TextureTiling::ClampToEdge,
+                anisotropic_filtering: false,
+            });
+
+            self.state.set_radiance_texture(frame_idx, None, sampler);
         }
 
         self.state.set_sun_cameras(&light_cameras);

@@ -75,10 +75,14 @@ impl Editor {
         item: InspectorItem,
         _: Commands,
         _: Queries<()>,
-        res: Res<(Read<Assets>,)>,
+        res: Res<(Read<Assets>, Read<SceneGraph>)>,
     ) {
+        let res = res.get();
+        let assets = res.0.unwrap();
+        let scene_graph = res.1.unwrap();
+
         self.inspector
-            .set_inspected_item(&res.get().0.unwrap(), Some(item));
+            .set_inspected_item(&assets, &scene_graph, Some(item));
     }
 
     fn pre_render(
@@ -104,6 +108,9 @@ impl Editor {
 
         let disabled = self.jobs.poll(ui);
         ui.disabled(disabled, || {
+            scene_graph.receive_nodes();
+            scene_graph.update_active_scene(&assets, &commands.entities);
+
             self.tool_bar.draw(
                 ui,
                 &queries,
@@ -113,12 +120,33 @@ impl Editor {
                 &mut self.dirty,
                 &mut self.jobs,
             );
-            self.scene_view
-                .draw(dt, &factory, &input, &mut windows, ui, &mut settings);
+
+            self.scene_view.draw(
+                dt,
+                &factory,
+                &input,
+                &assets,
+                &scene_graph,
+                &mut self.jobs,
+                &commands.entities,
+                &mut windows,
+                ui,
+                &mut settings,
+            );
+
             self.assets.draw(ui, &assets, &commands);
-            self.inspector
-                .draw(ui, &mut assets, &mut self.dirty, &factory);
-            self.hierarchy.draw(ui, &scene_graph);
+
+            self.inspector.draw(
+                ui,
+                &commands,
+                &queries,
+                &mut assets,
+                &mut self.dirty,
+                &factory,
+                &scene_graph,
+            );
+
+            self.hierarchy.draw(ui, &commands.events, &scene_graph);
         });
     }
 }

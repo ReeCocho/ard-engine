@@ -134,7 +134,7 @@ void main() { \
 
 /// Gets the model matrix for object.
 mat4 get_model_matrix() {
-    return ARD_OBJECT_INFO[ARD_INSTANCE_IDX].model;
+    return ARD_OBJECT_INFO[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].model;
 }
 
 /// Samples a texture at a given slot. If the texture is unbound, the provided default will

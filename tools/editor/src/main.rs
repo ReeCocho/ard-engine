@@ -1,6 +1,7 @@
 pub mod asset_meta;
 pub mod editor_job;
 pub mod gui;
+pub mod inspect;
 pub mod par_task;
 pub mod scene_graph;
 
@@ -13,7 +14,7 @@ use ard_engine::graphics_assets::prelude as graphics_assets;
 
 use asset_meta::{AssetMeta, AssetMetaLoader};
 use gui::Editor;
-use scene_graph::SceneGraph;
+use scene_graph::{SceneGraph, SceneGraphAsset, SceneGraphLoader};
 
 fn main() {
     AppBuilder::new(ard_engine::log::LevelFilter::Info)
@@ -48,6 +49,7 @@ fn setup(app: &mut App) {
     // Register meta loader
     let assets = app.resources.get::<Assets>().unwrap();
     assets.register::<AssetMeta>(AssetMetaLoader);
+    assets.register::<SceneGraphAsset>(SceneGraphLoader);
 
     let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
 

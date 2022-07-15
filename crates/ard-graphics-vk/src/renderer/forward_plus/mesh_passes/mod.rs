@@ -7,7 +7,7 @@ use self::mesh_pass::{MeshPass, MeshPassCreateInfo};
 
 use super::{DrawKey, ForwardPlus};
 use crate::{
-    alloc::{Buffer, Image, ImageCreateInfo},
+    alloc::Image,
     camera::{
         depth_pyramid::DepthPyramidGenerator, descriptors::DescriptorPool, graph::RenderPass,
         GraphicsContext, Lighting, RawPointLight,
@@ -24,7 +24,7 @@ use ard_render_graph::{
     buffer::{BufferAccessDescriptor, BufferDescriptor, BufferId, BufferUsage},
     graph::{RenderGraphBuilder, RenderGraphResources},
     image::ImageAccessDecriptor,
-    pass::{ColorAttachmentDescriptor, DepthStencilAttachmentDescriptor, PassDescriptor, PassId},
+    pass::{DepthStencilAttachmentDescriptor, PassDescriptor, PassId},
     AccessType, LoadOp, Operations,
 };
 use ash::vk;
@@ -95,6 +95,9 @@ pub(crate) struct MeshPasses {
     pub brdf_lut_sampler: vk::Sampler,
     pub brdf_lut: Image,
     pub brdf_lut_view: vk::ImageView,
+    // A black cube map.
+    pub black_cube: Image,
+    pub black_cube_view: vk::ImageView,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -759,9 +762,11 @@ impl<'a> MeshPassesBuilder<'a> {
         let (poisson_disk, poisson_disk_view) = unsafe {
             ctx.create_image(
                 POISSON_DISK_ANGLES,
+                1,
                 POISSON_DISK_DIMS,
                 vk::Format::R32G32B32A32_SFLOAT,
                 vk::ImageUsageFlags::SAMPLED,
+                vk::ImageCreateFlags::empty(),
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             )
         };
@@ -769,9 +774,23 @@ impl<'a> MeshPassesBuilder<'a> {
         let (brdf_lut, brdf_lut_view) = unsafe {
             ctx.create_image(
                 IBL_LUT,
+                1,
                 IBL_LUT_DIMS,
                 vk::Format::R16G16_SFLOAT,
                 vk::ImageUsageFlags::SAMPLED,
+                vk::ImageCreateFlags::empty(),
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            )
+        };
+
+        let (black_cube, black_cube_view) = unsafe {
+            ctx.create_image(
+                BLACK_CUBE,
+                6,
+                BLACK_CUBE_DIMS,
+                vk::Format::R8G8B8A8_UNORM,
+                vk::ImageUsageFlags::SAMPLED,
+                vk::ImageCreateFlags::CUBE_COMPATIBLE,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             )
         };
@@ -811,6 +830,8 @@ impl<'a> MeshPassesBuilder<'a> {
             brdf_lut,
             brdf_lut_view,
             brdf_lut_sampler,
+            black_cube,
+            black_cube_view,
         };
 
         MeshPassesBuilder {
@@ -1657,6 +1678,7 @@ impl Drop for MeshPasses {
                 pass.release(&mut self.depth_pyramid_gen);
             }
 
+            device.destroy_image_view(self.black_cube_view, None);
             device.destroy_image_view(self.brdf_lut_view, None);
             device.destroy_image_view(self.poisson_disk_view, None);
 
@@ -1730,3 +1752,9 @@ const POISSON_DISK_ANGLES: &[u8] = include_bytes!("./random_disk.bin");
 const IBL_LUT_DIMS: (u32, u32, u32) = (512, 512, 1);
 
 const IBL_LUT: &[u8] = include_bytes!("./ibl_brdf_lut.bin");
+
+const BLACK_CUBE: &[u8] = &[
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const BLACK_CUBE_DIMS: (u32, u32, u32) = (1, 1, 1);

@@ -1,3 +1,4 @@
+pub mod empty;
 pub mod static_object;
 
 use ard_assets::manager::Assets;
@@ -37,18 +38,18 @@ macro_rules! game_object_def {
             #[derive(Default)]
             pub struct $name {
                 $(
-                    [<field_ $field>]: Vec<$field>,
+                    pub [<field_ $field>]: Vec<$field>,
                 )*
             }
 
             #[serde_with::serde_as]
             #[derive(Default, Serialize, Deserialize)]
             pub struct [<$name Descriptor>] {
-                entity_count: usize,
+                pub entity_count: usize,
                 $(
                     #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
                     #[serde(default)]
-                    [<field_ $field>]: Vec<<$field as crate::serialization::SerializableComponent>::Descriptor>,
+                    pub [<field_ $field>]: Vec<<$field as crate::serialization::SerializableComponent>::Descriptor>,
                 )*
             }
         }

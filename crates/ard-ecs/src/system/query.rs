@@ -11,7 +11,7 @@ use crate::{
     prelude::{Component, Entities},
     prw_lock::PrwReadLock,
     system::data::SystemData,
-    tag::{filter::TagFilter, storage::set::TagStorageSet, Tags},
+    tag::{filter::TagFilter, storage::set::TagStorageSet, Tag, Tags},
 };
 
 /// An object used to create queries.
@@ -66,6 +66,11 @@ pub struct ComponentQuery<Components: ComponentFilter> {
 pub struct SingleComponentQuery<Components: ComponentFilter> {
     _set: Components::StorageSet,
     data: <Components::StorageSet as ArchetypeStorageSet>::Filter,
+}
+
+pub struct SingleTagQuery<Tags: TagFilter> {
+    _set: Tags::StorageSet,
+    data: <Tags::StorageSet as TagStorageSet>::TagSet,
 }
 
 /// A query that only requests components and their associated entity.
@@ -171,6 +176,20 @@ impl<S: SystemData> Queries<S> {
                 self.entities.as_ref(),
             )
         }
+    }
+
+    /// Queries a single entity for tags.
+    pub fn get_tag<T: TagFilter>(&self, entity: Entity) -> SingleTagQuery<T> {
+        // No need to perform checks if we have access to everything
+        if !S::EVERYTHING {
+            let read_tags = T::read_type_key();
+            let mut_tags = T::mut_type_key();
+
+            debug_assert!(read_tags.subset_of(&self.all_tags));
+            debug_assert!(mut_tags.subset_of(&self.mut_tags));
+        }
+
+        unsafe { SingleTagQuery::make(self.tags.as_ref(), entity) }
     }
 }
 
@@ -591,6 +610,31 @@ impl<C: ComponentFilter, T: TagFilter> Deref for SingleComponentTagQuery<C, T> {
 }
 
 impl<C: ComponentFilter, T: TagFilter> DerefMut for SingleComponentTagQuery<C, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<T: TagFilter> SingleTagQuery<T> {
+    fn make(tags: &Tags, entity: Entity) -> Self {
+        let set = T::StorageSet::from_tags(tags);
+        let data = set.make_set(entity);
+
+        Self { _set: set, data }
+    }
+}
+
+impl<T: TagFilter> Deref for SingleTagQuery<T> {
+    type Target = <T::StorageSet as TagStorageSet>::TagSet;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T: TagFilter> DerefMut for SingleTagQuery<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data

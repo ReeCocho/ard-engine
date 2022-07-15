@@ -108,6 +108,15 @@ impl AssetViewer {
             let style = unsafe { ui.style() };
             let mut new_folder = None;
             ui.window("Assets").build(|| {
+                if ui.button("Refresh") {
+                    // Rescan the project directory
+                    self.root = Folder::new_root(assets);
+                }
+
+                ui.same_line();
+                ui.text(" | ");
+                ui.same_line();
+
                 if ui.button("Root") {
                     self.current.clear();
                 }
@@ -349,6 +358,13 @@ impl Folder {
                 if ext == "meta" {
                     continue;
                 }
+            }
+
+            // Skip if the file doesn't exist
+            let mut abs_path = PathBuf::from("./assets/game/");
+            abs_path.push(asset.name());
+            if !abs_path.exists() {
+                continue;
             }
 
             // First, construct all the folders of the asset

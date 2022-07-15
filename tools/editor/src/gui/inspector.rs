@@ -1,13 +1,16 @@
-use std::error::Error;
 use std::path::PathBuf;
 
 use ard_engine::assets::prelude::{AssetNameBuf, Assets, Handle};
 use ard_engine::ecs::prelude::*;
+use ard_engine::game::object::empty::EmptyObject;
+use ard_engine::game::object::static_object::StaticObject;
+use ard_engine::game::SceneGameObject;
 use ard_engine::graphics::prelude::Factory;
-use std::thread::JoinHandle;
 
 use crate::asset_meta::{AssetMeta, AssetMetaError};
+use crate::inspect::Inspect;
 use crate::par_task::ParTask;
+use crate::scene_graph::SceneGraph;
 
 use super::dirty_assets::DirtyAssets;
 
@@ -20,6 +23,7 @@ pub struct Inspector {
 #[derive(Clone, Event)]
 pub enum InspectorItem {
     Asset(AssetNameBuf),
+    Entity(Entity),
 }
 
 enum ActiveInspectorItem {
@@ -28,6 +32,10 @@ enum ActiveInspectorItem {
         asset_name: AssetNameBuf,
         task: ParTask<Handle<AssetMeta>, AssetMetaError>,
     },
+    Entity {
+        entity: Entity,
+        ty: SceneGameObject,
+    },
 }
 
 impl Inspector {
@@ -35,7 +43,12 @@ impl Inspector {
         Self { item: None }
     }
 
-    pub fn set_inspected_item(&mut self, assets: &Assets, item: Option<InspectorItem>) {
+    pub fn set_inspected_item(
+        &mut self,
+        assets: &Assets,
+        scene_graph: &SceneGraph,
+        item: Option<InspectorItem>,
+    ) {
         match item {
             Some(item) => match item {
                 InspectorItem::Asset(asset) => {
@@ -81,6 +94,15 @@ impl Inspector {
                         });
                     }
                 }
+                InspectorItem::Entity(entity) => {
+                    self.item =
+                        scene_graph
+                            .find_entity(entity)
+                            .map(|node| ActiveInspectorItem::Entity {
+                                entity,
+                                ty: node.ty,
+                            });
+                }
             },
             None => self.item = None,
         }
@@ -89,9 +111,12 @@ impl Inspector {
     pub fn draw(
         &mut self,
         ui: &imgui::Ui,
+        commands: &Commands,
+        queries: &Queries<Everything>,
         assets: &mut Assets,
         dirty: &mut DirtyAssets,
         factory: &Factory,
+        scene_graph: &SceneGraph,
     ) {
         ui.window("Inspector").build(|| {
             let item = match &mut self.item {
@@ -124,6 +149,14 @@ impl Inspector {
                         }
                     });
                 }
+                ActiveInspectorItem::Entity { entity, ty } => match ty {
+                    SceneGameObject::StaticObject => {
+                        StaticObject::inspect(ui, *entity, commands, queries, assets)
+                    }
+                    SceneGameObject::EmptyObject => {
+                        EmptyObject::inspect(ui, *entity, commands, queries, assets)
+                    }
+                },
             }
         });
     }

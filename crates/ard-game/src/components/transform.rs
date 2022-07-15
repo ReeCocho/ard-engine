@@ -1,41 +1,38 @@
-use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_math::*;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use crate::{
-    destroy::{Destroy, Destroyer},
-    scene::MappedEntity,
-    serialization::SerializableComponent,
-};
+use crate::{scene::MappedEntity, serialization::SerializableComponent};
 
 pub const INLINE_CHILDREN: usize = 8;
 
 /// Describes the position, rotation, and scale of an entity in local space.
+///
+/// # Note
+/// You should not modify the fields of this component directly. You should use the `get` and set`
+/// methods.
 #[derive(Debug, Serialize, Deserialize, Component, Copy, Clone)]
 pub struct Transform {
-    position: Vec3A,
-    rotation: Quat,
-    scale: Vec3A,
+    pub position: Vec3A,
+    pub rotation: Quat,
+    pub scale: Vec3A,
 }
 
 /// Marks an entity with a transform as being dynamic. This allows you to modify the transform.
 #[derive(Debug, Default, Component, Copy, Clone)]
 pub struct DynamicTransformMark(bool);
 
-/// The global space transformation matrix of an entity.
-#[derive(Debug, Default, Component, Copy, Clone)]
-pub struct GlobalTransform(pub Mat4);
+#[derive(Debug, Clone, Default, Component)]
+pub struct Children(pub SmallVec<[Entity; INLINE_CHILDREN]>);
 
-#[derive(Debug, Default, Component)]
-pub struct Children(pub(crate) SmallVec<[Entity; INLINE_CHILDREN]>);
-
+/// # Note
+/// You should not modify this field directly. Instead, you should use the `get` and `set` methods.
 #[derive(Debug, Default, Component, Copy, Clone)]
-pub struct Parent(pub(crate) Option<Entity>);
+pub struct Parent(pub Option<Entity>);
 
 #[derive(Debug, Component, Copy, Clone)]
-pub struct PrevParent(pub(crate) Option<Entity>);
+pub struct PrevParent(pub Option<Entity>);
 
 impl Parent {
     #[inline]

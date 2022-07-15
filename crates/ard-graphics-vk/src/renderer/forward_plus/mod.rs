@@ -496,12 +496,12 @@ impl ForwardPlus {
     pub unsafe fn set_irradiance_texture(
         &self,
         frame: usize,
-        texture: &CubeMapInner,
+        view: Option<vk::ImageView>,
         sampler: vk::Sampler,
     ) {
         let image_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(texture.view)
+            .image_view(view.unwrap_or(self.mesh_passes.black_cube_view))
             .sampler(sampler)
             .build()];
 
@@ -521,12 +521,12 @@ impl ForwardPlus {
     pub unsafe fn set_radiance_texture(
         &self,
         frame: usize,
-        texture: &CubeMapInner,
+        view: Option<vk::ImageView>,
         sampler: vk::Sampler,
     ) {
         let image_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(texture.view)
+            .image_view(view.unwrap_or(self.mesh_passes.black_cube_view))
             .sampler(sampler)
             .build()];
 

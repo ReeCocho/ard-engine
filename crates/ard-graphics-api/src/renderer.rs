@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel, RenderLayerFlags};
 use ard_ecs::prelude::*;
 use ard_math::{Mat4, Vec3};
+use serde::{Deserialize, Serialize};
 
 /// Event indicating that rendering is about to be performed. Contains the duration sine the
 /// last pre render event.
@@ -26,7 +27,7 @@ pub struct Renderable<B: Backend> {
 impl<B: Backend> Component for Renderable<B> {}
 
 /// Model matrix for a `Renderable` component.
-#[derive(Component, Clone)]
+#[derive(Component, Default, Copy, Clone, Serialize, Deserialize)]
 pub struct Model(pub Mat4);
 
 /// Handle to a static renderable object.

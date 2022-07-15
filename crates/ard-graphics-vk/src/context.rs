@@ -310,9 +310,11 @@ impl GraphicsContext {
     pub(crate) unsafe fn create_image(
         &self,
         data: &[u8],
+        array_layers: u32,
         dims: (u32, u32, u32),
         format: vk::Format,
         usage: vk::ImageUsageFlags,
+        flags: vk::ImageCreateFlags,
         final_layout: vk::ImageLayout,
     ) -> (Image, vk::ImageView) {
         let image = {
@@ -329,9 +331,9 @@ impl GraphicsContext {
                 memory_usage: gpu_allocator::MemoryLocation::GpuOnly,
                 image_usage: usage | vk::ImageUsageFlags::TRANSFER_DST,
                 mip_levels: 1,
-                array_layers: 1,
+                array_layers,
                 format,
-                flags: vk::ImageCreateFlags::empty(),
+                flags,
             };
 
             Image::new(&create_info)
@@ -341,7 +343,11 @@ impl GraphicsContext {
             let create_info = vk::ImageViewCreateInfo::builder()
                 .image(image.image())
                 .view_type(if dims.2 == 1 {
-                    vk::ImageViewType::TYPE_2D
+                    if array_layers == 6 {
+                        vk::ImageViewType::CUBE
+                    } else {
+                        vk::ImageViewType::TYPE_2D
+                    }
                 } else {
                     vk::ImageViewType::TYPE_3D
                 })
@@ -351,7 +357,7 @@ impl GraphicsContext {
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: array_layers,
                 })
                 .build();
 
@@ -381,7 +387,7 @@ impl GraphicsContext {
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
-                layer_count: 1,
+                layer_count: array_layers,
             })
             .build()];
 
@@ -403,7 +409,7 @@ impl GraphicsContext {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
                 mip_level: 0,
                 base_array_layer: 0,
-                layer_count: 1,
+                layer_count: array_layers,
             })
             .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
             .image_extent(vk::Extent3D {
@@ -434,7 +440,7 @@ impl GraphicsContext {
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
-                layer_count: 1,
+                layer_count: array_layers,
             })
             .build()];
 

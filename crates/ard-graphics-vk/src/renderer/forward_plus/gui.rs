@@ -85,9 +85,11 @@ impl GuiRender {
 
             let ret = ctx.create_image(
                 font_atlas.data,
+                1,
                 (font_atlas.width, font_atlas.height, 1),
                 vk::Format::R8G8B8A8_UNORM,
                 vk::ImageUsageFlags::SAMPLED,
+                vk::ImageCreateFlags::empty(),
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
