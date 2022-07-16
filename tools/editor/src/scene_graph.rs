@@ -7,7 +7,7 @@ use ard_engine::{
         scene::{EntityMap, MappedEntity},
         Scene, SceneDescriptor, SceneEntities, SceneGameObject,
     },
-    log::warn,
+    log::{info, warn},
 };
 use async_trait::async_trait;
 use crossbeam_channel::{Receiver, Sender};
@@ -106,10 +106,10 @@ impl SceneGraph {
 
     pub fn update_active_scene(&mut self, assets: &Assets, commands: &EntityCommands) {
         while let Ok((scene, load)) = self.load_scene_recv.try_recv() {
-            self.handle = Some(scene.clone());
-
             if load {
-                let mut scene = match assets.get_mut(&scene) {
+                info!("loading new scene...");
+                assets.wait_for_load(&scene);
+                let mut scene_asset = match assets.get_mut(&scene) {
                     Some(scene) => scene,
                     None => {
                         warn!("could not load scene");
@@ -117,7 +117,7 @@ impl SceneGraph {
                     }
                 };
 
-                let descriptor = match scene.descriptor.take() {
+                let descriptor = match scene_asset.descriptor.take() {
                     Some(descriptor) => descriptor,
                     None => {
                         warn!("attempt to load scene, but descriptor was `None`");
@@ -126,6 +126,8 @@ impl SceneGraph {
                 };
 
                 self.load(descriptor, commands, assets);
+                self.handle = Some(scene.clone());
+                info!("new scene loaded...");
             }
         }
     }

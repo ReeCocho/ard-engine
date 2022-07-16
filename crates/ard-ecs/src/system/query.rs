@@ -289,7 +289,7 @@ impl<Components: ComponentFilter> Query<Components, ()> for EntityComponentQuery
                     // Add set and entity buffer
                     sets.push((
                         FastEntityIterator::new(handle),
-                        Components::make_storage_set(archetype, archetypes),
+                        Components::make_storage_set(archetype, archetypes).unwrap(),
                     ));
                 }
             }
@@ -378,7 +378,7 @@ impl<Components: ComponentFilter> Query<Components, ()> for ComponentQuery<Compo
 
                 if entity_count != 0 {
                     len += entity_count;
-                    sets.push(Components::make_storage_set(archetype, archetypes));
+                    sets.push(Components::make_storage_set(archetype, archetypes).unwrap());
                 }
             }
         }
@@ -449,10 +449,12 @@ impl<C: ComponentFilter> SingleQuery<C, ()> for SingleComponentQuery<C> {
             None => return None,
         };
 
-        let set = C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes);
-        let data = unsafe { set.fetch(idx as usize) };
-
-        Some(Self { _set: set, data })
+        C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes).map(
+            |set| {
+                let data = unsafe { set.fetch(idx as usize) };
+                Self { _set: set, data }
+            },
+        )
     }
 }
 
@@ -505,7 +507,7 @@ impl<C: ComponentFilter, T: TagFilter> Query<C, T> for EntityComponentTagQuery<C
                     // Add set and entity buffer
                     sets.push((
                         FastEntityIterator::new(handle),
-                        C::make_storage_set(archetype, archetypes),
+                        C::make_storage_set(archetype, archetypes).unwrap(),
                     ));
                 }
             }
@@ -583,7 +585,8 @@ impl<C: ComponentFilter, T: TagFilter> SingleQuery<C, T> for SingleComponentTagQ
             None => return None,
         };
 
-        let set = C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes);
+        let set = C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes)
+            .unwrap();
         let data = unsafe { set.fetch(idx as usize) };
 
         let tag_set = T::StorageSet::from_tags(tags);

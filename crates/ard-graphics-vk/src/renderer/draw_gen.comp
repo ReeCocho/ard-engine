@@ -91,7 +91,12 @@ void main() {
 
     // Frustum culling using sphere radius
     vec4 pos = model * vec4(draw_calls[obj.batch_idx].bounds_center.xyz, 1.0);
-    float radius = draw_calls[obj.batch_idx].bounds_center.w * max(max(model[0][0], max(model[1][1], model[2][2])), 1.0);
+    vec3 scale = vec3(
+        length(vec3(model[0][0], model[0][1], model[0][2])),
+        length(vec3(model[1][0], model[1][1], model[1][2])),
+        length(vec3(model[1][0], model[2][1], model[2][2]))
+    );
+    float radius = draw_calls[obj.batch_idx].bounds_center.w * max(max(scale.x, max(scale.y, scale.z)), 1.0);
     for (int i = 0; i < 6; i++) { 
         if (dot(vec4(pos.xyz, 1.0), camera.planes[i]) < -radius) {
             return;

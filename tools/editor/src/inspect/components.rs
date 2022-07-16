@@ -19,23 +19,32 @@ impl Inspect for Transform {
         queries: &Queries<Everything>,
         _: &Assets,
     ) {
-        let mut transform = queries.get::<Write<Transform>>(entity).unwrap();
-
-        // Add in the euler angle rotation tag if we don't have it yet
-        let mut tag_query = queries.get_tag::<(Write<EulerAngleRot>,)>(entity);
-        let mut euler_rot = match tag_query.0.as_mut() {
-            Some(euler_rot) => euler_rot,
-            None => {
-                let (x, y, z) = transform.rotation.to_euler(EulerRot::XYZ);
-                commands.entities.add_tag(
-                    entity,
-                    EulerAngleRot(Vec3::new(x.to_degrees(), y.to_degrees(), z.to_degrees())),
-                );
-                return;
-            }
-        };
-
         if ui.collapsing_header("Transform", imgui::TreeNodeFlags::empty()) {
+            let mut transform = match queries.get::<Write<Transform>>(entity) {
+                Some(transform) => transform,
+                None => {
+                    ui.text_colored(
+                        [1.0, 0.0, 0.0, 1.0],
+                        "Game object has no transform component.",
+                    );
+                    return;
+                }
+            };
+
+            // Add in the euler angle rotation tag if we don't have it yet
+            let mut tag_query = queries.get_tag::<(Write<EulerAngleRot>,)>(entity);
+            let mut euler_rot = match tag_query.0.as_mut() {
+                Some(euler_rot) => euler_rot,
+                None => {
+                    let (x, y, z) = transform.rotation.to_euler(EulerRot::XYZ);
+                    commands.entities.add_tag(
+                        entity,
+                        EulerAngleRot(Vec3::new(x.to_degrees(), y.to_degrees(), z.to_degrees())),
+                    );
+                    return;
+                }
+            };
+
             let mut position: [f32; 3] = transform.position.into();
             let mut rotation: [f32; 3] = euler_rot.0.into();
             let mut scale: [f32; 3] = transform.scale.into();

@@ -30,8 +30,9 @@ where
 
     /// Given an archetype, generates an instance of the storage set for the filter.
     ///
-    /// Panics if the filter isn't a subset of the archetype.
-    fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes) -> Self::StorageSet;
+    /// Returns `None` if the filter isn't a subset of the archetype.
+    fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes)
+        -> Option<Self::StorageSet>;
 }
 
 impl<T: ComponentAccess> ComponentFilter for T {
@@ -59,14 +60,14 @@ impl<T: ComponentAccess> ComponentFilter for T {
         descriptor
     }
 
-    fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes) -> Self::StorageSet {
-        T::Storage::new(
-            archetypes,
-            *archetype
-                .map
-                .get(&TypeId::of::<T::Component>())
-                .expect("Provided archetype does not contain component in filter."),
-        )
+    fn make_storage_set(
+        archetype: &Archetype,
+        archetypes: &Archetypes,
+    ) -> Option<Self::StorageSet> {
+        archetype
+            .map
+            .get(&TypeId::of::<T::Component>())
+            .map(|i| T::Storage::new(archetypes, *i))
     }
 }
 
@@ -108,13 +109,13 @@ macro_rules! component_filter_impl {
 
             #[inline]
             fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes)
-                -> Self::StorageSet {
-                ($(
-                    $name::Storage::new(
-                        archetypes,
-                        *archetype.map.get(&TypeId::of::<$name::Component>()
-                    ).expect("Provided archetype does not contain component in filter.")),
-                )*)
+                -> Option<Self::StorageSet> {
+                Some(($(
+                    match archetype.map.get(&TypeId::of::<$name::Component>()) {
+                        Some(idx) => $name::Storage::new(archetypes, *idx),
+                        None => return None,
+                    },
+                )*))
             }
         }
     }

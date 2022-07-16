@@ -10,7 +10,7 @@ use ard_engine::{
 
 use crate::{
     editor_job::{EditorJob, EditorJobQueue},
-    scene_graph::SceneGraph,
+    scene_graph::{SceneGraph, SceneGraphAsset},
 };
 
 use super::util::DragDropPayload;
@@ -109,6 +109,12 @@ impl SceneView {
                                                     );
                                                 },
                                             ));
+                                        }
+                                        <SceneGraphAsset as Asset>::EXTENSION => {
+                                            let handle = assets.load::<SceneGraphAsset>(&name);
+                                            let _ = scene_graph
+                                                .load_scene_channel()
+                                                .send((handle, true));
                                         }
                                         _ => {}
                                     }

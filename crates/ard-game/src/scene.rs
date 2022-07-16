@@ -13,7 +13,7 @@ pub struct Scene {}
 #[derive(Default)]
 pub struct EntityMap {
     entity_to_map: HashMap<Entity, MappedEntity>,
-    map_to_entity: Vec<Entity>,
+    map_to_entity: HashMap<MappedEntity, Entity>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,11 +33,17 @@ impl EntityMap {
     #[inline]
     pub fn register(&mut self, entity: Entity) {
         let id = self.map_to_entity.len();
-        self.map_to_entity.push(entity);
         assert!(self
             .entity_to_map
             .insert(entity, MappedEntity(id))
             .is_none());
+        self.map_to_entity.insert(MappedEntity(id), entity);
+    }
+
+    #[inline]
+    pub fn register_from_map(&mut self, mapped: MappedEntity, entity: Entity) {
+        assert!(self.map_to_entity.insert(mapped, entity).is_none());
+        assert!(self.entity_to_map.insert(entity, mapped).is_none());
     }
 
     #[inline]
@@ -47,7 +53,7 @@ impl EntityMap {
 
     #[inline]
     pub fn from_map(&self, mapped: MappedEntity) -> Entity {
-        self.map_to_entity[mapped.0]
+        *self.map_to_entity.get(&mapped).unwrap()
     }
 }
 
@@ -80,8 +86,8 @@ macro_rules! scene_definition {
             #[derive(Default, Serialize, Deserialize)]
             pub struct [<$name Descriptor>] {
                 $(
-                    #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
-                    #[serde(default)]
+                    // #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
+                    // #[serde(default)]
                     [<field_ $field>] : [<$field Descriptor>],
                 )*
             }
@@ -123,11 +129,12 @@ macro_rules! scene_definition {
                 pub fn entity_count(&self) -> usize {
                     let mut entity_count = 0;
                     $(
-                        entity_count += self.[<field_ $field>].entity_count;
+                        entity_count += self.[<field_ $field>].entities.len();
                     )*
                     entity_count
                 }
 
+                #[allow(unused_assignments)]
                 pub fn load(
                     mut self,
                     commands: &ard_ecs::prelude::EntityCommands,
@@ -136,18 +143,25 @@ macro_rules! scene_definition {
                     use crate::object::GameObject;
 
                     // Create entity mapping
-                    let mut entity_count = 0;
-                    $(
-                        entity_count += self.[<field_ $field>].entity_count;
-                    )*
-
-                    let mut entities = vec![ard_ecs::prelude::Entity::null(); entity_count];
-                    commands.create_empty(&mut entities);
-
+                    let mut entities = [<$name Entities>]::default();
                     let mut mapping = crate::scene::EntityMap::default();
-                    for entity in &entities {
-                        mapping.register(*entity);
-                    }
+                    $(
+                        // Create empty entities
+                        entities.[<$field _entities>] =
+                            vec![
+                                ard_ecs::prelude::Entity::null();
+                                self.[<field_ $field>].entities.len()
+                            ];
+                        commands.create_empty(&mut entities.[<$field _entities>]);
+
+                        // Associate empty entities with the mapped ID
+                        for i in 0..self.[<field_ $field>].entities.len() {
+                            mapping.register_from_map(
+                                self.[<field_ $field>].entities[i],
+                                entities.[<$field _entities>][i]
+                            );
+                        }
+                    )*
 
                     // Load each game object type
                     $(
@@ -155,7 +169,7 @@ macro_rules! scene_definition {
                             std::mem::take(&mut self.[<field_ $field>]),
                             &mapping,
                             assets,
-                        );
+                        ).instantiate(&entities.[<$field _entities>], commands);
                     )*
 
                     mapping

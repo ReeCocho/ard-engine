@@ -13,6 +13,8 @@ pub trait GameObject: Sized {
     /// Creates a default instance of the game object.
     fn create_default(commands: &EntityCommands) -> Entity;
 
+    fn instantiate(self, entities: &[Entity], commands: &EntityCommands);
+
     /// Takes the entities that match the game object and serializes them into a struct of arrays
     /// for fast loading.
     fn save_to_pack(
@@ -45,10 +47,10 @@ macro_rules! game_object_def {
             #[serde_with::serde_as]
             #[derive(Default, Serialize, Deserialize)]
             pub struct [<$name Descriptor>] {
-                pub entity_count: usize,
+                pub entities: Vec<crate::scene::MappedEntity>,
                 $(
-                    #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
-                    #[serde(default)]
+                    // #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
+                    // #[serde(default)]
                     pub [<field_ $field>]: Vec<<$field as crate::serialization::SerializableComponent>::Descriptor>,
                 )*
             }
@@ -71,6 +73,18 @@ macro_rules! game_object_def {
                 entity[0]
             }
 
+            fn instantiate(self, entities: &[ard_ecs::prelude::Entity], commands: &ard_ecs::prelude::EntityCommands) {
+                paste::paste! {
+                    let pack = (
+                        $(
+                            self.[<field _$field>],
+                        )*
+                    );
+                }
+
+                commands.set_components(entities, pack);
+            }
+
             fn save_to_pack(
                 entities: &[ard_ecs::prelude::Entity],
                 queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
@@ -80,7 +94,11 @@ macro_rules! game_object_def {
                 use crate::serialization::SerializableComponent;
 
                 let mut descriptor = Self::Descriptor::default();
-                descriptor.entity_count = entities.len();
+                descriptor.entities = Vec::with_capacity(entities.len());
+
+                for entity in entities {
+                    descriptor.entities.push(mapping.to_map(*entity));
+                }
 
                 paste::paste!{$(
                     for entity in entities {
