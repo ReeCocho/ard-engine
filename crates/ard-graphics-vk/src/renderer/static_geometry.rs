@@ -29,7 +29,7 @@ pub(crate) struct StaticGeometryInner {
     pub(crate) dirty: [AtomicBool; FRAMES_IN_FLIGHT],
     pub(crate) len: AtomicUsize,
     handle_to_object:
-        DashMap<StaticRenderable, (DrawKey, usize), BuildHasherDefault<FastIntHasher>>,
+        DashMap<StaticRenderableHandle, (DrawKey, usize), BuildHasherDefault<FastIntHasher>>,
     handle_ctr: AtomicU32,
     /// Used by the renderer to acquire exclusive access to static geometry.
     exclusive: RwLock<()>,
@@ -41,7 +41,8 @@ pub(crate) struct StaticBatch {
     pub mesh: Mesh,
     pub layers: RenderLayerFlags,
     pub models: Vec<Mat4>,
-    pub handles: Vec<StaticRenderable>,
+    pub entities: Vec<Entity>,
+    pub handles: Vec<StaticRenderableHandle>,
 }
 
 impl StaticGeometry {
@@ -65,8 +66,8 @@ impl StaticGeometry {
 impl StaticGeometryApi<VkBackend> for StaticGeometry {
     fn register(
         &self,
-        models: &[(Renderable<VkBackend>, Model)],
-        handles: &mut [StaticRenderable],
+        renderables: &[StaticRenderable<VkBackend>],
+        handles: &mut [StaticRenderableHandle],
     ) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
 
@@ -76,9 +77,9 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
 
         let batches = &self.0.batches;
         let handle_ctr = &self.0.handle_ctr;
-        for (i, model) in models.iter().enumerate() {
-            let key = make_draw_key(&model.0.material, &model.0.mesh);
-            let handle = StaticRenderable::new(handle_ctr.fetch_add(1, Ordering::Relaxed));
+        for (i, renderable) in renderables.iter().enumerate() {
+            let key = make_draw_key(&renderable.renderable.material, &renderable.renderable.mesh);
+            let handle = StaticRenderableHandle::new(handle_ctr.fetch_add(1, Ordering::Relaxed));
 
             let mut batch = if batches.contains_key(&key) {
                 // Batch already exists
@@ -91,15 +92,17 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
                 }
 
                 batches.entry(key).or_insert(StaticBatch {
-                    material: model.0.material.clone(),
-                    mesh: model.0.mesh.clone(),
-                    layers: model.0.layers,
+                    material: renderable.renderable.material.clone(),
+                    mesh: renderable.renderable.mesh.clone(),
+                    layers: renderable.renderable.layers,
                     models: Vec::default(),
+                    entities: Vec::default(),
                     handles: Vec::default(),
                 })
             };
 
-            batch.models.push(model.1 .0);
+            batch.models.push(renderable.model.0);
+            batch.entities.push(renderable.entity);
             batch.handles.push(handle);
 
             if i < handles.len() {
@@ -107,10 +110,10 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
             }
         }
 
-        self.0.len.fetch_add(models.len(), Ordering::Relaxed);
+        self.0.len.fetch_add(renderables.len(), Ordering::Relaxed);
     }
 
-    fn unregister(&self, handles: &[StaticRenderable]) {
+    fn unregister(&self, handles: &[StaticRenderableHandle]) {
         let _lock = self.0.exclusive.read().expect("lock poisoned");
 
         for flag in &self.0.dirty {
@@ -123,6 +126,7 @@ impl StaticGeometryApi<VkBackend> for StaticGeometry {
             let (key, idx) = *handle_to_obj.get(handle).expect("double free");
             let mut batch = batches.get_mut(&key).unwrap();
             batch.models.swap_remove(idx);
+            batch.entities.swap_remove(idx);
             batch.handles.swap_remove(idx);
 
             if idx != batch.handles.len() {

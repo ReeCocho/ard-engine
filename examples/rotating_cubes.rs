@@ -285,14 +285,15 @@ fn setup(app: &mut App) {
     // Create centeral static cube
     let static_geo = app.resources.get_mut::<StaticGeometry>().unwrap();
     static_geo.register(
-        &[(
-            Renderable {
+        &[StaticRenderable {
+            renderable: Renderable {
                 mesh: mesh.clone(),
                 material: material.clone(),
                 layers: RenderLayerFlags::all(),
             },
-            Model(Mat4::IDENTITY),
-        )],
+            model: Model(Mat4::IDENTITY),
+            entity: Entity::null(),
+        }],
         &mut [],
     );
 

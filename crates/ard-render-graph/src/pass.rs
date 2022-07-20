@@ -27,12 +27,20 @@ pub trait Pass<C: Context> {
         state: &mut C::State,
         resources: &mut RenderGraphResources<C>,
     );
+
+    fn toggle(&mut self, enabled: bool);
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ClearColor {
+    RGBAF32([f32; 4]),
+    RGBAU32([u32; 4]),
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct ColorAttachmentDescriptor {
     pub image: ImageId,
-    pub ops: Operations<[f32; 4]>,
+    pub ops: Operations<ClearColor>,
 }
 
 #[derive(Debug, Copy, Clone)]

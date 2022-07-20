@@ -535,10 +535,10 @@ impl DepthPyramid {
         width: u32,
         height: u32,
     ) -> Self {
-        let dimensions = (width, height);
+        let dimensions = (width.max(1), height.max(1));
         let mip_levels = (width.max(height) as f32).log2().floor() as u32;
-        let width = width / 2;
-        let height = height / 2;
+        let width = (width / 2).max(1);
+        let height = (height / 2).max(1);
 
         let create_info = ImageCreateInfo {
             ctx: ctx.clone(),

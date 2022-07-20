@@ -9,7 +9,7 @@ use crate::{
     camera::{
         depth_pyramid::{DepthPyramid, DepthPyramidGenerator},
         descriptors::DescriptorPool,
-        forward_plus::pick_depth_format,
+        forward_plus::{pick_depth_format, GameRendererGraph},
         graph::RenderPass,
         CameraLightClusters, Factory, GraphicsContext, Lighting, LightingUbo, PipelineType,
         StaticGeometry,
@@ -36,6 +36,8 @@ pub(crate) const DEFAULT_OBJECT_ID_BUFFER_CAP: usize = 1;
 pub(crate) const DEFAULT_DRAW_CALL_CAP: usize = 1;
 
 pub(crate) struct MeshPassCreateInfo {
+    /// Is this pass toggleable?
+    pub toggleable: bool,
     /// Size group used by this mesh pass. Must be shared between the depth and color images.
     pub size_group: SizeGroupId,
     /// Layers rendered by this pass.
@@ -51,12 +53,18 @@ pub(crate) struct MeshPassCreateInfo {
     /// The pipeline type used during depth prepass. This should only ever be values of
     /// `PipelineType::HighZRender` or `PipelineType::ShadowPass`.
     pub depth_pipeline_type: PipelineType,
+    /// The pipeline type used during color rendering.
+    pub color_pipeline_type: PipelineType,
     /// If `None`, rendering will be depth only.
     pub color_image: Option<ColorRendering>,
 }
 
 /// Used by the Forward+ renderer to draw objects.
 pub(crate) struct MeshPass {
+    /// Is this pass enabled?
+    pub enabled: bool,
+    /// Is this pass toggleable?
+    pub toggleable: bool,
     /// Layers this mesh pass renders.
     pub layers: RenderLayerFlags,
     /// Depth image rendered to by this pass.
@@ -66,6 +74,8 @@ pub(crate) struct MeshPass {
     /// The pipeline type used during depth prepass. This should only ever be values of
     /// `PipelineType::HighZRender` or `PipelineType::ShadowPass`.
     pub depth_pipeline_type: PipelineType,
+    /// The pipeline type used during color rendering.
+    pub color_pipeline_type: PipelineType,
     /// Images to sample for shadow mapping.
     pub shadow_images: Option<[ImageId; MAX_SHADOW_CASCADES]>,
     /// The number of static objects that we rendered this frame.
@@ -100,6 +110,8 @@ pub(crate) struct MeshPass {
     pub draw_gen_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
     /// Set for global data for rendering. One per frame in flight.
     pub global_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
+    /// All sub passes within the mehs pass.
+    pub passes: Vec<PassId>,
 }
 
 pub(crate) struct ColorRenderingInfo {
@@ -256,10 +268,14 @@ impl MeshPass {
         };
 
         Self {
+            passes: Vec::default(),
+            enabled: true,
+            toggleable: create_info.toggleable,
             layers: create_info.layers,
             shadow_images: create_info.shadow_images,
             depth_image: create_info.depth_image,
             depth_pipeline_type: create_info.depth_pipeline_type,
+            color_pipeline_type: create_info.color_pipeline_type,
             static_objects_rendered: 0,
             static_draw_calls: 0,
             dynamic_objects_rendered: 0,
@@ -277,6 +293,13 @@ impl MeshPass {
             draw_gen_sets,
             global_sets,
             depth_prepass_id: PassId::invalid(),
+        }
+    }
+
+    pub fn toggle_pass(&mut self, enabled: bool, graph: &mut GameRendererGraph) {
+        self.enabled = enabled;
+        for pass in &self.passes {
+            graph.toggle_pass(*pass, enabled);
         }
     }
 
@@ -1189,7 +1212,7 @@ impl MeshPass {
             render(RenderArgs {
                 frame_idx,
                 device,
-                pipeline_type: PipelineType::OpaquePass.idx(),
+                pipeline_type: mesh_pass.color_pipeline_type.idx(),
                 draw_sky: state.mesh_passes.draw_sky,
                 skybox_pipeline: state.mesh_passes.skybox_pipeline,
                 skybox_pipeline_layout: state.mesh_passes.skybox_pipeline_layout,

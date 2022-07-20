@@ -13,7 +13,7 @@ pub mod surface;
 pub mod texture;
 
 use bytemuck::{Pod, Zeroable};
-use enumflags2::{bitflags, make_bitflags, BitFlags};
+use enumflags2::{bitflags, BitFlags};
 use serde::{Deserialize, Serialize};
 
 pub mod prelude {
@@ -56,6 +56,7 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + Any + Send + Sync {
     type StaticGeometry: StaticGeometryApi<Self>;
     type DebugDrawing: DebugDrawingApi<Self>;
     type DebugGui: DebugGuiApi<Self>;
+    type EntityImageApi: EntityImageApi<Self>;
     type Mesh: MeshApi;
     type Shader: ShaderApi;
     type Pipeline: PipelineApi;

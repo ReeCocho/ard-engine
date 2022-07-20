@@ -2,12 +2,13 @@ use std::time::{Duration, Instant};
 
 use self::{
     debug_drawing::DebugDrawing,
+    entity_image::EntityImage,
     forward_plus::{ForwardPlus, GameRendererGraphRef},
     graph::RenderGraphContext,
     static_geometry::StaticGeometry,
 };
 use crate::{
-    camera::{CameraUbo, DebugGui, Lighting},
+    camera::{DebugGui, Lighting},
     context::GraphicsContext,
     factory::Factory,
     shader_constants::MAX_SHADOW_CASCADES,
@@ -25,6 +26,7 @@ use ash::vk;
 
 pub mod debug_drawing;
 pub mod depth_pyramid;
+pub mod entity_image;
 pub mod forward_plus;
 pub mod graph;
 pub mod static_geometry;
@@ -44,6 +46,7 @@ pub struct Renderer {
     graph: GameRendererGraphRef,
     last_render_time: Instant,
     canvas_size: Option<(u32, u32)>,
+    need_entity_image: bool,
 }
 
 #[allow(clippy::type_complexity)]
@@ -54,6 +57,7 @@ type RenderResources = (
     Write<Lighting>,
     Write<DebugGui>,
     Read<InputState>,
+    Write<EntityImage>,
     // These three are held internally, but are requested so that no other systems write to them
     // while rendering is occuring.
     Write<Factory>,
@@ -84,7 +88,7 @@ impl RendererApi<VkBackend> for Renderer {
 
         let mut lighting = unsafe { Lighting::new(create_info.ctx) };
 
-        let (graph, factory, debug_drawing, debug_gui, state) = unsafe {
+        let (graph, factory, debug_drawing, debug_gui, mut state) = unsafe {
             ForwardPlus::new_graph(
                 create_info.ctx,
                 create_info.surface,
@@ -99,6 +103,9 @@ impl RendererApi<VkBackend> for Renderer {
 
         lighting.factory = Some(factory.clone());
 
+        // Toggle off entity image rendering
+        state.toggle_entity_image_render(false, 0, &mut graph.lock().unwrap());
+
         (
             Self {
                 ctx: create_info.ctx.clone(),
@@ -110,6 +117,7 @@ impl RendererApi<VkBackend> for Renderer {
                 graph,
                 state,
                 canvas_size: create_info.settings.canvas_size,
+                need_entity_image: false,
             },
             factory,
             static_geometry,
@@ -209,6 +217,10 @@ impl Renderer {
         }
     }
 
+    fn entity_image(&mut self, _: RenderEntityImage, _: Commands, _: Queries<()>, _: Res<()>) {
+        self.need_entity_image = true;
+    }
+
     fn stopping(&mut self, _: Stopping, _: Commands, _: Queries<()>, _: Res<()>) {
         unsafe {
             self.ctx.0.device.device_wait_idle().unwrap();
@@ -218,7 +230,7 @@ impl Renderer {
     unsafe fn render(
         &mut self,
         evt: Render,
-        _: Commands,
+        commands: Commands,
         queries: Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
         res: Res<RenderResources>,
     ) {
@@ -229,6 +241,7 @@ impl Renderer {
         let windows = res.2.unwrap();
         let mut lighting = res.3.unwrap();
         let mut debug_gui = res.4.unwrap();
+        let mut entity_image = res.6.unwrap();
 
         let _static_geo_lock = self.static_geometry.acquire();
         let _factory_lock = self.factory.acquire();
@@ -238,6 +251,8 @@ impl Renderer {
             .get(surface_lock.window)
             .expect("surface window is destroyed");
         if window.physical_height() == 0 || window.physical_width() == 0 {
+            // Reset gui state if minimized
+            debug_gui.finish_draw();
             return;
         }
 
@@ -256,6 +271,25 @@ impl Renderer {
         // Process pending resources
         self.factory.process(frame_idx);
 
+        // If we need the entity image, toggle it on
+        {
+            let mut graph = self.graph.lock().expect("mutex poisoned");
+
+            // Read back the entity image from last frame
+            if self.state.read_back_entity_image(
+                frame_idx,
+                &mut entity_image,
+                graph.resources_mut(),
+            ) {
+                commands.events.submit(NewEntityImage)
+            }
+
+            // Toggle the entity image renderer
+            self.state
+                .toggle_entity_image_render(self.need_entity_image, frame_idx, &mut graph);
+            self.need_entity_image = false;
+        }
+
         // If we have a custom canvas size, resize if it has changed
         if let Some(canvas_size) = &settings.canvas_size {
             let mut graph = self.graph.lock().expect("mutex poisoned");
@@ -267,18 +301,15 @@ impl Renderer {
                 // Wait for all graphics operations to complete so we are safe to resize
                 self.ctx.0.device.device_wait_idle().unwrap();
 
-                graph.update_size_group(
-                    &mut self.rg_ctx,
-                    self.state.canvas_size_group(),
-                    SizeGroup {
+                self.state.resize_canvas(
+                    vk::Extent2D {
                         width: canvas_size.0,
                         height: canvas_size.1,
-                        mip_levels: 1,
-                        array_layers: 1,
                     },
+                    &mut entity_image,
+                    &mut graph,
+                    &mut self.rg_ctx,
                 );
-
-                self.state.resize_canvas(graph.resources_mut());
             }
         }
 
@@ -458,18 +489,12 @@ impl Renderer {
             // the frames. No need to wait since a wait is performed if the surface is
             // invalidated.
             if self.canvas_size.is_none() {
-                graph.update_size_group(
+                self.state.resize_canvas(
+                    resolution,
+                    &mut entity_image,
+                    &mut graph,
                     &mut self.rg_ctx,
-                    self.state.canvas_size_group(),
-                    SizeGroup {
-                        width: resolution.width,
-                        height: resolution.height,
-                        mip_levels: 1,
-                        array_layers: 1,
-                    },
                 );
-
-                self.state.resize_canvas(graph.resources_mut());
             }
 
             // Notify canvas size group always
@@ -521,11 +546,11 @@ impl Renderer {
     }
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<System> for Renderer {
-    fn into(self) -> System {
-        SystemBuilder::new(self)
+impl From<Renderer> for System {
+    fn from(renderer: Renderer) -> System {
+        SystemBuilder::new(renderer)
             .with_handler(Renderer::tick)
+            .with_handler(Renderer::entity_image)
             .with_handler(|s, e, c, q, r| unsafe { Renderer::render(s, e, c, q, r) })
             .with_handler(Renderer::stopping)
             .build()

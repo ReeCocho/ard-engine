@@ -176,6 +176,8 @@ impl MaterialBuffers {
 
         // Check if texture size is appropriate
         if set[frame].last_texture_size != textures[frame].0.size() {
+            set[frame].last_texture_size = textures[frame].0.size();
+
             let buffer_info = [vk::DescriptorBufferInfo::builder()
                 .buffer(textures[frame].0.buffer())
                 .offset(0)
@@ -202,6 +204,8 @@ impl MaterialBuffers {
                 .or_insert_with(|| unsafe { MaterialBuffer::new(ctx, data_size) });
 
             if set[frame].last_buffer_size != buffer.buffers[frame].0.size() {
+                set[frame].last_buffer_size = buffer.buffers[frame].0.size();
+
                 let buffer_info = [vk::DescriptorBufferInfo::builder()
                     .buffer(buffer.buffers[frame].0.buffer())
                     .offset(0)

@@ -136,6 +136,15 @@ impl<C: Context> RenderGraph<C> {
         &mut self.resources
     }
 
+    /// Toggles a pass. No-op if the pass is not toggleable.
+    #[inline]
+    pub fn toggle_pass(&mut self, pass: PassId, enabled: bool) {
+        let pass = &mut self.passes[pass.0 as usize];
+        if pass.toggleable {
+            pass.pass.toggle(enabled);
+        }
+    }
+
     pub fn update_size_group(&mut self, ctx: &mut C, id: SizeGroupId, new_size: SizeGroup) {
         self.resources.size_groups[id.0 as usize] = new_size;
 

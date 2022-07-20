@@ -302,14 +302,15 @@ fn setup(app: &mut App) {
                     Mat4::from_translation(position) * Mat4::from_scale(Vec3::new(0.6, 0.6, 0.6));
 
                 draws.register(
-                    &[(
-                        Renderable {
+                    &[StaticRenderable {
+                        renderable: Renderable {
                             mesh: mesh.clone(),
                             material: material.clone(),
                             layers: RenderLayerFlags::all(),
                         },
-                        Model(model),
-                    )],
+                        model: Model(model),
+                        entity: Entity::null(),
+                    }],
                     &mut [],
                 );
             }

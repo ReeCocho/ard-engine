@@ -15,6 +15,7 @@ pub(crate) enum PipelineType {
     ShadowPass,
     DepthPrepass,
     OpaquePass,
+    EntityImagePass,
 }
 
 #[derive(Clone)]
@@ -28,7 +29,7 @@ pub(crate) struct PipelineInner {
     pub ctx: GraphicsContext,
     pub vertex_layout: VertexLayout,
     pub inputs: ShaderInputs,
-    pub pipelines: [vk::Pipeline; 4],
+    pub pipelines: [vk::Pipeline; 5],
 }
 
 impl PipelineApi for Pipeline {}
@@ -41,6 +42,7 @@ impl PipelineInner {
         passes: &Passes,
         layouts: &Layouts,
         shaders: &ResourceContainer<ShaderInner>,
+        entity_shader: vk::ShaderModule,
     ) -> Self {
         let vertex = shaders.get(create_info.vertex.id).unwrap();
         let fragment = shaders.get(create_info.fragment.id).unwrap();
@@ -65,6 +67,13 @@ impl PipelineInner {
                 *pass
             } else {
                 panic!("Opaque pass not a graphics pass");
+            };
+
+        let entity_pass_rp =
+            if let RenderPass::Graphics { pass, .. } = graph.get_pass(passes.entity_pass) {
+                *pass
+            } else {
+                panic!("Entity image pass not a graphics pass");
             };
 
         let entry_point = std::ffi::CString::new("main").unwrap();
@@ -319,9 +328,80 @@ impl PipelineInner {
                 .expect("unable to create opaque pipeline")[0]
         };
 
+        let entity_pass = {
+            let shader_stages = [
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(vertex.module)
+                    .name(&entry_point)
+                    .build(),
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(entity_shader)
+                    .name(&entry_point)
+                    .build(),
+            ];
+
+            let color_blend_attachment = [vk::PipelineColorBlendAttachmentState::builder()
+                .color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G)
+                .blend_enable(false)
+                .src_color_blend_factor(vk::BlendFactor::ONE)
+                .dst_color_blend_factor(vk::BlendFactor::ZERO)
+                .color_blend_op(vk::BlendOp::ADD)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+                .alpha_blend_op(vk::BlendOp::ADD)
+                .build()];
+
+            let color_blending = vk::PipelineColorBlendStateCreateInfo::builder()
+                .logic_op_enable(false)
+                .logic_op(vk::LogicOp::COPY)
+                .attachments(&color_blend_attachment)
+                .blend_constants([0.0, 0.0, 0.0, 0.0])
+                .build();
+
+            let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
+                .depth_test_enable(true)
+                .depth_write_enable(false)
+                .front(stencil_state)
+                .back(stencil_state)
+                .depth_compare_op(vk::CompareOp::EQUAL)
+                .depth_bounds_test_enable(false)
+                .min_depth_bounds(0.0)
+                .max_depth_bounds(1.0)
+                .stencil_test_enable(false)
+                .build();
+
+            let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_state)
+                .input_assembly_state(&input_assembly)
+                .viewport_state(&viewport_state)
+                .rasterization_state(&rasterizer)
+                .multisample_state(&multisampling)
+                .depth_stencil_state(&depth_stencil)
+                .color_blend_state(&color_blending)
+                .dynamic_state(&dynamic_state)
+                .layout(layouts.opaque_pipeline_layout)
+                .render_pass(entity_pass_rp)
+                .subpass(0)
+                .build()];
+
+            ctx.0
+                .device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+                .expect("unable to create entity pass pipeline")[0]
+        };
+
         PipelineInner {
             ctx: ctx.clone(),
-            pipelines: [highz_render, shadow_pass, depth_prepass, opaque_pass],
+            pipelines: [
+                highz_render,
+                shadow_pass,
+                depth_prepass,
+                opaque_pass,
+                entity_pass,
+            ],
             vertex_layout,
             inputs: vertex.inputs,
         }
@@ -346,6 +426,7 @@ impl PipelineType {
             PipelineType::ShadowPass => 1,
             PipelineType::DepthPrepass => 2,
             PipelineType::OpaquePass => 3,
+            PipelineType::EntityImagePass => 4,
         }
     }
 }

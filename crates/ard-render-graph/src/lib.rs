@@ -49,6 +49,8 @@ mod tests {
             _resources: &mut RenderGraphResources<DummyContext>,
         ) {
         }
+
+        fn toggle(&mut self, enabled: bool) {}
     }
 
     impl Context for DummyContext {

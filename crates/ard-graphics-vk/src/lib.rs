@@ -32,6 +32,7 @@ pub mod prelude {
     pub use crate::mesh::*;
     pub use crate::pipeline::*;
     pub use crate::renderer::debug_drawing::*;
+    pub use crate::renderer::entity_image::*;
     pub use crate::renderer::static_geometry::*;
     pub use crate::renderer::*;
     pub use crate::shader::*;
@@ -57,6 +58,7 @@ impl Backend for VkBackend {
     type Camera = Camera;
     type StaticGeometry = StaticGeometry;
     type DebugDrawing = DebugDrawing;
+    type EntityImageApi = EntityImage;
     type Texture = Texture;
     type DebugGui = DebugGui;
     type CubeMap = CubeMap;
@@ -102,6 +104,16 @@ fn late_context_creation(app: &mut App) {
             settings: &renderer_settings,
         });
 
+    let mut entity_image = EntityImage::default();
+    entity_image.resize(match renderer_settings.canvas_size {
+        Some(dims) => ash::vk::Extent2D {
+            width: dims.0,
+            height: dims.1,
+        },
+        None => surface.0.lock().unwrap().resolution,
+    });
+
+    app.resources.add(entity_image);
     app.resources.add(static_geo);
     app.resources.add(factory);
     app.resources.add(renderer_settings);

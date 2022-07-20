@@ -31,17 +31,17 @@ impl<T: StorageBufferAccess> ArchetypeStorageSet for T {
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.is_empty()
+        StorageBufferAccess::is_empty(self)
     }
 
     #[inline]
     fn is_valid(&self, idx: usize) -> bool {
-        self.is_valid(idx)
+        StorageBufferAccess::is_valid(self, idx)
     }
 
     #[inline]
     unsafe fn fetch(&self, idx: usize) -> Self::Filter {
-        self.fetch(idx)
+        StorageBufferAccess::fetch(self, idx)
     }
 }
 

@@ -233,7 +233,10 @@ impl Assets {
     /// # Panics
     /// Panics if the asset type is incorrect.
     #[inline]
-    pub fn get<T: Asset + 'static>(&self, handle: &Handle<T>) -> Option<AssetReadHandle<T>> {
+    pub fn get<'a, T: Asset + 'static>(
+        &'a self,
+        handle: &'a Handle<T>,
+    ) -> Option<AssetReadHandle<'a, T>> {
         // Retrieve the asset data
         let guard = self.0.assets.guard();
         let asset_data = self.0.assets.get(&handle.id(), &guard).unwrap();
@@ -266,7 +269,10 @@ impl Assets {
     /// # Panics
     /// Panics if the asset type is incorrect.
     #[inline]
-    pub fn get_mut<T: Asset + 'static>(&self, handle: &Handle<T>) -> Option<AssetWriteHandle<T>> {
+    pub fn get_mut<'a, T: Asset + 'static>(
+        &'a self,
+        handle: &'a Handle<T>,
+    ) -> Option<AssetWriteHandle<'a, T>> {
         // Retrieve the asset data
         let guard = self.0.assets.guard();
         let asset_data = self.0.assets.get(&handle.id(), &guard).unwrap();
@@ -340,8 +346,7 @@ impl Assets {
         match self.0.default_assets.get(&TypeId::of::<A>(), &guard) {
             Some(raw) => {
                 let guard = self.0.assets.guard();
-                let asset_data = self
-                    .0
+                self.0
                     .assets
                     .get(&raw.id, &guard)
                     .unwrap()
@@ -435,7 +440,11 @@ impl Assets {
         let guard = self.0.assets.guard();
         let asset_data = self.0.assets.get(&handle.id(), &guard).unwrap();
 
-        if asset_data.loading.load(Ordering::Relaxed) {
+        if asset_data
+            .loading
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return;
         }
 

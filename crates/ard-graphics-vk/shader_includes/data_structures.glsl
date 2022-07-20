@@ -81,6 +81,8 @@ struct ObjectInfo {
     mat4 model;
     uint material;
     uint textures;
+    uint entity_id;
+    uint entity_ver;
 };
 
 struct DrawCall {

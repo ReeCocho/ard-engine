@@ -5,13 +5,16 @@ use ard_render_graph::{
     context::Context,
     graph::{self, ImageState, ImageUsage, RenderGraphBuildState, RenderGraphResources},
     image::{ImageAccessDecriptor, ImageDescriptor, ImageId, SizeGroup, SizeGroupId},
-    pass::{Pass, PassDescriptor, PassFn},
+    pass::{ClearColor, Pass, PassDescriptor, PassFn},
     LoadOp, Operations,
 };
 use ash::vk;
 
 use crate::{
-    alloc::{Image, ImageCreateInfo, StorageBuffer, UniformBuffer, WriteStorageBuffer},
+    alloc::{
+        Image, ImageCreateInfo, ReadBackStorageBuffer, StorageBuffer, UniformBuffer,
+        WriteStorageBuffer,
+    },
     context::GraphicsContext,
     shader_constants::FRAMES_IN_FLIGHT,
 };
@@ -29,6 +32,7 @@ pub(crate) struct RenderGraphContext<T> {
 
 pub(crate) enum RenderPass<T> {
     Graphics {
+        enabled: bool,
         ctx: GraphicsContext,
         /// Code to run during the pass.
         code: PassFn<RenderGraphContext<T>>,
@@ -52,11 +56,13 @@ pub(crate) enum RenderPass<T> {
         color_attachments: Vec<ImageId>,
     },
     Compute {
+        enabled: bool,
         code: PassFn<RenderGraphContext<T>>,
         /// Memory barriers for buffers used during rendering.
         buffer_barriers: Vec<Barrier>,
     },
     Cpu {
+        enabled: bool,
         code: PassFn<RenderGraphContext<T>>,
     },
 }
@@ -72,6 +78,9 @@ pub(crate) enum GraphBuffer {
     ReadStorage,
     WriteStorage {
         buffers: Vec<WriteStorageBuffer>,
+    },
+    ReadBack {
+        buffers: Vec<ReadBackStorageBuffer>,
     },
 }
 
@@ -155,6 +164,7 @@ impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
 
         match self {
             RenderPass::Graphics {
+                enabled,
                 code,
                 pass,
                 clear_values,
@@ -178,6 +188,10 @@ impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
                             &[],
                         );
                     }
+                }
+
+                if !*enabled {
+                    return;
                 }
 
                 // NOTE: Viewport is flipped to account for Vulkan coordinate system
@@ -222,6 +236,7 @@ impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
                 }
             }
             RenderPass::Compute {
+                enabled,
                 code,
                 buffer_barriers,
             } => {
@@ -240,11 +255,27 @@ impl<T> Pass<RenderGraphContext<T>> for RenderPass<T> {
                     }
                 }
 
+                if !*enabled {
+                    return;
+                }
+
                 code(rg_ctx, state, command_buffer, self, resources);
             }
-            RenderPass::Cpu { code } => {
+            RenderPass::Cpu { enabled, code } => {
+                if !*enabled {
+                    return;
+                }
+
                 code(rg_ctx, state, command_buffer, self, resources);
             }
+        }
+    }
+
+    fn toggle(&mut self, is_enabled: bool) {
+        match self {
+            RenderPass::Graphics { enabled, .. } => *enabled = is_enabled,
+            RenderPass::Compute { enabled, .. } => *enabled = is_enabled,
+            RenderPass::Cpu { enabled, .. } => *enabled = is_enabled,
         }
     }
 }
@@ -283,6 +314,16 @@ impl<T> Context for RenderGraphContext<T> {
                 }
 
                 GraphBuffer::WriteStorage { buffers }
+            }
+            BufferUsage::ReadBack => {
+                let mut buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+                for _ in 0..FRAMES_IN_FLIGHT {
+                    buffers.push(unsafe {
+                        ReadBackStorageBuffer::new(&self.ctx, descriptor.size as usize)
+                    });
+                }
+
+                GraphBuffer::ReadBack { buffers }
             }
         }
     }
@@ -392,7 +433,10 @@ impl<T> Context for RenderGraphContext<T> {
 
                     if let Some(color) = clear_value {
                         clear_values.push(vk::ClearValue {
-                            color: vk::ClearColorValue { float32: color },
+                            color: match color {
+                                ClearColor::RGBAF32(val) => vk::ClearColorValue { float32: val },
+                                ClearColor::RGBAU32(val) => vk::ClearColorValue { uint32: val },
+                            },
                         });
                     } else {
                         // Unused by Vulkan
@@ -455,6 +499,7 @@ impl<T> Context for RenderGraphContext<T> {
                 }
 
                 let mut render_pass = RenderPass::Graphics {
+                    enabled: true,
                     ctx: self.ctx.clone(),
                     code: *code,
                     pass: render_pass,
@@ -484,11 +529,15 @@ impl<T> Context for RenderGraphContext<T> {
             } => {
                 let buffer_barriers = create_barriers(buffers, images, state, false);
                 RenderPass::Compute {
+                    enabled: true,
                     code: *code,
                     buffer_barriers,
                 }
             }
-            PassDescriptor::CPUPass { code, .. } => RenderPass::Cpu { code: *code },
+            PassDescriptor::CPUPass { code, .. } => RenderPass::Cpu {
+                enabled: true,
+                code: *code,
+            },
         }
     }
 }
@@ -762,6 +811,24 @@ impl GraphBuffer {
             &mut buffers[frame]
         } else {
             panic!("expected write storage buffer");
+        }
+    }
+
+    #[inline]
+    pub fn expect_read_back(&self, frame: usize) -> &ReadBackStorageBuffer {
+        if let GraphBuffer::ReadBack { buffers } = self {
+            &buffers[frame]
+        } else {
+            panic!("expected read back storage buffer");
+        }
+    }
+
+    #[inline]
+    pub fn expect_read_back_mut(&mut self, frame: usize) -> &mut ReadBackStorageBuffer {
+        if let GraphBuffer::ReadBack { buffers } = self {
+            &mut buffers[frame]
+        } else {
+            panic!("expected read back storage buffer");
         }
     }
 }

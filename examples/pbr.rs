@@ -77,7 +77,7 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: false,
+                debug: true,
             },
         })
         .add_plugin(AssetsPlugin)
@@ -157,14 +157,15 @@ fn setup(app: &mut App) {
             let material = &model.materials[*material_idx];
 
             draws.register(
-                &[(
-                    Renderable {
+                &[StaticRenderable {
+                    renderable: Renderable {
                         mesh: mesh.clone(),
                         material: material.clone(),
                         layers: RenderLayerFlags::all(),
                     },
-                    Model(node.transform),
-                )],
+                    model: Model(node.transform),
+                    entity: Entity::null(),
+                }],
                 &mut [],
             );
         }

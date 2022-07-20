@@ -41,15 +41,15 @@ pub trait StorageBufferAccess: Default {
 pub struct ReadStorageBuffer<T> {
     #[allow(dead_code)]
     handle: Option<PrwReadLock<Vec<T>>>,
-    end: NonNull<T>,
     ptr: NonNull<T>,
+    len: usize,
 }
 
 pub struct WriteStorageBuffer<T> {
     #[allow(dead_code)]
     handle: Option<PrwWriteLock<Vec<T>>>,
-    end: NonNull<T>,
     ptr: NonNull<T>,
+    len: usize,
 }
 
 impl<T: Component + 'static> StorageBufferAccess for ReadStorageBuffer<T> {
@@ -62,18 +62,18 @@ impl<T: Component + 'static> StorageBufferAccess for ReadStorageBuffer<T> {
             .get_storage::<Self::Component>()
             .expect("Requested non existant storage")
             .get(index);
-        let end = unsafe { handle.as_ptr().add(handle.len()) };
+        let len = handle.len();
         let ptr = handle.as_ptr();
 
         Self {
             handle: Some(handle),
-            end: if end.is_null() {
-                unsafe { NonNull::new_unchecked(1 as *mut T) }
-            } else {
-                unsafe { NonNull::new_unchecked(end as *mut T) }
-            },
+            len,
             ptr: if ptr.is_null() {
-                unsafe { NonNull::new_unchecked(1 as *mut T) }
+                unsafe {
+                    NonNull::new_unchecked(
+                        std::mem::size_of::<T>().max(std::mem::size_of::<usize>()) as *mut T,
+                    )
+                }
             } else {
                 unsafe { NonNull::new_unchecked(ptr as *mut T) }
             },
@@ -82,17 +82,17 @@ impl<T: Component + 'static> StorageBufferAccess for ReadStorageBuffer<T> {
 
     #[inline]
     fn len(&self) -> usize {
-        unsafe { self.end.as_ptr().offset_from(self.ptr.as_ptr()) as usize }
+        self.len
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.end == self.ptr
+        self.len == 0
     }
 
     #[inline]
     fn is_valid(&self, idx: usize) -> bool {
-        unsafe { idx < self.end.as_ptr().offset_from(self.ptr.as_ptr()) as usize }
+        idx < self.len
     }
 
     #[inline]
@@ -106,8 +106,12 @@ impl<T> Default for ReadStorageBuffer<T> {
     fn default() -> Self {
         Self {
             handle: None,
-            end: unsafe { NonNull::new_unchecked(1 as *mut T) },
-            ptr: unsafe { NonNull::new_unchecked(1 as *mut T) },
+            len: 0,
+            ptr: unsafe {
+                NonNull::new_unchecked(
+                    std::mem::size_of::<T>().max(std::mem::size_of::<usize>()) as *mut T
+                )
+            },
         }
     }
 }
@@ -126,37 +130,37 @@ impl<T: Component + 'static> StorageBufferAccess for WriteStorageBuffer<T> {
             .get_storage::<Self::Component>()
             .expect("Requested non existant storage")
             .get_mut(index);
-        let end = unsafe { handle.as_ptr().add(handle.len()) };
+        let len = handle.len();
         let ptr = handle.as_mut_ptr();
 
         Self {
             handle: Some(handle),
-            end: if end.is_null() {
-                unsafe { NonNull::new_unchecked(1 as *mut T) }
-            } else {
-                unsafe { NonNull::new_unchecked(end as *mut T) }
-            },
+            len,
             ptr: if ptr.is_null() {
-                unsafe { NonNull::new_unchecked(1 as *mut T) }
+                unsafe {
+                    NonNull::new_unchecked(
+                        std::mem::size_of::<T>().max(std::mem::size_of::<usize>()) as *mut T,
+                    )
+                }
             } else {
-                unsafe { NonNull::new_unchecked(ptr) }
+                unsafe { NonNull::new_unchecked(ptr as *mut T) }
             },
         }
     }
 
     #[inline]
     fn len(&self) -> usize {
-        unsafe { self.end.as_ptr().offset_from(self.ptr.as_ptr()) as usize }
+        self.len
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.end == self.ptr
+        self.len == 0
     }
 
     #[inline]
     fn is_valid(&self, idx: usize) -> bool {
-        unsafe { idx < self.end.as_ptr().offset_from(self.ptr.as_ptr()) as usize }
+        idx < self.len
     }
 
     #[inline]
@@ -170,8 +174,12 @@ impl<T> Default for WriteStorageBuffer<T> {
     fn default() -> Self {
         Self {
             handle: None,
-            end: unsafe { NonNull::new_unchecked(1 as *mut T) },
-            ptr: unsafe { NonNull::new_unchecked(1 as *mut T) },
+            len: 0,
+            ptr: unsafe {
+                NonNull::new_unchecked(
+                    std::mem::size_of::<T>().max(std::mem::size_of::<usize>()) as *mut T
+                )
+            },
         }
     }
 }

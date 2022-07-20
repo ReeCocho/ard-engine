@@ -136,6 +136,11 @@ fn main() {
         Path::new("./src/renderer/composite.frag.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/renderer/entity_pass.frag"),
+        Path::new("./src/renderer/entity_pass.frag.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

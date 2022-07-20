@@ -85,6 +85,35 @@ impl Editor {
             .set_inspected_item(&assets, &scene_graph, Some(item));
     }
 
+    fn entity_image(
+        &mut self,
+        item: NewEntityImage,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<(Read<EntityImage>, Read<SceneGraph>, Read<Assets>)>,
+    ) {
+        let res = res.get();
+        let entity_image = res.0.unwrap();
+        let scene_graph = res.1.unwrap();
+        let assets = res.2.unwrap();
+
+        if self.scene_view.clicked() {
+            // Sample the entity
+            let entity = entity_image.sample(self.scene_view.click_uv());
+
+            // If we clicked something, inspect it
+            if let Some(entity) = entity {
+                self.inspector.set_inspected_item(
+                    &assets,
+                    &scene_graph,
+                    Some(InspectorItem::Entity(entity)),
+                );
+            }
+
+            self.scene_view.reset_click();
+        }
+    }
+
     fn pre_render(
         &mut self,
         evt: PreRender,
@@ -128,7 +157,7 @@ impl Editor {
                 &assets,
                 &scene_graph,
                 &mut self.jobs,
-                &commands.entities,
+                &commands,
                 &mut windows,
                 ui,
                 &mut settings,
@@ -146,7 +175,8 @@ impl Editor {
                 &scene_graph,
             );
 
-            self.hierarchy.draw(ui, &commands.events, &scene_graph);
+            self.hierarchy
+                .draw(ui, &commands.events, &mut scene_graph, &queries, &commands);
         });
     }
 }
@@ -154,6 +184,7 @@ impl Editor {
 impl Into<System> for Editor {
     fn into(self) -> System {
         SystemBuilder::new(self)
+            .with_handler(Editor::entity_image)
             .with_handler(Editor::file_dropped)
             .with_handler(Editor::pre_render)
             .with_handler(Editor::inspect_item)

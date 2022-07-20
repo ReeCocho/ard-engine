@@ -56,6 +56,13 @@ pub struct WriteStorageBuffer {
     cap: usize,
 }
 
+/// Storage buffer designed for read back by the CPU.
+pub struct ReadBackStorageBuffer {
+    buffer: Buffer,
+    map: NonNull<u8>,
+    cap: usize,
+}
+
 /// Represents a uniform buffer object containing some data.
 pub struct UniformBuffer {
     buffer: Buffer,
@@ -632,6 +639,119 @@ impl Drop for WriteStorageBuffer {
     fn drop(&mut self) {}
 }
 
+impl ReadBackStorageBuffer {
+    pub unsafe fn new(ctx: &GraphicsContext, initial_cap: usize) -> Self {
+        let create_info = BufferCreateInfo {
+            ctx: ctx.clone(),
+            size: initial_cap as u64,
+            memory_usage: MemoryLocation::GpuToCpu,
+            buffer_usage: vk::BufferUsageFlags::TRANSFER_DST,
+        };
+
+        let mut buffer = Buffer::new(&create_info);
+        let map = NonNull::new_unchecked(
+            buffer
+                .block
+                .mapped_ptr()
+                .expect("unable to map buffer")
+                .as_ptr() as *mut u8,
+        );
+
+        ReadBackStorageBuffer {
+            buffer,
+            map,
+            cap: initial_cap,
+        }
+    }
+
+    #[inline]
+    pub fn map(&self) -> NonNull<u8> {
+        self.map
+    }
+
+    #[inline]
+    pub fn buffer(&self) -> vk::Buffer {
+        self.buffer.buffer
+    }
+
+    #[inline]
+    pub fn size(&self) -> u64 {
+        self.buffer.size
+    }
+
+    /// Flush a range of bytes within the buffer.
+    pub unsafe fn flush(&self, offset: usize, len: usize) {
+        let offset = offset as u64;
+        let len = len as u64;
+
+        match self.buffer.ctx.0.properties.limits.non_coherent_atom_size {
+            0 => {
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(offset)
+                        .size(len)
+                        .build()])
+                    .expect("unable to flush buffer memory range");
+            }
+            size => {
+                let atom_mask = size - 1;
+                let aligned_offset = offset & !atom_mask;
+                let end = (offset + len + atom_mask) & !atom_mask;
+
+                self.buffer
+                    .ctx
+                    .0
+                    .device
+                    .flush_mapped_memory_ranges(&[vk::MappedMemoryRange::builder()
+                        .memory(self.buffer.block.memory())
+                        .offset(aligned_offset)
+                        .size(end - aligned_offset)
+                        .build()])
+                    .expect("unable to flush buffer memory range");
+            }
+        };
+    }
+
+    /// Expands the capacity of the buffer to meet the new capacity of the buffer. Returns `None`
+    /// if the buffer was not expanded, or `Some` containing the new capacity.
+    ///
+    /// ## Note
+    /// The returned new capacity might be larger than `new_cap`.
+    pub unsafe fn expand(&mut self, new_cap: usize) -> Option<usize> {
+        let mut cap = self.cap;
+        while cap < new_cap {
+            cap *= 2;
+        }
+
+        if cap > self.cap {
+            self.cap = cap as usize;
+            let create_info = BufferCreateInfo {
+                ctx: self.buffer.ctx.clone(),
+                size: cap as u64,
+                memory_usage: MemoryLocation::CpuToGpu,
+                buffer_usage: self.buffer.usage(),
+            };
+
+            self.buffer = Buffer::new(&create_info);
+            self.map = NonNull::new_unchecked(
+                self.buffer
+                    .block
+                    .mapped_ptr()
+                    .expect("unable to map buffer")
+                    .as_ptr() as *mut u8,
+            );
+
+            Some(self.cap)
+        } else {
+            None
+        }
+    }
+}
+
 impl StorageBuffer {
     pub unsafe fn new(ctx: &GraphicsContext, initial_cap: usize) -> Self {
         let create_info = BufferCreateInfo {
@@ -776,3 +896,7 @@ unsafe impl Sync for UniformBuffer {}
 unsafe impl Send for WriteStorageBuffer {}
 
 unsafe impl Sync for WriteStorageBuffer {}
+
+unsafe impl Send for ReadBackStorageBuffer {}
+
+unsafe impl Sync for ReadBackStorageBuffer {}

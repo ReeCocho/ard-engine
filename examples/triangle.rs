@@ -1,5 +1,6 @@
 use ard_engine::{
     core::prelude::*,
+    ecs::prelude::*,
     graphics::prelude::*,
     math::{Mat4, Vec3, Vec4},
     window::prelude::*,
@@ -101,14 +102,15 @@ fn setup(app: &mut App) {
     // so they can be unregistered later
     let draws = app.resources.get_mut::<StaticGeometry>().unwrap();
     draws.register(
-        &[(
-            Renderable {
+        &[StaticRenderable {
+            renderable: Renderable {
                 mesh,
                 material,
                 layers: RenderLayerFlags::all(),
             },
-            Model(Mat4::from_translation(Vec3::new(0.0, -0.5, 1.0))),
-        )],
+            model: Model(Mat4::from_translation(Vec3::new(0.0, -0.5, 1.0))),
+            entity: Entity::null(),
+        }],
         &mut [],
     );
 }

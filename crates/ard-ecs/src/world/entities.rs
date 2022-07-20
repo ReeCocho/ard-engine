@@ -309,6 +309,10 @@ impl EntityCommands {
     /// will detect this during deferred destruction of entities and panic then.
     #[inline]
     pub fn destroy(&self, entities: &[Entity]) {
+        if entities.is_empty() {
+            return;
+        }
+
         let _ = self.sender.send(EntityCommand::Destroy {
             entities: Vec::from(entities),
         });

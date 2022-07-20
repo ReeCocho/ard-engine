@@ -20,7 +20,7 @@ rfd = "0.9"
 ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window" ] }
 
 [profile.dev]
-opt-level = 1
+opt-level = 0
 
 [profile.release]
 lto = "fat"

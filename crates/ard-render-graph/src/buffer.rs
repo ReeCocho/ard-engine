@@ -14,6 +14,8 @@ pub enum BufferUsage {
     ReadStorageBuffer,
     /// Storage buffer with fast write access by the CPU.
     WriteStorageBuffer,
+    /// Buffer contents will be written to by the GPU and read by the CPU.
+    ReadBack,
 }
 
 pub struct BufferDescriptor {

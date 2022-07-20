@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{camera::CameraDescriptor, prelude::Backend, AnisotropyLevel, RenderLayerFlags};
 use ard_ecs::prelude::*;
-use ard_math::{Mat4, Vec3};
+use ard_math::{Mat4, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 /// Event indicating that rendering is about to be performed. Contains the duration sine the
@@ -10,10 +10,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Event, Copy, Clone)]
 pub struct PreRender(pub Duration);
 
-/// Event indicating that rendering has finished. Contains the duration sine the
+/// Event indicating that rendering has finished. Contains the duration since the
 /// last post render event.
 #[derive(Debug, Event, Copy, Clone)]
 pub struct PostRender(pub Duration);
+
+/// Event indicating an entity image has rendered and is available for sampling.
+#[derive(Debug, Event, Copy, Clone)]
+pub struct NewEntityImage;
+
+/// User submitable event that indicates the next frame should render an entity image.
+#[derive(Debug, Event, Copy, Clone)]
+pub struct RenderEntityImage;
 
 /// Represents an object to be rendered. When paired with a `Model` component, the `Renderer`
 /// will present it to the screen dynamically.
@@ -24,6 +32,16 @@ pub struct Renderable<B: Backend> {
     pub layers: RenderLayerFlags,
 }
 
+/// An object to be rendered that will not move.
+pub struct StaticRenderable<B: Backend> {
+    /// Describes how the object looks.
+    pub renderable: Renderable<B>,
+    /// Transformation of the object.
+    pub model: Model,
+    /// Entity associated with the object.
+    pub entity: Entity,
+}
+
 impl<B: Backend> Component for Renderable<B> {}
 
 /// Model matrix for a `Renderable` component.
@@ -32,7 +50,7 @@ pub struct Model(pub Mat4);
 
 /// Handle to a static renderable object.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StaticRenderable(u32);
+pub struct StaticRenderableHandle(u32);
 
 /// Renderer system settings.
 #[derive(Debug, Resource)]
@@ -86,9 +104,9 @@ pub trait StaticGeometryApi<B: Backend>: Resource + Send + Sync {
     /// ## Note
     /// If you drop a static renderable handle, it is impossible thereafter to unregister the
     /// renderable.
-    fn register(&self, models: &[(Renderable<B>, Model)], handles: &mut [StaticRenderable]);
+    fn register(&self, models: &[StaticRenderable<B>], handles: &mut [StaticRenderableHandle]);
 
-    fn unregister(&self, handles: &[StaticRenderable]);
+    fn unregister(&self, handles: &[StaticRenderableHandle]);
 }
 
 /// Used to draw simple debugging shapes like lines, prisims, and spheres. All debug shapes that
@@ -107,6 +125,16 @@ pub trait DebugDrawingApi<B: Backend>: Resource + Send + Sync {
     fn draw_rect_prism(&self, half_extents: Vec3, transform: Mat4, color: Vec3);
 }
 
+/// Contains an image of the scene where each pixel is an entity. Submit the `RenderEntityImage`
+/// command in order to get this image rendered.
+///
+/// # Note
+/// The rendered image may be at a lower resolution than the actual canvas size.
+pub trait EntityImageApi<B: Backend>: Resource + Send + Sync {
+    /// Sample an entity from the image using UV coordinates.
+    fn sample(&self, uv: Vec2) -> Option<Entity>;
+}
+
 impl Default for RendererSettings {
     fn default() -> Self {
         RendererSettings {
@@ -118,21 +146,21 @@ impl Default for RendererSettings {
     }
 }
 
-impl StaticRenderable {
+impl StaticRenderableHandle {
     #[inline]
     pub fn new(id: u32) -> Self {
-        StaticRenderable(id)
+        StaticRenderableHandle(id)
     }
 
     #[inline]
     pub fn empty() -> Self {
-        StaticRenderable(0)
+        StaticRenderableHandle(0)
     }
 }
 
-impl From<u32> for StaticRenderable {
+impl From<u32> for StaticRenderableHandle {
     #[inline]
     fn from(id: u32) -> Self {
-        StaticRenderable::new(id)
+        StaticRenderableHandle::new(id)
     }
 }

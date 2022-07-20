@@ -182,14 +182,15 @@ fn setup(app: &mut App) {
     let draws = app.resources.get_mut::<StaticGeometry>().unwrap();
 
     draws.register(
-        &[(
-            Renderable {
+        &[StaticRenderable {
+            renderable: Renderable {
                 mesh: quad_mesh,
                 material,
                 layers: RenderLayerFlags::all(),
             },
-            Model(Mat4::from_translation(Vec3::new(0.0, 0.0, 1.0))),
-        )],
+            model: Model(Mat4::from_translation(Vec3::new(0.0, 0.0, 1.0))),
+            entity: Entity::null(),
+        }],
         &mut [],
     );
 

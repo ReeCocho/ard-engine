@@ -11,7 +11,7 @@ use crate::{
     prelude::{Component, Entities},
     prw_lock::PrwReadLock,
     system::data::SystemData,
-    tag::{filter::TagFilter, storage::set::TagStorageSet, Tag, Tags},
+    tag::{filter::TagFilter, storage::set::TagStorageSet, Tags},
 };
 
 /// An object used to create queries.
@@ -673,3 +673,5 @@ impl FastEntityIterator {
         *self.ptr.as_ptr().add(idx)
     }
 }
+
+unsafe impl Send for FastEntityIterator {}

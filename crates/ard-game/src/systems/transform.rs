@@ -45,10 +45,19 @@ impl TransformUpdate {
         }
 
         // Remove from old parents child list if we changed parents
-        for (entity, prev) in queries.make::<(Entity, Read<PrevParent>)>() {
+        for (entity, (parent, prev)) in queries.make::<(Entity, (Read<Parent>, Read<PrevParent>))>()
+        {
+            // Remove self from old parents list
             if let Some(prev) = prev.0 {
                 if let Some(mut children) = queries.get::<Write<Children>>(prev) {
                     children.0.retain(|e| *e != entity);
+                }
+            }
+
+            // Put self into new parents list
+            if let Some(parent) = parent.0 {
+                if let Some(mut children) = queries.get::<Write<Children>>(parent) {
+                    children.0.push(entity);
                 }
             }
 

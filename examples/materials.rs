@@ -1,4 +1,6 @@
-use ard_engine::{core::prelude::*, graphics::prelude::*, math::*, window::prelude::*};
+use ard_engine::{
+    core::prelude::*, ecs::prelude::*, graphics::prelude::*, math::*, window::prelude::*,
+};
 
 fn main() {
     AppBuilder::new(ard_log::LevelFilter::Error)
@@ -151,18 +153,19 @@ fn setup(app: &mut App) {
             factory.update_material_data(&material, bytemuck::cast_slice(&[color]));
 
             draws.register(
-                &[(
-                    Renderable {
+                &[StaticRenderable {
+                    renderable: Renderable {
                         mesh: triangle_mesh.clone(),
                         material: material.clone(),
                         layers: RenderLayerFlags::all(),
                     },
-                    Model(Mat4::from_translation(Vec3::new(
+                    model: Model(Mat4::from_translation(Vec3::new(
                         -(x as f32) - 1.0,
                         y as f32,
                         1.0,
                     ))),
-                )],
+                    entity: Entity::null(),
+                }],
                 &mut [],
             );
 
@@ -174,18 +177,19 @@ fn setup(app: &mut App) {
             factory.update_material_data(&material, bytemuck::cast_slice(&[color]));
 
             draws.register(
-                &[(
-                    Renderable {
+                &[StaticRenderable {
+                    renderable: Renderable {
                         mesh: quad_mesh.clone(),
                         material: material.clone(),
                         layers: RenderLayerFlags::all(),
                     },
-                    Model(Mat4::from_translation(Vec3::new(
+                    model: Model(Mat4::from_translation(Vec3::new(
                         x as f32 + 1.0,
                         y as f32,
                         1.0,
                     ))),
-                )],
+                    entity: Entity::null(),
+                }],
                 &mut [],
             );
         }

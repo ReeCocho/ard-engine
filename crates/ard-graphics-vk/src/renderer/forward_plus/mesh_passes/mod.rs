@@ -5,12 +5,12 @@ use std::sync::atomic::Ordering;
 
 use self::mesh_pass::{MeshPass, MeshPassCreateInfo};
 
-use super::{DrawKey, ForwardPlus};
+use super::{DrawKey, ForwardPlus, GameRendererGraph};
 use crate::{
     alloc::Image,
     camera::{
         depth_pyramid::DepthPyramidGenerator, descriptors::DescriptorPool, graph::RenderPass,
-        GraphicsContext, Lighting, RawPointLight,
+        GraphicsContext, Lighting, PipelineType, RawPointLight,
     },
     prelude::graph::RenderGraphContext,
     shader_constants::{
@@ -51,7 +51,7 @@ pub(crate) struct MeshPasses {
     /// Flag indicating if the skybox should be drawn.
     pub draw_sky: bool,
     /// Dynamic geometry query to look through when rendering.
-    pub dynamic_geo_query: Option<ComponentQuery<(Read<Renderable<VkBackend>>, Read<Model>)>>,
+    pub dynamic_geo_query: Option<EntityComponentQuery<(Read<Renderable<VkBackend>>, Read<Model>)>>,
     /// Query of point lights to read through.
     pub point_lights_query: Option<ComponentQuery<(Read<PointLight>, Read<Model>)>>,
     pub point_light_count: usize,
@@ -175,13 +175,14 @@ unsafe impl Pod for InputObjectId {}
 
 pub(crate) type OutputObjectId = u32;
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Copy, Clone)]
 pub(crate) struct ObjectInfo {
     pub model: Mat4,
     pub material_idx: u32,
     pub textures_idx: u32,
-    pub _pad: Vec2,
+    pub entity_id: u32,
+    pub entity_ver: u32,
 }
 
 unsafe impl Zeroable for ObjectInfo {}
@@ -800,8 +801,12 @@ impl<'a> MeshPassesBuilder<'a> {
             passes: Vec::default(),
             stages: Default::default(),
             draw_sky: false,
-            active_stage: MeshPassStage::CameraSetup,
-            active_pass: 0,
+            /////////////////////////
+            // These values are here so that when the first pass begins, it wraps around to the
+            // beginning.
+            active_stage: MeshPassStage::OpaquePass,
+            active_pass: usize::MAX - 1,
+            /////////////////////////
             total_objects: 0,
             dynamic_geo_query: None,
             point_lights_query: None,
@@ -887,16 +892,18 @@ impl<'a> MeshPassesBuilder<'a> {
         // Add passes to the render graph
 
         // Stage 1: Camera setup
-        for _ in &self.passes.stages[MeshPassStage::CameraSetup.as_idx()] {
-            self.builder.add_pass(PassDescriptor::ComputePass {
-                toggleable: false,
-                images: Vec::default(),
-                buffers: Vec::default(),
-                code: |ctx, state, cb, pass, resc| {
-                    MeshPass::camera_setup(ctx, state, cb, pass, resc);
-                    state.mesh_passes.next_pass();
-                },
-            });
+        for pass_idx in &self.passes.stages[MeshPassStage::CameraSetup.as_idx()] {
+            let pass = &mut self.passes.passes[*pass_idx];
+            pass.passes
+                .push(self.builder.add_pass(PassDescriptor::ComputePass {
+                    toggleable: pass.toggleable,
+                    images: Vec::default(),
+                    buffers: Vec::default(),
+                    code: |ctx, state, cb, pass, resc| {
+                        state.mesh_passes.next_pass();
+                        MeshPass::camera_setup(ctx, state, cb, pass, resc);
+                    },
+                }));
         }
 
         // Stage 2.a: Expand object buffers
@@ -911,7 +918,7 @@ impl<'a> MeshPassesBuilder<'a> {
             let highz_culling = pass.highz_culling.as_mut().unwrap();
 
             highz_culling.pass_id = self.builder.add_pass(PassDescriptor::RenderPass {
-                toggleable: false,
+                toggleable: pass.toggleable,
                 color_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachmentDescriptor {
                     image: highz_culling.image,
@@ -932,21 +939,25 @@ impl<'a> MeshPassesBuilder<'a> {
                     },
                 ],
                 code: |ctx, state, cb, pass, resc| {
-                    MeshPass::highz_render(ctx, state, cb, pass, resc);
                     state.mesh_passes.next_pass();
+                    MeshPass::highz_render(ctx, state, cb, pass, resc);
                 },
             });
+
+            pass.passes.push(highz_culling.pass_id);
         }
 
         // Stage 3: Highz generate
-        for _ in &self.passes.stages[MeshPassStage::HighZGenerate.as_idx()] {
-            self.builder.add_pass(PassDescriptor::CPUPass {
-                toggleable: false,
-                code: |ctx, state, cb, pass, resc| {
-                    MeshPass::highz_generate(ctx, state, cb, pass, resc);
-                    state.mesh_passes.next_pass();
-                },
-            });
+        for pass_idx in &self.passes.stages[MeshPassStage::HighZGenerate.as_idx()] {
+            let pass = &mut self.passes.passes[*pass_idx];
+            pass.passes
+                .push(self.builder.add_pass(PassDescriptor::CPUPass {
+                    toggleable: pass.toggleable,
+                    code: |ctx, state, cb, pass, resc| {
+                        state.mesh_passes.next_pass();
+                        MeshPass::highz_generate(ctx, state, cb, pass, resc);
+                    },
+                }));
         }
 
         // Stage 4.a: Prepare draw calls
@@ -957,58 +968,60 @@ impl<'a> MeshPassesBuilder<'a> {
 
         // Stage 4.b: Generate draw calls
         for pass in &self.passes.stages[MeshPassStage::GenerateDrawCalls.as_idx()] {
-            let pass = &self.passes.passes[*pass];
+            let pass = &mut self.passes.passes[*pass];
 
-            self.builder.add_pass(PassDescriptor::ComputePass {
-                toggleable: false,
-                images: Vec::default(),
-                buffers: vec![
-                    BufferAccessDescriptor {
-                        buffer: self.passes.object_info,
-                        access: AccessType::Read,
+            pass.passes
+                .push(self.builder.add_pass(PassDescriptor::ComputePass {
+                    toggleable: pass.toggleable,
+                    images: Vec::default(),
+                    buffers: vec![
+                        BufferAccessDescriptor {
+                            buffer: self.passes.object_info,
+                            access: AccessType::Read,
+                        },
+                        BufferAccessDescriptor {
+                            buffer: pass.input_ids,
+                            access: AccessType::Read,
+                        },
+                        BufferAccessDescriptor {
+                            buffer: pass.output_ids,
+                            access: AccessType::ReadWrite,
+                        },
+                        BufferAccessDescriptor {
+                            buffer: pass.draw_calls,
+                            access: AccessType::ReadWrite,
+                        },
+                    ],
+                    code: |ctx, state, cb, pass, resc| {
+                        state.mesh_passes.next_pass();
+                        MeshPass::generate_draw_calls(ctx, state, cb, pass, resc);
                     },
-                    BufferAccessDescriptor {
-                        buffer: pass.input_ids,
-                        access: AccessType::Read,
-                    },
-                    BufferAccessDescriptor {
-                        buffer: pass.output_ids,
-                        access: AccessType::ReadWrite,
-                    },
-                    BufferAccessDescriptor {
-                        buffer: pass.draw_calls,
-                        access: AccessType::ReadWrite,
-                    },
-                ],
-                code: |ctx, state, cb, pass, resc| {
-                    MeshPass::generate_draw_calls(ctx, state, cb, pass, resc);
-                    state.mesh_passes.next_pass();
-                },
-            });
+                }));
         }
 
         // Stage 5: Light clustering
         for pass in &self.passes.stages[MeshPassStage::ClusterLights.as_idx()] {
-            let pass = &self.passes.passes[*pass];
+            let pass = &mut self.passes.passes[*pass];
 
-            self.builder.add_pass(PassDescriptor::ComputePass {
-                toggleable: false,
-                images: Vec::default(),
-                buffers: vec![
-                    BufferAccessDescriptor {
-                        buffer: self.passes.point_lights,
-                        access: AccessType::Read,
+            pass.passes
+                .push(self.builder.add_pass(PassDescriptor::ComputePass {
+                    toggleable: pass.toggleable,
+                    images: Vec::default(),
+                    buffers: vec![
+                        BufferAccessDescriptor {
+                            buffer: self.passes.point_lights,
+                            access: AccessType::Read,
+                        },
+                        BufferAccessDescriptor {
+                            buffer: pass.color_rendering.as_ref().unwrap().point_lights_table,
+                            access: AccessType::ReadWrite,
+                        },
+                    ],
+                    code: |ctx, state, cb, pass, resc| {
+                        state.mesh_passes.next_pass();
+                        MeshPass::cluster_lights(ctx, state, cb, pass, resc);
                     },
-                    BufferAccessDescriptor {
-                        buffer: pass.color_rendering.as_ref().unwrap().point_lights_table,
-                        access: AccessType::ReadWrite,
-                    },
-                ],
-                code: |ctx, state, cb, pass, resc| {
-                    MeshPass::cluster_lights(ctx, state, cb, pass, resc);
-                    state.mesh_passes.next_pass();
-                },
-            });
+                }));
         }
 
         // Stage 6: Depth prepass
@@ -1039,7 +1052,7 @@ impl<'a> MeshPassesBuilder<'a> {
             }
 
             pass.depth_prepass_id = self.builder.add_pass(PassDescriptor::RenderPass {
-                toggleable: false,
+                toggleable: pass.toggleable,
                 color_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachmentDescriptor {
                     image: pass.depth_image.image,
@@ -1051,10 +1064,12 @@ impl<'a> MeshPassesBuilder<'a> {
                 buffers,
                 images: Vec::default(),
                 code: |ctx, state, cb, pass, resc| {
-                    MeshPass::depth_prepass(ctx, state, cb, pass, resc);
                     state.mesh_passes.next_pass();
+                    MeshPass::depth_prepass(ctx, state, cb, pass, resc);
                 },
             });
+
+            pass.passes.push(pass.depth_prepass_id);
         }
 
         // Stage 7: Opaque pass
@@ -1093,7 +1108,7 @@ impl<'a> MeshPassesBuilder<'a> {
             };
 
             color_rendering.pass_id = self.builder.add_pass(PassDescriptor::RenderPass {
-                toggleable: false,
+                toggleable: pass.toggleable,
                 color_attachments: vec![color_rendering.color_image],
                 depth_stencil_attachment: Some(DepthStencilAttachmentDescriptor {
                     image: pass.depth_image.image,
@@ -1108,10 +1123,12 @@ impl<'a> MeshPassesBuilder<'a> {
                     access: AccessType::Read,
                 }],
                 code: |ctx, state, cb, pass, resc| {
-                    MeshPass::opaque_pass(ctx, state, cb, pass, resc);
                     state.mesh_passes.next_pass();
+                    MeshPass::opaque_pass(ctx, state, cb, pass, resc);
                 },
             });
+
+            pass.passes.push(color_rendering.pass_id);
         }
 
         self.passes
@@ -1119,6 +1136,12 @@ impl<'a> MeshPassesBuilder<'a> {
 }
 
 impl MeshPasses {
+    #[inline]
+    pub fn reset(&mut self) {
+        self.active_stage = MeshPassStage::OpaquePass;
+        self.active_pass = usize::MAX - 1;
+    }
+
     #[inline]
     pub fn get_pass(&self, id: MeshPassId) -> &MeshPass {
         &self.passes[id.0]
@@ -1134,13 +1157,26 @@ impl MeshPasses {
     fn next_pass(&mut self) {
         loop {
             self.active_pass = self.active_pass.wrapping_add(1);
+
+            // Move to next stage if looping
             if self.stages[self.active_stage.as_idx()].len() <= self.active_pass {
                 self.active_pass = usize::MAX;
                 self.active_stage = self.active_stage.next();
                 continue;
             }
+
+            // Make sure the pass is active
+            if !self.passes[self.stages[self.active_stage.as_idx()][self.active_pass]].enabled {
+                continue;
+            }
+
             break;
         }
+    }
+
+    #[inline]
+    pub fn toggle_pass(&mut self, id: MeshPassId, enabled: bool, graph: &mut GameRendererGraph) {
+        self.passes[id.0].toggle_pass(enabled, graph);
     }
 
     /// Prepares the high-z culling images for the first frame by transitioning their layouts.
@@ -1229,6 +1265,25 @@ impl MeshPasses {
     /// Returns `None` if no pass uses opaque rendering.
     pub fn get_opaque_pass_id(&self) -> Option<PassId> {
         for pass in &self.passes {
+            if let Some(color_rendering) = &pass.color_rendering {
+                return Some(color_rendering.pass_id);
+            }
+        }
+
+        None
+    }
+
+    /// Gets the ID of a render pass that performs entity image rendering.
+    ///
+    /// All render passes that perform entity image rendering are compatible (in the Vulkan sense).
+    ///
+    /// Returns `None` if no pass uses entity image rendering.
+    pub fn get_entity_pass_id(&self) -> Option<PassId> {
+        for pass in &self.passes {
+            if pass.color_pipeline_type != PipelineType::EntityImagePass {
+                continue;
+            }
+
             if let Some(color_rendering) = &pass.color_rendering {
                 return Some(color_rendering.pass_id);
             }
@@ -1593,7 +1648,8 @@ impl MeshPasses {
                                 model: batch.models[i],
                                 material_idx: material.material_slot.unwrap_or(0),
                                 textures_idx: material.texture_slot.unwrap_or(0),
-                                _pad: Vec2::ZERO,
+                                entity_id: batch.entities[i].id(),
+                                entity_ver: batch.entities[i].ver(),
                             },
                         );
                     }
@@ -1607,7 +1663,7 @@ impl MeshPasses {
         }
 
         let object_info_map = object_info_buffer.map();
-        for (i, (renderable, model)) in state
+        for (i, (entity, (renderable, model))) in state
             .mesh_passes
             .dynamic_geo_query
             .take()
@@ -1626,7 +1682,8 @@ impl MeshPasses {
                     model: model.0,
                     material_idx: material.material_slot.unwrap_or(0),
                     textures_idx: material.texture_slot.unwrap_or(0),
-                    _pad: Vec2::ZERO,
+                    entity_id: entity.id(),
+                    entity_ver: entity.ver(),
                 };
             }
         }

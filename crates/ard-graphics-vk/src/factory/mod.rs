@@ -32,6 +32,7 @@ pub struct FactoryInner {
     staging: Mutex<StagingBuffers>,
     passes: Passes,
     graph: GameRendererGraphRef,
+    entity_shader: vk::ShaderModule,
     main_camera: Mutex<Option<Camera>>,
     /// Used by the renderer to acquire exclusive access to the factory.
     exclusive: RwLock<()>,
@@ -71,11 +72,25 @@ impl Factory {
         // TODO: Make default vertex and index buffer lengths part of renderer settings
         let mesh_buffers = MeshBuffers::new(ctx, 1024, 1024);
 
+        let entity_shader = {
+            let module_create_info = vk::ShaderModuleCreateInfo {
+                p_code: ENTITY_IMAGE_FRAG_SHADER.as_ptr() as *const u32,
+                code_size: ENTITY_IMAGE_FRAG_SHADER.len(),
+                ..Default::default()
+            };
+
+            ctx.0
+                .device
+                .create_shader_module(&module_create_info, None)
+                .expect("unable to compile entity shader module")
+        };
+
         let factory = Factory(Arc::new(FactoryInner {
             ctx: ctx.clone(),
             passes: *passes,
             graph: graph.clone(),
             layouts,
+            entity_shader,
             main_camera: Mutex::default(),
             material_buffers: Mutex::new(material_buffers),
             mesh_buffers: Mutex::new(mesh_buffers),
@@ -219,6 +234,10 @@ impl Factory {
 impl Drop for FactoryInner {
     fn drop(&mut self) {
         unsafe {
+            self.ctx
+                .0
+                .device
+                .destroy_shader_module(self.entity_shader, None);
             self.layouts.release(&self.ctx.0.device);
         }
     }
@@ -306,6 +325,7 @@ impl FactoryApi<VkBackend> for Factory {
                 &self.0.passes,
                 &self.0.layouts,
                 &shaders,
+                self.0.entity_shader,
             )
         };
         let escaper = pipelines.insert(pipeline_inner);
@@ -526,3 +546,5 @@ impl FactoryApi<VkBackend> for Factory {
         material_inner.textures[slot] = texture.map(|tex| tex.clone());
     }
 }
+
+const ENTITY_IMAGE_FRAG_SHADER: &[u8] = include_bytes!("../renderer/entity_pass.frag.spv");

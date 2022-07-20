@@ -2,6 +2,7 @@ use ard_engine::{
     assets::prelude::*,
     ecs::prelude::*,
     game::{
+        components::transform::Parent,
         destroy::Destroy,
         object::{empty::EmptyObject, static_object::StaticObject, GameObject},
         scene::{EntityMap, MappedEntity},
@@ -108,7 +109,16 @@ impl SceneGraph {
         while let Ok((scene, load)) = self.load_scene_recv.try_recv() {
             if load {
                 info!("loading new scene...");
+
+                // If the scene to load is the same as the current scene, we must reload it
+                if Some(scene.clone()) == self.handle {
+                    assets.reload(&scene);
+                }
+
+                // Wait for the scene to load
                 assets.wait_for_load(&scene);
+
+                // Grab the scene asset
                 let mut scene_asset = match assets.get_mut(&scene) {
                     Some(scene) => scene,
                     None => {
@@ -125,8 +135,10 @@ impl SceneGraph {
                     }
                 };
 
+                std::mem::drop(scene_asset);
+
                 self.load(descriptor, commands, assets);
-                self.handle = Some(scene.clone());
+                self.handle = Some(scene);
                 info!("new scene loaded...");
             }
         }
@@ -141,6 +153,58 @@ impl SceneGraph {
         }
 
         None
+    }
+
+    /// Attempts to set the parent of the entity. If a circular dependency would be created, the
+    /// parent value is not updated.
+    pub fn set_parent(
+        &mut self,
+        entity: Entity,
+        new_parent: Option<Entity>,
+        queries: &Queries<Everything>,
+        commands: &Commands,
+    ) {
+        // First, find the node of the entity
+        let mut entity_node = None;
+        for root in &self.roots {
+            let search = self.find_entity_recurse(entity, root);
+            if search.is_some() {
+                entity_node = search;
+                break;
+            }
+        }
+
+        let entity_node = match entity_node {
+            Some(node) => node,
+            None => return,
+        };
+
+        // Now, make sure the parent is not a child of the node
+        if let Some(new_parent) = new_parent {
+            if self.find_entity_recurse(new_parent, &entity_node).is_some() {
+                return;
+            }
+        }
+
+        // If it is not, remove the entity node from the graph
+        let node = self.remove_entity(entity).unwrap();
+
+        // Then find the parent
+        let parent = match new_parent {
+            Some(new_parent) => match self.find_entity_mut(new_parent) {
+                Some(parent) => Some(parent),
+                None => return,
+            },
+            None => None,
+        };
+
+        // Update the parent component in the ECS
+        let mut entity_parent_comp = queries.get::<Write<Parent>>(entity).unwrap();
+        entity_parent_comp.set(entity, new_parent, commands);
+        match parent {
+            Some(parent) => parent.children.push(node),
+            None => self.roots.push(node),
+        }
     }
 
     pub fn save(&self, queries: &Queries<Everything>, assets: &Assets) -> SceneGraphDescriptor {
@@ -257,6 +321,48 @@ impl SceneGraph {
         });
     }
 
+    fn remove_entity(&mut self, entity: Entity) -> Option<SceneGraphNode> {
+        fn remove_entity_recurse(
+            entity: Entity,
+            node: &mut SceneGraphNode,
+        ) -> Option<SceneGraphNode> {
+            let mut idx = None;
+            for (i, node) in node.children.iter().enumerate() {
+                if node.entity == entity {
+                    idx = Some(i);
+                    break;
+                }
+            }
+
+            match idx {
+                Some(idx) => Some(node.children.remove(idx)),
+                None => {
+                    for child in &mut node.children {
+                        let res = remove_entity_recurse(entity, child);
+                        if res.is_some() {
+                            return res;
+                        }
+                    }
+
+                    None
+                }
+            }
+        }
+
+        for i in 0..self.roots.len() {
+            if self.roots[i].entity == entity {
+                return Some(self.roots.remove(i));
+            }
+
+            let search = remove_entity_recurse(entity, &mut self.roots[i]);
+            if search.is_some() {
+                return search;
+            }
+        }
+
+        None
+    }
+
     fn find_entity_recurse<'a>(
         &'a self,
         entity: Entity,
@@ -270,6 +376,35 @@ impl SceneGraph {
             let recurse = self.find_entity_recurse(entity, child);
             if recurse.is_some() {
                 return recurse;
+            }
+        }
+
+        None
+    }
+
+    fn find_entity_mut(&mut self, entity: Entity) -> Option<&mut SceneGraphNode> {
+        fn find_entity_recurse_mut(
+            entity: Entity,
+            node: &mut SceneGraphNode,
+        ) -> Option<&mut SceneGraphNode> {
+            if node.entity == entity {
+                return Some(node);
+            }
+
+            for child in &mut node.children {
+                let found = find_entity_recurse_mut(entity, child);
+                if found.is_some() {
+                    return found;
+                }
+            }
+
+            None
+        }
+
+        for root in &mut self.roots {
+            let found = find_entity_recurse_mut(entity, root);
+            if found.is_some() {
+                return found;
             }
         }
 

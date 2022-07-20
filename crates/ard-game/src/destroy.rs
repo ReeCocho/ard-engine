@@ -30,7 +30,9 @@ impl Destroyer {
             self.to_destroy.push(entity);
         }
 
-        commands.entities.destroy(&self.to_destroy);
+        if !self.to_destroy.is_empty() {
+            commands.entities.destroy(&self.to_destroy);
+        }
     }
 }
 

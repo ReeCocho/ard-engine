@@ -23,6 +23,8 @@ pub struct SceneView {
     pub look_speed: f32,
     pub position: Vec3,
     pub rotation: Vec3,
+    click_uv: Vec2,
+    clicked: bool,
 }
 
 impl Default for SceneView {
@@ -35,11 +37,28 @@ impl Default for SceneView {
             move_speed: 30.0,
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
+            click_uv: Vec2::ZERO,
+            clicked: false,
         }
     }
 }
 
 impl SceneView {
+    #[inline]
+    pub fn clicked(&self) -> bool {
+        self.clicked
+    }
+
+    #[inline]
+    pub fn click_uv(&self) -> Vec2 {
+        self.click_uv
+    }
+
+    #[inline]
+    pub fn reset_click(&mut self) {
+        self.clicked = false;
+    }
+
     pub fn draw(
         &mut self,
         dt: f32,
@@ -48,7 +67,7 @@ impl SceneView {
         assets: &Assets,
         scene_graph: &SceneGraph,
         jobs: &mut EditorJobQueue,
-        commands: &EntityCommands,
+        commands: &Commands,
         windows: &mut Windows,
         ui: &imgui::Ui,
         settings: &mut RendererSettings,
@@ -77,7 +96,7 @@ impl SceneView {
                                         <ModelAsset as Asset>::EXTENSION => {
                                             let handle = assets.load::<ModelAsset>(&name);
                                             let assets_cl = assets.clone();
-                                            let commands_cl = commands.clone();
+                                            let commands_cl = commands.entities.clone();
                                             let send = scene_graph.new_node_channel();
                                             jobs.add(EditorJob::new(
                                                 "Instantiate Model",
@@ -181,6 +200,28 @@ impl SceneView {
                 window.set_cursor_lock_mode(true);
             } else {
                 window.set_cursor_lock_mode(false);
+            }
+
+            // Select entity in the view
+            if input.mouse_button_down(MouseButton::Left) && ui.is_item_hovered() {
+                // Compute UV coordinate of the mouse position in scene view space
+                let min = ui.item_rect_min();
+                let mut max = ui.item_rect_max();
+                let mut pos = input.mouse_pos();
+
+                pos.0 -= min[0] as f64;
+                pos.1 -= min[1] as f64;
+                max[0] -= min[0];
+                max[1] -= min[1];
+
+                self.click_uv = Vec2::new(
+                    (pos.0 / max[0] as f64) as f32,
+                    (pos.1 / max[1] as f64) as f32,
+                );
+
+                // Signal to the renderer that an entity image needs to be rendered
+                commands.events.submit(RenderEntityImage);
+                self.clicked = true;
             }
         });
     }
