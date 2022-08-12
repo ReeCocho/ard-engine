@@ -60,6 +60,8 @@ fn setup(app: &mut App) {
     let create_info = PipelineCreateInfo {
         vertex: vert_shader.clone(),
         fragment: frag_shader.clone(),
+        use_depth_buffer: true,
+        use_occlusion_culling: true,
     };
 
     let pipeline = factory.create_pipeline(&create_info);

@@ -8,11 +8,12 @@ use ard_ecs::{
 };
 
 pub trait GameObject: Sized {
-    type Descriptor;
+    type Pack;
 
     /// Creates a default instance of the game object.
     fn create_default(commands: &EntityCommands) -> Entity;
 
+    /// Takes the game object set and instantiates it in the world.
     fn instantiate(self, entities: &[Entity], commands: &EntityCommands);
 
     /// Takes the entities that match the game object and serializes them into a struct of arrays
@@ -22,15 +23,21 @@ pub trait GameObject: Sized {
         queries: &Queries<Everything>,
         mapping: &crate::scene::EntityMap,
         assets: &Assets,
-    ) -> Self::Descriptor;
+    ) -> Self::Pack;
 
     /// After the struct of arrays has been deserialized, this function takes the descriptors and
     /// uses them to construct the components
     fn load_from_pack(
-        descriptor: Self::Descriptor,
+        pack: Self::Pack,
         entities: &crate::scene::EntityMap,
         assets: &Assets,
     ) -> Self;
+}
+
+#[macro_export]
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + crate::count!($($xs)*));
 }
 
 #[macro_export]
@@ -38,28 +45,25 @@ macro_rules! game_object_def {
     ( $name:ident, $( $field:ty )+ ) => {
         paste::paste! {
             #[derive(Default)]
+            #[allow(non_snake_case)]
             pub struct $name {
                 $(
                     pub [<field_ $field>]: Vec<$field>,
                 )*
             }
 
-            #[serde_with::serde_as]
             #[derive(Default, Serialize, Deserialize)]
-            pub struct [<$name Descriptor>] {
+            #[allow(non_snake_case)]
+            pub struct [<$name Pack>] {
                 pub entities: Vec<crate::scene::MappedEntity>,
                 $(
-                    // #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
-                    // #[serde(default)]
-                    pub [<field_ $field>]: Vec<<$field as crate::serialization::SerializableComponent>::Descriptor>,
+                    pub [<field_ $field>]: Vec<<$field as crate::serialization::SaveLoad>::Descriptor>,
                 )*
             }
         }
 
         impl crate::object::GameObject for $name {
-            paste::paste! {
-                type Descriptor = [<$name Descriptor>];
-            }
+            type Pack = paste::paste! { [<$name Pack>] };
 
             fn create_default(commands: &ard_ecs::prelude::EntityCommands) -> ard_ecs::prelude::Entity {
                 let pack = (
@@ -89,11 +93,11 @@ macro_rules! game_object_def {
                 entities: &[ard_ecs::prelude::Entity],
                 queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
                 mapping: &crate::scene::EntityMap,
-                assets: &ard_assets::manager::Assets
-            ) -> Self::Descriptor {
-                use crate::serialization::SerializableComponent;
+                assets: &ard_assets::manager::Assets,
+            ) -> Self::Pack {
+                use crate::serialization::{SaveLoad};
 
-                let mut descriptor = Self::Descriptor::default();
+                let mut descriptor = Self::Pack::default();
                 descriptor.entities = Vec::with_capacity(entities.len());
 
                 for entity in entities {
@@ -118,21 +122,25 @@ macro_rules! game_object_def {
             }
 
             fn load_from_pack(
-                mut descriptor: Self::Descriptor,
+                mut descriptor: Self::Pack,
                 entities: &crate::scene::EntityMap,
-                assets: &ard_assets::manager::Assets
+                assets: &ard_assets::manager::Assets,
             ) -> Self {
                 let mut components = Self::default();
 
                 // Take the descriptors and convert them into components
                 paste::paste! {$(
                     let mem = std::mem::take(&mut descriptor.[<field_ $field>]);
-                    components.[<field_ $field>] =
-                        <$field as crate::serialization::SerializableComponent>::load(
-                            mem,
-                            entities,
-                            assets
-                        ).unwrap();
+                    components.[<field_ $field>].reserve_exact(mem.len());
+                    for elem in mem {
+                        components.[<field_ $field>].push(
+                            <$field as crate::serialization::SaveLoad>::load(
+                                elem,
+                                entities,
+                                assets
+                            )
+                        );
+                    }
                 )*}
 
                 components

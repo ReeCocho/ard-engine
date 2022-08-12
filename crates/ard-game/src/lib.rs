@@ -1,5 +1,6 @@
 pub mod components;
 pub mod destroy;
+pub mod lighting;
 pub mod object;
 pub mod scene;
 pub mod serialization;
@@ -8,8 +9,8 @@ pub mod systems;
 use ard_core::prelude::*;
 use destroy::Destroyer;
 use object::{
-    empty::{EmptyObject, EmptyObjectDescriptor},
-    static_object::{StaticObject, StaticObjectDescriptor},
+    empty::{EmptyObject, EmptyObjectPack},
+    static_object::{StaticObject, StaticObjectPack},
 };
 use serde::{Deserialize, Serialize};
 use systems::{renderable::ApplyRenderableData, transform::TransformUpdate};

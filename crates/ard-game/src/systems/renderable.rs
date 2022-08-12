@@ -32,6 +32,7 @@ impl ApplyRenderableData {
 
             // If it is, add the renderable component
             match source {
+                RenderableSource::None => {}
                 RenderableSource::Model {
                     model,
                     mesh_group_idx,

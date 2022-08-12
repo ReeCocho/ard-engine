@@ -1,5 +1,6 @@
 pub mod components;
 pub mod game_objects;
+pub mod transform_gizmo;
 
 use ard_engine::{assets::prelude::*, ecs::prelude::*};
 

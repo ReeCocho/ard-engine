@@ -4,6 +4,7 @@ use ard_engine::{
     game::{
         components::transform::Parent,
         destroy::Destroy,
+        lighting::LightingSettings,
         object::{empty::EmptyObject, static_object::StaticObject, GameObject},
         scene::{EntityMap, MappedEntity},
         Scene, SceneDescriptor, SceneEntities, SceneGameObject,
@@ -18,6 +19,8 @@ use serde::{Deserialize, Serialize};
 pub struct SceneGraph {
     /// Handle to the scene asset for this graph.
     handle: Option<Handle<SceneGraphAsset>>,
+    /// Lighting settings for the scene.
+    lighting: LightingSettings,
     /// Root nodes in the graph.
     roots: Vec<SceneGraphNode>,
     // Channel for creating new nodes.
@@ -67,6 +70,7 @@ impl Default for SceneGraph {
 
         Self {
             handle: None,
+            lighting: LightingSettings::default(),
             roots: Vec::default(),
             new_node_send,
             new_node_recv,
@@ -85,6 +89,16 @@ impl SceneGraph {
     #[inline]
     pub fn roots(&self) -> &[SceneGraphNode] {
         &self.roots
+    }
+
+    #[inline]
+    pub fn lighting(&self) -> &LightingSettings {
+        &self.lighting
+    }
+
+    #[inline]
+    pub fn lighting_mut(&mut self) -> &mut LightingSettings {
+        &mut self.lighting
     }
 
     /// # Note
@@ -228,7 +242,7 @@ impl SceneGraph {
         }
 
         // Create the descriptor
-        let (descriptor, mapping) = SceneDescriptor::new(entities, queries, assets);
+        let (descriptor, mapping) = SceneDescriptor::new(entities, &self.lighting, queries, assets);
 
         // Create the scene graph descriptor from the mapping
         let mut sg_descriptor = SceneGraphDescriptor::default();
@@ -263,7 +277,7 @@ impl SceneGraph {
 
     pub fn load(
         &mut self,
-        descriptor: SceneGraphDescriptor,
+        mut descriptor: SceneGraphDescriptor,
         commands: &EntityCommands,
         assets: &Assets,
     ) {
@@ -281,6 +295,10 @@ impl SceneGraph {
         }
 
         self.roots.clear();
+
+        // Lighting settings
+        self.lighting =
+            std::mem::take(&mut descriptor.scene.lighting_settings).into_settings(assets);
 
         // Load in the provided descriptor
         let map = descriptor.scene.load(&commands, assets);

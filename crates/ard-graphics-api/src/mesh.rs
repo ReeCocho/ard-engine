@@ -49,6 +49,8 @@ pub trait MeshApi: Clone + Send + Sync {
     fn index_count(&self) -> usize;
 
     fn vertex_count(&self) -> usize;
+
+    fn bounds(&self) -> ObjectBounds;
 }
 
 impl<'a> MeshCreateInfo<'a> {

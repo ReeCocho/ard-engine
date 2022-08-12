@@ -2,6 +2,7 @@ pub mod assets;
 pub mod dirty_assets;
 pub mod hierarchy;
 pub mod inspector;
+pub mod lighting;
 pub mod scene_view;
 pub mod toolbar;
 pub mod util;
@@ -20,6 +21,7 @@ use self::{
     dirty_assets::DirtyAssets,
     hierarchy::Hierarchy,
     inspector::{Inspector, InspectorItem},
+    lighting::LightingGui,
     toolbar::ToolBar,
 };
 
@@ -32,6 +34,7 @@ pub struct Editor {
     hierarchy: Hierarchy,
     assets: AssetViewer,
     inspector: Inspector,
+    lighting: LightingGui,
 }
 
 type EditorGuiResources = (
@@ -42,6 +45,8 @@ type EditorGuiResources = (
     Write<RendererSettings>,
     Write<Assets>,
     Write<SceneGraph>,
+    Write<Lighting>,
+    Write<DebugDrawing>,
 );
 
 impl Editor {
@@ -55,6 +60,7 @@ impl Editor {
             hierarchy: Hierarchy::default(),
             assets: AssetViewer::new(&assets),
             inspector: Inspector::new(),
+            lighting: LightingGui,
         });
     }
 
@@ -131,6 +137,8 @@ impl Editor {
         let mut settings = res.4.unwrap();
         let mut assets = res.5.unwrap();
         let mut scene_graph = res.6.unwrap();
+        let mut lighting = res.7.unwrap();
+        let mut debug_drawing = res.8.unwrap();
 
         gui.begin_dock();
         let ui = gui.ui();
@@ -173,10 +181,15 @@ impl Editor {
                 &mut self.dirty,
                 &factory,
                 &scene_graph,
+                &self.scene_view,
+                &debug_drawing,
             );
 
             self.hierarchy
                 .draw(ui, &commands.events, &mut scene_graph, &queries, &commands);
+
+            self.lighting
+                .draw(ui, &mut assets, &mut scene_graph, &mut lighting);
         });
     }
 }

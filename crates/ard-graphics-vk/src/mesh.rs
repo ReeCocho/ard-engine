@@ -16,7 +16,7 @@ pub(crate) const MAX_VERTEX_ATTRIBUTE_COUNT: usize = 8;
 pub struct Mesh {
     pub(crate) id: u32,
     pub(crate) layout_key: VertexLayoutKey,
-    pub info: Arc<MeshInfo>,
+    pub(crate) info: Arc<MeshInfo>,
     pub(crate) escaper: EscapeHandle,
 }
 
@@ -159,12 +159,19 @@ impl MeshInner {
 }
 
 impl MeshApi for Mesh {
+    #[inline]
     fn index_count(&self) -> usize {
         self.info.index_count
     }
 
+    #[inline]
     fn vertex_count(&self) -> usize {
         self.info.vertex_count
+    }
+
+    #[inline]
+    fn bounds(&self) -> ObjectBounds {
+        self.info.bounds
     }
 }
 

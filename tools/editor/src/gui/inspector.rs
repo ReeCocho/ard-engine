@@ -2,19 +2,24 @@ use std::path::PathBuf;
 
 use ard_engine::assets::prelude::{AssetNameBuf, Assets, Handle};
 use ard_engine::ecs::prelude::*;
+use ard_engine::game::components::transform::Transform;
 use ard_engine::game::object::empty::EmptyObject;
 use ard_engine::game::object::static_object::StaticObject;
 use ard_engine::game::SceneGameObject;
-use ard_engine::graphics::prelude::Factory;
+use ard_engine::graphics::prelude::*;
+use ard_engine::math::*;
 
 use crate::asset_meta::{AssetMeta, AssetMetaError};
+use crate::inspect::transform_gizmo::TransformGizmo;
 use crate::inspect::Inspect;
 use crate::par_task::ParTask;
 use crate::scene_graph::SceneGraph;
 
 use super::dirty_assets::DirtyAssets;
+use super::scene_view::SceneView;
 
 pub struct Inspector {
+    transform_gizmo: TransformGizmo,
     /// Current item being inspected.
     item: Option<ActiveInspectorItem>,
 }
@@ -40,7 +45,10 @@ enum ActiveInspectorItem {
 
 impl Inspector {
     pub fn new() -> Self {
-        Self { item: None }
+        Self {
+            item: None,
+            transform_gizmo: TransformGizmo {},
+        }
     }
 
     pub fn set_inspected_item(
@@ -117,6 +125,8 @@ impl Inspector {
         dirty: &mut DirtyAssets,
         factory: &Factory,
         scene_graph: &SceneGraph,
+        scene_view: &SceneView,
+        debug_draw: &DebugDrawing,
     ) {
         ui.window("Inspector").build(|| {
             let item = match &mut self.item {
@@ -149,14 +159,36 @@ impl Inspector {
                         }
                     });
                 }
-                ActiveInspectorItem::Entity { entity, ty } => match ty {
-                    SceneGameObject::StaticObject => {
-                        StaticObject::inspect(ui, *entity, commands, queries, assets)
+                ActiveInspectorItem::Entity { entity, ty } => {
+                    // Draw the bounding box of the object unless it has no mesh to render
+                    if let Some(query) =
+                        queries.get::<(Read<Renderable<VkBackend>>, Read<Model>)>(*entity)
+                    {
+                        let bounds = query.0.mesh.bounds();
+                        let model = query.1 .0 * Mat4::from_translation(bounds.center.xyz());
+
+                        // Draw object bounds
+                        debug_draw.draw_rect_prism(
+                            bounds.half_extents.xyz(),
+                            model,
+                            Vec3::new(1.0, 1.0, 0.0),
+                        );
+
+                        // Draw the transform gizmo
+                        self.transform_gizmo
+                            .draw(debug_draw, scene_view, query.1 .0);
                     }
-                    SceneGameObject::EmptyObject => {
-                        EmptyObject::inspect(ui, *entity, commands, queries, assets)
+
+                    // Inspect the object
+                    match ty {
+                        SceneGameObject::StaticObject => {
+                            StaticObject::inspect(ui, *entity, commands, queries, assets);
+                        }
+                        SceneGameObject::EmptyObject => {
+                            EmptyObject::inspect(ui, *entity, commands, queries, assets);
+                        }
                     }
-                },
+                }
             }
         });
     }

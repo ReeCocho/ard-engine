@@ -17,7 +17,14 @@ pub struct EntityMap {
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MappedEntity(usize);
+pub struct MappedEntity(pub(crate) usize);
+
+impl Default for MappedEntity {
+    #[inline]
+    fn default() -> Self {
+        Self(usize::MAX)
+    }
+}
 
 impl EntityMap {
     #[inline]
@@ -85,16 +92,18 @@ macro_rules! scene_definition {
             #[serde_with::serde_as]
             #[derive(Default, Serialize, Deserialize)]
             pub struct [<$name Descriptor>] {
+                pub lighting_settings: crate::lighting::LightingSettingsDescriptor,
                 $(
                     // #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
                     // #[serde(default)]
-                    [<field_ $field>] : [<$field Descriptor>],
+                    [<field_ $field>] : [<$field Pack>],
                 )*
             }
 
             impl [<$name Descriptor>] {
                 pub fn new(
                     entities: [<$name Entities>],
+                    lighting: &crate::lighting::LightingSettings,
                     queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
                     assets: &ard_assets::manager::Assets,
                 ) -> (Self, crate::scene::EntityMap) {
@@ -111,6 +120,11 @@ macro_rules! scene_definition {
 
                     // Save game objects
                     let mut descriptor = Self::default();
+                    descriptor.lighting_settings =
+                        crate::lighting::LightingSettingsDescriptor::from_settings(
+                            lighting,
+                            assets
+                        );
 
                     // Save each game object type
                     $(

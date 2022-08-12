@@ -1,4 +1,6 @@
 (
     vertex: "pbr.vert.shd",
     fragment: "pbr.frag.shd",
+    use_occlusion_culling: true,
+    use_depth_buffer: true,
 )

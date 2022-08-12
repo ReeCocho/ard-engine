@@ -5,6 +5,12 @@ use bytemuck::{Pod, Zeroable};
 use crate::Backend;
 
 pub trait LightingApi<B: Backend>: Resource + Send + Sync {
+    fn set_ambient(&mut self, color: Vec3, intensity: f32);
+
+    fn set_sun_color(&mut self, color: Vec3, intensity: f32);
+
+    fn set_sun_direction(&mut self, dir: Vec3);
+
     fn set_skybox_texture(&mut self, texture: Option<B::CubeMap>);
 
     fn set_irradiance_texture(&mut self, texture: Option<B::CubeMap>);

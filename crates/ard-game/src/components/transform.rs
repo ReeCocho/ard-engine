@@ -1,9 +1,10 @@
 use ard_ecs::prelude::*;
+use ard_game_derive::SaveLoad;
 use ard_math::*;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use crate::{scene::MappedEntity, serialization::SerializableComponent};
+use crate::serialization::SaveLoad;
 
 pub const INLINE_CHILDREN: usize = 8;
 
@@ -12,7 +13,7 @@ pub const INLINE_CHILDREN: usize = 8;
 /// # Note
 /// You should not modify the fields of this component directly. You should use the `get` and set`
 /// methods.
-#[derive(Debug, Serialize, Deserialize, Component, Copy, Clone)]
+#[derive(Debug, SaveLoad, Component, Copy, Clone)]
 pub struct Transform {
     pub position: Vec3A,
     pub rotation: Quat,
@@ -23,12 +24,12 @@ pub struct Transform {
 #[derive(Debug, Default, Component, Copy, Clone)]
 pub struct DynamicTransformMark(bool);
 
-#[derive(Debug, Clone, Default, Component)]
+#[derive(Debug, SaveLoad, Clone, Default, Component)]
 pub struct Children(pub SmallVec<[Entity; INLINE_CHILDREN]>);
 
 /// # Note
 /// You should not modify this field directly. Instead, you should use the `get` and `set` methods.
-#[derive(Debug, Default, Component, Copy, Clone)]
+#[derive(Debug, SaveLoad, Default, Component, Copy, Clone)]
 pub struct Parent(pub Option<Entity>);
 
 #[derive(Debug, Component, Copy, Clone)]
@@ -46,64 +47,6 @@ impl Parent {
         commands
             .entities
             .add_component(self_entity, PrevParent(entity))
-    }
-}
-
-impl SerializableComponent for Parent {
-    type Descriptor = Option<MappedEntity>;
-
-    fn save(
-        &self,
-        entities: &crate::scene::EntityMap,
-        _: &ard_assets::manager::Assets,
-    ) -> Self::Descriptor {
-        self.0.map(|entity| entities.to_map(entity))
-    }
-
-    fn load(
-        descriptors: Vec<Self::Descriptor>,
-        entities: &crate::scene::EntityMap,
-        _: &ard_assets::manager::Assets,
-    ) -> Result<Vec<Self>, ()> {
-        let mut parents = Vec::with_capacity(descriptors.len());
-        for map in descriptors {
-            parents.push(Parent(map.map(|entity| entities.from_map(entity))));
-        }
-        Ok(parents)
-    }
-}
-
-impl SerializableComponent for Children {
-    type Descriptor = SmallVec<[MappedEntity; INLINE_CHILDREN]>;
-
-    fn save(
-        &self,
-        entities: &crate::scene::EntityMap,
-        _: &ard_assets::manager::Assets,
-    ) -> Self::Descriptor {
-        let mut descriptor =
-            SmallVec::<[MappedEntity; INLINE_CHILDREN]>::with_capacity(self.0.len());
-        for entity in &self.0 {
-            descriptor.push(entities.to_map(*entity));
-        }
-        descriptor
-    }
-
-    fn load(
-        descriptors: Vec<Self::Descriptor>,
-        entities: &crate::scene::EntityMap,
-        _: &ard_assets::manager::Assets,
-    ) -> Result<Vec<Self>, ()> {
-        let mut children = Vec::with_capacity(descriptors.len());
-        for descriptor in descriptors {
-            let mut unmapped =
-                SmallVec::<[Entity; INLINE_CHILDREN]>::with_capacity(descriptor.len());
-            for child in &descriptor {
-                unmapped.push(entities.from_map(*child));
-            }
-            children.push(Children(unmapped));
-        }
-        Ok(children)
     }
 }
 

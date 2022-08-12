@@ -20,6 +20,8 @@ pub struct ModelAsset {
     pub materials: Vec<graphics::Material>,
     /// All nodes within the model.
     pub nodes: Vec<Node>,
+    /// Pipeline used by the model.
+    pipeline: Handle<PipelineAsset>,
 }
 
 pub struct MeshGroup {
@@ -95,6 +97,7 @@ impl AssetLoader for ModelLoader {
             textures: Vec::default(),
             materials: Vec::default(),
             nodes: Vec::default(),
+            pipeline: pipeline_handle.clone(),
         };
 
         // Create textures

@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = [ "crates/*", "crates/ard-game/ard-game-derive/", "tools/editor" ]
+members = [ "crates/*", "tools/editor" ]
 
 [features]
 default = [ "input", "assets", "graphics_vk", "window", "graphics_assets" ]

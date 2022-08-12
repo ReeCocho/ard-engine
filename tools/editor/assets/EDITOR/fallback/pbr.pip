@@ -1,4 +1,6 @@
 (
     vertex: "fallback/pbr.vert.shd",
     fragment: "fallback/pbr.frag.shd",
+    use_occlusion_culling: true,
+    use_depth_buffer: true,
 )

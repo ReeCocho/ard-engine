@@ -196,14 +196,32 @@ impl Lighting {
 }
 
 impl LightingApi<VkBackend> for Lighting {
+    #[inline]
+    fn set_ambient(&mut self, color: Vec3, intensity: f32) {
+        self.ubo_data.ambient = Vec4::from((color, intensity));
+    }
+
+    #[inline]
+    fn set_sun_color(&mut self, color: Vec3, intensity: f32) {
+        self.ubo_data.sun_color_intensity = Vec4::from((color, intensity));
+    }
+
+    #[inline]
+    fn set_sun_direction(&mut self, dir: Vec3) {
+        self.ubo_data.sun_direction = Vec4::from((dir.normalize(), 1.0));
+    }
+
+    #[inline]
     fn set_skybox_texture(&mut self, texture: Option<CubeMap>) {
         self.skybox = texture;
     }
 
+    #[inline]
     fn set_irradiance_texture(&mut self, texture: Option<CubeMap>) {
         self.irradiance = texture;
     }
 
+    #[inline]
     fn set_radiance_texture(&mut self, texture: Option<CubeMap>) {
         match texture {
             Some(texture) => {

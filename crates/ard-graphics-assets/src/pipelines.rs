@@ -27,6 +27,8 @@ pub struct PipelineDescriptor {
     pub vertex: AssetNameBuf,
     /// Name of the fragment shader.
     pub fragment: AssetNameBuf,
+    pub use_occlusion_culling: bool,
+    pub use_depth_buffer: bool,
 }
 
 impl Asset for PipelineAsset {
@@ -61,6 +63,8 @@ impl AssetLoader for PipelineLoader {
         let create_info = PipelineCreateInfo {
             vertex: assets.get(&vertex).unwrap().shader.clone(),
             fragment: assets.get(&fragment).unwrap().shader.clone(),
+            use_occlusion_culling: meta.use_occlusion_culling,
+            use_depth_buffer: meta.use_depth_buffer,
         };
 
         let pipeline = self.factory.create_pipeline(&create_info);
