@@ -1,7 +1,5 @@
 use std::{any::Any, error::Error, thread::JoinHandle};
 
-use ard_engine::assets::prelude::Asset;
-
 pub struct ParTask<V: Send + 'static, E: Error + Send + 'static> {
     task: Option<Box<dyn FnOnce() -> Result<V, E> + Send + 'static>>,
     handle: Option<JoinHandle<Result<V, E>>>,
@@ -52,7 +50,7 @@ impl<V: Send + 'static, E: Error + Send + 'static> ParTask<V, E> {
 
                 ui.text("Loading...");
                 ui.same_line();
-                crate::gui::util::throbber(ui, 8.0, 4.0, 8, 1.0, style[imgui::StyleColor::Button]);
+                super::ui::throbber(ui, 8.0, 4.0, 8, 1.0, style[imgui::StyleColor::Button]);
             }
             ParTaskGet::Err(err) => {
                 ui.text("An error has occured:");

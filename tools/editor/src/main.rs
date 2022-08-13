@@ -1,9 +1,8 @@
-pub mod asset_meta;
-pub mod editor_job;
-pub mod gui;
-pub mod inspect;
-pub mod par_task;
+pub mod controller;
+pub mod editor;
 pub mod scene_graph;
+pub mod util;
+pub mod view;
 
 use ard_engine::{
     assets::prelude::*, core::prelude::*, game::GamePlugin, graphics::prelude::*,
@@ -12,9 +11,9 @@ use ard_engine::{
 
 use ard_engine::graphics_assets::prelude as graphics_assets;
 
-use asset_meta::{AssetMeta, AssetMetaLoader};
-use gui::Editor;
-use scene_graph::{SceneGraph, SceneGraphAsset, SceneGraphLoader};
+use editor::Editor;
+use scene_graph::SceneGraph;
+use view::scene_view::SceneViewCamera;
 
 fn main() {
     AppBuilder::new(ard_engine::log::LevelFilter::Info)
@@ -33,32 +32,14 @@ fn main() {
         .add_plugin(VkGraphicsPlugin {
             context_create_info: GraphicsContextCreateInfo {
                 window: WindowId::primary(),
-                debug: true,
+                debug: false,
             },
         })
         .add_plugin(AssetsPlugin)
         .add_plugin(GamePlugin)
         .add_plugin(graphics_assets::GraphicsAssetsPlugin)
         .add_resource(SceneGraph::default())
-        .add_startup_function(Editor::startup)
-        .add_startup_function(setup)
+        .add_resource(SceneViewCamera::default())
+        .add_startup_function(Editor::setup)
         .run();
-}
-
-fn setup(app: &mut App) {
-    // Register meta loader
-    let assets = app.resources.get::<Assets>().unwrap();
-    assets.register::<AssetMeta>(AssetMetaLoader);
-    assets.register::<SceneGraphAsset>(SceneGraphLoader);
-
-    let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
-
-    // Don't use the canvas size
-    settings.canvas_size = Some((100, 100));
-
-    // Disable frame rate limit
-    settings.render_time = None;
-
-    // Don't render the scene to the surface
-    settings.render_scene = false;
 }

@@ -1,28 +1,38 @@
+pub mod inspect;
+
 use std::path::PathBuf;
 
-use ard_engine::assets::prelude::{AssetNameBuf, Assets, Handle};
-use ard_engine::ecs::prelude::*;
-use ard_engine::game::components::transform::Transform;
-use ard_engine::game::object::empty::EmptyObject;
-use ard_engine::game::object::static_object::StaticObject;
-use ard_engine::game::SceneGameObject;
-use ard_engine::graphics::prelude::*;
-use ard_engine::math::*;
+use inspect::Inspect;
 
-use crate::asset_meta::{AssetMeta, AssetMetaError};
-use crate::inspect::transform_gizmo::TransformGizmo;
-use crate::inspect::Inspect;
-use crate::par_task::ParTask;
+use ard_engine::{
+    assets::prelude::*,
+    ecs::prelude::*,
+    game::{
+        object::{empty::EmptyObject, static_object::StaticObject},
+        SceneGameObject,
+    },
+    graphics::prelude::*,
+    math::*,
+};
+
+use crate::util::{
+    asset_meta::{AssetMeta, AssetMetaError},
+    par_task::ParTask,
+};
+
 use crate::scene_graph::SceneGraph;
 
-use super::dirty_assets::DirtyAssets;
-use super::scene_view::SceneView;
+use super::{scene_view::SceneViewCamera, View};
+
+const GIZMO_SCALE_FACTOR: f32 = 0.25;
 
 pub struct Inspector {
     transform_gizmo: TransformGizmo,
     /// Current item being inspected.
     item: Option<ActiveInspectorItem>,
 }
+
+struct TransformGizmo {}
 
 /// Event that signals a new item was selected for inspection.
 #[derive(Clone, Event)]
@@ -115,18 +125,14 @@ impl Inspector {
             None => self.item = None,
         }
     }
+}
 
-    pub fn draw(
+impl View for Inspector {
+    fn show(
         &mut self,
         ui: &imgui::Ui,
-        commands: &Commands,
-        queries: &Queries<Everything>,
-        assets: &mut Assets,
-        dirty: &mut DirtyAssets,
-        factory: &Factory,
-        scene_graph: &SceneGraph,
-        scene_view: &SceneView,
-        debug_draw: &DebugDrawing,
+        _controller: &mut crate::controller::Controller,
+        resc: &mut crate::editor::Resources,
     ) {
         ui.window("Inspector").build(|| {
             let item = match &mut self.item {
@@ -146,8 +152,8 @@ impl Inspector {
                         ui.separator();
 
                         // Draw the asset inspector
-                        let modified = match assets.get_mut(handle) {
-                            Some(mut asset) => asset.draw(ui, assets, factory),
+                        let modified = match resc.assets.get_mut(handle) {
+                            Some(mut asset) => asset.draw(ui, resc.assets, resc.factory),
                             None => {
                                 ui.text("There was an error loading the asset. Check the logs.");
                                 false
@@ -155,20 +161,21 @@ impl Inspector {
                         };
 
                         if modified {
-                            dirty.add(asset_name, handle.clone());
+                            resc.dirty.add(asset_name, handle.clone());
                         }
                     });
                 }
                 ActiveInspectorItem::Entity { entity, ty } => {
                     // Draw the bounding box of the object unless it has no mesh to render
-                    if let Some(query) =
-                        queries.get::<(Read<Renderable<VkBackend>>, Read<Model>)>(*entity)
+                    if let Some(query) = resc
+                        .queries
+                        .get::<(Read<Renderable<VkBackend>>, Read<Model>)>(*entity)
                     {
                         let bounds = query.0.mesh.bounds();
                         let model = query.1 .0 * Mat4::from_translation(bounds.center.xyz());
 
                         // Draw object bounds
-                        debug_draw.draw_rect_prism(
+                        resc.debug_draw.draw_rect_prism(
                             bounds.half_extents.xyz(),
                             model,
                             Vec3::new(1.0, 1.0, 0.0),
@@ -176,20 +183,130 @@ impl Inspector {
 
                         // Draw the transform gizmo
                         self.transform_gizmo
-                            .draw(debug_draw, scene_view, query.1 .0);
+                            .draw(resc.debug_draw, resc.camera, query.1 .0);
                     }
 
                     // Inspect the object
                     match ty {
                         SceneGameObject::StaticObject => {
-                            StaticObject::inspect(ui, *entity, commands, queries, assets);
+                            StaticObject::inspect(
+                                ui,
+                                *entity,
+                                &resc.ecs_commands,
+                                &resc.queries,
+                                &resc.assets,
+                            );
                         }
                         SceneGameObject::EmptyObject => {
-                            EmptyObject::inspect(ui, *entity, commands, queries, assets);
+                            EmptyObject::inspect(
+                                ui,
+                                *entity,
+                                &resc.ecs_commands,
+                                &resc.queries,
+                                &resc.assets,
+                            );
                         }
                     }
                 }
             }
         });
+    }
+}
+
+impl TransformGizmo {
+    pub fn draw(&self, drawing: &DebugDrawing, view: &SceneViewCamera, model: Mat4) {
+        let pos = model.col(3).xyz();
+
+        let scale = Vec3::new(
+            model.col(0).xyz().length() * model.col(0).x.signum(),
+            model.col(1).xyz().length() * model.col(1).y.signum(),
+            model.col(2).xyz().length() * model.col(2).z.signum(),
+        );
+
+        let rot = Mat4::from_cols(
+            if scale.x == 0.0 {
+                Vec4::X
+            } else {
+                Vec4::from((model.col(0).xyz() / scale.x, 0.0))
+            },
+            if scale.y == 0.0 {
+                Vec4::Y
+            } else {
+                Vec4::from((model.col(1).xyz() / scale.y, 0.0))
+            },
+            if scale.z == 0.0 {
+                Vec4::Z
+            } else {
+                Vec4::from((model.col(2).xyz() / scale.z, 0.0))
+            },
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        );
+
+        let model = Mat4::from_translation(pos)
+            * rot
+            * Mat4::from_scale(Vec3::ONE * (pos - view.position).length() * GIZMO_SCALE_FACTOR);
+
+        let origin = (model * Vec4::new(0.0, 0.0, 0.0, 1.0)).xyz();
+        let x = (model * Vec4::from((Vec3::X, 1.0))).xyz();
+        let y = (model * Vec4::from((Vec3::Y, 1.0))).xyz();
+        let z = (model * Vec4::from((Vec3::Z, 1.0))).xyz();
+
+        // X-axis
+        drawing.draw_line(origin, x, Vec3::X);
+        draw_translate_tip(
+            drawing,
+            Vec3::X,
+            Vec3::new(0.0, 0.0, -std::f32::consts::FRAC_PI_2),
+            model,
+        );
+
+        // Y-axis
+        drawing.draw_line(origin, y, Vec3::Y);
+        draw_translate_tip(drawing, Vec3::Y, Vec3::ZERO, model);
+
+        // Z-axis
+        drawing.draw_line(origin, z, Vec3::Z);
+        draw_translate_tip(
+            drawing,
+            Vec3::Z,
+            Vec3::new(std::f32::consts::FRAC_PI_2, 0.0, 0.0),
+            model,
+        );
+    }
+}
+
+fn draw_translate_tip(drawing: &DebugDrawing, color: Vec3, rotation: Vec3, model: Mat4) {
+    const TIP_SIZE: f32 = 0.07;
+
+    // Three lines for the triangle base and three more for the tip
+    let mut points = [(Vec3::ZERO, Vec3::ZERO); 6];
+
+    // Base
+    for i in 0..3 {
+        let ang1 = (i as f32 * 120.0) * std::f32::consts::PI / 180.0;
+        let ang2 = ((i + 1) as f32 * 120.0) * std::f32::consts::PI / 180.0;
+
+        points[i].0 = Vec3::new(ang1.cos(), 0.0, ang1.sin()) * TIP_SIZE;
+
+        points[i].1 = Vec3::new(ang2.cos(), 0.0, ang2.sin()) * TIP_SIZE;
+    }
+
+    // Tip
+    for i in 3..6 {
+        let ang1 = (i as f32 * 120.0) * std::f32::consts::PI / 180.0;
+
+        points[i].0 = Vec3::new(ang1.cos(), 0.0, ang1.sin()) * TIP_SIZE;
+
+        points[i].1 = Vec3::new(0.0, 3.0, 0.0) * TIP_SIZE;
+    }
+
+    // Apply model matrix and then draw
+    let model = model
+        * Mat4::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z)
+        * Mat4::from_translation(Vec3::Y);
+    for pt in &mut points {
+        pt.0 = (model * Vec4::from((pt.0, 1.0))).xyz();
+        pt.1 = (model * Vec4::from((pt.1, 1.0))).xyz();
+        drawing.draw_line(pt.0, pt.1, color);
     }
 }

@@ -11,7 +11,7 @@ use ard_engine::{
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::par_task::ParTask;
+use crate::util::par_task::{ParTask, ParTaskGet};
 
 #[derive(Serialize, Deserialize)]
 pub enum AssetMeta {
@@ -135,7 +135,7 @@ impl AssetMeta {
                 roughness_metallic_texture,
             } => {
                 let handle = match task.get() {
-                    crate::par_task::ParTaskGet::Ok(handle) => handle,
+                    ParTaskGet::Ok(handle) => handle,
                     _ => {
                         warn!(
                             "attempt to save pbr material `{:?}` failed because it was not loaded",
@@ -260,7 +260,7 @@ impl AssetLoader for AssetMetaLoader {
 
     async fn load(
         &self,
-        assets: Assets,
+        _assets: Assets,
         package: Package,
         asset: &AssetName,
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {

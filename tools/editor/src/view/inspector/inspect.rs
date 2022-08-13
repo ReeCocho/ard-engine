@@ -1,15 +1,50 @@
 use ard_engine::{
     assets::prelude::*,
     ecs::prelude::*,
-    game::components::transform::Transform,
-    math::{EulerRot, Quat, Vec3},
+    game::{
+        components::transform::Transform,
+        object::{empty::EmptyObject, static_object::StaticObject},
+    },
+    math::*,
 };
-
-use super::Inspect;
 
 #[derive(Tag, Copy, Clone)]
 #[storage(UncommonStorage)]
 struct EulerAngleRot(Vec3);
+
+pub trait Inspect {
+    fn inspect(
+        ui: &imgui::Ui,
+        entity: Entity,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        assets: &Assets,
+    );
+}
+
+impl Inspect for EmptyObject {
+    fn inspect(
+        ui: &imgui::Ui,
+        entity: Entity,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        assets: &Assets,
+    ) {
+        Transform::inspect(ui, entity, commands, queries, assets);
+    }
+}
+
+impl Inspect for StaticObject {
+    fn inspect(
+        ui: &imgui::Ui,
+        entity: Entity,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        assets: &Assets,
+    ) {
+        Transform::inspect(ui, entity, commands, queries, assets);
+    }
+}
 
 impl Inspect for Transform {
     fn inspect(

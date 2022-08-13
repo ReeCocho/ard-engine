@@ -10,9 +10,7 @@
 
 const float PI = 3.14159265359;
 
-#define SHADOW_SAMPLES_COUNT 32
-#define SHADOW_SAMPLES_COUNT_DIV2 16
-#define SHADOW_SAMPLES_COUNT_INV (1.0 / SHADOW_SAMPLES_COUNT)
+#define SHADOW_SAMPLES_COUNT 8
 
 #ifdef ARD_VERTEX_SHADER
 layout(location = 16) flat out uint ARD_INSTANCE_IDX;
@@ -58,7 +56,7 @@ layout(set = 0, binding = 4) uniform ARD_Lighting {
     Lighting ARD_LIGHTING;
 };
 
-layout(set = 0, binding = 5) uniform sampler2D[MAX_SHADOW_CASCADES] ARD_SHADOW_MAPS;
+layout(set = 0, binding = 5) uniform sampler2DShadow[MAX_SHADOW_CASCADES] ARD_SHADOW_MAPS;
 
 layout(set = 0, binding = 6) uniform sampler3D ARD_POISSON_DISK;
 
@@ -225,16 +223,26 @@ float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv, i
     //if ((shadow - 1) * shadow != 0) {
         //shadow *= 8.0 / SHADOW_SAMPLES_COUNT;
         
+        /*
         for (int i = 0; i < SHADOW_SAMPLES_COUNT; ++i) {
             vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
             jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
 
-            shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.xy).r ? 
-                SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
+            shadow += texture(ARD_SHADOW_MAPS[layer], vec3(uv + offset.xy, z_receiver - bias)).r / SHADOW_SAMPLES_COUNT; // z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv).r ? 
+                // 1.0 : 0.0; // SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
 
-            shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? 
-                SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
+            // shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? 
+            //    SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
         }
+        */
+
+    for (int x = -2; x <= 2; ++x) {
+        for (int y = -2; y <= 2; ++y) {
+            vec2 offset = filter_radius_uv * vec2(x, y);
+            shadow += texture(ARD_SHADOW_MAPS[layer], vec3(uv + offset, z_receiver - bias)).r / 25.0;
+        }
+    }
+
     //}
     
     return shadow;

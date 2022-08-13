@@ -1,21 +1,23 @@
 use ard_engine::{
-    assets::prelude::{Asset, Assets},
-    ecs::prelude::*,
-    graphics::prelude::*,
-    graphics_assets::prelude::ModelAsset,
-    input::*,
-    math::*,
-    window::prelude::*,
+    assets::prelude::*, ecs::prelude::*, graphics::prelude::*, graphics_assets::prelude::*,
+    input::*, math::*, window::prelude::*,
 };
 
 use crate::{
-    editor_job::{EditorJob, EditorJobQueue},
-    scene_graph::{SceneGraph, SceneGraphAsset},
+    scene_graph::SceneGraphAsset,
+    util::{editor_job::EditorJob, ui::DragDropPayload},
 };
 
-use super::util::DragDropPayload;
+use super::View;
 
+#[derive(Default)]
 pub struct SceneView {
+    click_uv: Vec2,
+    clicked: bool,
+}
+
+#[derive(Resource)]
+pub struct SceneViewCamera {
     pub fov: f32,
     pub near: f32,
     pub far: f32,
@@ -23,11 +25,9 @@ pub struct SceneView {
     pub look_speed: f32,
     pub position: Vec3,
     pub rotation: Vec3,
-    click_uv: Vec2,
-    clicked: bool,
 }
 
-impl Default for SceneView {
+impl Default for SceneViewCamera {
     fn default() -> Self {
         Self {
             near: 0.3,
@@ -37,8 +37,6 @@ impl Default for SceneView {
             move_speed: 30.0,
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
-            click_uv: Vec2::ZERO,
-            clicked: false,
         }
     }
 }
@@ -58,27 +56,20 @@ impl SceneView {
     pub fn reset_click(&mut self) {
         self.clicked = false;
     }
+}
 
-    pub fn draw(
+impl View for SceneView {
+    fn show(
         &mut self,
-        dt: f32,
-        factory: &Factory,
-        input: &InputState,
-        assets: &Assets,
-        scene_graph: &SceneGraph,
-        jobs: &mut EditorJobQueue,
-        commands: &Commands,
-        windows: &mut Windows,
         ui: &imgui::Ui,
-        settings: &mut RendererSettings,
+        _controller: &mut crate::controller::Controller,
+        resc: &mut crate::editor::Resources,
     ) {
-        let mut opened = true;
-        ui.show_demo_window(&mut opened);
-
         ui.window("Scene View").build(|| {
             // Draw the scene image
             let size = ui.content_region_avail();
-            settings.canvas_size = Some(((size[0] as u32).max(1), (size[1] as u32).max(1)));
+            resc.renderer_settings.canvas_size =
+                Some(((size[0] as u32).max(1), (size[1] as u32).max(1)));
             imgui::Image::new(DebugGui::scene_view(), size).build(ui);
 
             // Drag and drop for assets onto the scene
@@ -90,22 +81,22 @@ impl SceneView {
                     // Fuggly, but we can make this nicer once if-let chains are stable
                     if payload_data.delivery {
                         if let DragDropPayload::Asset(handle) = payload_data.data {
-                            if let Some(name) = assets.get_name_by_id(handle.id) {
+                            if let Some(name) = resc.assets.get_name_by_id(handle.id) {
                                 if let Some(ext) = name.extension() {
                                     match ext.to_str().unwrap() {
                                         <ModelAsset as Asset>::EXTENSION => {
-                                            let handle = assets.load::<ModelAsset>(&name);
-                                            let assets_cl = assets.clone();
-                                            let commands_cl = commands.entities.clone();
-                                            let send = scene_graph.new_node_channel();
-                                            jobs.add(EditorJob::new(
+                                            let handle = resc.assets.load::<ModelAsset>(&name);
+                                            let assets_cl = resc.assets.clone();
+                                            let commands_cl = resc.ecs_commands.entities.clone();
+                                            let send = resc.scene_graph.new_node_channel();
+                                            resc.jobs.add(EditorJob::new(
                                                 "Instantiate Model",
                                                 None,
                                                 move || {
                                                     assets_cl.wait_for_load(&handle);
 
                                                     if let Some(model) = assets_cl.get(&handle) {
-                                                        let node = super::util::instantiate_model(
+                                                        let node = crate::util::instantiate_model(
                                                             &model,
                                                             &handle,
                                                             &commands_cl,
@@ -118,7 +109,7 @@ impl SceneView {
                                                     let style = unsafe { ui.style() };
                                                     ui.text("Loading...");
                                                     ui.same_line();
-                                                    crate::gui::util::throbber(
+                                                    crate::util::ui::throbber(
                                                         ui,
                                                         8.0,
                                                         4.0,
@@ -130,8 +121,9 @@ impl SceneView {
                                             ));
                                         }
                                         <SceneGraphAsset as Asset>::EXTENSION => {
-                                            let handle = assets.load::<SceneGraphAsset>(&name);
-                                            let _ = scene_graph
+                                            let handle = resc.assets.load::<SceneGraphAsset>(&name);
+                                            let _ = resc
+                                                .scene_graph
                                                 .load_scene_channel()
                                                 .send((handle, true));
                                         }
@@ -147,18 +139,18 @@ impl SceneView {
             }
 
             // Transform camera
-            let window = windows.get_mut(WindowId::primary()).unwrap();
-            if input.mouse_button(MouseButton::Right) && ui.is_item_hovered() {
-                let (mx, my) = input.mouse_delta();
-                self.rotation.x += (my as f32) * self.look_speed;
-                self.rotation.y += (mx as f32) * self.look_speed;
-                self.rotation.x = self.rotation.x.clamp(-85.0, 85.0);
+            let window = resc.windows.get_mut(WindowId::primary()).unwrap();
+            if resc.input.mouse_button(MouseButton::Right) && ui.is_item_hovered() {
+                let (mx, my) = resc.input.mouse_delta();
+                resc.camera.rotation.x += (my as f32) * resc.camera.look_speed;
+                resc.camera.rotation.y += (mx as f32) * resc.camera.look_speed;
+                resc.camera.rotation.x = resc.camera.rotation.x.clamp(-85.0, 85.0);
 
                 // Direction from rotation
                 let rot = Mat4::from_euler(
                     EulerRot::YXZ,
-                    self.rotation.y.to_radians(),
-                    self.rotation.x.to_radians(),
+                    resc.camera.rotation.y.to_radians(),
+                    resc.camera.rotation.x.to_radians(),
                     0.0,
                 );
 
@@ -167,33 +159,33 @@ impl SceneView {
                 let up = rot.col(1);
                 let forward = rot.col(2);
 
-                if input.key(Key::W) {
-                    self.position += forward.xyz() * dt * self.move_speed;
+                if resc.input.key(Key::W) {
+                    resc.camera.position += forward.xyz() * resc.dt * resc.camera.move_speed;
                 }
 
-                if input.key(Key::S) {
-                    self.position -= forward.xyz() * dt * self.move_speed;
+                if resc.input.key(Key::S) {
+                    resc.camera.position -= forward.xyz() * resc.dt * resc.camera.move_speed;
                 }
 
-                if input.key(Key::A) {
-                    self.position -= right.xyz() * dt * self.move_speed;
+                if resc.input.key(Key::A) {
+                    resc.camera.position -= right.xyz() * resc.dt * resc.camera.move_speed;
                 }
 
-                if input.key(Key::D) {
-                    self.position += right.xyz() * dt * self.move_speed;
+                if resc.input.key(Key::D) {
+                    resc.camera.position += right.xyz() * resc.dt * resc.camera.move_speed;
                 }
 
                 // Update camera
-                let main_camera = factory.main_camera();
-                factory.update_camera(
+                let main_camera = resc.factory.main_camera();
+                resc.factory.update_camera(
                     &main_camera,
                     CameraDescriptor {
-                        position: self.position,
-                        center: self.position + forward.xyz(),
+                        position: resc.camera.position,
+                        center: resc.camera.position + forward.xyz(),
                         up: up.xyz(),
-                        near: self.near,
-                        far: self.far,
-                        fov: self.fov,
+                        near: resc.camera.near,
+                        far: resc.camera.far,
+                        fov: resc.camera.fov,
                     },
                 );
 
@@ -203,11 +195,11 @@ impl SceneView {
             }
 
             // Select entity in the view
-            if input.mouse_button_down(MouseButton::Left) && ui.is_item_hovered() {
+            if resc.input.mouse_button_down(MouseButton::Left) && ui.is_item_hovered() {
                 // Compute UV coordinate of the mouse position in scene view space
                 let min = ui.item_rect_min();
                 let mut max = ui.item_rect_max();
-                let mut pos = input.mouse_pos();
+                let mut pos = resc.input.mouse_pos();
 
                 pos.0 -= min[0] as f64;
                 pos.1 -= min[1] as f64;
@@ -220,7 +212,7 @@ impl SceneView {
                 );
 
                 // Signal to the renderer that an entity image needs to be rendered
-                commands.events.submit(RenderEntityImage);
+                resc.ecs_commands.events.submit(RenderEntityImage);
                 self.clicked = true;
             }
         });

@@ -1,18 +1,17 @@
-use ard_engine::{assets::prelude::*, graphics::prelude::*, math::*};
+use ard_engine::{graphics::prelude::*, math::*};
 
-use crate::scene_graph::SceneGraph;
+use super::View;
 
 pub struct LightingGui;
 
-impl LightingGui {
-    pub fn draw(
+impl View for LightingGui {
+    fn show(
         &mut self,
         ui: &imgui::Ui,
-        assets: &mut Assets,
-        scene_graph: &mut SceneGraph,
-        lighting: &mut Lighting,
+        _: &mut crate::controller::Controller,
+        resc: &mut crate::editor::Resources,
     ) {
-        let settings = scene_graph.lighting_mut();
+        let settings = resc.scene_graph.lighting_mut();
 
         ui.window("Lighting Settings").build(|| {
             let mut ambient: [f32; 3] = settings.ambient.into();
@@ -41,24 +40,37 @@ impl LightingGui {
             settings.sun_rotation = sun_rot.into();
         });
 
-        lighting.set_ambient(settings.ambient, settings.ambient_intensity);
-        lighting.set_sun_color(settings.sun_color, settings.sun_intensity);
-        lighting.set_sun_direction(Vec3::new(
+        resc.lighting
+            .set_ambient(settings.ambient, settings.ambient_intensity);
+        resc.lighting
+            .set_sun_color(settings.sun_color, settings.sun_intensity);
+        resc.lighting.set_sun_direction(Vec3::new(
             settings.sun_rotation.x.cos() * settings.sun_rotation.y.cos(),
             settings.sun_rotation.x.sin() * settings.sun_rotation.y.cos(),
             settings.sun_rotation.y.sin(),
         ));
-        lighting.set_skybox_texture(match &settings.skybox {
-            Some(skybox) => assets.get(skybox).map(|handle| handle.cube_map.clone()),
+        resc.lighting.set_skybox_texture(match &settings.skybox {
+            Some(skybox) => resc
+                .assets
+                .get(skybox)
+                .map(|handle| handle.cube_map.clone()),
             None => None,
         });
-        lighting.set_radiance_texture(match &settings.radiance {
-            Some(radiance) => assets.get(radiance).map(|handle| handle.cube_map.clone()),
-            None => None,
-        });
-        lighting.set_irradiance_texture(match &settings.irradiance {
-            Some(irradiance) => assets.get(irradiance).map(|handle| handle.cube_map.clone()),
-            None => None,
-        });
+        resc.lighting
+            .set_radiance_texture(match &settings.radiance {
+                Some(radiance) => resc
+                    .assets
+                    .get(radiance)
+                    .map(|handle| handle.cube_map.clone()),
+                None => None,
+            });
+        resc.lighting
+            .set_irradiance_texture(match &settings.irradiance {
+                Some(irradiance) => resc
+                    .assets
+                    .get(irradiance)
+                    .map(|handle| handle.cube_map.clone()),
+                None => None,
+            });
     }
 }

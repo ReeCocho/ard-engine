@@ -48,9 +48,9 @@ impl EntityImage {
 
     #[inline]
     pub(crate) fn resize(&mut self, mut size: vk::Extent2D) {
-        // Take half resolution always
-        size.width = (size.width / 2).max(1);
-        size.height = (size.height / 2).max(1);
+        // Take quarter resolution always
+        size.width = (size.width / 4).max(1);
+        size.height = (size.height / 4).max(1);
 
         self.canvas_size = size;
         self.canvas.clear();

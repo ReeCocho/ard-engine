@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{editor_job::EditorJob, AssetMeta};
+use super::{asset_meta::AssetMeta, editor_job::EditorJob};
 use ard_engine::{
     assets::prelude::{AssetName, AssetNameBuf, Assets, Handle},
     log::warn,

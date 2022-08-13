@@ -140,8 +140,8 @@ impl ForwardPlus {
         });
 
         let entity_image_dims = vk::Extent2D {
-            width: canvas_size.width.div(2).max(1),
-            height: canvas_size.height.div(2).max(1),
+            width: canvas_size.width.div(4).max(1),
+            height: canvas_size.height.div(4).max(1),
         };
 
         let entity_image_size_group = rg_builder.add_size_group(SizeGroup {

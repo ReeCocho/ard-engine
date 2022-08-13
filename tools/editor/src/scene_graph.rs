@@ -7,7 +7,7 @@ use ard_engine::{
         lighting::LightingSettings,
         object::{empty::EmptyObject, static_object::StaticObject, GameObject},
         scene::{EntityMap, MappedEntity},
-        Scene, SceneDescriptor, SceneEntities, SceneGameObject,
+        SceneDescriptor, SceneEntities, SceneGameObject,
     },
     log::{info, warn},
 };

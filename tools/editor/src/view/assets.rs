@@ -5,13 +5,14 @@ use std::{
 };
 use thiserror::*;
 
-use ard_engine::{
-    assets::prelude::*, ecs::prelude::*, graphics::prelude::*, graphics_assets::prelude::*, math::*,
+use ard_engine::{assets::prelude::*, graphics::prelude::*, graphics_assets::prelude::*, math::*};
+
+use crate::util::{
+    par_task::{ParTask, ParTaskGet},
+    ui::DragDropPayload,
 };
 
-use crate::par_task::ParTask;
-
-use super::{inspector::InspectorItem, util::DragDropPayload};
+use super::{inspector::InspectorItem, View};
 
 const MAX_CHARS_IN_ASSET: usize = 12;
 const ASSET_ICON_SIZE: f32 = 80.0;
@@ -66,149 +67,6 @@ impl AssetViewer {
             current: Vec::default(),
             loading: None,
         }
-    }
-
-    pub fn draw(&mut self, ui: &imgui::Ui, assets: &Assets, commands: &Commands) {
-        // Asset loading window
-        if let Some(loading) = &mut self.loading {
-            let mut done = false;
-
-            // It should be possible to close the loading dialouge if there was an error
-            let mut can_close = match loading.get() {
-                crate::par_task::ParTaskGet::Err(_) => true,
-                crate::par_task::ParTaskGet::Panic(_) => true,
-                _ => false,
-            };
-
-            // Used to detect if the window is closed
-            let old_can_close = can_close;
-
-            let mut window = ui
-                .window("Loading Asset")
-                .size([320.0, 100.0], imgui::Condition::Always);
-
-            if can_close {
-                window = window.opened(&mut can_close);
-            }
-
-            window.build(|| {
-                loading.ui(ui, |asset| {
-                    // Rescan the project directory
-                    self.root = Folder::new_root(assets);
-                    done = true;
-                });
-            });
-
-            if done || !can_close && old_can_close {
-                self.loading = None;
-            }
-        }
-
-        ui.disabled(self.loading.is_some(), || {
-            let style = unsafe { ui.style() };
-            let mut new_folder = None;
-            ui.window("Assets").build(|| {
-                if ui.button("Refresh") {
-                    // Rescan the project directory
-                    self.root = Folder::new_root(assets);
-                }
-
-                ui.same_line();
-                ui.text(" | ");
-                ui.same_line();
-
-                if ui.button("Root") {
-                    self.current.clear();
-                }
-                ui.same_line();
-                ui.text(">");
-
-                // Find the current folder
-                let mut current_folder = &self.root;
-                for (i, folder_name) in self.current.iter().enumerate() {
-                    // Draw the folder on the tab
-                    ui.same_line();
-                    if ui.button(folder_name) {
-                        self.current.truncate(i + 1);
-                        break;
-                    }
-                    ui.same_line();
-                    ui.text(">");
-
-                    // Find the index of the sub folder
-                    let mut idx = None;
-                    for (i, folder) in current_folder.folders.iter().enumerate() {
-                        if folder.name == *folder_name {
-                            idx = Some(i);
-                            break;
-                        }
-                    }
-
-                    match idx {
-                        Some(idx) => {
-                            current_folder = &current_folder.folders[idx];
-                        }
-                        // We didn't find the sub folder, so go back to the root and stop searching
-                        None => {
-                            current_folder = &self.root;
-                            self.current.clear();
-                            break;
-                        }
-                    }
-                }
-                ui.separator();
-
-                // Folders
-                let folder_icon_id = self.assets.get(&self.folder_icon).unwrap().texture.ui_id();
-                for (i, folder) in current_folder.folders.iter().enumerate() {
-                    let last =
-                        i == current_folder.folders.len() - 1 && current_folder.assets.is_empty();
-                    let image = folder_icon_id;
-
-                    // Move to next folder if selected
-                    if asset_button(
-                        ui,
-                        style,
-                        image,
-                        None,
-                        &folder.display_name,
-                        &folder.name,
-                        last,
-                    ) {
-                        new_folder = Some(folder.name.clone());
-                    }
-                }
-
-                // Assets
-                let file_icon_id = self.assets.get(&self.file_icon).unwrap().texture.ui_id();
-                for (i, asset) in current_folder.assets.iter().enumerate() {
-                    let last = i == current_folder.assets.len() - 1;
-                    let image = file_icon_id;
-
-                    let id = assets
-                        .get_id_by_name(&asset.asset_name)
-                        .map(|id| RawHandle { id });
-
-                    if asset_button(
-                        ui,
-                        style,
-                        image,
-                        id,
-                        &asset.display_name,
-                        asset.asset_name.to_str().unwrap(),
-                        last,
-                    ) {
-                        commands
-                            .events
-                            .submit(InspectorItem::Asset(asset.asset_name.clone()));
-                    }
-                }
-            });
-
-            if let Some(new_folder) = new_folder {
-                self.current.push(new_folder);
-            }
-        });
     }
 
     /// Imports a new asset or folder and registers it with the viewer.
@@ -322,6 +180,157 @@ impl AssetViewer {
             path.push(cur);
         }
         path
+    }
+}
+
+impl View for AssetViewer {
+    fn show(
+        &mut self,
+        ui: &imgui::Ui,
+        _controller: &mut crate::controller::Controller,
+        resc: &mut crate::editor::Resources,
+    ) {
+        // Asset loading window
+        if let Some(loading) = &mut self.loading {
+            let mut done = false;
+
+            // It should be possible to close the loading dialouge if there was an error
+            let mut can_close = match loading.get() {
+                ParTaskGet::Err(_) => true,
+                ParTaskGet::Panic(_) => true,
+                _ => false,
+            };
+
+            // Used to detect if the window is closed
+            let old_can_close = can_close;
+
+            let mut window = ui
+                .window("Loading Asset")
+                .size([320.0, 100.0], imgui::Condition::Always);
+
+            if can_close {
+                window = window.opened(&mut can_close);
+            }
+
+            window.build(|| {
+                loading.ui(ui, |_asset| {
+                    // Rescan the project directory
+                    self.root = Folder::new_root(resc.assets);
+                    done = true;
+                });
+            });
+
+            if done || !can_close && old_can_close {
+                self.loading = None;
+            }
+        }
+
+        ui.disabled(self.loading.is_some(), || {
+            let style = unsafe { ui.style() };
+            let mut new_folder = None;
+            ui.window("Assets").build(|| {
+                if ui.button("Refresh") {
+                    // Rescan the project directory
+                    self.root = Folder::new_root(resc.assets);
+                }
+
+                ui.same_line();
+                ui.text(" | ");
+                ui.same_line();
+
+                if ui.button("Root") {
+                    self.current.clear();
+                }
+                ui.same_line();
+                ui.text(">");
+
+                // Find the current folder
+                let mut current_folder = &self.root;
+                for (i, folder_name) in self.current.iter().enumerate() {
+                    // Draw the folder on the tab
+                    ui.same_line();
+                    if ui.button(folder_name) {
+                        self.current.truncate(i + 1);
+                        break;
+                    }
+                    ui.same_line();
+                    ui.text(">");
+
+                    // Find the index of the sub folder
+                    let mut idx = None;
+                    for (i, folder) in current_folder.folders.iter().enumerate() {
+                        if folder.name == *folder_name {
+                            idx = Some(i);
+                            break;
+                        }
+                    }
+
+                    match idx {
+                        Some(idx) => {
+                            current_folder = &current_folder.folders[idx];
+                        }
+                        // We didn't find the sub folder, so go back to the root and stop searching
+                        None => {
+                            current_folder = &self.root;
+                            self.current.clear();
+                            break;
+                        }
+                    }
+                }
+                ui.separator();
+
+                // Folders
+                let folder_icon_id = self.assets.get(&self.folder_icon).unwrap().texture.ui_id();
+                for (i, folder) in current_folder.folders.iter().enumerate() {
+                    let last =
+                        i == current_folder.folders.len() - 1 && current_folder.assets.is_empty();
+                    let image = folder_icon_id;
+
+                    // Move to next folder if selected
+                    if asset_button(
+                        ui,
+                        style,
+                        image,
+                        None,
+                        &folder.display_name,
+                        &folder.name,
+                        last,
+                    ) {
+                        new_folder = Some(folder.name.clone());
+                    }
+                }
+
+                // Assets
+                let file_icon_id = self.assets.get(&self.file_icon).unwrap().texture.ui_id();
+                for (i, asset) in current_folder.assets.iter().enumerate() {
+                    let last = i == current_folder.assets.len() - 1;
+                    let image = file_icon_id;
+
+                    let id = resc
+                        .assets
+                        .get_id_by_name(&asset.asset_name)
+                        .map(|id| RawHandle { id });
+
+                    if asset_button(
+                        ui,
+                        style,
+                        image,
+                        id,
+                        &asset.display_name,
+                        asset.asset_name.to_str().unwrap(),
+                        last,
+                    ) {
+                        resc.ecs_commands
+                            .events
+                            .submit(InspectorItem::Asset(asset.asset_name.clone()));
+                    }
+                }
+            });
+
+            if let Some(new_folder) = new_folder {
+                self.current.push(new_folder);
+            }
+        });
     }
 }
 

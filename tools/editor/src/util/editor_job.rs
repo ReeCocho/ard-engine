@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::par_task::ParTask;
+use crate::util::par_task::{ParTask, ParTaskGet};
 use thiserror::*;
 
 #[derive(Default)]
@@ -74,7 +74,10 @@ impl EditorJob {
 
     /// Should return `true` when the job is complete and should be terminated.
     pub fn poll(&mut self, ui: &imgui::Ui) -> bool {
-        let mut window = ui.window(&self.name).title_bar(false);
+        let mut window = ui
+            .window(&self.name)
+            .flags(imgui::WindowFlags::NO_DOCKING)
+            .title_bar(false);
 
         if let Some((w, h)) = &self.size {
             window = window.size([*w as f32, *h as f32], imgui::Condition::Always);
@@ -83,23 +86,23 @@ impl EditorJob {
         match self.status {
             JobStatus::Running => {
                 window.build(|| match self.task.get() {
-                    crate::par_task::ParTaskGet::Running => {
+                    ParTaskGet::Running => {
                         (self.display)(ui);
                     }
-                    crate::par_task::ParTaskGet::Err(_) => self.status = JobStatus::Error,
-                    crate::par_task::ParTaskGet::Panic(_) => self.status = JobStatus::Error,
-                    crate::par_task::ParTaskGet::Ok(_) => self.status = JobStatus::Complete,
+                    ParTaskGet::Err(_) => self.status = JobStatus::Error,
+                    ParTaskGet::Panic(_) => self.status = JobStatus::Error,
+                    ParTaskGet::Ok(_) => self.status = JobStatus::Complete,
                 });
             }
             JobStatus::Complete => {}
             JobStatus::Error => {
                 let mut opened = true;
                 window.opened(&mut opened).build(|| match self.task.get() {
-                    crate::par_task::ParTaskGet::Err(err) => {
+                    ParTaskGet::Err(err) => {
                         ui.text("An error occured:");
                         ui.text(err.to_string());
                     }
-                    crate::par_task::ParTaskGet::Panic(panic) => {
+                    ParTaskGet::Panic(panic) => {
                         ui.text("An error occured:");
                         ui.text(format!("{:?}", panic));
                     }

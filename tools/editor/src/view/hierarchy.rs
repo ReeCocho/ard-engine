@@ -1,21 +1,20 @@
 use ard_engine::ecs::prelude::*;
 
 use crate::{
-    gui::{inspector::InspectorItem, util::DragDropPayload},
-    scene_graph::{SceneGraph, SceneGraphNode},
+    scene_graph::SceneGraphNode, util::ui::DragDropPayload, view::inspector::InspectorItem,
 };
+
+use super::View;
 
 #[derive(Default)]
 pub struct Hierarchy {}
 
-impl Hierarchy {
-    pub fn draw(
+impl View for Hierarchy {
+    fn show(
         &mut self,
         ui: &imgui::Ui,
-        events: &Events,
-        scene_graph: &mut SceneGraph,
-        queries: &Queries<Everything>,
-        commands: &Commands,
+        _controller: &mut crate::controller::Controller,
+        resc: &mut crate::editor::Resources,
     ) {
         ui.window("Hierarchy").build(|| {
             // First entity is the entity to reparent and second is the new parent
@@ -92,8 +91,8 @@ impl Hierarchy {
                     target.pop();
                 }
 
-                for root in scene_graph.roots() {
-                    let res = build_tree(ui, events, root);
+                for root in resc.scene_graph.roots() {
+                    let res = build_tree(ui, &resc.ecs_commands.events, root);
                     if res.is_some() {
                         reparent = res;
                     }
@@ -102,7 +101,8 @@ impl Hierarchy {
 
             // Reparent if requested
             if let Some((entity, new_parent)) = reparent {
-                scene_graph.set_parent(entity, new_parent, queries, commands);
+                resc.scene_graph
+                    .set_parent(entity, new_parent, resc.queries, &resc.ecs_commands);
             }
         });
     }
