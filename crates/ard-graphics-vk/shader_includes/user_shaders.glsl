@@ -210,20 +210,20 @@ float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv, i
     vec2 sm_coord = uv;
     vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
 
-    // // Perform cheap tests first
-    // for (int i = 0; i < 4; i++) {
-    //     vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
-    //     jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
-    //     
-    //     shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.xy).r ? (1.0 / 8) : 0.0;
-    //     shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? (1.0 / 8) : 0.0;
-    // }
+    /*
+    // Perform cheap tests first
+    for (int i = 0; i < 4; i++) {
+        vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
+        jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
+        
+        shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.xy).r ? (1.0 / 8) : 0.0;
+        shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? (1.0 / 8) : 0.0;
+    }
 
     // If all test samples are either 0's or 1's, we can skip expensive filtering
-    //if ((shadow - 1) * shadow != 0) {
-        //shadow *= 8.0 / SHADOW_SAMPLES_COUNT;
+    if ((shadow - 1) * shadow != 0) {
+        shadow *= 8.0 / SHADOW_SAMPLES_COUNT;
         
-        /*
         for (int i = 0; i < SHADOW_SAMPLES_COUNT; ++i) {
             vec4 offset = texture(ARD_POISSON_DISK, jcoord) * fr_uv2;
             jcoord.z += 1.0 / SHADOW_SAMPLES_COUNT;
@@ -234,7 +234,8 @@ float pcf_filter(vec2 uv, float z_receiver, float bias, vec2 filter_radius_uv, i
             // shadow += z_receiver - bias < texture(ARD_SHADOW_MAPS[layer], uv + offset.zw).r ? 
             //    SHADOW_SAMPLES_COUNT_INV * 0.5 : 0.0;
         }
-        */
+    }
+    */
 
     for (int x = -2; x <= 2; ++x) {
         for (int y = -2; y <= 2; ++y) {
@@ -411,8 +412,7 @@ vec3 lighting(
     vec3 Lo = vec3(0.0);
 
     // Directional light
-    float shadow = shadow_calculation(N);
-    float sun_attenuation = shadow;
+    float sun_attenuation = shadow_calculation(N);
 
     Lo += lighting_general(
         ARD_LIGHTING.sun_color_intensity.xyz * ARD_LIGHTING.sun_color_intensity.w,

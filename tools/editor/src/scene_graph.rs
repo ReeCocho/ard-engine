@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ard_engine::{
     assets::prelude::*,
     ecs::prelude::*,
@@ -23,6 +25,8 @@ pub struct SceneGraph {
     lighting: LightingSettings,
     /// Root nodes in the graph.
     roots: Vec<SceneGraphNode>,
+    /// Hash set of all entities within the scene graph for fast lookup.
+    entities: HashSet<Entity>,
     // Channel for creating new nodes.
     new_node_send: Sender<SceneGraphNode>,
     new_node_recv: Receiver<SceneGraphNode>,
@@ -72,6 +76,7 @@ impl Default for SceneGraph {
             handle: None,
             lighting: LightingSettings::default(),
             roots: Vec::default(),
+            entities: HashSet::default(),
             new_node_send,
             new_node_recv,
             load_scene_send,
@@ -113,9 +118,14 @@ impl SceneGraph {
         self.load_scene_send.clone()
     }
 
+    #[inline]
+    pub fn contains(&self, entity: Entity) -> bool {
+        self.entities.contains(&entity)
+    }
+
     pub fn receive_nodes(&mut self) {
         while let Ok(new_node) = self.new_node_recv.try_recv() {
-            self.roots.push(new_node);
+            self.add_node(new_node);
         }
     }
 
@@ -159,6 +169,10 @@ impl SceneGraph {
     }
 
     pub fn find_entity(&self, entity: Entity) -> Option<&SceneGraphNode> {
+        if !self.entities.contains(&entity) {
+            return None;
+        }
+
         for root in &self.roots {
             let search = self.find_entity_recurse(entity, root);
             if search.is_some() {
@@ -202,6 +216,7 @@ impl SceneGraph {
 
         // If it is not, remove the entity node from the graph
         let node = self.remove_entity(entity).unwrap();
+        self.entities.insert(entity);
 
         // Then find the parent
         let parent = match new_parent {
@@ -213,11 +228,12 @@ impl SceneGraph {
         };
 
         // Update the parent component in the ECS
-        let mut entity_parent_comp = queries.get::<Write<Parent>>(entity).unwrap();
-        entity_parent_comp.set(entity, new_parent, commands);
-        match parent {
-            Some(parent) => parent.children.push(node),
-            None => self.roots.push(node),
+        if let Some(mut entity_parent_comp) = queries.get::<Write<Parent>>(entity) {
+            entity_parent_comp.set(entity, new_parent, commands);
+            match parent {
+                Some(parent) => parent.children.push(node),
+                None => self.roots.push(node),
+            }
         }
     }
 
@@ -295,6 +311,7 @@ impl SceneGraph {
         }
 
         self.roots.clear();
+        self.entities.clear();
 
         // Lighting settings
         self.lighting =
@@ -307,6 +324,7 @@ impl SceneGraph {
         fn construct_node(
             descriptor: &SceneGraphNodeDescriptor,
             mapping: &EntityMap,
+            entities: &mut HashSet<Entity>,
         ) -> SceneGraphNode {
             let mut node = SceneGraphNode {
                 entity: mapping.from_map(descriptor.entity),
@@ -314,15 +332,18 @@ impl SceneGraph {
                 ty: descriptor.ty,
             };
 
+            entities.insert(node.entity);
+
             for child in &descriptor.children {
-                node.children.push(construct_node(child, mapping));
+                node.children.push(construct_node(child, mapping, entities));
             }
 
             node
         }
 
         for node in &descriptor.nodes {
-            self.roots.push(construct_node(node, &map));
+            self.roots
+                .push(construct_node(node, &map, &mut self.entities));
         }
     }
 
@@ -332,6 +353,8 @@ impl SceneGraph {
             SceneGameObject::EmptyObject => EmptyObject::create_default(commands),
         };
 
+        self.entities.insert(entity);
+
         self.roots.push(SceneGraphNode {
             entity,
             children: Vec::default(),
@@ -339,7 +362,9 @@ impl SceneGraph {
         });
     }
 
-    fn remove_entity(&mut self, entity: Entity) -> Option<SceneGraphNode> {
+    /// Removes an entity from the scene graph without actually destroying it. If the entity was
+    /// found, the node is returned.
+    pub fn remove_entity(&mut self, entity: Entity) -> Option<SceneGraphNode> {
         fn remove_entity_recurse(
             entity: Entity,
             node: &mut SceneGraphNode,
@@ -369,16 +394,30 @@ impl SceneGraph {
 
         for i in 0..self.roots.len() {
             if self.roots[i].entity == entity {
+                self.entities.remove(&entity);
                 return Some(self.roots.remove(i));
             }
 
             let search = remove_entity_recurse(entity, &mut self.roots[i]);
             if search.is_some() {
+                self.entities.remove(&entity);
                 return search;
             }
         }
 
         None
+    }
+
+    /// Add a scene graph node into the graph at the root level.
+    pub fn add_node(&mut self, node: SceneGraphNode) {
+        fn add_entities(node: &SceneGraphNode, entities: &mut HashSet<Entity>) {
+            entities.insert(node.entity);
+            for child in &node.children {
+                add_entities(child, entities);
+            }
+        }
+        add_entities(&node, &mut self.entities);
+        self.roots.push(node);
     }
 
     fn find_entity_recurse<'a>(

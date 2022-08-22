@@ -19,6 +19,7 @@ use crate::{
     renderer::graph::GraphBuffer,
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_SHADOW_CASCADES},
 };
+use ard_core::prelude::Disabled;
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
 use ard_math::Vec2;
@@ -87,7 +88,8 @@ pub(crate) struct MeshPass {
     /// The number of dynamic draw calls that we performed this frame.
     pub dynamic_draw_calls: usize,
     /// Dynamic geometry query to look through when rendering.
-    pub dynamic_geo_query: Option<ComponentQuery<(Read<Renderable<VkBackend>>,)>>,
+    pub dynamic_geo_query:
+        Option<EntityComponentTagQuery<(Read<Renderable<VkBackend>>, Read<Model>), Read<Disabled>>>,
     /// Camera to render from the perspective of.
     pub camera: MeshPassCameraInfo,
     /// Optional high-z culling information.
@@ -718,15 +720,16 @@ impl MeshPass {
 
         // Write dynamic geometry
         let layers = self.layers;
-        for (i, (renderable,)) in self
+        for (i, (_, (renderable, _), _)) in self
             .dynamic_geo_query
             .take()
             .unwrap()
             .into_iter()
             .enumerate()
-            .filter(|(_, (renderable,))| {
-                // Filter out objects that don't share at least one layer with us
-                renderable.layers & layers != RenderLayerFlags::EMPTY
+            .filter(|(_, (_, (renderable, _), disabled))| {
+                // Filter out objects that don't share at least one layer with us or that are
+                // disabled
+                (renderable.layers & layers != RenderLayerFlags::EMPTY) && disabled.is_none()
             })
         {
             unsafe {

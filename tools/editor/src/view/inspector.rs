@@ -1,23 +1,15 @@
-pub mod inspect;
-
 use std::path::PathBuf;
 
-use inspect::Inspect;
-
 use ard_engine::{
-    assets::prelude::*,
-    ecs::prelude::*,
-    game::{
-        object::{empty::EmptyObject, static_object::StaticObject},
-        SceneGameObject,
-    },
-    graphics::prelude::*,
-    math::*,
+    assets::prelude::*, ecs::prelude::*, game::SceneGameObject, graphics::prelude::*, math::*,
 };
 
-use crate::util::{
-    asset_meta::{AssetMeta, AssetMetaError},
-    par_task::ParTask,
+use crate::{
+    inspectable::InspectState,
+    util::{
+        asset_meta::{AssetMeta, AssetMetaError},
+        par_task::ParTask,
+    },
 };
 
 use crate::scene_graph::SceneGraph;
@@ -131,7 +123,7 @@ impl View for Inspector {
     fn show(
         &mut self,
         ui: &imgui::Ui,
-        _controller: &mut crate::controller::Controller,
+        controller: &mut crate::controller::Controller,
         resc: &mut crate::editor::Resources,
     ) {
         ui.window("Inspector").build(|| {
@@ -166,6 +158,12 @@ impl View for Inspector {
                     });
                 }
                 ActiveInspectorItem::Entity { entity, ty } => {
+                    // Deselect the entity if it isn't in the scene graph
+                    if !resc.scene_graph.contains(*entity) {
+                        self.item = None;
+                        return;
+                    }
+
                     // Draw the bounding box of the object unless it has no mesh to render
                     if let Some(query) = resc
                         .queries
@@ -182,30 +180,25 @@ impl View for Inspector {
                         );
 
                         // Draw the transform gizmo
-                        self.transform_gizmo
-                            .draw(resc.debug_draw, resc.camera, query.1 .0);
+                        let (x, y) = resc.input.mouse_pos();
+                        let mouse_pos = Vec2::new(x as f32, y as f32);
+                        self.transform_gizmo.draw(
+                            resc.debug_draw,
+                            mouse_pos,
+                            resc.camera,
+                            query.1 .0,
+                        );
                     }
 
+                    // Create inspection state
+                    let mut inspect_state = InspectState::new_inspection(resc, *entity, *ty, ui);
+
                     // Inspect the object
-                    match ty {
-                        SceneGameObject::StaticObject => {
-                            StaticObject::inspect(
-                                ui,
-                                *entity,
-                                &resc.ecs_commands,
-                                &resc.queries,
-                                &resc.assets,
-                            );
-                        }
-                        SceneGameObject::EmptyObject => {
-                            EmptyObject::inspect(
-                                ui,
-                                *entity,
-                                &resc.ecs_commands,
-                                &resc.queries,
-                                &resc.assets,
-                            );
-                        }
+                    inspect_state.inspect();
+
+                    // Drain the modify queue and submit to controller
+                    for command in inspect_state.into_modify_queue().unwrap().drain() {
+                        controller.submit(command);
                     }
                 }
             }
@@ -214,7 +207,18 @@ impl View for Inspector {
 }
 
 impl TransformGizmo {
-    pub fn draw(&self, drawing: &DebugDrawing, view: &SceneViewCamera, model: Mat4) {
+    pub fn draw(
+        &self,
+        drawing: &DebugDrawing,
+        mouse_pos: Vec2,
+        view: &SceneViewCamera,
+        model: Mat4,
+    ) {
+        // World space direction from the camera to where the screen is pointing
+        let stw = view.screen_to_world(mouse_pos);
+        let mouse_dir = (stw - view.position).xyz().normalize();
+
+        // Compute the model matrix of the gizmo
         let pos = model.col(3).xyz();
 
         let scale = Vec3::new(
@@ -242,33 +246,71 @@ impl TransformGizmo {
             Vec4::new(0.0, 0.0, 0.0, 1.0),
         );
 
-        let model = Mat4::from_translation(pos)
-            * rot
-            * Mat4::from_scale(Vec3::ONE * (pos - view.position).length() * GIZMO_SCALE_FACTOR);
+        let scale_factor = (pos - view.position).length() * GIZMO_SCALE_FACTOR;
+        let translate = Mat4::from_translation(pos);
+        let scale = Mat4::from_scale(Vec3::ONE * scale_factor);
+        let model = translate * rot * scale;
 
         let origin = (model * Vec4::new(0.0, 0.0, 0.0, 1.0)).xyz();
         let x = (model * Vec4::from((Vec3::X, 1.0))).xyz();
         let y = (model * Vec4::from((Vec3::Y, 1.0))).xyz();
         let z = (model * Vec4::from((Vec3::Z, 1.0))).xyz();
 
+        // Rotate the mouse direction vector to be relative to the gizmo
+        let forward = (rot.inverse() * Vec4::from((mouse_dir, 1.0))).xyz();
+        let position = ((translate * rot).inverse() * Vec4::from((view.position, 1.0))).xyz();
+
         // X-axis
-        drawing.draw_line(origin, x, Vec3::X);
+        let bounds = ObjectBounds {
+            center: Vec4::new(0.6 * scale_factor, 0.0, 0.0, 0.0),
+            half_extents: Vec4::new(0.6, 0.08, 0.08, 1.0) * scale_factor,
+        };
+
+        let color = if bounds.intersects(position, forward) {
+            Vec3::new(1.0, 0.5, 0.5)
+        } else {
+            Vec3::X
+        };
+
+        drawing.draw_line(origin, x, color);
         draw_translate_tip(
             drawing,
-            Vec3::X,
+            color,
             Vec3::new(0.0, 0.0, -std::f32::consts::FRAC_PI_2),
             model,
         );
 
         // Y-axis
-        drawing.draw_line(origin, y, Vec3::Y);
-        draw_translate_tip(drawing, Vec3::Y, Vec3::ZERO, model);
+        let bounds = ObjectBounds {
+            center: Vec4::new(0.0, 0.6 * scale_factor, 0.0, 0.0),
+            half_extents: Vec4::new(0.08, 0.6, 0.08, 1.0) * scale_factor,
+        };
+
+        let color = if bounds.intersects(position, forward) {
+            Vec3::new(0.7, 1.0, 0.7)
+        } else {
+            Vec3::Y
+        };
+
+        drawing.draw_line(origin, y, color);
+        draw_translate_tip(drawing, color, Vec3::ZERO, model);
 
         // Z-axis
-        drawing.draw_line(origin, z, Vec3::Z);
+        let bounds = ObjectBounds {
+            center: Vec4::new(0.0, 0.0, 0.6 * scale_factor, 0.0),
+            half_extents: Vec4::new(0.08, 0.08, 0.6, 1.0) * scale_factor,
+        };
+
+        let color = if bounds.intersects(position, forward) {
+            Vec3::new(0.5, 0.5, 1.0)
+        } else {
+            Vec3::Z
+        };
+
+        drawing.draw_line(origin, z, color);
         draw_translate_tip(
             drawing,
-            Vec3::Z,
+            color,
             Vec3::new(std::f32::consts::FRAC_PI_2, 0.0, 0.0),
             model,
         );

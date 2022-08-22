@@ -27,6 +27,20 @@ impl TagStorageSet for () {
     fn make_set(&self, _: Entity) -> Self::TagSet {}
 }
 
+impl<T: TagStorageAccess> TagStorageSet for T {
+    type TagSet = Option<T::TagAccess>;
+
+    #[inline]
+    fn from_tags(tags: &Tags) -> Self {
+        T::from_tags(tags)
+    }
+
+    #[inline]
+    fn make_set(&self, entity: Entity) -> Self::TagSet {
+        self.get_tag(entity)
+    }
+}
+
 macro_rules! tag_storage_set_impl {
     ( $n:expr, $( $name:ident )+ ) => {
         impl<$($name: TagStorageAccess,)*> TagStorageSet for ($($name,)*) {

@@ -85,7 +85,9 @@ impl TransformUpdate {
         // Construct the tree from roots to leaves breadth first
         let mut i = 0;
         while i != self.hierarchy.len() {
-            let parent_global = match queries.get::<Read<Model>>(self.hierarchy[i]) {
+            let entity = self.hierarchy[i];
+
+            let parent_global = match queries.get::<Read<Model>>(entity) {
                 Some(parent) => parent.0,
                 None => {
                     i += 1;
@@ -94,7 +96,7 @@ impl TransformUpdate {
             };
 
             // Get the children of the current node
-            let children = match queries.get::<Read<Children>>(self.hierarchy[i]) {
+            let children = match queries.get::<Read<Children>>(entity) {
                 Some(children) => children,
                 None => {
                     i += 1;
@@ -106,6 +108,7 @@ impl TransformUpdate {
             // parent
             for child in children.0.iter() {
                 self.hierarchy.push(*child);
+
                 if let Some(mut query) = queries.get::<(Read<Transform>, Write<Model>)>(*child) {
                     query.1 .0 = parent_global
                         * Mat4::from_scale_rotation_translation(

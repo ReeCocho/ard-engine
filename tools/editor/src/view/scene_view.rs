@@ -25,6 +25,11 @@ pub struct SceneViewCamera {
     pub look_speed: f32,
     pub position: Vec3,
     pub rotation: Vec3,
+    pub mouse_ray: Vec3,
+    pub view: Mat4,
+    pub projection: Mat4,
+    pub min: Vec2,
+    pub max: Vec2,
 }
 
 impl Default for SceneViewCamera {
@@ -37,6 +42,11 @@ impl Default for SceneViewCamera {
             move_speed: 30.0,
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
+            mouse_ray: Vec3::Z,
+            view: Mat4::IDENTITY,
+            projection: Mat4::IDENTITY,
+            min: Vec2::ONE,
+            max: Vec2::ONE,
         }
     }
 }
@@ -138,6 +148,25 @@ impl View for SceneView {
                 target.pop();
             }
 
+            // Compute UV coordinate of the mouse position in scene view space
+            let min = ui.item_rect_min();
+            let mut max = ui.item_rect_max();
+            let mut pos = resc.input.mouse_pos();
+
+            resc.camera.min = Vec2::new(min[0] as f32, min[1] as f32);
+            resc.camera.max = Vec2::new(max[0] as f32, max[1] as f32);
+
+            pos.0 -= min[0] as f64;
+            pos.1 -= min[1] as f64;
+            max[0] -= min[0];
+            max[1] -= min[1];
+
+            self.click_uv = Vec2::new(
+                (pos.0 / max[0] as f64) as f32,
+                (pos.1 / max[1] as f64) as f32,
+            )
+            .clamp(Vec2::ZERO, Vec2::ONE);
+
             // Transform camera
             let window = resc.windows.get_mut(WindowId::primary()).unwrap();
             if resc.input.mouse_button(MouseButton::Right) && ui.is_item_hovered() {
@@ -189,6 +218,19 @@ impl View for SceneView {
                     },
                 );
 
+                // Compute view and projection for scene view
+                resc.camera.view = Mat4::look_at_lh(
+                    resc.camera.position,
+                    resc.camera.position + forward.xyz(),
+                    up.xyz(),
+                );
+                resc.camera.projection = Mat4::perspective_lh(
+                    resc.camera.fov,
+                    max[0] as f32 / max[1] as f32,
+                    resc.camera.near,
+                    resc.camera.far,
+                );
+
                 window.set_cursor_lock_mode(true);
             } else {
                 window.set_cursor_lock_mode(false);
@@ -196,25 +238,24 @@ impl View for SceneView {
 
             // Select entity in the view
             if resc.input.mouse_button_down(MouseButton::Left) && ui.is_item_hovered() {
-                // Compute UV coordinate of the mouse position in scene view space
-                let min = ui.item_rect_min();
-                let mut max = ui.item_rect_max();
-                let mut pos = resc.input.mouse_pos();
-
-                pos.0 -= min[0] as f64;
-                pos.1 -= min[1] as f64;
-                max[0] -= min[0];
-                max[1] -= min[1];
-
-                self.click_uv = Vec2::new(
-                    (pos.0 / max[0] as f64) as f32,
-                    (pos.1 / max[1] as f64) as f32,
-                );
-
                 // Signal to the renderer that an entity image needs to be rendered
                 resc.ecs_commands.events.submit(RenderEntityImage);
                 self.clicked = true;
             }
         });
+    }
+}
+
+impl SceneViewCamera {
+    /// Given a screen space pixel coordinate, determine a world space position on the near plane.
+    #[inline]
+    pub fn screen_to_world(&self, mut uv: Vec2) -> Vec3 {
+        uv -= self.min;
+        uv /= self.max - self.min;
+        uv *= 2.0;
+        uv -= Vec2::ONE;
+        uv.y = -uv.y;
+        let res = (self.projection * self.view).inverse() * Vec4::new(uv.x, uv.y, 0.0, 1.0);
+        res.xyz() / res.w
     }
 }

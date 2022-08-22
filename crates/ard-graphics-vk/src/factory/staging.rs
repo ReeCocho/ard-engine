@@ -830,6 +830,7 @@ impl Upload {
     unsafe fn uploaded(&self, device: &ash::Device, blocking: bool) -> bool {
         // Check to see if the command is finished
         let fence = [self.transfer.1];
+
         let mut uploaded =
             match device.wait_for_fences(&fence, true, if blocking { u64::MAX } else { 0 }) {
                 Ok(()) => true,

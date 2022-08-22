@@ -33,7 +33,7 @@ pub mod prelude {
     pub use crate::*;
 }
 
-use ard_math::{Mat4, Vec4};
+use ard_math::{Mat4, Vec3, Vec4, Vec4Swizzles};
 use prelude::{cube_map::CubeMapApi, *};
 use std::{any::Any, hash::Hash};
 
@@ -139,6 +139,45 @@ unsafe impl Zeroable for ObjectBounds {}
 
 unsafe impl Pod for Frustum {}
 unsafe impl Zeroable for Frustum {}
+
+impl ObjectBounds {
+    /// Determine if a ray intersects the bounding box.
+    ///
+    /// # Note
+    /// Assumes the bounding box is axis aligned.
+    #[inline]
+    pub fn intersects(&self, start: Vec3, dir: Vec3) -> bool {
+        let bb_min = self.center.xyz() - self.half_extents.xyz();
+        let bb_max = self.center.xyz() + self.half_extents.xyz();
+        let mut t_min = (bb_min - start) / dir;
+        let mut t_max = (bb_max - start) / dir;
+
+        if t_max.x < t_min.x {
+            std::mem::swap(&mut t_max.x, &mut t_min.x);
+        }
+
+        if t_max.y < t_min.y {
+            std::mem::swap(&mut t_max.y, &mut t_min.y);
+        }
+
+        if t_max.z < t_min.z {
+            std::mem::swap(&mut t_max.z, &mut t_min.z);
+        }
+
+        let f_min = f32::max(t_min.x, t_min.y);
+        let f_max = f32::min(t_max.x, t_max.y);
+
+        if t_min.x > t_max.y || t_min.y > t_max.x {
+            return false;
+        }
+
+        if f_min > t_max.z || t_min.z > f_max {
+            return false;
+        }
+
+        true
+    }
+}
 
 impl From<Mat4> for Frustum {
     fn from(m: Mat4) -> Frustum {

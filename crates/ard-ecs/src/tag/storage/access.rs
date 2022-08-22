@@ -92,3 +92,9 @@ impl<S: TagStorage<T> + 'static, T: Tag<Storage = S>> TagStorageAccess for Write
         }
     }
 }
+
+unsafe impl<S: TagStorage<T>, T: Tag<Storage = S> + 'static> Send for ReadTagStorage<S, T> {}
+unsafe impl<S: TagStorage<T>, T: Tag<Storage = S> + 'static> Sync for ReadTagStorage<S, T> {}
+
+unsafe impl<S: TagStorage<T>, T: Tag<Storage = S> + 'static> Send for WriteTagStorage<S, T> {}
+unsafe impl<S: TagStorage<T>, T: Tag<Storage = S> + 'static> Sync for WriteTagStorage<S, T> {}

@@ -1,5 +1,6 @@
 pub mod controller;
 pub mod editor;
+pub mod inspectable;
 pub mod scene_graph;
 pub mod util;
 pub mod view;

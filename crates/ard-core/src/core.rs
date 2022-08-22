@@ -51,6 +51,13 @@ pub struct ArdCoreState {
     stopping: bool,
 }
 
+/// A tag indicating that a particular entity is not enabled. It is up to systems to query for
+/// this tag and turn off functionality when it exists. Assume that all entities without this
+/// tag are enabled.
+#[derive(Debug, Tag, Copy, Clone)]
+#[storage(CommonStorage)]
+pub struct Disabled;
+
 /// The base engine plugin.
 ///
 /// A default runner is used which, every iteration of dispatch, generates new `Tick` and

@@ -40,6 +40,32 @@ impl TagFilter for () {
     }
 }
 
+impl<T: TagAccess> TagFilter for T {
+    type StorageSet = T::StorageAccess;
+
+    fn type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        descriptor.add::<T::Tag>();
+        descriptor
+    }
+
+    fn read_type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        if !T::MUT_ACCESS {
+            descriptor.add::<T::Tag>();
+        }
+        descriptor
+    }
+
+    fn mut_type_key() -> TypeKey {
+        let mut descriptor = TypeKey::default();
+        if T::MUT_ACCESS {
+            descriptor.add::<T::Tag>();
+        }
+        descriptor
+    }
+}
+
 macro_rules! tag_filter_impl {
     ( $n:expr, $( $name:ident )+ ) => {
         impl<$($name: TagAccess,)*> TagFilter for ($($name,)*) {

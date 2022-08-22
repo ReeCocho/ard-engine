@@ -19,6 +19,7 @@ use crate::{
     VkBackend,
 };
 
+use ard_core::prelude::Disabled;
 use ard_ecs::{
     entity::Entity,
     prelude::{ComponentQuery, Queries, Read},
@@ -622,21 +623,34 @@ impl ForwardPlus {
     #[inline]
     pub fn set_dynamic_geo(
         &mut self,
-        queries: &Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
+        queries: &Queries<(
+            Entity,
+            (Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>),
+            (Read<Disabled>,),
+        )>,
     ) {
         self.mesh_passes.dynamic_geo_query =
             Some(queries.make::<(Entity, (Read<Renderable<VkBackend>>, Read<Model>))>());
         for pass in &mut self.mesh_passes.passes {
-            pass.dynamic_geo_query = Some(queries.make::<(Read<Renderable<VkBackend>>,)>());
+            pass.dynamic_geo_query = Some(queries.make::<(
+                Entity,
+                (Read<Renderable<VkBackend>>, Read<Model>),
+                Read<Disabled>,
+            )>());
         }
     }
 
     #[inline]
     pub fn set_point_light_query(
         &mut self,
-        point_lights: ComponentQuery<(Read<PointLight>, Read<Model>)>,
+        queries: &Queries<(
+            Entity,
+            (Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>),
+            (Read<Disabled>,),
+        )>,
     ) {
-        self.mesh_passes.point_lights_query = Some(point_lights);
+        self.mesh_passes.point_lights_query =
+            Some(queries.make::<(Entity, (Read<PointLight>, Read<Model>), (Read<Disabled>,))>());
     }
 
     #[inline]

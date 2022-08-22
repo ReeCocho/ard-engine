@@ -6,7 +6,7 @@ use std::{
 use bytemuck::{Pod, Zeroable};
 
 /// An entity is an identifier that is associated with a set of components in a world.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Eq)]
 #[repr(C)]
 pub struct Entity {
     id: u32,
@@ -52,6 +52,13 @@ impl Entity {
     #[inline]
     pub fn ver(&self) -> u32 {
         self.ver.get()
+    }
+}
+
+impl PartialEq for Entity {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.ver == other.ver
     }
 }
 

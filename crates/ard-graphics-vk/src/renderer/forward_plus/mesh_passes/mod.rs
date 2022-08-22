@@ -1,5 +1,6 @@
 pub mod mesh_pass;
 
+use ard_core::prelude::Disabled;
 use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 
@@ -53,7 +54,8 @@ pub(crate) struct MeshPasses {
     /// Dynamic geometry query to look through when rendering.
     pub dynamic_geo_query: Option<EntityComponentQuery<(Read<Renderable<VkBackend>>, Read<Model>)>>,
     /// Query of point lights to read through.
-    pub point_lights_query: Option<ComponentQuery<(Read<PointLight>, Read<Model>)>>,
+    pub point_lights_query:
+        Option<EntityComponentTagQuery<(Read<PointLight>, Read<Model>), (Read<Disabled>,)>>,
     pub point_light_count: usize,
     /// Flag indicating that object buffers were expanded and thus need to be updated.
     pub object_buffers_expanded: bool,
@@ -1571,7 +1573,6 @@ impl MeshPasses {
         let frame_idx = ctx.frame();
         let materials = state.factory.0.materials.read().expect("mutex poisoned");
         let static_objects = state.static_geo.0.len.load(Ordering::Relaxed);
-        let dynamic_objects = state.mesh_passes.dynamic_geo_query.as_ref().unwrap().len();
 
         // Swap the draw call buffers for every pass
         for pass in &mut state.mesh_passes.passes {
@@ -1591,13 +1592,18 @@ impl MeshPasses {
             .expect_write_storage_mut(frame_idx);
 
         let point_lights = state.mesh_passes.point_lights_query.take().unwrap();
-        state.mesh_passes.point_light_count = point_lights.len();
 
-        for (i, (light, model)) in point_lights.into_iter().enumerate() {
+        let mut point_light_count = 0;
+        for (_, (light, model), (disabled,)) in point_lights.into_iter() {
+            // Skip disabled lights
+            if disabled.is_some() {
+                continue;
+            }
+
             unsafe {
                 let position = model.0.col(3);
                 point_lights_buffer.write(
-                    i,
+                    point_light_count,
                     RawPointLight {
                         color_intensity: Vec4::new(
                             light.color.x,
@@ -1609,7 +1615,11 @@ impl MeshPasses {
                     },
                 );
             }
+
+            point_light_count += 1;
         }
+
+        state.mesh_passes.point_light_count = point_light_count;
 
         unsafe {
             point_lights_buffer.flush(
@@ -1665,18 +1675,19 @@ impl MeshPasses {
         }
 
         let object_info_map = object_info_buffer.map();
-        for (i, (entity, (renderable, model))) in state
+        let mut dynamic_objects = 0;
+        for (entity, (renderable, model)) in state
             .mesh_passes
             .dynamic_geo_query
             .take()
             .unwrap()
             .into_iter()
-            .enumerate()
         {
-            let info_idx = static_objects + i;
+            let info_idx = static_objects + dynamic_objects;
             let material = materials
                 .get(renderable.material.id)
                 .expect("invalid material");
+            dynamic_objects += 1;
 
             // Write model matrix
             unsafe {

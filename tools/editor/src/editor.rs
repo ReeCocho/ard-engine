@@ -1,5 +1,5 @@
 use ard_engine::{
-    assets::prelude::*, core::prelude::*, ecs::prelude::*, graphics::prelude::*, input::InputState,
+    assets::prelude::*, core::prelude::*, ecs::prelude::*, graphics::prelude::*, input::*,
     window::prelude::*,
 };
 
@@ -201,6 +201,7 @@ impl Editor {
                 .scene_graph
                 .update_active_scene(&resources.assets, &resources.ecs_commands.entities);
 
+            // Display views
             self.toolbar.show(ui, &mut self.controller, &mut resources);
             self.scene_view
                 .show(ui, &mut self.controller, &mut resources);
@@ -211,6 +212,20 @@ impl Editor {
             self.hierarchy
                 .show(ui, &mut self.controller, &mut resources);
             self.lighting.show(ui, &mut self.controller, &mut resources);
+
+            // Resolve commands from views
+            self.controller.resolve(&mut resources);
+
+            // Detect undo/redo
+            // TODO: Some imgui elements have an internal undo stack which we should replace with
+            // this
+            if resources.input.key(Key::LCtrl) {
+                if resources.input.key_down(Key::Z) {
+                    self.controller.undo(&mut resources);
+                } else if resources.input.key_down(Key::Y) {
+                    self.controller.redo(&mut resources);
+                }
+            }
         });
     }
 }

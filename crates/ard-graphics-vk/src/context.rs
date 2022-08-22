@@ -78,7 +78,10 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
         let app_name = CString::new(window.title()).unwrap();
 
         let layer_names = if create_info.debug {
-            vec![CString::new("VK_LAYER_KHRONOS_validation").unwrap()]
+            vec![
+                CString::new("VK_LAYER_KHRONOS_validation").unwrap(),
+                CString::new("VK_LAYER_KHRONOS_synchronization2").unwrap(),
+            ]
         } else {
             Vec::default()
         };
@@ -100,7 +103,6 @@ impl GraphicsContextApi<VkBackend> for GraphicsContext {
         let mut device_extensions = vec![CString::from(khr::Swapchain::name())];
         if create_info.debug {
             device_extensions.push(CString::new("VK_KHR_shader_non_semantic_info").unwrap());
-            // device_extensions.push(CString::from(khr::Synchronization2::name()));
         }
 
         let device_extension_names_raw = device_extensions

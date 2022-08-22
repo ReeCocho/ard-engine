@@ -15,7 +15,10 @@ use crate::{
     surface::Surface,
     VkBackend,
 };
-use ard_core::core::{Stopping, Tick};
+use ard_core::{
+    core::{Stopping, Tick},
+    prelude::Disabled,
+};
 use ard_ecs::prelude::*;
 use ard_graphics_api::prelude::*;
 use ard_input::{InputState, Key, MouseButton};
@@ -231,7 +234,11 @@ impl Renderer {
         &mut self,
         evt: Render,
         commands: Commands,
-        queries: Queries<(Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>)>,
+        queries: Queries<(
+            Entity,
+            (Read<Renderable<VkBackend>>, Read<PointLight>, Read<Model>),
+            (Read<Disabled>,),
+        )>,
         res: Res<RenderResources>,
     ) {
         let mut res = res.get();
@@ -442,8 +449,7 @@ impl Renderer {
 
         self.state.set_sun_cameras(&light_cameras);
         self.state.set_dynamic_geo(&queries);
-        self.state
-            .set_point_light_query(queries.make::<(Read<PointLight>, Read<Model>)>());
+        self.state.set_point_light_query(&queries);
         self.state.set_surface_image_idx(image_idx);
 
         // Run the render graph

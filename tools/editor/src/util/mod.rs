@@ -1,11 +1,13 @@
 use ard_engine::{
     assets::prelude::*,
+    core::prelude::*,
     ecs::prelude::*,
     game::{
         components::{
             renderable::{RenderableData, RenderableSource},
             transform::{Children, Parent, Transform},
         },
+        destroy::Destroy,
         object::{empty::EmptyObject, static_object::StaticObject},
         SceneGameObject,
     },
@@ -22,6 +24,54 @@ pub mod dirty_assets;
 pub mod editor_job;
 pub mod par_task;
 pub mod ui;
+
+/// Disables an entity and all of it's children.
+pub fn disable(entity: Entity, queries: &Queries<Everything>, commands: &EntityCommands) {
+    let mut to_disable = vec![entity];
+    let mut i = 0;
+    while i != to_disable.len() {
+        let entity = to_disable[i];
+        commands.add_tag(entity, Disabled);
+        if let Some(children) = queries.get::<Read<Children>>(entity) {
+            for child in children.0.iter() {
+                to_disable.push(*child);
+            }
+        };
+        i += 1;
+    }
+}
+
+/// Enables an entity and all of it's children.
+pub fn enable(entity: Entity, queries: &Queries<Everything>, commands: &EntityCommands) {
+    let mut to_enable = vec![entity];
+    let mut i = 0;
+    while i != to_enable.len() {
+        let entity = to_enable[i];
+        commands.remove_tag::<Disabled>(entity);
+        if let Some(children) = queries.get::<Read<Children>>(entity) {
+            for child in children.0.iter() {
+                to_enable.push(*child);
+            }
+        };
+        i += 1;
+    }
+}
+
+/// Destroys an entity and all of it's children.
+pub fn destroy(entity: Entity, queries: &Queries<Everything>, commands: &EntityCommands) {
+    let mut to_destroy = vec![entity];
+    let mut i = 0;
+    while i != to_destroy.len() {
+        let entity = to_destroy[i];
+        commands.add_component(entity, Destroy);
+        if let Some(children) = queries.get::<Read<Children>>(entity) {
+            for child in children.0.iter() {
+                to_destroy.push(*child);
+            }
+        };
+        i += 1;
+    }
+}
 
 /// Constructs an empty entity as a root and then parents all the entities of a model to that root.
 pub fn instantiate_model(

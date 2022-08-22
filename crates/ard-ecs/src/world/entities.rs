@@ -175,7 +175,7 @@ impl Entities {
                     }
                 }
                 EntityCommand::Destroy { entities } => {
-                    for entity in entities {
+                    for mut entity in entities {
                         let ind = entity.id() as usize;
 
                         // Verify that the entity handles are valid
@@ -199,6 +199,9 @@ impl Entities {
                                 tags.get_storage_by_id(storage).remove(&[entity]);
                             }
                         }
+
+                        // Update entity handle with appropriate version
+                        entity = Entity::new(entity.id(), info.ver);
 
                         // Remove components and swap the moved entity if needed
                         if let Some(moved_entity) =
