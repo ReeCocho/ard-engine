@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 
 use ard_engine::{
-    assets::prelude::*, ecs::prelude::*, game::SceneGameObject, graphics::prelude::*, math::*,
+    assets::prelude::*,
+    ecs::prelude::*,
+    game::{components::transform::Transform, SceneGameObject},
+    graphics::prelude::*,
+    math::*,
 };
 
 use crate::{
@@ -25,6 +29,16 @@ pub struct Inspector {
 }
 
 struct TransformGizmo {}
+
+#[derive(Copy, Clone)]
+pub enum GizmoAxis {
+    X,
+    Y,
+    Z,
+    XZ,
+    XY,
+    YZ,
+}
 
 /// Event that signals a new item was selected for inspection.
 #[derive(Clone, Event)]
@@ -183,6 +197,7 @@ impl View for Inspector {
                         let (x, y) = resc.input.mouse_pos();
                         let mouse_pos = Vec2::new(x as f32, y as f32);
                         self.transform_gizmo.draw(
+                            *entity,
                             resc.debug_draw,
                             mouse_pos,
                             resc.camera,
@@ -209,42 +224,21 @@ impl View for Inspector {
 impl TransformGizmo {
     pub fn draw(
         &self,
+        entity: Entity,
         drawing: &DebugDrawing,
         mouse_pos: Vec2,
-        view: &SceneViewCamera,
+        view: &mut SceneViewCamera,
         model: Mat4,
     ) {
+        // Reset active gizmo
+        view.gizmo_axis = None;
+
         // World space direction from the camera to where the screen is pointing
         let stw = view.screen_to_world(mouse_pos);
         let mouse_dir = (stw - view.position).xyz().normalize();
 
         // Compute the model matrix of the gizmo
-        let pos = model.col(3).xyz();
-
-        let scale = Vec3::new(
-            model.col(0).xyz().length() * model.col(0).x.signum(),
-            model.col(1).xyz().length() * model.col(1).y.signum(),
-            model.col(2).xyz().length() * model.col(2).z.signum(),
-        );
-
-        let rot = Mat4::from_cols(
-            if scale.x == 0.0 {
-                Vec4::X
-            } else {
-                Vec4::from((model.col(0).xyz() / scale.x, 0.0))
-            },
-            if scale.y == 0.0 {
-                Vec4::Y
-            } else {
-                Vec4::from((model.col(1).xyz() / scale.y, 0.0))
-            },
-            if scale.z == 0.0 {
-                Vec4::Z
-            } else {
-                Vec4::from((model.col(2).xyz() / scale.z, 0.0))
-            },
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        );
+        let (pos, rot, _) = crate::util::extract_transformations(model);
 
         let scale_factor = (pos - view.position).length() * GIZMO_SCALE_FACTOR;
         let translate = Mat4::from_translation(pos);
@@ -266,7 +260,8 @@ impl TransformGizmo {
             half_extents: Vec4::new(0.6, 0.08, 0.08, 1.0) * scale_factor,
         };
 
-        let color = if bounds.intersects(position, forward) {
+        let color = if view.gizmo_axis.is_none() && bounds.intersects(position, forward) {
+            view.gizmo_axis = Some((GizmoAxis::X, entity));
             Vec3::new(1.0, 0.5, 0.5)
         } else {
             Vec3::X
@@ -286,7 +281,8 @@ impl TransformGizmo {
             half_extents: Vec4::new(0.08, 0.6, 0.08, 1.0) * scale_factor,
         };
 
-        let color = if bounds.intersects(position, forward) {
+        let color = if view.gizmo_axis.is_none() && bounds.intersects(position, forward) {
+            view.gizmo_axis = Some((GizmoAxis::Y, entity));
             Vec3::new(0.7, 1.0, 0.7)
         } else {
             Vec3::Y
@@ -301,7 +297,8 @@ impl TransformGizmo {
             half_extents: Vec4::new(0.08, 0.08, 0.6, 1.0) * scale_factor,
         };
 
-        let color = if bounds.intersects(position, forward) {
+        let color = if view.gizmo_axis.is_none() && bounds.intersects(position, forward) {
+            view.gizmo_axis = Some((GizmoAxis::Z, entity));
             Vec3::new(0.5, 0.5, 1.0)
         } else {
             Vec3::Z

@@ -173,3 +173,35 @@ pub fn instantiate_model(
 
     graph_node
 }
+
+/// Extracts the translation, rotation (as a matrix), and scale from a model matrix.
+pub fn extract_transformations(model: Mat4) -> (Vec3, Mat4, Vec3) {
+    let pos = model.col(3).xyz();
+
+    let scale = Vec3::new(
+        model.col(0).xyz().length() * model.col(0).x.signum(),
+        model.col(1).xyz().length() * model.col(1).y.signum(),
+        model.col(2).xyz().length() * model.col(2).z.signum(),
+    );
+
+    let rot = Mat4::from_cols(
+        if scale.x == 0.0 {
+            Vec4::X
+        } else {
+            Vec4::from((model.col(0).xyz() / scale.x, 0.0))
+        },
+        if scale.y == 0.0 {
+            Vec4::Y
+        } else {
+            Vec4::from((model.col(1).xyz() / scale.y, 0.0))
+        },
+        if scale.z == 0.0 {
+            Vec4::Z
+        } else {
+            Vec4::from((model.col(2).xyz() / scale.z, 0.0))
+        },
+        Vec4::new(0.0, 0.0, 0.0, 1.0),
+    );
+
+    (pos, rot, scale)
+}
