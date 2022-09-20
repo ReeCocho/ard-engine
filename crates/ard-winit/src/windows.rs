@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ard_ecs::prelude::*;
 use ard_window::prelude::{WindowDescriptor, WindowMode};
 use glam::IVec2;
-use winit::{dpi::LogicalSize, event_loop::EventLoopWindowTarget};
+use winit::{dpi::LogicalSize, event_loop::EventLoopWindowTarget, window::CursorGrabMode};
 
 use crate::prelude::{Window, WindowId};
 
@@ -80,7 +80,11 @@ impl WinitWindows {
 
         let winit_window = winit_window_builder.build(event_loop).unwrap();
 
-        match winit_window.set_cursor_grab(descriptor.cursor_locked) {
+        match winit_window.set_cursor_grab(if descriptor.cursor_locked {
+            CursorGrabMode::Locked
+        } else {
+            CursorGrabMode::None
+        }) {
             Ok(_) => {}
             Err(winit::error::ExternalError::NotSupported(_)) => {}
             Err(err) => Err(err).unwrap(),
@@ -139,7 +143,9 @@ pub fn get_fitting_videomode(
         match abs_diff(a.size().width, width).cmp(&abs_diff(b.size().width, width)) {
             Equal => {
                 match abs_diff(a.size().height, height).cmp(&abs_diff(b.size().height, height)) {
-                    Equal => b.refresh_rate().cmp(&a.refresh_rate()),
+                    Equal => b
+                        .refresh_rate_millihertz()
+                        .cmp(&a.refresh_rate_millihertz()),
                     default => default,
                 }
             }
@@ -156,7 +162,9 @@ pub fn get_best_videomode(monitor: &winit::monitor::MonitorHandle) -> winit::mon
         use std::cmp::Ordering::*;
         match b.size().width.cmp(&a.size().width) {
             Equal => match b.size().height.cmp(&a.size().height) {
-                Equal => b.refresh_rate().cmp(&a.refresh_rate()),
+                Equal => b
+                    .refresh_rate_millihertz()
+                    .cmp(&a.refresh_rate_millihertz()),
                 default => default,
             },
             default => default,

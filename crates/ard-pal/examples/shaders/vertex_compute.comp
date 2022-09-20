@@ -1,0 +1,22 @@
+#version 450
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(set = 0, binding = 0) writeonly buffer VertexBuffer {
+    vec4[] vertex_elements;
+};
+
+const vec4[3] POSITIONS = vec4[](
+    vec4(-1.0, -1.0, 0.0, 1.0),
+    vec4(1.0, -1.0, 0.0, 1.0),
+    vec4(0.0, 1.0, 0.0, 1.0)
+);
+
+void main() {
+    if (gl_GlobalInvocationID.x > 2 || gl_GlobalInvocationID.y > 1 || gl_GlobalInvocationID.z > 1)
+        return;
+        
+    vertex_elements[gl_GlobalInvocationID.x] = POSITIONS[gl_GlobalInvocationID.x];
+}

@@ -121,6 +121,12 @@ pub struct Events {
     sender: Sender<Box<dyn EventExt>>,
 }
 
+impl Default for Dispatcher {
+    fn default() -> Self {
+        DispatcherBuilder::default().build()
+    }
+}
+
 impl Dispatcher {
     pub fn builder() -> DispatcherBuilder {
         DispatcherBuilder::default()

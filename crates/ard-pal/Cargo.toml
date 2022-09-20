@@ -1,0 +1,43 @@
+[package]
+name = "ard-pal"
+version = "0.1.0"
+edition = "2021"
+autoexamples = false
+build = "build.rs"
+
+[features]
+default = [ "vulkan" ]
+vulkan = [ "dep:vulkan" ]
+
+[dependencies]
+api = { path = "./api/", version = "0.1" }
+vulkan = { path = "./backends/vulkan/", version = "0.1", optional = true }
+
+[dev-dependencies]
+winit = "0.27"
+bytemuck = "1"
+ordered-float = "3"
+glam = { version = "0.21", features = [ "bytemuck" ] }
+wgpu = { version = "0.13", features = [ "spirv" ] }
+futures = "0.3"
+
+[profile.release]
+debug = true
+
+[[example]]
+name = "blank_window"
+
+[[example]]
+name = "complex"
+
+[[example]]
+name = "triangle"
+
+[[example]]
+name = "uniform_buffer"
+
+[[example]]
+name = "textured_cube"
+
+[[example]]
+name = "performance"

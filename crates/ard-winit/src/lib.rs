@@ -16,6 +16,8 @@ use winit::{
     dpi::{LogicalPosition, Position},
     event::{Event, TouchPhase, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
+    platform::run_return::EventLoopExtRunReturn,
+    window::CursorGrabMode,
 };
 
 /// Plugin that adds winit integration
@@ -34,7 +36,7 @@ impl Plugin for WinitPlugin {
 }
 
 fn winit_runner(mut app: App) {
-    let event_loop = EventLoop::new();
+    let mut event_loop = EventLoop::new();
 
     // Create initial windows if requested
     {
@@ -50,7 +52,7 @@ fn winit_runner(mut app: App) {
 
     // Begin main loop
     let mut last = Instant::now();
-    event_loop.run(move |event, event_loop, control_flow| {
+    event_loop.run_return(|event, event_loop, control_flow| {
         *control_flow = ControlFlow::Poll;
 
         let mut windows = app.resources.get_mut::<Windows>().unwrap();
@@ -191,9 +193,17 @@ fn winit_runner(mut app: App) {
                                 WindowCommand::SetDecorations { decorations } => {
                                     winit_window.set_decorations(decorations)
                                 }
-                                WindowCommand::SetCursorLockMode { locked } => {
-                                    winit_window.set_cursor_grab(locked).unwrap()
-                                }
+                                WindowCommand::SetCursorLockMode { locked } => winit_window
+                                    .set_cursor_grab(if locked {
+                                        if cfg!(target_os = "macos") {
+                                            CursorGrabMode::Locked
+                                        } else {
+                                            CursorGrabMode::Confined
+                                        }
+                                    } else {
+                                        CursorGrabMode::None
+                                    })
+                                    .unwrap(),
                                 WindowCommand::SetCursorVisibility { visible } => {
                                     winit_window.set_cursor_visible(visible)
                                 }

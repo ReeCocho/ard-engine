@@ -1,0 +1,24 @@
+[package]
+name = "ard-render"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ard-core = { version = "0.1", path = "../ard-core" }
+ard-window = { version = "0.1", path = "../ard-window" }
+ard-winit = { version = "0.1", path = "../ard-winit" }
+ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-math = { version = "0.1", path = "../ard-math" }
+ard-pal = { version = "0.1", path = "../ard-pal" }
+ard-log = { version = "0.1", path = "../ard-log" }
+raw-window-handle = "0.4.2"
+winit = "0.27"
+bytemuck = "1.7"
+crossbeam-channel = "0.5"
+crossbeam-utils = "0.8"
+
+[features]
+default = [ "vulkan" ]
+vulkan = [ "ard-pal/vulkan" ]
