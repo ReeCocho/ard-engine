@@ -5,10 +5,16 @@ use crate::{
     descriptor_set::DescriptorSet,
     graphics_pipeline::GraphicsPipeline,
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
-    texture::Texture,
-    types::{IndexType, QueueType, ShaderStage},
+    surface::SurfaceImage,
+    texture::{Blit, Texture},
+    types::{Filter, IndexType, QueueType, ShaderStage},
     Backend,
 };
+
+pub enum BlitDestination<'a, B: Backend> {
+    Texture(&'a Texture<B>),
+    SurfaceImage(&'a SurfaceImage<B>),
+}
 
 pub struct CopyBufferToBuffer<'a, B: Backend> {
     /// The source buffer to read from.
@@ -57,6 +63,10 @@ pub enum Command<'a, B: Backend> {
     BindGraphicsPipeline(GraphicsPipeline<B>),
     BindComputePipeline(ComputePipeline<B>),
     Dispatch(u32, u32, u32),
+    PushConstants {
+        stage: ShaderStage,
+        data: Vec<u8>,
+    },
     BindDescriptorSets {
         sets: Vec<&'a DescriptorSet<B>>,
         first: usize,
@@ -102,6 +112,12 @@ pub enum Command<'a, B: Backend> {
         buffer: &'a Buffer<B>,
         texture: &'a Texture<B>,
         copy: BufferTextureCopy,
+    },
+    BlitTexture {
+        src: &'a Texture<B>,
+        dst: BlitDestination<'a, B>,
+        blit: Blit,
+        filter: Filter,
     },
 }
 
@@ -244,6 +260,41 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             buffer,
             texture,
             copy,
+        });
+    }
+
+    /// Copies a region of one texture into another, possibly performing format conversion,
+    /// scaling, and filtering.
+    ///
+    /// # Arguments
+    /// - `src` - Source texture.
+    /// - `dst` - Destination texture or surface image.
+    /// - `blit` - The blit to perform.
+    /// - `filter` - Filtering type when the blit requires scaling.
+    ///
+    /// # Panics
+    /// - If the queue type this command buffer was created with does not support graphics
+    /// commands.
+    #[inline(always)]
+    pub fn blit_texture(
+        &mut self,
+        src: &'a Texture<B>,
+        dst: BlitDestination<'a, B>,
+        blit: Blit,
+        filter: Filter,
+    ) {
+        assert_eq!(
+            self.queue_ty,
+            QueueType::Main,
+            "queue `{:?}` does not support render passes",
+            self.queue_ty
+        );
+
+        self.commands.push(Command::BlitTexture {
+            src,
+            dst,
+            blit,
+            filter,
         });
     }
 }

@@ -306,12 +306,10 @@ impl DescriptorSet {
 
 impl Drop for DescriptorSet {
     fn drop(&mut self) {
-        self.on_drop
-            .send(Garbage::DescriptorSet {
-                set: self.set,
-                layout: self.layout,
-                bindings: std::mem::take(&mut self.bound),
-            })
-            .unwrap();
+        let _ = self.on_drop.send(Garbage::DescriptorSet {
+            set: self.set,
+            layout: self.layout,
+            bindings: std::mem::take(&mut self.bound),
+        });
     }
 }

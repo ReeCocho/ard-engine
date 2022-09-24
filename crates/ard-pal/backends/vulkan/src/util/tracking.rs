@@ -1,9 +1,9 @@
 use api::{
     buffer::Buffer,
-    command_buffer::{BufferTextureCopy, Command, CopyBufferToBuffer},
+    command_buffer::{BlitDestination, BufferTextureCopy, Command, CopyBufferToBuffer},
     descriptor_set::DescriptorSet,
     render_pass::{ColorAttachmentSource, RenderPassDescriptor},
-    texture::Texture,
+    texture::{Blit, Texture},
 };
 
 use super::{
@@ -45,6 +45,7 @@ pub(crate) unsafe fn track_resources(mut state: TrackState) {
             texture,
             copy,
         } => track_texture_to_buffer_copy(&mut state, buffer, texture, copy),
+        Command::BlitTexture { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
         // All other commands do not need state tracking
         _ => {}
     }
@@ -159,6 +160,23 @@ unsafe fn track_render_pass(
             }
             Command::BindDescriptorSets { sets, .. } => {
                 track_descriptor_sets(sets, &mut scope);
+            }
+            Command::DrawIndexedIndirect {
+                buffer,
+                array_element,
+                ..
+            } => {
+                scope.use_resource(
+                    SubResource::Buffer {
+                        buffer: buffer.internal().buffer,
+                        array_elem: *array_element as u32,
+                    },
+                    SubResourceUsage {
+                        access: vk::AccessFlags::INDIRECT_COMMAND_READ,
+                        stage: vk::PipelineStageFlags::DRAW_INDIRECT,
+                        layout: vk::ImageLayout::UNDEFINED,
+                    },
+                );
             }
             Command::EndRenderPass => break,
             _ => {}
@@ -349,6 +367,72 @@ unsafe fn track_texture_to_buffer_copy(
             access: vk::AccessFlags::TRANSFER_READ,
             stage: vk::PipelineStageFlags::TRANSFER,
             layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        },
+    );
+
+    if let Some(barrier) = state.pipeline_tracker.submit(scope) {
+        barrier.execute(state.device, state.command_buffer);
+    }
+}
+
+unsafe fn track_blit(
+    state: &mut TrackState,
+    src: &Texture<crate::VulkanBackend>,
+    dst: &BlitDestination<crate::VulkanBackend>,
+    blit: &Blit,
+) {
+    // Barrier check
+    let src = src.internal();
+    let (dst_img, dst_aspect_flags) = match dst {
+        BlitDestination::Texture(tex) => {
+            let internal = tex.internal();
+            (internal.image, internal.aspect_flags)
+        }
+        BlitDestination::SurfaceImage(si) => {
+            let internal = si.internal();
+            let semaphores = internal.semaphores();
+
+            // Also handle semaphores of the surface image
+            state
+                .semaphores
+                .register_signal(semaphores.presentable, None);
+            state.semaphores.register_wait(
+                semaphores.available,
+                WaitInfo {
+                    value: None,
+                    stage: vk::PipelineStageFlags::TRANSFER,
+                },
+            );
+
+            (internal.image(), vk::ImageAspectFlags::COLOR)
+        }
+    };
+
+    let mut scope = UsageScope::default();
+    scope.use_resource(
+        SubResource::Texture {
+            texture: src.image,
+            aspect_mask: src.aspect_flags,
+            array_elem: blit.src_array_element as u32,
+            mip_level: blit.src_mip as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_READ,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        },
+    );
+    scope.use_resource(
+        SubResource::Texture {
+            texture: dst_img,
+            aspect_mask: dst_aspect_flags,
+            array_elem: blit.dst_array_element as u32,
+            mip_level: blit.dst_mip as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_WRITE,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         },
     );
 

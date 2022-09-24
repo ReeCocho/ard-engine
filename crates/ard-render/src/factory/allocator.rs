@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::renderer::FRAMES_IN_FLIGHT;
+use crate::shader_constants::FRAMES_IN_FLIGHT;
 
 pub(crate) struct ResourceAllocator<T> {
     max: usize,
@@ -19,7 +19,7 @@ pub(crate) struct ResourceAllocator<T> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct ResourceId(usize);
+pub(crate) struct ResourceId(pub(crate) usize);
 
 #[derive(Clone)]
 pub(crate) struct EscapeHandle(Arc<EscapeHandleInner>);
@@ -41,6 +41,16 @@ impl<T> ResourceAllocator<T> {
             dropped,
             pending_drop: Default::default(),
         }
+    }
+
+    #[inline(always)]
+    pub fn all(&self) -> &[Option<T>] {
+        &self.resources
+    }
+
+    #[inline(always)]
+    pub fn all_mut(&mut self) -> &mut [Option<T>] {
+        &mut self.resources
     }
 
     pub fn drop_pending(

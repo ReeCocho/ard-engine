@@ -19,6 +19,14 @@ impl<'a, B: Backend> ComputePass<'a, B> {
         self.commands.push(Command::BindComputePipeline(pipeline));
     }
 
+    #[inline]
+    pub fn push_constants(&mut self, data: &[u8]) {
+        self.commands.push(Command::PushConstants {
+            data: Vec::from(data),
+            stage: ShaderStage::Compute,
+        });
+    }
+
     /// Binds one or more descriptor sets to the scope.
     ///
     /// # Arguments

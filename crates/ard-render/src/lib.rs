@@ -1,7 +1,10 @@
+pub mod camera;
 pub mod factory;
 pub mod material;
 pub mod mesh;
 pub mod renderer;
+pub mod shader_constants;
+pub mod texture;
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;

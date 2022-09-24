@@ -9,6 +9,8 @@ pub struct ComputePipelineCreateInfo<B: Backend> {
     pub module: Shader<B>,
     /// The size of each dispatched work group.
     pub work_group_size: (u32, u32, u32),
+    /// Number of bytes to use for push constants.
+    pub push_constants_size: Option<u32>,
     /// The backend *should* use the provided debug name for easy identification.
     pub debug_name: Option<String>,
 }

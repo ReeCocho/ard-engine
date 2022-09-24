@@ -37,6 +37,18 @@ pub struct Sampler {
     pub unnormalize_coords: bool,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Blit {
+    pub src_min: (u32, u32, u32),
+    pub src_max: (u32, u32, u32),
+    pub src_mip: usize,
+    pub src_array_element: usize,
+    pub dst_min: (u32, u32, u32),
+    pub dst_max: (u32, u32, u32),
+    pub dst_mip: usize,
+    pub dst_array_element: usize,
+}
+
 #[derive(Debug, Error)]
 pub enum TextureCreateError {
     #[error("an error has occured: {0}")]

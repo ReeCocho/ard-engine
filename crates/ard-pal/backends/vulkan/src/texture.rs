@@ -171,18 +171,21 @@ impl Texture {
             mip_count: create_info.mip_levels as u32,
         })
     }
+
+    #[inline(always)]
+    pub(crate) fn get_view(&self, array_elem: usize, mip: usize) -> vk::ImageView {
+        self.views[(array_elem * self.mip_count as usize) + mip]
+    }
 }
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        self.on_drop
-            .send(Garbage::Texture {
-                image: self.image,
-                views: std::mem::take(&mut self.views),
-                allocation: unsafe { ManuallyDrop::take(&mut self.block) },
-                ref_counter: self.ref_counter.clone(),
-            })
-            .unwrap();
+        let _ = self.on_drop.send(Garbage::Texture {
+            image: self.image,
+            views: std::mem::take(&mut self.views),
+            allocation: unsafe { ManuallyDrop::take(&mut self.block) },
+            ref_counter: self.ref_counter.clone(),
+        });
     }
 }
 

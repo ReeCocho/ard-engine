@@ -90,7 +90,7 @@ impl VertexBuffers {
             AttributeType::Position,
         )];
 
-        if layout.normals {
+        if layout.contains(VertexLayout::NORMAL) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -105,7 +105,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.tangents {
+        if layout.contains(VertexLayout::TANGENT) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -120,7 +120,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.colors {
+        if layout.contains(VertexLayout::COLOR) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -135,7 +135,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.uv0 {
+        if layout.contains(VertexLayout::UV0) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -150,7 +150,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.uv1 {
+        if layout.contains(VertexLayout::UV1) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -165,7 +165,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.uv2 {
+        if layout.contains(VertexLayout::UV2) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -180,7 +180,7 @@ impl VertexBuffers {
             ));
         }
 
-        if layout.uv3 {
+        if layout.contains(VertexLayout::UV3) {
             buffers.push((
                 BufferArrayAllocator::new(
                     ctx.clone(),
@@ -207,37 +207,37 @@ impl VertexBuffers {
             match *id {
                 AttributeType::Position => {}
                 AttributeType::Normal => {
-                    if !target_layout.normals {
+                    if !target_layout.contains(VertexLayout::NORMAL) {
                         continue;
                     }
                 }
                 AttributeType::Tangent => {
-                    if !target_layout.tangents {
+                    if !target_layout.contains(VertexLayout::TANGENT) {
                         continue;
                     }
                 }
                 AttributeType::Color => {
-                    if !target_layout.colors {
+                    if !target_layout.contains(VertexLayout::COLOR) {
                         continue;
                     }
                 }
                 AttributeType::Uv0 => {
-                    if !target_layout.uv0 {
+                    if !target_layout.contains(VertexLayout::UV0) {
                         continue;
                     }
                 }
                 AttributeType::Uv1 => {
-                    if !target_layout.uv1 {
+                    if !target_layout.contains(VertexLayout::UV1) {
                         continue;
                     }
                 }
                 AttributeType::Uv2 => {
-                    if !target_layout.uv2 {
+                    if !target_layout.contains(VertexLayout::UV2) {
                         continue;
                     }
                 }
                 AttributeType::Uv3 => {
-                    if !target_layout.uv3 {
+                    if !target_layout.contains(VertexLayout::UV3) {
                         continue;
                     }
                 }
@@ -487,18 +487,18 @@ impl BufferArrayAllocator {
         .unwrap();
 
         // Record copy command
+        let mut commands = ctx.transfer().command_buffer();
+        commands.copy_buffer_to_buffer(CopyBufferToBuffer {
+            src: &self.buffer,
+            src_array_element: 0,
+            src_offset: 0,
+            dst: &new_buffer,
+            dst_array_element: 0,
+            dst_offset: 0,
+            len: self.buffer.size(),
+        });
         ctx.transfer()
-            .submit(Some("resize_vertex_buffer"), |commands| {
-                commands.copy_buffer_to_buffer(CopyBufferToBuffer {
-                    src: &self.buffer,
-                    src_array_element: 0,
-                    src_offset: 0,
-                    dst: &new_buffer,
-                    dst_array_element: 0,
-                    dst_offset: 0,
-                    len: self.buffer.size(),
-                });
-            });
+            .submit(Some("resize_vertex_buffer"), commands);
 
         // Swap old and new buffer
         self.buffer = new_buffer;

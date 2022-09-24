@@ -1,6 +1,7 @@
 use ard_log::warn;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
+use bitflags::bitflags;
 
 use crate::factory::{
     allocator::{EscapeHandle, ResourceId},
@@ -9,7 +10,7 @@ use crate::factory::{
 
 pub struct Mesh {
     pub(crate) id: ResourceId,
-    pub(crate) layout_key: VertexLayoutKey,
+    pub(crate) layout: VertexLayout,
     pub(crate) escaper: EscapeHandle,
 }
 
@@ -24,21 +25,19 @@ pub(crate) struct MeshInner {
     pub ready: bool,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct VertexLayout {
-    pub normals: bool,
-    pub tangents: bool,
-    pub colors: bool,
-    pub uv0: bool,
-    pub uv1: bool,
-    pub uv2: bool,
-    pub uv3: bool,
+bitflags! {
+    pub struct VertexLayout: u8 {
+        const NORMAL    = 0b0000_0001;
+        const TANGENT   = 0b0000_0010;
+        const COLOR     = 0b0000_0100;
+        const UV0       = 0b0000_1000;
+        const UV1       = 0b0001_0000;
+        const UV2       = 0b0010_0000;
+        const UV3       = 0b0100_0000;
+    }
 }
 
-/// Type used to pack the flags in a vertex layout into a single value.
-pub(crate) type VertexLayoutKey = u8;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AttributeType {
     Position,
     Normal,
@@ -248,15 +247,29 @@ impl<'a> MeshCreateInfo<'a> {
 
     #[inline(always)]
     pub fn vertex_layout(&self) -> VertexLayout {
-        VertexLayout {
-            normals: self.normals.is_some(),
-            tangents: self.tangents.is_some(),
-            colors: self.colors.is_some(),
-            uv0: self.uv0.is_some(),
-            uv1: self.uv1.is_some(),
-            uv2: self.uv2.is_some(),
-            uv3: self.uv3.is_some(),
+        let mut layout = VertexLayout::empty();
+        if self.normals.is_some() {
+            layout |= VertexLayout::NORMAL;
         }
+        if self.tangents.is_some() {
+            layout |= VertexLayout::TANGENT;
+        }
+        if self.colors.is_some() {
+            layout |= VertexLayout::COLOR;
+        }
+        if self.uv0.is_some() {
+            layout |= VertexLayout::UV0;
+        }
+        if self.uv1.is_some() {
+            layout |= VertexLayout::UV1;
+        }
+        if self.uv2.is_some() {
+            layout |= VertexLayout::UV2;
+        }
+        if self.uv3.is_some() {
+            layout |= VertexLayout::UV3;
+        }
+        layout
     }
 }
 
@@ -264,13 +277,7 @@ impl VertexLayout {
     /// Returns `true` if this vertex layout contains a subset of the vertex components of `other`.
     #[inline(always)]
     pub fn subset_of(&self, other: &VertexLayout) -> bool {
-        (!self.normals || other.normals)
-            && (!self.tangents || other.tangents)
-            && (!self.colors || other.colors)
-            && (!self.uv0 || other.uv0)
-            && (!self.uv1 || other.uv1)
-            && (!self.uv2 || other.uv2)
-            && (!self.uv3 || other.uv3)
+        (*self | *other) == *other
     }
 
     pub fn vertex_input_state(&self) -> VertexInputState {
@@ -292,139 +299,105 @@ impl VertexLayout {
             offset: 0,
         });
 
-        if self.normals {
+        if self.contains(VertexLayout::NORMAL) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec4>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyzwF32,
                 offset: 0,
             });
         }
 
-        if self.tangents {
+        if self.contains(VertexLayout::TANGENT) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec4>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyzwF32,
                 offset: 0,
             });
         }
 
-        if self.colors {
+        if self.contains(VertexLayout::COLOR) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec4>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyzwF32,
                 offset: 0,
             });
         }
 
-        if self.uv0 {
+        if self.contains(VertexLayout::UV0) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
         }
 
-        if self.uv1 {
+        if self.contains(VertexLayout::UV1) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
         }
 
-        if self.uv2 {
+        if self.contains(VertexLayout::UV2) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
         }
 
-        if self.uv3 {
+        if self.contains(VertexLayout::UV3) {
             state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32 - 1,
+                binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32 - 1,
-                location: state.attributes.len() as u32 - 1,
+                binding: state.attributes.len() as u32,
+                location: state.attributes.len() as u32,
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
         }
 
         state
-    }
-
-    #[inline(always)]
-    pub(crate) fn make_layout_key(&self) -> VertexLayoutKey {
-        let mut key = 0;
-        if self.normals {
-            key |= 1 << 0;
-        }
-
-        if self.tangents {
-            key |= 1 << 1;
-        }
-
-        if self.colors {
-            key |= 1 << 2;
-        }
-
-        if self.uv0 {
-            key |= 1 << 3;
-        }
-
-        if self.uv1 {
-            key |= 1 << 4;
-        }
-
-        if self.uv2 {
-            key |= 1 << 5;
-        }
-
-        if self.uv3 {
-            key |= 1 << 6;
-        }
-
-        key
     }
 }
 

@@ -4,7 +4,7 @@ use ard_pal::prelude::*;
 
 use crate::{
     material::{Material, MaterialInstance, MaterialInstanceInner},
-    renderer::FRAMES_IN_FLIGHT,
+    shader_constants::{FRAMES_IN_FLIGHT, MAX_TEXTURES_PER_MATERIAL},
 };
 
 use super::allocator::ResourceAllocator;
@@ -18,6 +18,9 @@ pub(crate) struct MaterialBuffers {
     ctx: Context,
     layout: DescriptorSetLayout,
     buffers: HashMap<u64, MaterialBuffer>,
+    /// UBO for material textures. Max number of textures is allocated per material, regardless
+    /// of how many are actually used.
+    texture_arrays: MaterialBuffer,
     sets: HashMap<u64, Vec<MaterialSet>>,
 }
 
@@ -36,6 +39,7 @@ pub(crate) struct MaterialBlock(usize);
 struct MaterialSet {
     set: DescriptorSet,
     last_buffer_size: u64,
+    last_texture_size: u64,
 }
 
 impl MaterialBuffers {
@@ -43,19 +47,35 @@ impl MaterialBuffers {
         let layout = DescriptorSetLayout::new(
             ctx.clone(),
             DescriptorSetLayoutCreateInfo {
-                bindings: vec![DescriptorBinding {
-                    binding: MATERIAL_BINDING,
-                    ty: DescriptorType::StorageBuffer(AccessType::Read),
-                    count: 1,
-                    stage: ShaderStage::AllGraphics,
-                }],
+                bindings: vec![
+                    // Material data
+                    DescriptorBinding {
+                        binding: MATERIAL_BINDING,
+                        ty: DescriptorType::StorageBuffer(AccessType::Read),
+                        count: 1,
+                        stage: ShaderStage::AllGraphics,
+                    },
+                    // Textures
+                    DescriptorBinding {
+                        binding: TEXTURE_BINDING,
+                        ty: DescriptorType::StorageBuffer(AccessType::Read),
+                        count: 1,
+                        stage: ShaderStage::AllGraphics,
+                    },
+                ],
             },
         )
         .unwrap();
 
+        let texture_arrays = MaterialBuffer::new(
+            &ctx,
+            (std::mem::size_of::<u32>() * MAX_TEXTURES_PER_MATERIAL) as u64,
+        );
+
         Self {
             ctx,
             layout,
+            texture_arrays,
             buffers: HashMap::default(),
             sets: HashMap::default(),
         }
@@ -78,9 +98,19 @@ impl MaterialBuffers {
         for buffer in self.buffers.values_mut() {
             buffer.flush(&self.ctx, materials, frame);
         }
+
+        self.texture_arrays.flush(&self.ctx, materials, frame);
     }
 
-    pub fn get_set(&mut self, data_size: u64, frame: usize) -> &DescriptorSet {
+    #[inline(always)]
+    pub fn get_set(&self, data_size: u64, frame: usize) -> Option<&DescriptorSet> {
+        match self.sets.get(&data_size) {
+            Some(sets) => Some(&sets[frame].set),
+            None => None,
+        }
+    }
+
+    pub fn get_set_mut(&mut self, data_size: u64, frame: usize) -> &DescriptorSet {
         // If the set doesn't already exist, create it
         if let Entry::Vacant(entry) = self.sets.entry(data_size) {
             let mut sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
@@ -95,12 +125,14 @@ impl MaterialBuffers {
                     )
                     .unwrap(),
                     last_buffer_size: 0,
+                    last_texture_size: 0,
                 });
             }
             entry.insert(sets);
         }
 
         let set = self.sets.get_mut(&data_size).unwrap();
+        let textures = &self.texture_arrays.buffer;
 
         // Rebind UBO if needed
         if data_size != 0 {
@@ -108,6 +140,7 @@ impl MaterialBuffers {
                 .buffers
                 .entry(data_size)
                 .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size));
+
             if set[frame].last_buffer_size != buffer.buffer.size() {
                 set[frame].last_buffer_size = buffer.buffer.size();
                 set[frame].set.update(&[DescriptorSetUpdate {
@@ -115,6 +148,18 @@ impl MaterialBuffers {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &buffer.buffer,
+                        array_element: frame,
+                    },
+                }]);
+            }
+
+            if set[frame].last_texture_size != textures.size() {
+                set[frame].last_texture_size = textures.size();
+                set[frame].set.update(&[DescriptorSetUpdate {
+                    binding: TEXTURE_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &textures,
                         array_element: frame,
                     },
                 }]);
@@ -134,8 +179,18 @@ impl MaterialBuffers {
     }
 
     #[inline(always)]
+    pub fn allocate_textures(&mut self) -> MaterialBlock {
+        self.texture_arrays.allocate()
+    }
+
+    #[inline(always)]
     pub fn free_ubo(&mut self, data_size: u64, block: MaterialBlock) {
         self.buffers.get_mut(&data_size).unwrap().free(block);
+    }
+
+    #[inline(always)]
+    pub fn free_textures(&mut self, block: MaterialBlock) {
+        self.texture_arrays.free(block)
     }
 }
 
@@ -216,7 +271,7 @@ impl MaterialBuffer {
             for frame in 0..FRAMES_IN_FLIGHT {
                 let old_view = self.buffer.read(frame).unwrap();
                 let mut new_view = new_buffer.write(frame).unwrap();
-                new_view.as_slice_mut().copy_from_slice(old_view.as_slice());
+                new_view.copy_from_slice(&old_view);
             }
 
             // Swap the old buffer with the new
@@ -226,11 +281,24 @@ impl MaterialBuffer {
 
         // Flush dirty values
         let mut view = self.buffer.write(frame).unwrap();
-        let slice = view.as_slice_mut();
         for dirty_mat in self.dirty[frame].drain(..) {
             let material = materials.get(dirty_mat.id).unwrap();
             let offset = material.material_block.unwrap().0 * self.data_size as usize;
-            slice[offset..].copy_from_slice(&material.data);
+            view[offset..].copy_from_slice(&material.data);
         }
+    }
+}
+
+impl From<MaterialBlock> for usize {
+    #[inline(always)]
+    fn from(block: MaterialBlock) -> Self {
+        block.0
+    }
+}
+
+impl From<MaterialBlock> for u32 {
+    #[inline(always)]
+    fn from(block: MaterialBlock) -> Self {
+        block.0 as u32
     }
 }

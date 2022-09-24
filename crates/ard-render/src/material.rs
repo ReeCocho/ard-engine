@@ -39,11 +39,22 @@ pub struct MaterialInstance {
 
 pub(crate) struct MaterialInner {
     pub pipelines: Pipelines,
+    pub data_size: u64,
+    pub texture_count: usize,
 }
 
 pub(crate) struct MaterialInstanceInner {
     pub data: Vec<u8>,
+    pub textures: Vec<Option<Texture>>,
     pub material_block: Option<MaterialBlock>,
+    pub texture_block: Option<MaterialBlock>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum PipelineType {
+    DepthOnly,
+    Opaque,
+    Shadow,
 }
 
 pub(crate) struct Pipelines {
@@ -63,7 +74,11 @@ impl MaterialInner {
                     vertex: create_info.vertex_shader.clone(),
                     fragment: None,
                 },
-                layouts: vec![layouts.global.clone(), layouts.materials.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.materials.clone(),
+                ],
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
@@ -79,6 +94,7 @@ impl MaterialInner {
                     max_depth: 1.0,
                 }),
                 color_blend: None,
+                push_constants_size: None,
                 debug_name: None,
             },
         )
@@ -91,7 +107,11 @@ impl MaterialInner {
                     vertex: create_info.vertex_shader.clone(),
                     fragment: None,
                 },
-                layouts: vec![layouts.global.clone(), layouts.materials.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.materials.clone(),
+                ],
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
@@ -107,6 +127,7 @@ impl MaterialInner {
                     max_depth: 1.0,
                 }),
                 color_blend: None,
+                push_constants_size: None,
                 debug_name: None,
             },
         )
@@ -119,7 +140,11 @@ impl MaterialInner {
                     vertex: create_info.vertex_shader.clone(),
                     fragment: Some(create_info.fragment_shader.clone()),
                 },
-                layouts: vec![layouts.global.clone(), layouts.materials.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.materials.clone(),
+                ],
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
@@ -129,17 +154,22 @@ impl MaterialInner {
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,
                     depth_test: true,
-                    depth_write: true,
-                    depth_compare: CompareOp::Less,
+                    depth_write: false,
+                    depth_compare: CompareOp::Equal,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }),
                 color_blend: Some(ColorBlendState {
                     attachments: vec![ColorBlendAttachment {
                         blend: false,
+                        write_mask: ColorComponents::R
+                            | ColorComponents::G
+                            | ColorComponents::B
+                            | ColorComponents::A,
                         ..Default::default()
                     }],
                 }),
+                push_constants_size: None,
                 debug_name: None,
             },
         )
@@ -151,6 +181,8 @@ impl MaterialInner {
                 opaque,
                 shadow,
             },
+            data_size: create_info.data_size,
+            texture_count: create_info.texture_count,
         }
     }
 }
@@ -166,9 +198,32 @@ impl MaterialInstanceInner {
             None
         };
 
+        let (texture_block, textures) = if create_info.material.texture_count > 0 {
+            let mut textures = Vec::with_capacity(create_info.material.texture_count);
+            for _ in 0..create_info.material.texture_count {
+                textures.push(None);
+            }
+            (Some(material_buffers.allocate_textures()), textures)
+        } else {
+            (None, Vec::default())
+        };
+
         MaterialInstanceInner {
             data: vec![0; create_info.material.data_size as usize],
+            textures,
             material_block,
+            texture_block,
+        }
+    }
+}
+
+impl Pipelines {
+    #[inline(always)]
+    pub fn get(&self, ty: PipelineType) -> &GraphicsPipeline {
+        match ty {
+            PipelineType::DepthOnly => &self.depth_only,
+            PipelineType::Opaque => &self.opaque,
+            PipelineType::Shadow => &self.shadow,
         }
     }
 }

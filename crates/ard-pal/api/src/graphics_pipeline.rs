@@ -110,6 +110,7 @@ pub struct GraphicsPipelineCreateInfo<B: Backend> {
     pub rasterization: RasterizationState,
     pub depth_stencil: Option<DepthStencilState>,
     pub color_blend: Option<ColorBlendState>,
+    pub push_constants_size: Option<u32>,
     /// The backend *should* use the provided debug name for easy identification.
     pub debug_name: Option<String>,
 }

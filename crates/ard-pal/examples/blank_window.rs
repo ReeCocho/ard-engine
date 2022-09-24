@@ -66,27 +66,30 @@ fn main() {
                 let surface_image = surface.acquire_image().unwrap();
 
                 // Then we acquire a command buffer from our main queue which supports graphics
-                context.main().submit(Some("main_pass"), |command_buffer| {
-                    // Begin a render pass to clear the surface image
-                    command_buffer.render_pass(
-                        RenderPassDescriptor {
-                            color_attachments: vec![ColorAttachment {
-                                // The source of our image is from a surface (as opposed to a texture)
-                                source: ColorAttachmentSource::SurfaceImage(&surface_image),
-                                // We clear the image with black
-                                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
-                                // And store the image instead of discarding the contents
-                                store_op: StoreOp::Store,
-                            }],
-                            depth_stencil_attachment: None,
-                        },
-                        |_pass| {
-                            // Here is where you would put rendering commands if you wanted to draw
-                            // objects to the screen. We aren't doing that here. If you'd like an
-                            // example, refer to `triangle.rs`.
-                        },
-                    );
-                });
+                let mut command_buffer = context.main().command_buffer();
+
+                // Begin a render pass to clear the surface image
+                command_buffer.render_pass(
+                    RenderPassDescriptor {
+                        color_attachments: vec![ColorAttachment {
+                            // The source of our image is from a surface (as opposed to a texture)
+                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            // We clear the image with black
+                            load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                            // And store the image instead of discarding the contents
+                            store_op: StoreOp::Store,
+                        }],
+                        depth_stencil_attachment: None,
+                    },
+                    |_pass| {
+                        // Here is where you would put rendering commands if you wanted to draw
+                        // objects to the screen. We aren't doing that here. If you'd like an
+                        // example, refer to `triangle.rs`.
+                    },
+                );
+
+                // Submit the commands
+                context.main().submit(Some("main_pass"), command_buffer);
 
                 // After we're done rendering, we must submit the surface image for presentation
                 match context.present().present(&surface, surface_image).unwrap() {

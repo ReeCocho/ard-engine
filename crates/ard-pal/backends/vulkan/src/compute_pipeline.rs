@@ -19,6 +19,14 @@ impl ComputePipeline {
         garbage: Sender<Garbage>,
         create_info: ComputePipelineCreateInfo<crate::VulkanBackend>,
     ) -> Result<Self, ComputePipelineCreateError> {
+        let push_constant_ranges = create_info.push_constants_size.map(|size| {
+            [vk::PushConstantRange {
+                stage_flags: vk::ShaderStageFlags::COMPUTE,
+                offset: 0,
+                size,
+            }]
+        });
+
         // Create the layout
         let mut layouts = Vec::with_capacity(create_info.layouts.len());
         for layout in &create_info.layouts {
@@ -26,6 +34,10 @@ impl ComputePipeline {
         }
         let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
             .set_layouts(&layouts)
+            .push_constant_ranges(match &push_constant_ranges {
+                Some(range) => range,
+                None => &[],
+            })
             .build();
         let layout = device
             .create_pipeline_layout(&layout_create_info, None)
@@ -108,9 +120,7 @@ impl ComputePipeline {
 
 impl Drop for ComputePipeline {
     fn drop(&mut self) {
-        self.garbage.send(Garbage::Pipeline(self.pipeline)).unwrap();
-        self.garbage
-            .send(Garbage::PipelineLayout(self.layout))
-            .unwrap();
+        let _ = self.garbage.send(Garbage::Pipeline(self.pipeline));
+        let _ = self.garbage.send(Garbage::PipelineLayout(self.layout));
     }
 }

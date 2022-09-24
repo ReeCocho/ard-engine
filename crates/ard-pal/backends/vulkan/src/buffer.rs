@@ -165,13 +165,11 @@ impl Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        self.on_drop
-            .send(Garbage::Buffer {
-                buffer: self.buffer,
-                allocation: unsafe { ManuallyDrop::take(&mut self.block) },
-                ref_counter: self.ref_counter.clone(),
-            })
-            .unwrap();
+        let _ = self.on_drop.send(Garbage::Buffer {
+            buffer: self.buffer,
+            allocation: unsafe { ManuallyDrop::take(&mut self.block) },
+            ref_counter: self.ref_counter.clone(),
+        });
     }
 }
 

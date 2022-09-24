@@ -33,6 +33,14 @@ fn main() {
         Path::new("./examples/shaders/triangle.vert"),
         Path::new("./examples/assets/example/"),
     );
+    compile(
+        Path::new("./examples/shaders/new_rend.frag"),
+        Path::new("./examples/assets/example/"),
+    );
+    compile(
+        Path::new("./examples/shaders/new_rend.vert"),
+        Path::new("./examples/assets/example/"),
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path) {

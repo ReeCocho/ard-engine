@@ -17,6 +17,14 @@ impl GraphicsPipeline {
         garbage: Sender<Garbage>,
         descriptor: GraphicsPipelineCreateInfo<crate::VulkanBackend>,
     ) -> Self {
+        let push_constant_ranges = descriptor.push_constants_size.map(|size| {
+            [vk::PushConstantRange {
+                stage_flags: vk::ShaderStageFlags::ALL_GRAPHICS,
+                offset: 0,
+                size,
+            }]
+        });
+
         // Create the layout
         let mut layouts = Vec::with_capacity(descriptor.layouts.len());
         for layout in &descriptor.layouts {
@@ -24,6 +32,10 @@ impl GraphicsPipeline {
         }
         let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
             .set_layouts(&layouts)
+            .push_constant_ranges(match &push_constant_ranges {
+                Some(range) => range,
+                None => &[],
+            })
             .build();
         let layout = device
             .create_pipeline_layout(&layout_create_info, None)
@@ -258,8 +270,6 @@ impl GraphicsPipeline {
 
 impl Drop for GraphicsPipeline {
     fn drop(&mut self) {
-        self.garbage
-            .send(Garbage::PipelineLayout(self.layout))
-            .unwrap();
+        let _ = self.garbage.send(Garbage::PipelineLayout(self.layout));
     }
 }

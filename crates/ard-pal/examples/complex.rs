@@ -143,6 +143,7 @@ fn main() {
             layouts: vec![compute_layout.clone()],
             module: vertex_compute_shader,
             work_group_size: (3, 1, 1),
+            push_constants_size: None,
             debug_name: Some(String::from("vertex_compute_pipeline")),
         },
     )
@@ -182,6 +183,7 @@ fn main() {
             layouts: vec![compute_layout.clone()],
             module: index_compute_shader,
             work_group_size: (3, 1, 1),
+            push_constants_size: None,
             debug_name: Some(String::from("index_compute_pipeline")),
         },
     )
@@ -250,6 +252,7 @@ fn main() {
                     ..Default::default()
                 }],
             }),
+            push_constants_size: None,
             debug_name: Some(String::from("graphics_pipeline")),
         },
     )
@@ -295,39 +298,38 @@ fn main() {
                 color_buffer
                     .write(0)
                     .unwrap()
-                    .as_slice_mut()
                     .copy_from_slice(bytemuck::cast_slice(&colors));
 
                 // Next, we use a transfer command to copy the color buffer to the vertex buffer
                 // (this requires a GPU to GPU sync because we must gaurantee the buffer is not
                 // being accessed by another queue).
+                let mut command_buffer = context.transfer().command_buffer();
+                command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+                    src: &color_buffer,
+                    src_array_element: 0,
+                    src_offset: 0,
+                    dst: &vertex_buffer,
+                    dst_array_element: 0,
+                    // Skip the position vertices and write to the colors
+                    dst_offset: 3 * 4 * std::mem::size_of::<f32>() as u64,
+                    len: color_buffer.size(),
+                });
                 context
                     .transfer()
-                    .submit(Some("color_buffer_copy"), |command_buffer| {
-                        command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                            src: &color_buffer,
-                            src_array_element: 0,
-                            src_offset: 0,
-                            dst: &vertex_buffer,
-                            dst_array_element: 0,
-                            // Skip the position vertices and write to the colors
-                            dst_offset: 3 * 4 * std::mem::size_of::<f32>() as u64,
-                            len: color_buffer.size(),
-                        });
-                    });
+                    .submit(Some("color_buffer_copy"), command_buffer);
 
                 // Next, we use a compute shader to generate the vertex positions (this requires a
                 // GPU to GPU sync with the transfer command because we can't write until the
                 // buffer is done being written to).
+                let mut command_buffer = context.compute().command_buffer();
+                command_buffer.compute_pass(|pass| {
+                    pass.bind_pipeline(vertex_compute_pipeline.clone());
+                    pass.bind_sets(0, vec![&vertex_compute_set]);
+                    pass.dispatch(1, 1, 1);
+                });
                 context
                     .compute()
-                    .submit(Some("vertex_compute"), |command_buffer| {
-                        command_buffer.compute_pass(|pass| {
-                            pass.bind_pipeline(vertex_compute_pipeline.clone());
-                            pass.bind_sets(0, vec![&vertex_compute_set]);
-                            pass.dispatch(1, 1, 1);
-                        });
-                    });
+                    .submit(Some("vertex_compute"), command_buffer);
 
                 // Finally, we have a pass with three steps.
                 // 1. Generate our index buffers using a compute shader.
@@ -337,50 +339,52 @@ fn main() {
                 // This demonstrates GPU to GPU sync with the previous two queue operations and
                 // also command synchronization because each operation depends on the last.
                 let surface_image = surface.acquire_image().unwrap();
-                context.main().submit(Some("main_pass"), |command_buffer| {
-                    // 1. Generate indices
-                    command_buffer.compute_pass(|pass| {
-                        pass.bind_pipeline(index_compute_pipeline.clone());
-                        pass.bind_sets(0, vec![&index_compute_set]);
-                        pass.dispatch(1, 1, 1);
-                    });
+                let mut command_buffer = context.main().command_buffer();
 
-                    // 2. Copy indices
-                    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                        src: &index_buffer_intermediate,
-                        src_array_element: 0,
-                        src_offset: 0,
-                        dst: &index_buffer,
-                        dst_array_element: 0,
-                        dst_offset: 0,
-                        len: index_buffer_intermediate.size(),
-                    });
-
-                    // 3. Render everything
-                    command_buffer.render_pass(
-                        RenderPassDescriptor {
-                            color_attachments: vec![ColorAttachment {
-                                source: ColorAttachmentSource::SurfaceImage(&surface_image),
-                                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
-                                store_op: StoreOp::Store,
-                            }],
-                            depth_stencil_attachment: None,
-                        },
-                        |pass| {
-                            pass.bind_pipeline(graphics_pipeline.clone());
-                            pass.bind_vertex_buffers(
-                                0,
-                                vec![VertexBind {
-                                    buffer: &vertex_buffer,
-                                    array_element: 0,
-                                    offset: 0,
-                                }],
-                            );
-                            pass.bind_index_buffer(&index_buffer, 0, 0, IndexType::U32);
-                            pass.draw_indexed(3, 1, 0, 0, 0);
-                        },
-                    );
+                // 1. Generate indices
+                command_buffer.compute_pass(|pass| {
+                    pass.bind_pipeline(index_compute_pipeline.clone());
+                    pass.bind_sets(0, vec![&index_compute_set]);
+                    pass.dispatch(1, 1, 1);
                 });
+
+                // 2. Copy indices
+                command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+                    src: &index_buffer_intermediate,
+                    src_array_element: 0,
+                    src_offset: 0,
+                    dst: &index_buffer,
+                    dst_array_element: 0,
+                    dst_offset: 0,
+                    len: index_buffer_intermediate.size(),
+                });
+
+                // 3. Render everything
+                command_buffer.render_pass(
+                    RenderPassDescriptor {
+                        color_attachments: vec![ColorAttachment {
+                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                            store_op: StoreOp::Store,
+                        }],
+                        depth_stencil_attachment: None,
+                    },
+                    |pass| {
+                        pass.bind_pipeline(graphics_pipeline.clone());
+                        pass.bind_vertex_buffers(
+                            0,
+                            vec![VertexBind {
+                                buffer: &vertex_buffer,
+                                array_element: 0,
+                                offset: 0,
+                            }],
+                        );
+                        pass.bind_index_buffer(&index_buffer, 0, 0, IndexType::U32);
+                        pass.draw_indexed(3, 1, 0, 0, 0);
+                    },
+                );
+
+                context.main().submit(Some("main_pass"), command_buffer);
 
                 match context.present().present(&surface, surface_image).unwrap() {
                     SurfacePresentSuccess::Ok => {}

@@ -49,23 +49,27 @@ impl<B: Backend> Queue<B> {
         self.ty
     }
 
+    /// Gets a command buffer to record commands to.
+    #[inline(always)]
+    pub fn command_buffer<'a>(&self) -> CommandBuffer<'a, B> {
+        CommandBuffer {
+            queue_ty: self.ty,
+            commands: Vec::default(),
+        }
+    }
+
     /// Records the commands to a command buffer, and then submits them to the queue.
     ///
     /// # Arguments
     /// - `debug_name` - The backend *should* use the provided debug name for easy identification.
-    /// - `commands` - A function that records the commands.
+    /// - `commands` - The command buffers to submit.
     #[inline(always)]
-    pub fn submit<'a>(
-        &self,
-        debug_name: Option<&str>,
-        commands: impl FnOnce(&mut CommandBuffer<'a, B>),
-    ) -> Job<B> {
-        let mut cb = CommandBuffer {
-            queue_ty: self.ty,
-            commands: Vec::default(),
+    pub fn submit<'a>(&self, debug_name: Option<&str>, commands: CommandBuffer<B>) -> Job<B> {
+        let id = unsafe {
+            self.ctx
+                .0
+                .submit_commands(self.ty, debug_name, commands.commands)
         };
-        commands(&mut cb);
-        let id = unsafe { self.ctx.0.submit_commands(self.ty, debug_name, cb.commands) };
 
         Job {
             id,

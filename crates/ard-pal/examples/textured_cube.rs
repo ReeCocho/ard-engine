@@ -69,46 +69,46 @@ fn main() {
     let cube_index_buffer = buffers.index;
     let cube_index_staging = buffers.index_staging;
 
+    let mut command_buffer = context.transfer().command_buffer();
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &triangle_index_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &triangle_index_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: triangle_index_buffer.size(),
+    });
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &triangle_vertex_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &triangle_vertex_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: triangle_vertex_buffer.size(),
+    });
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &cube_index_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &cube_index_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: cube_index_buffer.size(),
+    });
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &cube_vertex_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &cube_vertex_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: cube_vertex_buffer.size(),
+    });
     context
         .transfer()
-        .submit(Some("staging_upload"), |command_buffer| {
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &triangle_index_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &triangle_index_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: triangle_index_buffer.size(),
-            });
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &triangle_vertex_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &triangle_vertex_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: triangle_vertex_buffer.size(),
-            });
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &cube_index_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &cube_index_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: cube_index_buffer.size(),
-            });
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &cube_vertex_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &cube_vertex_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: cube_vertex_buffer.size(),
-            });
-        });
+        .submit(Some("staging_upload"), command_buffer);
 
     std::mem::drop(triangle_vertex_staging);
     std::mem::drop(triangle_index_staging);
@@ -173,6 +173,7 @@ fn main() {
                         ..Default::default()
                     }],
                 }),
+                push_constants_size: None,
                 debug_name: Some(String::from("triangle_graphics_pipeline")),
             },
         )
@@ -343,6 +344,7 @@ fn main() {
                         ..Default::default()
                     }],
                 }),
+                push_constants_size: None,
                 debug_name: Some(String::from("cube_graphics_pipeline")),
             },
         )
@@ -414,73 +416,73 @@ fn main() {
                 uniform_buffer
                     .write(0)
                     .unwrap()
-                    .as_slice_mut()
                     .copy_from_slice(bytemuck::cast_slice(&[mvp]));
 
                 // Begin rendering
                 let surface_image = surface.acquire_image().unwrap();
-                context.main().submit(Some("main_pass"), |command_buffer| {
-                    // First pass, we render a triangle to the texture
-                    command_buffer.render_pass(
-                        RenderPassDescriptor {
-                            color_attachments: vec![ColorAttachment {
-                                source: ColorAttachmentSource::Texture {
-                                    texture: &triangle_texture,
-                                    array_element: 0,
-                                    mip_level: 0,
-                                },
-                                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
-                                store_op: StoreOp::Store,
-                            }],
-                            depth_stencil_attachment: None,
-                        },
-                        |pass| {
-                            pass.bind_pipeline(triangle_pipeline.clone());
-                            pass.bind_index_buffer(&triangle_index_buffer, 0, 0, IndexType::U16);
-                            pass.bind_vertex_buffers(
-                                0,
-                                vec![VertexBind {
-                                    buffer: &triangle_vertex_buffer,
-                                    array_element: 0,
-                                    offset: 0,
-                                }],
-                            );
-                            pass.draw_indexed(3, 1, 0, 0, 0);
-                        },
-                    );
+                let mut command_buffer = context.main().command_buffer();
 
-                    // In the second pass, we sample from the rendered texture and draw a cube
-                    command_buffer.render_pass(
-                        RenderPassDescriptor {
-                            color_attachments: vec![ColorAttachment {
-                                source: ColorAttachmentSource::SurfaceImage(&surface_image),
-                                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.2, 0.2, 0.2, 0.0)),
-                                store_op: StoreOp::Store,
-                            }],
-                            depth_stencil_attachment: Some(DepthStencilAttachment {
-                                texture: &depth_buffer,
+                // First pass, we render a triangle to the texture
+                command_buffer.render_pass(
+                    RenderPassDescriptor {
+                        color_attachments: vec![ColorAttachment {
+                            source: ColorAttachmentSource::Texture {
+                                texture: &triangle_texture,
                                 array_element: 0,
                                 mip_level: 0,
-                                load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
-                                store_op: StoreOp::DontCare,
-                            }),
-                        },
-                        |pass| {
-                            pass.bind_pipeline(cube_pipeline.clone());
-                            pass.bind_sets(0, vec![&cube_set]);
-                            pass.bind_index_buffer(&cube_index_buffer, 0, 0, IndexType::U16);
-                            pass.bind_vertex_buffers(
-                                0,
-                                vec![VertexBind {
-                                    buffer: &cube_vertex_buffer,
-                                    array_element: 0,
-                                    offset: 0,
-                                }],
-                            );
-                            pass.draw_indexed(36, 1, 0, 0, 0);
-                        },
-                    );
-                });
+                            },
+                            load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                            store_op: StoreOp::Store,
+                        }],
+                        depth_stencil_attachment: None,
+                    },
+                    |pass| {
+                        pass.bind_pipeline(triangle_pipeline.clone());
+                        pass.bind_index_buffer(&triangle_index_buffer, 0, 0, IndexType::U16);
+                        pass.bind_vertex_buffers(
+                            0,
+                            vec![VertexBind {
+                                buffer: &triangle_vertex_buffer,
+                                array_element: 0,
+                                offset: 0,
+                            }],
+                        );
+                        pass.draw_indexed(3, 1, 0, 0, 0);
+                    },
+                );
+
+                // In the second pass, we sample from the rendered texture and draw a cube
+                command_buffer.render_pass(
+                    RenderPassDescriptor {
+                        color_attachments: vec![ColorAttachment {
+                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            load_op: LoadOp::Clear(ClearColor::RgbaF32(0.2, 0.2, 0.2, 0.0)),
+                            store_op: StoreOp::Store,
+                        }],
+                        depth_stencil_attachment: Some(DepthStencilAttachment {
+                            texture: &depth_buffer,
+                            array_element: 0,
+                            mip_level: 0,
+                            load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
+                            store_op: StoreOp::DontCare,
+                        }),
+                    },
+                    |pass| {
+                        pass.bind_pipeline(cube_pipeline.clone());
+                        pass.bind_sets(0, vec![&cube_set]);
+                        pass.bind_index_buffer(&cube_index_buffer, 0, 0, IndexType::U16);
+                        pass.bind_vertex_buffers(
+                            0,
+                            vec![VertexBind {
+                                buffer: &cube_vertex_buffer,
+                                array_element: 0,
+                                offset: 0,
+                            }],
+                        );
+                        pass.draw_indexed(36, 1, 0, 0, 0);
+                    },
+                );
+                context.main().submit(Some("main_pass"), command_buffer);
 
                 match context.present().present(&surface, surface_image).unwrap() {
                     SurfacePresentSuccess::Ok => {}

@@ -1,0 +1,49 @@
+#version 450
+
+#include "data_structures.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+/// Draw calls to update the draw count of when an object is verified for rendering. Also contains
+/// bounding volume information for objects of the type it draws.
+layout(set = 0, binding = 0) buffer DrawCalls {
+    DrawCall[] draw_calls;
+};
+
+/// Contains per object information.
+layout(set = 0, binding = 1) readonly buffer Objects {
+    ObjectData[] objects;
+};
+
+/// Input objects to verify for rendering.
+layout(set = 0, binding = 2) readonly buffer InputIds {
+    ObjectId[] input_ids;
+};
+
+/// Output indices into the `objects` buffer for verified objects.
+layout(set = 0, binding = 3) writeonly buffer OutputIds {
+    uint[] output_ids;
+};
+
+layout(push_constant) uniform constants {
+    uint object_count;
+};
+
+void main() {
+    uint object_index = gl_GlobalInvocationID.x;
+    if (object_index >= object_count) {
+        return;
+    }
+
+    // Grab the object
+    ObjectId obj = input_ids[object_index];
+
+    // TODO: Culling
+
+    // Insert the object into the output list and notify the associated call of the object
+    uint model_offset = atomicAdd(draw_calls[obj.draw_idx].instance_count, 1);
+    uint instance_index = draw_calls[obj.draw_idx].first_instance + model_offset;
+    output_ids[instance_index] = obj.data_idx;
+}

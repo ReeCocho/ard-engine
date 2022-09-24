@@ -1,6 +1,6 @@
 use api::{
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
-    command_buffer::Command,
+    command_buffer::{BlitDestination, Command},
     compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo},
     descriptor_set::{
         DescriptorSetCreateError, DescriptorSetCreateInfo, DescriptorSetLayoutCreateError,
@@ -47,7 +47,7 @@ use util::{
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
     tracking::TrackState,
-    usage::{GlobalResourceUsage, PipelineTracker},
+    usage::{GlobalResourceUsage, PipelineTracker, SubResource, SubResourceUsage, UsageScope},
 };
 
 pub mod buffer;
@@ -308,17 +308,18 @@ impl Backend for VulkanBackend {
                                 array_element,
                                 mip_level,
                             } => {
-                                let internal = texture.internal();
                                 dims = (texture.dims().0, texture.dims().1);
-                                texture.internal().views
-                                    [(*array_element * internal.array_elements) + *mip_level]
+                                texture.internal().get_view(*array_element, *mip_level)
                             }
                         });
                     }
 
                     if let Some(attachment) = &descriptor.depth_stencil_attachment {
+                        let (width, height, _) = attachment.texture.dims();
                         let texture = attachment.texture.internal();
-                        views.push(texture.views[attachment.array_element]);
+                        dims = (width, height);
+                        views
+                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
                     }
 
                     // Find the framebuffer
@@ -599,6 +600,115 @@ impl Backend for VulkanBackend {
                         &copy,
                     );
                 }
+                Command::BlitTexture {
+                    src,
+                    dst,
+                    blit,
+                    filter,
+                } => {
+                    let src = src.internal();
+                    let (dst_img, dst_aspect_flags, is_si) = match dst {
+                        BlitDestination::Texture(tex) => {
+                            let internal = tex.internal();
+                            (internal.image, internal.aspect_flags, false)
+                        }
+                        BlitDestination::SurfaceImage(si) => {
+                            let internal = si.internal();
+                            (internal.image(), vk::ImageAspectFlags::COLOR, true)
+                        }
+                    };
+
+                    let vk_blit = [vk::ImageBlit::builder()
+                        .src_offsets([
+                            vk::Offset3D {
+                                x: blit.src_min.0 as i32,
+                                y: blit.src_min.1 as i32,
+                                z: blit.src_min.2 as i32,
+                            },
+                            vk::Offset3D {
+                                x: blit.src_max.0 as i32,
+                                y: blit.src_max.1 as i32,
+                                z: blit.src_max.2 as i32,
+                            },
+                        ])
+                        .src_subresource(
+                            vk::ImageSubresourceLayers::builder()
+                                .aspect_mask(src.aspect_flags)
+                                .mip_level(blit.src_mip as u32)
+                                .base_array_layer(blit.src_array_element as u32)
+                                .layer_count(1)
+                                .build(),
+                        )
+                        .dst_offsets([
+                            vk::Offset3D {
+                                x: blit.dst_min.0 as i32,
+                                y: blit.dst_min.1 as i32,
+                                z: blit.dst_min.2 as i32,
+                            },
+                            vk::Offset3D {
+                                x: blit.dst_max.0 as i32,
+                                y: blit.dst_max.1 as i32,
+                                z: blit.dst_max.2 as i32,
+                            },
+                        ])
+                        .dst_subresource(
+                            vk::ImageSubresourceLayers::builder()
+                                .aspect_mask(dst_aspect_flags)
+                                .mip_level(blit.dst_mip as u32)
+                                .base_array_layer(blit.dst_array_element as u32)
+                                .layer_count(1)
+                                .build(),
+                        )
+                        .build()];
+
+                    self.device.cmd_blit_image(
+                        cb,
+                        src.image,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        dst_img,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &vk_blit,
+                        crate::util::to_vk_filter(*filter),
+                    );
+
+                    // If the dst image is a surface image, we must transition it back into a
+                    // presentable format and mark it as presentable
+                    if is_si {
+                        // Grab internal surface image and signal it was "drawn to"
+                        let si = match dst {
+                            BlitDestination::SurfaceImage(si) => si.internal(),
+                            _ => unreachable!(),
+                        };
+                        si.signal_draw();
+
+                        // Transition layer
+                        let mut scope = UsageScope::default();
+                        scope.use_resource(
+                            SubResource::Texture {
+                                texture: si.image(),
+                                aspect_mask: vk::ImageAspectFlags::COLOR,
+                                array_elem: blit.dst_array_element as u32,
+                                mip_level: blit.dst_mip as u32,
+                            },
+                            SubResourceUsage {
+                                access: vk::AccessFlags::MEMORY_READ
+                                    | vk::AccessFlags::MEMORY_WRITE,
+                                stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                                layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                            },
+                        );
+                        if let Some(barrier) = pipeline_tracker.submit(scope) {
+                            barrier.execute(&self.device, cb);
+                        }
+                    }
+                }
+                Command::PushConstants { data, stage } => self.device.cmd_push_constants(
+                    cb,
+                    active_layout,
+                    crate::util::to_vk_shader_stage(*stage),
+                    0,
+                    &data,
+                ),
             }
         }
 
@@ -820,21 +930,21 @@ impl Backend for VulkanBackend {
     #[inline(always)]
     unsafe fn map_memory(
         &self,
-        id: &mut Self::Buffer,
+        id: &Self::Buffer,
         idx: usize,
     ) -> Result<(NonNull<u8>, u64), BufferViewError> {
         id.map(self, idx)
     }
 
-    unsafe fn unmap_memory(&self, _id: &mut Self::Buffer) {
+    unsafe fn unmap_memory(&self, _id: &Self::Buffer) {
         // Handled by the allocator
     }
 
-    unsafe fn flush_range(&self, _id: &mut Self::Buffer, _idx: usize) {
+    unsafe fn flush_range(&self, _id: &Self::Buffer, _idx: usize) {
         // Not needed because `HOST_COHERENT`
     }
 
-    unsafe fn invalidate_range(&self, _id: &mut Self::Buffer, _idx: usize) {
+    unsafe fn invalidate_range(&self, _id: &Self::Buffer, _idx: usize) {
         // Not needed because `HOST_COHERENT`
     }
 

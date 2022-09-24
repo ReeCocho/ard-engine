@@ -13,6 +13,8 @@ ard-ecs = { version = "0.1", path = "../ard-ecs" }
 ard-math = { version = "0.1", path = "../ard-math" }
 ard-pal = { version = "0.1", path = "../ard-pal" }
 ard-log = { version = "0.1", path = "../ard-log" }
+bitflags = "1"
+ordered-float = "3"
 raw-window-handle = "0.4.2"
 winit = "0.27"
 bytemuck = "1.7"
@@ -22,3 +24,7 @@ crossbeam-utils = "0.8"
 [features]
 default = [ "vulkan" ]
 vulkan = [ "ard-pal/vulkan" ]
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+ron = "0.7"

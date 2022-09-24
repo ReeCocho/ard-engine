@@ -1,5 +1,5 @@
 #[cfg(feature = "vulkan")]
-type Backend = vulkan::VulkanBackend;
+pub type Backend = vulkan::VulkanBackend;
 
 #[cfg(feature = "vulkan")]
 pub mod backend {
@@ -28,7 +28,7 @@ pub mod prelude {
     };
 
     // Command buffer
-    pub use api::command_buffer::CopyBufferToBuffer;
+    pub use api::command_buffer::{BlitDestination, BufferTextureCopy, CopyBufferToBuffer};
     pub type CommandBuffer<'a> = api::command_buffer::CommandBuffer<'a, crate::Backend>;
 
     // Queue
@@ -59,7 +59,7 @@ pub mod prelude {
 
     // Texture
     pub type Texture = api::texture::Texture<crate::Backend>;
-    pub use api::texture::{Sampler, TextureCreateError, TextureCreateInfo};
+    pub use api::texture::{Blit, Sampler, TextureCreateError, TextureCreateInfo};
 
     // Descriptor set & layout
     pub type DescriptorSetLayout = api::descriptor_set::DescriptorSetLayout<crate::Backend>;

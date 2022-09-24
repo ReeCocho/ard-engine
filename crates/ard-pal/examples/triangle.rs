@@ -53,29 +53,30 @@ fn main() {
     let index_staging = buffers.index_staging;
 
     // Write the staging buffers to the primary buffers
+    let mut command_buffer = context.transfer().command_buffer();
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &index_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &index_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: index_buffer.size(),
+    });
+
+    command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
+        src: &vertex_staging,
+        src_array_element: 0,
+        src_offset: 0,
+        dst: &vertex_buffer,
+        dst_array_element: 0,
+        dst_offset: 0,
+        len: vertex_buffer.size(),
+    });
     context
         .transfer()
-        .submit(Some("buffer_upload"), |command_buffer| {
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &index_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &index_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: index_buffer.size(),
-            });
+        .submit(Some("staging_upload"), command_buffer);
 
-            command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
-                src: &vertex_staging,
-                src_array_element: 0,
-                src_offset: 0,
-                dst: &vertex_buffer,
-                dst_array_element: 0,
-                dst_offset: 0,
-                len: vertex_buffer.size(),
-            });
-        });
     std::mem::drop(vertex_staging);
     std::mem::drop(index_staging);
 
@@ -142,6 +143,7 @@ fn main() {
                     ..Default::default()
                 }],
             }),
+            push_constants_size: None,
             debug_name: Some(String::from("graphics_pipeline")),
         },
     )
@@ -164,36 +166,36 @@ fn main() {
 
                 let surface_image = surface.acquire_image().unwrap();
 
-                context.main().submit(Some("main_pass"), |command_buffer| {
-                    command_buffer.render_pass(
-                        RenderPassDescriptor {
-                            color_attachments: vec![ColorAttachment {
-                                source: ColorAttachmentSource::SurfaceImage(&surface_image),
-                                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
-                                store_op: StoreOp::Store,
+                let mut command_buffer = context.main().command_buffer();
+                command_buffer.render_pass(
+                    RenderPassDescriptor {
+                        color_attachments: vec![ColorAttachment {
+                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                            store_op: StoreOp::Store,
+                        }],
+                        depth_stencil_attachment: None,
+                    },
+                    |pass| {
+                        // Bind our graphics pipeline
+                        pass.bind_pipeline(pipeline.clone());
+
+                        // Bind vertex and index buffers
+                        pass.bind_vertex_buffers(
+                            0,
+                            vec![VertexBind {
+                                buffer: &vertex_buffer,
+                                array_element: 0,
+                                offset: 0,
                             }],
-                            depth_stencil_attachment: None,
-                        },
-                        |pass| {
-                            // Bind our graphics pipeline
-                            pass.bind_pipeline(pipeline.clone());
+                        );
+                        pass.bind_index_buffer(&index_buffer, 0, 0, IndexType::U16);
 
-                            // Bind vertex and index buffers
-                            pass.bind_vertex_buffers(
-                                0,
-                                vec![VertexBind {
-                                    buffer: &vertex_buffer,
-                                    array_element: 0,
-                                    offset: 0,
-                                }],
-                            );
-                            pass.bind_index_buffer(&index_buffer, 0, 0, IndexType::U16);
-
-                            // Draw the triangle
-                            pass.draw_indexed(3, 1, 0, 0, 0);
-                        },
-                    );
-                });
+                        // Draw the triangle
+                        pass.draw_indexed(3, 1, 0, 0, 0);
+                    },
+                );
+                context.main().submit(Some("main_pass"), command_buffer);
 
                 match context.present().present(&surface, surface_image).unwrap() {
                     SurfacePresentSuccess::Ok => {}

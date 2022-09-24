@@ -73,6 +73,14 @@ impl<'a, B: Backend> RenderPass<'a, B> {
         self.commands.push(Command::BindGraphicsPipeline(pipeline));
     }
 
+    #[inline]
+    pub fn push_constants(&mut self, data: &[u8]) {
+        self.commands.push(Command::PushConstants {
+            data: Vec::from(data),
+            stage: ShaderStage::AllGraphics,
+        });
+    }
+
     /// Binds one or more descriptor sets to the pass.
     ///
     /// # Arguments

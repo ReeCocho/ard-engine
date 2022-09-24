@@ -123,12 +123,12 @@ pub trait Backend: Sized + 'static {
 
     unsafe fn map_memory(
         &self,
-        id: &mut Self::Buffer,
+        id: &Self::Buffer,
         idx: usize,
     ) -> Result<(NonNull<u8>, u64), BufferViewError>;
-    unsafe fn unmap_memory(&self, id: &mut Self::Buffer);
-    unsafe fn flush_range(&self, id: &mut Self::Buffer, idx: usize);
-    unsafe fn invalidate_range(&self, id: &mut Self::Buffer, idx: usize);
+    unsafe fn unmap_memory(&self, id: &Self::Buffer);
+    unsafe fn flush_range(&self, id: &Self::Buffer, idx: usize);
+    unsafe fn invalidate_range(&self, id: &Self::Buffer, idx: usize);
 
     unsafe fn update_descriptor_sets(
         &self,
