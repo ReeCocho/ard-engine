@@ -5,34 +5,34 @@ use std::{
 
 fn main() {
     // Compile shaders
-    compile(
-        Path::new("./examples/shaders/color.frag"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/pbr.frag"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/pbr.vert"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/textured.frag"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/textured.vert"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/triangle.frag"),
-        Path::new("./examples/assets/example/"),
-    );
-    compile(
-        Path::new("./examples/shaders/triangle.vert"),
-        Path::new("./examples/assets/example/"),
-    );
+    // compile(
+    //     Path::new("./examples/shaders/color.frag"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/pbr.frag"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/pbr.vert"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/textured.frag"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/textured.vert"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/triangle.frag"),
+    //     Path::new("./examples/assets/example/"),
+    // );
+    // compile(
+    //     Path::new("./examples/shaders/triangle.vert"),
+    //     Path::new("./examples/assets/example/"),
+    // );
     compile(
         Path::new("./examples/shaders/new_rend.frag"),
         Path::new("./examples/assets/example/"),
@@ -58,7 +58,7 @@ fn compile(in_path: &Path, out_path: &Path) {
     let stderr = Command::new("glslc")
         .arg(in_path)
         .arg("--target-env=vulkan1.2")
-        .arg("-I./crates/ard-graphics-vk/shader_includes")
+        .arg("-I./crates/ard-render/src/shaders/include")
         .arg("-o")
         .arg(&out_name)
         .output()

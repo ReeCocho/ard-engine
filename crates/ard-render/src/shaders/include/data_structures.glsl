@@ -1,10 +1,43 @@
 #ifndef _DATA_STRUCTURES_GLSL
 #define _DATA_STRUCTURES_GLSL
 
+#include "constants.glsl"
+
 // NOTE: See /src/renderer/render_data.rs for the definitions of most of these structures. If
 // you're experiencing weird data corruption, odds are that one of those structures was modified
 // and then not updated here. Might be worth investigating a way to auto-generate this file from
 // the Rust files.
+
+//////////////
+/// CAMERA ///
+//////////////
+
+struct Froxel {
+    vec4[4] planes;
+    vec4 min_max_z;
+};
+
+struct Frustum {
+    vec4[6] planes;
+};
+
+struct CameraClusterFroxels {
+    Froxel froxels[FROXEL_TABLE_Z][FROXEL_TABLE_X][FROXEL_TABLE_Y];
+};
+
+struct Camera {
+    mat4 view;
+    mat4 projection;
+    mat4 vp;
+    mat4 view_inv;
+    mat4 projection_inv;
+    mat4 vp_inv;
+    Frustum frustum;
+    vec4 position;
+    float fov;
+    float near_clip;
+    float far_clip;
+};
 
 ///////////////////////
 /// DRAW GENERATION ///
@@ -33,6 +66,26 @@ struct ObjectId {
     uint padding1;
     uint data_idx;
     uint padding2;
+};
+
+////////////
+/// MISC ///
+////////////
+
+struct VsOut {
+    /// The fragment position in world space.
+    vec3 frag_pos;
+};
+
+struct BoundingBox {
+    /// All eight corners of the box in world space.
+    vec4[8] corners;
+    /// Min point for AABB in screen space.
+    vec2 min_pt;
+    /// Max point for AABB in screen space.
+    vec2 max_pt;
+    /// Depth value for the AABB square in world space.
+    float depth;
 };
 
 #endif

@@ -76,6 +76,7 @@ impl MaterialInner {
                 },
                 layouts: vec![
                     layouts.global.clone(),
+                    layouts.camera.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -109,6 +110,7 @@ impl MaterialInner {
                 },
                 layouts: vec![
                     layouts.global.clone(),
+                    layouts.camera.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -142,6 +144,7 @@ impl MaterialInner {
                 },
                 layouts: vec![
                     layouts.global.clone(),
+                    layouts.camera.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],

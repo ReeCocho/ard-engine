@@ -27,6 +27,11 @@ layout(set = 0, binding = 3) writeonly buffer OutputIds {
     uint[] output_ids;
 };
 
+/// Camera to use from frustum/high-z culling.
+layout(set = 0, binding = 4) uniform CameraUbo {
+    Camera camera;
+};
+
 layout(push_constant) uniform constants {
     uint object_count;
 };
@@ -39,6 +44,22 @@ void main() {
 
     // Grab the object
     ObjectId obj = input_ids[object_index];
+    mat4 model = objects[obj.data_idx].model;
+
+    // Frustum culling using sphere radius
+    vec4 bounds_center = draw_calls[obj.draw_idx].bounds_center;
+    vec4 pos = model * vec4(bounds_center.xyz, 1.0);
+    vec3 scale = vec3(
+        length(vec3(model[0][0], model[0][1], model[0][2])),
+        length(vec3(model[1][0], model[1][1], model[1][2])),
+        length(vec3(model[1][0], model[2][1], model[2][2]))
+    );
+    float radius = bounds_center.w * max(max(scale.x, max(scale.y, scale.z)), 1.0);
+    for (int i = 0; i < 6; i++) { 
+        if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
+            return;
+        }
+    }
 
     // TODO: Culling
 

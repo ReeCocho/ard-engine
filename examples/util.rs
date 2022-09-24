@@ -50,6 +50,7 @@ impl Default for FrameRate {
 
 impl FrameRate {
     fn pre_render(&mut self, _: PreRender, _: Commands, _: Queries<()>, _: Res<()>) {
+        println!("T");
         let now = Instant::now();
         self.frame_ctr += 1;
         if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {

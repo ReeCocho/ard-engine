@@ -4,21 +4,19 @@ use std::time::{Duration, Instant};
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_log::warn;
 use ard_math::Mat4;
 use ard_pal::prelude::*;
-use ard_window::{
-    window::{Window, WindowId},
-    windows::Windows,
-};
+use ard_window::{window::WindowId, windows::Windows};
 use bitflags::bitflags;
 use raw_window_handle::HasRawWindowHandle;
 
 use crate::{
-    factory::{allocator::ResourceId, Factory},
+    camera::CameraUbo,
+    factory::Factory,
     material::{MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
+    static_geometry::{self, StaticGeometry},
     RenderPlugin,
 };
 
@@ -55,7 +53,7 @@ pub struct Renderer {
 }
 
 /// The geometry and material of an object to render.
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Renderable {
     pub mesh: Mesh,
     pub material: MaterialInstance,
@@ -63,7 +61,7 @@ pub struct Renderable {
 }
 
 /// Model matrix of a renderable object.
-#[derive(Component)]
+#[derive(Component, Copy, Clone)]
 pub struct Model(pub Mat4);
 
 bitflags! {
@@ -89,7 +87,12 @@ struct Render(Duration);
 pub struct PostRender(pub Duration);
 
 pub(crate) type RenderQuery = (Entity, (Read<Renderable>, Read<Model>), (Read<Disabled>,));
-type RenderResources = (Read<RendererSettings>, Read<Windows>, Write<Factory>);
+type RenderResources = (
+    Read<RendererSettings>,
+    Read<Windows>,
+    Write<Factory>,
+    Write<StaticGeometry>,
+);
 
 impl Renderer {
     pub fn new<W: HasRawWindowHandle>(
@@ -98,7 +101,7 @@ impl Renderer {
         window_id: WindowId,
         window_size: (u32, u32),
         settings: &RendererSettings,
-    ) -> (Self, Factory) {
+    ) -> (Self, Factory, StaticGeometry) {
         // Initialize the backend based on what renderer we want
         #[cfg(feature = "vulkan")]
         let backend = {
@@ -194,6 +197,7 @@ impl Renderer {
                 depth_buffer,
             },
             factory,
+            StaticGeometry::default(),
         )
     }
 
@@ -233,9 +237,10 @@ impl Renderer {
         res: Res<RenderResources>,
     ) {
         let res = res.get();
-        let _settings = res.0.unwrap();
+        let settings = res.0.unwrap();
         let windows = res.1.unwrap();
         let factory = res.2.unwrap();
+        let static_geometry = res.3.unwrap();
 
         // Check if the window is minimized. If it is, we should skip rendering
         let window = windows
@@ -245,8 +250,55 @@ impl Renderer {
             return;
         }
 
+        // Determine the dimensions of the canvas
+        let (canvas_width, canvas_height) = match settings.canvas_size {
+            Some(dims) => dims,
+            None => self.surface.dimensions(),
+        };
+
+        // Resize the canvas images if the dimensions don't match
+        let (old_width, old_height, _) = self.final_image.dims();
+        if old_width != canvas_width || old_height != canvas_height {
+            self.final_image = Texture::new(
+                self.ctx.clone(),
+                TextureCreateInfo {
+                    format: TextureFormat::Bgra8Unorm,
+                    ty: TextureType::Type2D,
+                    width: canvas_width,
+                    height: canvas_height,
+                    depth: 1,
+                    array_elements: FRAMES_IN_FLIGHT,
+                    mip_levels: 1,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    debug_name: Some(String::from("final_image")),
+                },
+            )
+            .unwrap();
+            self.depth_buffer = Texture::new(
+                self.ctx.clone(),
+                TextureCreateInfo {
+                    format: TextureFormat::D32Sfloat,
+                    ty: TextureType::Type2D,
+                    width: canvas_width,
+                    height: canvas_height,
+                    depth: 1,
+                    array_elements: FRAMES_IN_FLIGHT,
+                    mip_levels: 1,
+                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    debug_name: Some(String::from("depth_buffer")),
+                },
+            )
+            .unwrap();
+        }
+
         // Move to the next frame
         self.frame = (self.frame + 1) % FRAMES_IN_FLIGHT;
+
+        // Cleanup dropped static geometry
+        let mut static_geometry = static_geometry.0.lock().unwrap();
+        static_geometry.cleanup();
 
         // Process factory resources
         factory.process(self.frame);
@@ -259,7 +311,7 @@ impl Renderer {
 
         // Prepare global object data
         self.global_data
-            .prepare_object_data(self.frame, &factory, &queries);
+            .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
 
         // Prepare rendering data
         let mut cameras = factory.0.cameras.lock().unwrap();
@@ -271,10 +323,23 @@ impl Renderer {
             };
 
             // Prepare IDs and draw calls
-            camera
-                .render_data
-                .prepare_input_ids(self.frame, camera.descriptor.layers, &queries);
+            camera.render_data.prepare_input_ids(
+                self.frame,
+                camera.descriptor.layers,
+                &queries,
+                &static_geometry,
+            );
             camera.render_data.prepare_draw_calls(self.frame, &factory);
+
+            // Update the camera's UBO
+            camera.render_data.update_camera_ubo(
+                self.frame,
+                CameraUbo::new(
+                    &camera.descriptor,
+                    canvas_width as f32,
+                    canvas_height as f32,
+                ),
+            );
 
             // Update sets
             camera
@@ -412,6 +477,9 @@ impl Renderer {
 
         // Submit for rendering
         self.ctx.main().submit(Some("main_pass"), commands);
+
+        // Mark static geometry as being clean
+        static_geometry.dirty[self.frame] = false;
 
         // Submit the surface image for presentation
         if let SurfacePresentSuccess::Invalidated = self

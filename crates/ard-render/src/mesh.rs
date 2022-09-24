@@ -8,6 +8,7 @@ use crate::factory::{
     meshes::{MeshBlock, MeshBuffers},
 };
 
+#[derive(Clone)]
 pub struct Mesh {
     pub(crate) id: ResourceId,
     pub(crate) layout: VertexLayout,

@@ -34,6 +34,21 @@ pub struct CameraDescriptor {
     pub layers: RenderLayer,
 }
 
+/// Describes a view frustum using planes.
+#[derive(Debug, Default, Copy, Clone)]
+#[repr(C)]
+pub struct Frustum {
+    /// Planes come in the following order:
+    /// - Left
+    /// - Right
+    /// - Top
+    /// - Bottom
+    /// - Near
+    /// - Far
+    /// With inward facing normals.
+    pub planes: [Vec4; 6],
+}
+
 #[derive(Clone)]
 pub struct Camera {
     pub(crate) id: ResourceId,
@@ -54,6 +69,7 @@ pub(crate) struct CameraUbo {
     pub view_inv: Mat4,
     pub projection_inv: Mat4,
     pub vp_inv: Mat4,
+    pub frustum: Frustum,
     pub position: Vec4,
     pub fov: f32,
     pub near_clip: f32,
@@ -63,11 +79,20 @@ pub(crate) struct CameraUbo {
 unsafe impl Pod for CameraUbo {}
 unsafe impl Zeroable for CameraUbo {}
 
+unsafe impl Pod for Frustum {}
+unsafe impl Zeroable for Frustum {}
+
 impl CameraInner {
     pub fn new(ctx: &Context, descriptor: CameraDescriptor, layouts: &Layouts) -> Self {
         Self {
             descriptor,
-            render_data: RenderData::new(ctx, "camera", &layouts.global, &layouts.draw_gen),
+            render_data: RenderData::new(
+                ctx,
+                "camera",
+                &layouts.global,
+                &layouts.draw_gen,
+                &layouts.camera,
+            ),
         }
     }
 }
@@ -97,6 +122,7 @@ impl CameraUbo {
             view_inv: view.inverse(),
             projection_inv: projection.inverse(),
             vp_inv: vp.inverse(),
+            frustum: vp.into(),
             position: Vec4::new(
                 descriptor.position.x,
                 descriptor.position.y,
@@ -123,5 +149,26 @@ impl Default for CameraDescriptor {
             clear_color: Some(Vec3::ZERO),
             layers: RenderLayer::OPAQUE,
         }
+    }
+}
+
+impl From<Mat4> for Frustum {
+    fn from(m: Mat4) -> Frustum {
+        let mut frustum = Frustum {
+            planes: [
+                m.row(3) + m.row(0),
+                m.row(3) - m.row(0),
+                m.row(3) - m.row(1),
+                m.row(3) + m.row(1),
+                m.row(2),
+                m.row(3) - m.row(2),
+            ],
+        };
+
+        for plane in &mut frustum.planes {
+            *plane /= Vec4::new(plane.x, plane.y, plane.z, 0.0).length();
+        }
+
+        frustum
     }
 }

@@ -4,6 +4,7 @@ pub mod material;
 pub mod mesh;
 pub mod renderer;
 pub mod shader_constants;
+pub mod static_geometry;
 pub mod texture;
 
 use ard_core::prelude::*;
@@ -35,7 +36,7 @@ fn late_render_init(app: &mut App) {
     let size = window.inner_size();
     let renderer_settings = RendererSettings::default();
 
-    let (renderer, factory) = Renderer::new(
+    let (renderer, factory, static_geo) = Renderer::new(
         plugin.0,
         window,
         plugin.0.window,
@@ -46,4 +47,5 @@ fn late_render_init(app: &mut App) {
     app.dispatcher.add_system(renderer);
     app.resources.add(renderer_settings);
     app.resources.add(factory);
+    app.resources.add(static_geo);
 }

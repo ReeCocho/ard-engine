@@ -55,6 +55,7 @@ pub(crate) struct FactoryInner {
 
 pub(crate) struct Layouts {
     pub global: DescriptorSetLayout,
+    pub camera: DescriptorSetLayout,
     pub textures: DescriptorSetLayout,
     pub materials: DescriptorSetLayout,
     pub draw_gen: DescriptorSetLayout,
@@ -74,6 +75,7 @@ impl Factory {
 
         let layouts = Layouts {
             global: global_data.global_layout.clone(),
+            camera: global_data.camera_layout.clone(),
             textures: texture_sets.layout().clone(),
             materials: material_buffers.layout().clone(),
             draw_gen: global_data.draw_gen_layout.clone(),
@@ -291,5 +293,12 @@ impl Factory {
             id: escaper.id(),
             escaper,
         }
+    }
+
+    #[inline]
+    pub fn update_camera(&self, camera: &Camera, descriptor: CameraDescriptor) {
+        let mut cameras = self.0.cameras.lock().unwrap();
+        let camera = cameras.get_mut(camera.id).unwrap();
+        camera.descriptor = descriptor;
     }
 }
