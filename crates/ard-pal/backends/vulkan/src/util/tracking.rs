@@ -513,6 +513,26 @@ unsafe fn track_descriptor_set(set: &DescriptorSet<crate::VulkanBackend>, scope:
                             )
                         }
                     }
+                    BoundValue::StorageImage {
+                        _ref_counter,
+                        image,
+                        aspect_mask,
+                        mip,
+                        array_element,
+                        ..
+                    } => scope.use_resource(
+                        SubResource::Texture {
+                            texture: *image,
+                            aspect_mask: *aspect_mask,
+                            array_elem: *array_element as u32,
+                            mip_level: *mip,
+                        },
+                        SubResourceUsage {
+                            access: elem.access,
+                            stage: elem.stage,
+                            layout: vk::ImageLayout::GENERAL,
+                        },
+                    ),
                 }
             }
         }

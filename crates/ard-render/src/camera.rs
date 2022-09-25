@@ -8,7 +8,12 @@ use crate::{
         allocator::{EscapeHandle, ResourceId},
         Layouts,
     },
-    renderer::{render_data::RenderData, RenderLayer},
+    renderer::{
+        occlusion::{HzbGlobal, HzbImage},
+        render_data::RenderData,
+        RenderLayer,
+    },
+    shader_constants::FROXEL_TABLE_DIMS,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -107,12 +112,8 @@ impl CameraUbo {
             descriptor.target,
             descriptor.up.try_normalize().unwrap_or(Vec3::Y),
         );
-        let projection = Mat4::perspective_lh(
-            descriptor.fov,
-            width / height,
-            descriptor.near,
-            descriptor.far,
-        );
+        let projection =
+            Mat4::perspective_infinite_reverse_lh(descriptor.fov, width / height, descriptor.near);
         let vp = projection * view;
 
         CameraUbo {

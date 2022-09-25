@@ -47,6 +47,14 @@ pub(crate) enum BoundValue {
         buffer: vk::Buffer,
         array_element: usize,
     },
+    StorageImage {
+        _ref_counter: TextureRefCounter,
+        image: vk::Image,
+        view: vk::ImageView,
+        aspect_mask: vk::ImageAspectFlags,
+        mip: u32,
+        array_element: usize,
+    },
     Texture {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
@@ -143,6 +151,9 @@ impl DescriptorSet {
                     BoundValue::Texture { view, .. } => {
                         ctx.device.destroy_image_view(view, None);
                     }
+                    BoundValue::StorageImage { view, .. } => {
+                        ctx.device.destroy_image_view(view, None);
+                    }
                     _ => {}
                 }
             }
@@ -154,6 +165,12 @@ impl DescriptorSet {
                     DescriptorType::Texture => vk::AccessFlags::SHADER_READ,
                     DescriptorType::UniformBuffer => vk::AccessFlags::UNIFORM_READ,
                     DescriptorType::StorageBuffer(ty) => match ty {
+                        AccessType::Read => vk::AccessFlags::SHADER_READ,
+                        AccessType::ReadWrite => {
+                            vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE
+                        }
+                    },
+                    DescriptorType::StorageImage(ty) => match ty {
                         AccessType::Read => vk::AccessFlags::SHADER_READ,
                         AccessType::ReadWrite => {
                             vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE
@@ -292,6 +309,65 @@ impl DescriptorSet {
                                 view,
                                 aspect_mask: texture.aspect_flags,
                                 mip_count: texture.mip_count,
+                                array_element: *array_element,
+                            },
+                        }
+                    }
+                    DescriptorValue::StorageImage {
+                        texture,
+                        array_element,
+                        mip,
+                    } => {
+                        let texture = texture.internal();
+
+                        // Create a view for the texture
+                        let create_info = vk::ImageViewCreateInfo::builder()
+                            .format(texture.format)
+                            .view_type(vk::ImageViewType::TYPE_2D)
+                            .subresource_range(vk::ImageSubresourceRange {
+                                aspect_mask: texture.aspect_flags,
+                                base_mip_level: *mip as u32,
+                                level_count: 1,
+                                base_array_layer: *array_element as u32,
+                                layer_count: 1,
+                            })
+                            .components(vk::ComponentMapping {
+                                r: vk::ComponentSwizzle::R,
+                                g: vk::ComponentSwizzle::G,
+                                b: vk::ComponentSwizzle::B,
+                                a: vk::ComponentSwizzle::A,
+                            })
+                            .image(texture.image)
+                            .build();
+
+                        let view = ctx.device.create_image_view(&create_info, None).unwrap();
+
+                        images.push(
+                            vk::DescriptorImageInfo::builder()
+                                .image_view(view)
+                                .image_layout(vk::ImageLayout::GENERAL)
+                                .build(),
+                        );
+
+                        writes.push(
+                            vk::WriteDescriptorSet::builder()
+                                .dst_set(self.set)
+                                .dst_binding(update.binding)
+                                .dst_array_element(update.array_element as u32)
+                                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                                .image_info(&images[images.len() - 1..])
+                                .build(),
+                        );
+
+                        Binding {
+                            access,
+                            stage,
+                            value: BoundValue::StorageImage {
+                                _ref_counter: texture.ref_counter.clone(),
+                                image: texture.image,
+                                view,
+                                aspect_mask: texture.aspect_flags,
+                                mip: *mip as u32,
                                 array_element: *array_element,
                             },
                         }

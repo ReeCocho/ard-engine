@@ -1,10 +1,11 @@
+pub mod occlusion;
 pub mod render_data;
 
 use std::time::{Duration, Instant};
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_math::Mat4;
+use ard_math::{Mat4, Vec2};
 use ard_pal::prelude::*;
 use ard_window::{window::WindowId, windows::Windows};
 use bitflags::bitflags;
@@ -16,11 +17,14 @@ use crate::{
     material::{MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
-    static_geometry::{self, StaticGeometry},
+    static_geometry::StaticGeometry,
     RenderPlugin,
 };
 
-use self::render_data::{GlobalRenderData, RenderArgs};
+use self::{
+    occlusion::HzbImage,
+    render_data::{GlobalRenderData, RenderArgs},
+};
 
 #[derive(Resource)]
 pub struct RendererSettings {
@@ -49,6 +53,8 @@ pub struct Renderer {
     global_data: GlobalRenderData,
     depth_buffer: Texture,
     final_image: Texture,
+    hzb_image: HzbImage,
+    use_alternate: [bool; FRAMES_IN_FLIGHT],
     ctx: Context,
 }
 
@@ -170,7 +176,7 @@ impl Renderer {
                 depth: 1,
                 array_elements: FRAMES_IN_FLIGHT,
                 mip_levels: 1,
-                texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
+                texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("depth_buffer")),
             },
@@ -183,6 +189,9 @@ impl Renderer {
         // Create the factory
         let factory = Factory::new(ctx.clone(), settings.anisotropy_level, &global_data);
 
+        // Create the HZB image
+        let hzb_image = factory.0.hzb.new_image(width, height);
+
         (
             Self {
                 ctx,
@@ -194,6 +203,8 @@ impl Renderer {
                 frame: 0,
                 global_data,
                 final_image,
+                hzb_image,
+                use_alternate: [false; FRAMES_IN_FLIGHT],
                 depth_buffer,
             },
             factory,
@@ -285,16 +296,19 @@ impl Renderer {
                     depth: 1,
                     array_elements: FRAMES_IN_FLIGHT,
                     mip_levels: 1,
-                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
+                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                     memory_usage: MemoryUsage::GpuOnly,
                     debug_name: Some(String::from("depth_buffer")),
                 },
             )
             .unwrap();
+            self.hzb_image = factory.0.hzb.new_image(canvas_width, canvas_height);
         }
 
         // Move to the next frame
         self.frame = (self.frame + 1) % FRAMES_IN_FLIGHT;
+        self.use_alternate[self.frame] = !self.use_alternate[self.frame];
+        let use_alternate = self.use_alternate[self.frame];
 
         // Cleanup dropped static geometry
         let mut static_geometry = static_geometry.0.lock().unwrap();
@@ -329,7 +343,9 @@ impl Renderer {
                 &queries,
                 &static_geometry,
             );
-            camera.render_data.prepare_draw_calls(self.frame, &factory);
+            camera
+                .render_data
+                .prepare_draw_calls(self.frame, use_alternate, &factory);
 
             // Update the camera's UBO
             camera.render_data.update_camera_ubo(
@@ -342,13 +358,78 @@ impl Renderer {
             );
 
             // Update sets
+            camera.render_data.update_draw_gen_set(
+                &self.global_data,
+                &self.hzb_image,
+                self.frame,
+                use_alternate,
+            );
             camera
                 .render_data
-                .update_draw_gen_set(&self.global_data, self.frame);
+                .update_global_set(&self.global_data, self.frame, true);
             camera
                 .render_data
-                .update_global_set(&self.global_data, self.frame);
+                .update_global_set(&self.global_data, self.frame, false);
         }
+
+        // Grab resources for rendering
+        let texture_sets = factory.0.texture_sets.lock().unwrap();
+        let material_buffers = factory.0.material_buffers.lock().unwrap();
+        let mesh_buffers = factory.0.mesh_buffers.lock().unwrap();
+        let materials = factory.0.materials.lock().unwrap();
+        let meshes = factory.0.meshes.lock().unwrap();
+
+        // Render only the static geometry of the previous frame
+        for camera_id in active_cameras.iter() {
+            let camera = match cameras.get(*camera_id) {
+                Some(camera) => camera,
+                None => continue,
+            };
+
+            commands.render_pass(
+                RenderPassDescriptor {
+                    color_attachments: vec![],
+                    depth_stencil_attachment: Some(DepthStencilAttachment {
+                        texture: &self.depth_buffer,
+                        array_element: self.frame,
+                        mip_level: 0,
+                        load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
+                        store_op: StoreOp::Store,
+                    }),
+                },
+                |pass| {
+                    // Only render if static geometry is the same from last frame
+                    if static_geometry.dirty[self.frame] {
+                        return;
+                    }
+
+                    let draw_count = camera.render_data.last_static_draws;
+                    camera.render_data.render(
+                        self.frame,
+                        !use_alternate,
+                        RenderArgs {
+                            pass,
+                            texture_sets: &texture_sets,
+                            material_buffers: &material_buffers,
+                            mesh_buffers: &mesh_buffers,
+                            materials: &materials,
+                            meshes: &meshes,
+                            pipeline_ty: PipelineType::DepthOnly,
+                            draw_offset: 0,
+                            draw_count,
+                        },
+                    );
+                },
+            );
+        }
+
+        // Generate the high-z depth pyramid using the depth buffer we just made
+        factory.0.hzb.generate(
+            self.frame,
+            &mut commands,
+            &mut self.hzb_image,
+            &self.depth_buffer,
+        );
 
         // Generate draw calls
         // NOTE: We are generating all draw calls first and then performing rendering instead of
@@ -359,18 +440,13 @@ impl Renderer {
                 Some(camera) => camera,
                 None => continue,
             };
-            camera
-                .render_data
-                .generate_draw_calls(self.frame, &self.global_data, &mut commands);
+            camera.render_data.generate_draw_calls(
+                self.frame,
+                &self.global_data,
+                Vec2::new(canvas_width as f32, canvas_height as f32),
+                &mut commands,
+            );
         }
-
-        // Grab resources for rendering
-        let texture_sets = factory.0.texture_sets.lock().unwrap();
-        let material_buffers = factory.0.material_buffers.lock().unwrap();
-        let mesh_buffers = factory.0.mesh_buffers.lock().unwrap();
-        let materials = factory.0.materials.lock().unwrap();
-        let material_instances = factory.0.material_instances.lock().unwrap();
-        let meshes = factory.0.meshes.lock().unwrap();
 
         // Render from every camera
         for camera_id in active_cameras.iter() {
@@ -392,7 +468,7 @@ impl Renderer {
                         texture: &self.depth_buffer,
                         array_element: self.frame,
                         mip_level: 0,
-                        load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
+                        load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
                         store_op: StoreOp::Store,
                     }),
                 },
@@ -400,13 +476,13 @@ impl Renderer {
                     let draw_count = camera.render_data.keys[self.frame].len();
                     camera.render_data.render(
                         self.frame,
+                        use_alternate,
                         RenderArgs {
                             pass,
                             texture_sets: &texture_sets,
                             material_buffers: &material_buffers,
                             mesh_buffers: &mesh_buffers,
                             materials: &materials,
-                            material_instances: &material_instances,
                             meshes: &meshes,
                             pipeline_ty: PipelineType::DepthOnly,
                             draw_offset: 0,
@@ -433,20 +509,20 @@ impl Renderer {
                         array_element: self.frame,
                         mip_level: 0,
                         load_op: LoadOp::Load,
-                        store_op: StoreOp::DontCare,
+                        store_op: StoreOp::Store,
                     }),
                 },
                 |pass| {
                     let draw_count = camera.render_data.keys[self.frame].len();
                     camera.render_data.render(
                         self.frame,
+                        use_alternate,
                         RenderArgs {
                             pass,
                             texture_sets: &texture_sets,
                             material_buffers: &material_buffers,
                             mesh_buffers: &mesh_buffers,
                             materials: &materials,
-                            material_instances: &material_instances,
                             meshes: &meshes,
                             pipeline_ty: PipelineType::Opaque,
                             draw_offset: 0,

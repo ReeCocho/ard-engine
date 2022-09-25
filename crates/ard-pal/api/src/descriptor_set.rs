@@ -42,6 +42,8 @@ pub enum DescriptorType {
     UniformBuffer,
     /// A read-only or read-write storage buffer object.
     StorageBuffer(AccessType),
+    /// A read-only or read-write storage image object.
+    StorageImage(AccessType),
 }
 
 #[derive(Debug, Error)]
@@ -85,6 +87,14 @@ pub enum DescriptorValue<'a, B: Backend> {
         buffer: &'a Buffer<B>,
         /// The array element of the storage buffer to bind.
         array_element: usize,
+    },
+    StorageImage {
+        /// The texture to bind.
+        texture: &'a Texture<B>,
+        /// The array element of the texture to bind.
+        array_element: usize,
+        /// The mip level of the texture to bind.
+        mip: usize,
     },
     Texture {
         /// The texture to bind.

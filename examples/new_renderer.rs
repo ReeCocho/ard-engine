@@ -240,7 +240,7 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 30.0,
+        move_speed: 3.0,
         entity: camera_entity[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,

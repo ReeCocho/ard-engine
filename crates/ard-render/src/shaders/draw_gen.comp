@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_debug_printf : enable
 
 #include "data_structures.glsl"
 
@@ -23,7 +24,7 @@ layout(set = 0, binding = 2) readonly buffer InputIds {
 };
 
 /// Output indices into the `objects` buffer for verified objects.
-layout(set = 0, binding = 3) writeonly buffer OutputIds {
+layout(set = 0, binding = 3) restrict writeonly buffer OutputIds {
     uint[] output_ids;
 };
 
@@ -32,9 +33,56 @@ layout(set = 0, binding = 4) uniform CameraUbo {
     Camera camera;
 };
 
+// HZB image for occlusion culling.
+layout(set = 0, binding = 5) uniform sampler2D hzb_image; 
+
 layout(push_constant) uniform constants {
+    vec2 render_area;
     uint object_count;
 };
+
+/// Transforms the bounding box via the given model matrix.
+BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
+    BoundingBox bb;
+
+    half_extents.x = max(half_extents.x + 0.1, 0.1);
+    half_extents.y = max(half_extents.y + 0.1, 0.1);
+    half_extents.z = max(half_extents.z + 0.1, 0.1);
+
+    // Compute all eight corners
+    bb.corners[0] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[1] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[2] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[3] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[4] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+    bb.corners[5] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[6] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[7] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+
+    // Then find the min and max points in screen space
+    bb.min_pt = vec2(1000.0, 1000.0);
+    bb.max_pt = vec2(-1000.0, -1000.0);
+    bb.depth = uintBitsToFloat(0xFF800000);
+
+    for (int i = 0; i < 8; i++) {
+        // Depth
+        bb.depth = max(bb.depth, bb.corners[i].z);
+    
+        bb.corners[i] = camera.projection * bb.corners[i];
+        bb.corners[i] /= bb.corners[i].w;
+        vec4 pt = bb.corners[i];
+
+        // Min
+        bb.min_pt.x = min(bb.min_pt.x, pt.x);
+        bb.min_pt.y = min(bb.min_pt.y, pt.y);
+
+        // Max
+        bb.max_pt.x = max(bb.max_pt.x, pt.x);
+        bb.max_pt.y = max(bb.max_pt.y, pt.y);
+    }
+
+    return bb;
+}
 
 void main() {
     uint object_index = gl_GlobalInvocationID.x;
@@ -61,7 +109,37 @@ void main() {
         }
     }
 
-    // TODO: Culling
+    // Find the AABB of the object
+    BoundingBox bb = transform_bounding_box(
+        model, 
+        bounds_center, 
+        draw_calls[obj.draw_idx].bounds_half_extents
+    );
+
+    // Determine the appropriate mip level to sample the HZB image
+    vec2 dbl_pixel_size = vec2(
+        bb.max_pt.x - bb.min_pt.x,
+        bb.max_pt.y - bb.min_pt.y
+    ) * render_area;
+    float level = ceil(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
+    
+    // Clip space to UV
+    bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);
+    bb.max_pt.y = 1.0 - bb.max_pt.y;
+
+    bb.min_pt = (bb.min_pt * 0.5) + vec2(0.5);
+    bb.min_pt.y = 1.0 - bb.min_pt.y;
+
+    // Determine depth (in world space)
+    float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
+    depth = (camera.near_clip / depth) + 1.0;
+
+    debugPrintfEXT("%f %f", depth, bb.depth);
+
+    // If our object is behind all local objects, cull
+    if (bb.depth >= depth) {
+        return;
+    }
 
     // Insert the object into the output list and notify the associated call of the object
     uint model_offset = atomicAdd(draw_calls[obj.draw_idx].instance_count, 1);

@@ -3,6 +3,7 @@ use bitflags::bitflags;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TextureFormat {
     R8Unorm,
+    R32Sfloat,
     Rgba8Unorm,
     Bgra8Unorm,
     D16Unorm,

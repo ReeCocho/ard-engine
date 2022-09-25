@@ -81,6 +81,11 @@ fn main() {
         Path::new("./src/shaders/draw_gen_no_highz.comp.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/shaders/highz_gen.comp"),
+        Path::new("./src/shaders/highz_gen.comp.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

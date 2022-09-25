@@ -9,7 +9,7 @@ use crate::{
         MaterialInstanceInner,
     },
     mesh::{Mesh, MeshCreateInfo, MeshInner},
-    renderer::render_data::GlobalRenderData,
+    renderer::{occlusion::HzbGlobal, render_data::GlobalRenderData},
     texture::{Texture, TextureCreateInfo, TextureInner},
 };
 
@@ -41,6 +41,7 @@ pub struct Factory(pub(crate) Arc<FactoryInner>);
 pub(crate) struct FactoryInner {
     ctx: Context,
     pub layouts: Layouts,
+    pub hzb: HzbGlobal,
     pub material_buffers: Mutex<MaterialBuffers>,
     pub mesh_buffers: Mutex<MeshBuffers>,
     pub texture_sets: Mutex<TextureSets>,
@@ -81,9 +82,12 @@ impl Factory {
             draw_gen: global_data.draw_gen_layout.clone(),
         };
 
+        let hzb = HzbGlobal::new(&ctx);
+
         Factory(Arc::new(FactoryInner {
             ctx,
             layouts,
+            hzb,
             material_buffers: Mutex::new(material_buffers),
             mesh_buffers: Mutex::new(mesh_buffers),
             staging: Mutex::new(staging),

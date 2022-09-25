@@ -335,11 +335,24 @@ impl UsageScope {
     #[inline(always)]
     pub fn use_resource(&mut self, subresource: SubResource, usage: SubResourceUsage) {
         let mut entry = self.usages.entry(subresource).or_default();
+        let need_general =
+            entry.layout == vk::ImageLayout::GENERAL || usage.layout == vk::ImageLayout::GENERAL;
+
         assert!(
-            entry.layout == vk::ImageLayout::UNDEFINED || entry.layout == usage.layout,
+            // Don't care if the previous layout is undefined
+            entry.layout == vk::ImageLayout::UNDEFINED ||
+            // Don't care if the layouts match
+            entry.layout == usage.layout ||
+            // Don't care if one of the layouts is general
+            need_general,
             "an image can only have one layout per scope"
         );
-        entry.layout = usage.layout;
+
+        entry.layout = if need_general {
+            vk::ImageLayout::GENERAL
+        } else {
+            usage.layout
+        };
         entry.access |= usage.access;
         entry.stage |= usage.stage;
     }

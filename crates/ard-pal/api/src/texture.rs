@@ -58,6 +58,7 @@ pub enum TextureCreateError {
 pub struct Texture<B: Backend> {
     ctx: Context<B>,
     dims: (u32, u32, u32),
+    mip_count: usize,
     pub(crate) id: B::Texture,
 }
 
@@ -67,8 +68,14 @@ impl<B: Backend> Texture<B> {
         create_info: TextureCreateInfo,
     ) -> Result<Self, TextureCreateError> {
         let dims = (create_info.width, create_info.height, create_info.depth);
+        let mip_count = create_info.mip_levels;
         let id = unsafe { ctx.0.create_texture(create_info)? };
-        Ok(Self { ctx, dims, id })
+        Ok(Self {
+            ctx,
+            dims,
+            id,
+            mip_count,
+        })
     }
 
     #[inline(always)]
@@ -79,6 +86,11 @@ impl<B: Backend> Texture<B> {
     #[inline(always)]
     pub fn dims(&self) -> (u32, u32, u32) {
         self.dims
+    }
+
+    #[inline(always)]
+    pub fn mip_count(&self) -> usize {
+        self.mip_count
     }
 }
 

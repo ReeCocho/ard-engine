@@ -47,6 +47,7 @@ pub(crate) fn to_vk_present_mode(present_mode: PresentMode) -> vk::PresentModeKH
 pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
     match format {
         TextureFormat::R8Unorm => vk::Format::R8_UNORM,
+        TextureFormat::R32Sfloat => vk::Format::R32_SFLOAT,
         TextureFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
         TextureFormat::Bgra8Unorm => vk::Format::B8G8R8A8_UNORM,
         TextureFormat::D16Unorm => vk::Format::D16_UNORM,
@@ -87,6 +88,7 @@ pub(crate) fn to_vk_descriptor_type(ty: DescriptorType) -> vk::DescriptorType {
         DescriptorType::Texture => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
         DescriptorType::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
         DescriptorType::StorageBuffer(_) => vk::DescriptorType::STORAGE_BUFFER,
+        DescriptorType::StorageImage(_) => vk::DescriptorType::STORAGE_IMAGE,
     }
 }
 
