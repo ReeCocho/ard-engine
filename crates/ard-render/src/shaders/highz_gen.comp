@@ -17,21 +17,21 @@ layout(push_constant) uniform constants {
 
 void main() {
     // Fetch a 2x2 texel region
-    vec2 base_texel_coord = vec2(gl_GlobalInvocationID.xy);
+    vec2 base_texel_coord = vec2(gl_GlobalInvocationID.xy) + vec2(0.5);
     
     vec2 gather_coord1 = (base_texel_coord + vec2(-0.5, -0.5)) * inv_output_size;
     vec2 gather_coord2 = (base_texel_coord + vec2(-0.5, 0.5)) * inv_output_size;
     vec2 gather_coord3 = (base_texel_coord + vec2(0.5, -0.5)) * inv_output_size;
     vec2 gather_coord4 = (base_texel_coord + vec2(0.5, 0.5)) * inv_output_size;
 
-    vec4 texel_value1 = textureGather(input_depth_buffer, gather_coord1);
-    vec4 texel_value2 = textureGather(input_depth_buffer, gather_coord2);
-    vec4 texel_value3 = textureGather(input_depth_buffer, gather_coord3);
-    vec4 texel_value4 = textureGather(input_depth_buffer, gather_coord4);
+    float texel_value1 = texture(input_depth_buffer, gather_coord1).r;
+    float texel_value2 = texture(input_depth_buffer, gather_coord2).r;
+    float texel_value3 = texture(input_depth_buffer, gather_coord3).r;
+    float texel_value4 = texture(input_depth_buffer, gather_coord4).r;
 
     // Find the minimum value of the gathered texels
-    vec4 gathered_min = min(texel_value1, min(texel_value2, min(texel_value3, texel_value4)));
-    float min_depth = min(gathered_min.x, min(gathered_min.y, min(gathered_min.z, gathered_min.w)));
+    float min_depth = min(texel_value1, min(texel_value2, min(texel_value3, texel_value4)));
+    // float min_depth = min(gathered_min.x, min(gathered_min.y, min(gathered_min.z, gathered_min.w)));
 
     imageStore(
         output_depth_buffer,

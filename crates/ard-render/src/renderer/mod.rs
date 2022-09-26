@@ -366,10 +366,7 @@ impl Renderer {
             );
             camera
                 .render_data
-                .update_global_set(&self.global_data, self.frame, true);
-            camera
-                .render_data
-                .update_global_set(&self.global_data, self.frame, false);
+                .update_global_set(&self.global_data, self.frame);
         }
 
         // Grab resources for rendering

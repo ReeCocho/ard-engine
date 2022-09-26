@@ -602,31 +602,28 @@ impl RenderData {
     }
 
     /// Rebinds all global descriptor set values.
-    pub fn update_global_set(
-        &mut self,
-        global: &GlobalRenderData,
-        frame: usize,
-        use_alternate: bool,
-    ) {
-        let set = &mut self.global_sets[frame][use_alternate as usize];
-        set.update(&[
-            DescriptorSetUpdate {
-                binding: GLOBAL_OBJECT_DATA_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: &global.object_data,
-                    array_element: frame,
+    pub fn update_global_set(&mut self, global: &GlobalRenderData, frame: usize) {
+        for i in 0..2 {
+            let set = &mut self.global_sets[frame][i];
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: GLOBAL_OBJECT_DATA_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &global.object_data,
+                        array_element: frame,
+                    },
                 },
-            },
-            DescriptorSetUpdate {
-                binding: GLOBAL_OBJECT_ID_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: &self.output_ids,
-                    array_element: frame,
+                DescriptorSetUpdate {
+                    binding: GLOBAL_OBJECT_ID_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &self.output_ids,
+                        array_element: frame,
+                    },
                 },
-            },
-        ]);
+            ]);
+        }
     }
 
     /// Updates the camera UBO.

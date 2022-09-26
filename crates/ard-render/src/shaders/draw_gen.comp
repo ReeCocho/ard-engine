@@ -60,13 +60,13 @@ BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
     bb.corners[7] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, -half_extents.z), 1.0);
 
     // Then find the min and max points in screen space
-    bb.min_pt = vec2(1000.0, 1000.0);
-    bb.max_pt = vec2(-1000.0, -1000.0);
-    bb.depth = uintBitsToFloat(0xFF800000);
+    bb.min_pt = vec2(uintBitsToFloat(0x7F800000));
+    bb.max_pt = vec2(uintBitsToFloat(0xFF800000));
+    bb.depth = uintBitsToFloat(0x7F800000);
 
     for (int i = 0; i < 8; i++) {
         // Depth
-        bb.depth = max(bb.depth, bb.corners[i].z);
+        bb.depth = min(bb.depth, bb.corners[i].z);
     
         bb.corners[i] = camera.projection * bb.corners[i];
         bb.corners[i] /= bb.corners[i].w;
@@ -132,12 +132,11 @@ void main() {
 
     // Determine depth (in world space)
     float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
-    depth = (camera.near_clip / depth) + 1.0;
-
-    debugPrintfEXT("%f %f", depth, bb.depth);
+    debugPrintfEXT("%f %f %f", level, depth, bb.depth);
+    depth = camera.near_clip / depth;
 
     // If our object is behind all local objects, cull
-    if (bb.depth >= depth) {
+    if (bb.depth > depth) {
         return;
     }
 
