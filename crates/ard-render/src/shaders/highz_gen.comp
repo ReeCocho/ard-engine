@@ -1,7 +1,7 @@
 #version 450
 
 // Most of the code for this comes from here:
-// https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/
+// https://miketuritzin.com/post/hierarchical-depth-buffers/
 
 layout(local_size_x_id = 0) in;
 layout(local_size_y_id = 1) in;
@@ -15,27 +15,35 @@ layout(push_constant) uniform constants {
     vec2 inv_output_size;
 };
 
-void main() {
-    // Fetch a 2x2 texel region
-    vec2 base_texel_coord = vec2(gl_GlobalInvocationID.xy) + vec2(0.5);
-    
-    vec2 gather_coord1 = (base_texel_coord + vec2(-0.5, -0.5)) * inv_output_size;
-    vec2 gather_coord2 = (base_texel_coord + vec2(-0.5, 0.5)) * inv_output_size;
-    vec2 gather_coord3 = (base_texel_coord + vec2(0.5, -0.5)) * inv_output_size;
-    vec2 gather_coord4 = (base_texel_coord + vec2(0.5, 0.5)) * inv_output_size;
+shared uint min_depth_as_uint;
 
-    float texel_value1 = texture(input_depth_buffer, gather_coord1).r;
-    float texel_value2 = texture(input_depth_buffer, gather_coord2).r;
-    float texel_value3 = texture(input_depth_buffer, gather_coord3).r;
-    float texel_value4 = texture(input_depth_buffer, gather_coord4).r;
+void main() {
+    if (gl_LocalInvocationIndex == 0) {
+        min_depth_as_uint = floatBitsToUint(1.0);
+    }
+
+    memoryBarrierShared();
+    barrier();
+
+    // Fetch a 2x2 texel region
+    vec2 texel_coord = vec2(gl_WorkGroupID.xy) + vec2(0.5);
+    texel_coord += (vec2(gl_LocalInvocationID.xy) - vec2(0.5)) * 2.0;
+    vec2 gather_coord = texel_coord * inv_output_size;
+    vec4 texel_value = textureGather(input_depth_buffer, gather_coord);
 
     // Find the minimum value of the gathered texels
-    float min_depth = min(texel_value1, min(texel_value2, min(texel_value3, texel_value4)));
-    // float min_depth = min(gathered_min.x, min(gathered_min.y, min(gathered_min.z, gathered_min.w)));
+    float min_depth = min(texel_value.x, min(texel_value.y, min(texel_value.z, texel_value.w)));
+    atomicMin(min_depth_as_uint, floatBitsToUint(min_depth));
 
-    imageStore(
-        output_depth_buffer,
-        ivec2(gl_GlobalInvocationID.xy),
-        vec4(min_depth)
-    );
+    memoryBarrierShared();
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0) {
+        min_depth = uintBitsToFloat(min_depth_as_uint);
+        imageStore(
+            output_depth_buffer,
+            ivec2(gl_WorkGroupID.xy),
+            vec4(min_depth)
+        );
+    }
 }

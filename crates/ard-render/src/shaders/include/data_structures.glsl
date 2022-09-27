@@ -8,6 +8,22 @@
 // and then not updated here. Might be worth investigating a way to auto-generate this file from
 // the Rust files.
 
+////////////////
+/// LIGHTING ///
+////////////////
+
+struct Light {
+    vec4 color_intensity;
+    vec4 position_range;
+    // Unused by point lights.
+    vec4 direction_radius;
+};
+
+struct LightClusters {
+    uint[FROXEL_TABLE_Z][FROXEL_TABLE_X][FROXEL_TABLE_Y] light_counts;
+    uint[FROXEL_TABLE_Z][FROXEL_TABLE_X][FROXEL_TABLE_Y][MAX_LIGHTS_PER_FROXEL] clusters;
+};
+
 //////////////
 /// CAMERA ///
 //////////////
@@ -21,7 +37,7 @@ struct Frustum {
     vec4[6] planes;
 };
 
-struct CameraClusterFroxels {
+struct CameraFroxels {
     Froxel froxels[FROXEL_TABLE_Z][FROXEL_TABLE_X][FROXEL_TABLE_Y];
 };
 
@@ -34,6 +50,7 @@ struct Camera {
     mat4 vp_inv;
     Frustum frustum;
     vec4 position;
+    vec2 cluster_scale_bias;
     float fov;
     float near_clip;
     float far_clip;

@@ -38,12 +38,20 @@ layout(location = 20) in vec3 ARD_FRAG_POS_VIEW_SPACE;
 /// GLOBAL SET ///
 //////////////////
 
-layout(set = GLOBAL_SET_ID, binding = 0) readonly buffer ARD_ObjectData {
+layout(set = GLOBAL_SET_ID, binding = 0) restrict readonly buffer ARD_ObjectData {
     ObjectData[] ARD_OBJECT_DATA;
 };
 
-layout(set = GLOBAL_SET_ID, binding = 1) readonly buffer ARD_ObjectIndices {
+layout(set = GLOBAL_SET_ID, binding = 1) restrict readonly buffer ARD_ObjectIndices {
     uint[] ARD_OBJECT_INDICES;
+};
+
+layout(set = GLOBAL_SET_ID, binding = 2) restrict readonly buffer ARD_Lights {
+    Light[] ARD_LIGHTS;
+};
+
+layout(set = GLOBAL_SET_ID, binding = 3) restrict readonly buffer ARD_Clusters {
+    LightClusters ARD_CLUSTERS;
 };
 
 //////////////

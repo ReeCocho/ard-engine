@@ -60,6 +60,8 @@ pub(crate) struct Layouts {
     pub textures: DescriptorSetLayout,
     pub materials: DescriptorSetLayout,
     pub draw_gen: DescriptorSetLayout,
+    pub light_cluster: DescriptorSetLayout,
+    pub froxel_gen: DescriptorSetLayout,
 }
 
 impl Factory {
@@ -80,6 +82,8 @@ impl Factory {
             textures: texture_sets.layout().clone(),
             materials: material_buffers.layout().clone(),
             draw_gen: global_data.draw_gen_layout.clone(),
+            light_cluster: global_data.light_cluster_layout.clone(),
+            froxel_gen: global_data.froxel_gen_layout.clone(),
         };
 
         let hzb = HzbGlobal::new(&ctx);
@@ -303,6 +307,15 @@ impl Factory {
     pub fn update_camera(&self, camera: &Camera, descriptor: CameraDescriptor) {
         let mut cameras = self.0.cameras.lock().unwrap();
         let camera = cameras.get_mut(camera.id).unwrap();
+
+        // Mark cluster regen if the perspective matrix changed
+        if camera.descriptor.near != descriptor.near
+            || camera.descriptor.far != descriptor.far
+            || camera.descriptor.fov != descriptor.fov
+        {
+            camera.mark_froxel_regen();
+        }
+
         camera.descriptor = descriptor;
     }
 }

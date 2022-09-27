@@ -9,17 +9,17 @@ layout(local_size_z_id = 2) in;
 
 /// Draw calls to update the draw count of when an object is verified for rendering. Also contains
 /// bounding volume information for objects of the type it draws.
-layout(set = 0, binding = 0) buffer DrawCalls {
+layout(set = 0, binding = 0) restrict buffer DrawCalls {
     DrawCall[] draw_calls;
 };
 
 /// Contains per object information.
-layout(set = 0, binding = 1) readonly buffer Objects {
+layout(set = 0, binding = 1) restrict readonly buffer Objects {
     ObjectData[] objects;
 };
 
 /// Input objects to verify for rendering.
-layout(set = 0, binding = 2) readonly buffer InputIds {
+layout(set = 0, binding = 2) restrict readonly buffer InputIds {
     ObjectId[] input_ids;
 };
 
@@ -98,17 +98,18 @@ void main() {
     vec4 bounds_center = draw_calls[obj.draw_idx].bounds_center;
     vec4 pos = model * vec4(bounds_center.xyz, 1.0);
     vec3 scale = vec3(
-        length(vec3(model[0][0], model[0][1], model[0][2])),
-        length(vec3(model[1][0], model[1][1], model[1][2])),
-        length(vec3(model[1][0], model[2][1], model[2][2]))
+        dot(model[0].xyz, model[0].xyz),
+        dot(model[1].xyz, model[1].xyz),
+        dot(model[2].xyz, model[2].xyz)
     );
-    float radius = bounds_center.w * max(max(scale.x, max(scale.y, scale.z)), 1.0);
+    float radius = bounds_center.w * sqrt(max(scale.x, max(scale.y, scale.z)));
     for (int i = 0; i < 6; i++) { 
         if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
             return;
         }
     }
 
+#if defined(HIGH_Z_CULLING)
     // Find the AABB of the object
     BoundingBox bb = transform_bounding_box(
         model, 
@@ -132,13 +133,13 @@ void main() {
 
     // Determine depth (in world space)
     float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
-    debugPrintfEXT("%f %f %f", level, depth, bb.depth);
     depth = camera.near_clip / depth;
 
     // If our object is behind all local objects, cull
     if (bb.depth > depth) {
         return;
     }
+#endif
 
     // Insert the object into the output list and notify the associated call of the object
     uint model_offset = atomicAdd(draw_calls[obj.draw_idx].instance_count, 1);

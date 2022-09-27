@@ -14,7 +14,7 @@ input = [ "ard-input" ]
 assets = [ "ard-assets" ]
 graphics_assets = [ "ard-graphics-assets" ]
 graphics_vk = [ "window", "ard-graphics-api", "ard-graphics-vk" ]
-render = [ "window", "ard-render" ]
+render = [ "window", "ard-render", "ard-pal" ]
 window = [ "ard-window", "ard-winit" ]
 
 [dependencies]
@@ -33,6 +33,7 @@ ard-graphics-vk = { path = "./crates/ard-graphics-vk", version = "0.1", optional
 ard-window = { path = "./crates/ard-window", version = "0.1", optional = true }
 ard-winit = { path = "./crates/ard-winit", version = "0.1", optional = true }
 ard-render = { path = "./crates/ard-render", version = "0.1", optional = true }
+ard-pal = { path = "./crates/ard-pal", version = "0.1", optional = true }
 ard-graphics-assets = { path = "./crates/ard-graphics-assets", version = "0.1", optional = true }
 
 [dev-dependencies]

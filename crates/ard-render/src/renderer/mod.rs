@@ -14,6 +14,7 @@ use raw_window_handle::HasRawWindowHandle;
 use crate::{
     camera::CameraUbo,
     factory::Factory,
+    lighting::PointLight,
     material::{MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
@@ -26,7 +27,7 @@ use self::{
     render_data::{GlobalRenderData, RenderArgs},
 };
 
-#[derive(Resource)]
+#[derive(Resource, Copy, Clone)]
 pub struct RendererSettings {
     /// Flag to enable drawing the game scene. For games, this should be `true` all the time. This
     /// is useful for things like editors where you only want a GUI.
@@ -92,7 +93,12 @@ struct Render(Duration);
 #[derive(Debug, Event, Copy, Clone)]
 pub struct PostRender(pub Duration);
 
-pub(crate) type RenderQuery = (Entity, (Read<Renderable>, Read<Model>), (Read<Disabled>,));
+pub(crate) type RenderQuery = (
+    Entity,
+    (Read<Renderable>, Read<Model>, Read<PointLight>),
+    (Read<Disabled>,),
+);
+
 type RenderResources = (
     Read<RendererSettings>,
     Read<Windows>,
@@ -269,7 +275,7 @@ impl Renderer {
 
         // Resize the canvas images if the dimensions don't match
         let (old_width, old_height, _) = self.final_image.dims();
-        if old_width != canvas_width || old_height != canvas_height {
+        let resized = if old_width != canvas_width || old_height != canvas_height {
             self.final_image = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
@@ -303,7 +309,10 @@ impl Renderer {
             )
             .unwrap();
             self.hzb_image = factory.0.hzb.new_image(canvas_width, canvas_height);
-        }
+            true
+        } else {
+            false
+        };
 
         // Move to the next frame
         self.frame = (self.frame + 1) % FRAMES_IN_FLIGHT;
@@ -326,6 +335,7 @@ impl Renderer {
         // Prepare global object data
         self.global_data
             .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
+        self.global_data.prepare_lights(self.frame, &queries);
 
         // Prepare rendering data
         let mut cameras = factory.0.cameras.lock().unwrap();
@@ -335,6 +345,11 @@ impl Renderer {
                 Some(camera) => camera,
                 None => continue,
             };
+
+            // If the cavas resized, we need to regen froxels
+            if resized {
+                camera.mark_froxel_regen();
+            }
 
             // Prepare IDs and draw calls
             camera.render_data.prepare_input_ids(
@@ -346,6 +361,7 @@ impl Renderer {
             camera
                 .render_data
                 .prepare_draw_calls(self.frame, use_alternate, &factory);
+            camera.render_data.prepare_light_table(self.frame);
 
             // Update the camera's UBO
             camera.render_data.update_camera_ubo(
@@ -367,6 +383,9 @@ impl Renderer {
             camera
                 .render_data
                 .update_global_set(&self.global_data, self.frame);
+            camera
+                .render_data
+                .update_light_cluster_set(&self.global_data, self.frame);
         }
 
         // Grab resources for rendering
@@ -428,7 +447,7 @@ impl Renderer {
             &self.depth_buffer,
         );
 
-        // Generate draw calls
+        // Regen froxels (if needed) and generate draw calls and light table
         // NOTE: We are generating all draw calls first and then performing rendering instead of
         // doing both at the same time because your GPU will cry if you schedule a ton of both
         // compute and graphics work at the same time
@@ -437,6 +456,16 @@ impl Renderer {
                 Some(camera) => camera,
                 None => continue,
             };
+            if camera.needs_froxel_regen(self.frame) {
+                camera.render_data.generate_camera_froxels(
+                    self.frame,
+                    &self.global_data,
+                    &mut commands,
+                );
+            }
+            camera
+                .render_data
+                .cluster_lights(self.frame, &self.global_data, &mut commands);
             camera.render_data.generate_draw_calls(
                 self.frame,
                 &self.global_data,

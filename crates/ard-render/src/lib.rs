@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod factory;
+pub mod lighting;
 pub mod material;
 pub mod mesh;
 pub mod renderer;
@@ -16,6 +17,7 @@ use renderer::{Renderer, RendererSettings};
 #[derive(Copy, Clone)]
 pub struct RenderPlugin {
     pub window: WindowId,
+    pub settings: RendererSettings,
     pub debug: bool,
 }
 
@@ -34,18 +36,17 @@ fn late_render_init(app: &mut App) {
     let windows = app.resources.get::<WinitWindows>().unwrap();
     let window = windows.get_window(plugin.0.window).unwrap();
     let size = window.inner_size();
-    let renderer_settings = RendererSettings::default();
 
     let (renderer, factory, static_geo) = Renderer::new(
         plugin.0,
         window,
         plugin.0.window,
         (size.width, size.height),
-        &renderer_settings,
+        &plugin.0.settings,
     );
 
     app.dispatcher.add_system(renderer);
-    app.resources.add(renderer_settings);
+    app.resources.add(plugin.0.settings);
     app.resources.add(factory);
     app.resources.add(static_geo);
 }

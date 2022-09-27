@@ -1,0 +1,89 @@
+#version 450
+
+#include "data_structures.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(set = 0, binding = 0) uniform ARD_Camera {
+    Camera camera;
+};
+
+layout(set = 0, binding = 1) writeonly restrict buffer ARD_CameraFroxels {
+    CameraFroxels clusters;
+};
+
+void main() {
+    vec4 corners[4];
+    corners[0] = vec4(
+        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[1] = vec4(
+        ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[2] = vec4(
+        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[3] = vec4(
+        ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    float f_over_n = camera.far_clip / camera.near_clip;
+    vec2 min_max_z = camera.near_clip * vec2(
+        pow(
+            f_over_n, 
+            float(gl_WorkGroupID.z) / float(FROXEL_TABLE_Z)
+        ),
+        pow(
+            f_over_n, 
+            float(gl_WorkGroupID.z + 1) / float(FROXEL_TABLE_Z)
+        )
+    );
+
+    // If this is the final cluster, the max Z is +inf
+    if (gl_WorkGroupID.z == FROXEL_TABLE_Z - 1) {
+        min_max_z.y = uintBitsToFloat(0x7F800000);
+    }
+
+    vec4 frustum[4];
+    frustum[0] = camera.projection_inv * corners[0];
+    frustum[0] /= frustum[0].w;
+    
+    frustum[1] = camera.projection_inv * corners[1];
+    frustum[1] /= frustum[1].w;
+    
+    frustum[2] = camera.projection_inv * corners[2];
+    frustum[2] /= frustum[2].w;
+    
+    frustum[3] = camera.projection_inv * corners[3];
+    frustum[3] /= frustum[3].w;
+
+    Froxel froxel;
+    froxel.planes[0] = vec4(normalize(cross(frustum[0].xyz, frustum[1].xyz)), 1.0);
+    froxel.planes[1] = vec4(normalize(cross(frustum[1].xyz, frustum[2].xyz)), 1.0);
+    froxel.planes[2] = vec4(normalize(cross(frustum[2].xyz, frustum[3].xyz)), 1.0);
+    froxel.planes[3] = vec4(normalize(cross(frustum[3].xyz, frustum[0].xyz)), 1.0);
+
+    froxel.min_max_z = vec4(min_max_z, 0.0, 0.0);
+
+    clusters.froxels
+        [gl_WorkGroupID.z]
+        [gl_WorkGroupID.x]
+        [gl_WorkGroupID.y] = froxel;
+}

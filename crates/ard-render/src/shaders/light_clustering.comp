@@ -1,0 +1,79 @@
+#version 450
+
+#include "data_structures.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(set = 0, binding = 0) readonly buffer ARD_Lights {
+    Light[] lights;
+};
+
+layout(set = 0, binding = 1) restrict buffer ARD_Clusters {
+    LightClusters light_clusters;
+};
+
+layout(set = 0, binding = 2) uniform ARD_Camera {
+    Camera camera;
+};
+
+layout(set = 0, binding = 3) readonly restrict buffer ARD_CameraFroxels {
+    CameraFroxels clusters;
+};
+
+layout(push_constant) uniform constants {
+    uint total_lights;
+};
+
+void main() {
+    Froxel froxel = clusters.froxels
+        [gl_GlobalInvocationID.z]
+        [gl_GlobalInvocationID.x]
+        [gl_GlobalInvocationID.y];
+
+    uint light_idx = 0;
+    for (int i = 0; i < total_lights; i++) {
+        // Bounds check for lights
+        if (light_idx >= MAX_LIGHTS_PER_FROXEL) {
+            break;
+        }
+
+        Light light = lights[i];
+
+        // Convert light position to view space
+        float radius = light.position_range.w;
+        vec4 pos = camera.view * vec4(light.position_range.xyz, 1.0);
+
+        // Z-slice check
+        vec2 min_max_z = froxel.min_max_z.xy;
+        if (pos.z - radius > min_max_z.y || pos.z + radius < min_max_z.x) {
+            continue;
+        }
+
+        // Check planes
+        bool inside = true;
+        for (int i = 0; i < 4; i++) {
+            if (dot(pos, froxel.planes[i]) <= -radius) {
+                inside = false;
+                break;
+            }
+        }
+
+        if (!inside) {
+            continue;
+        }
+
+        // Add light to cluster
+        light_clusters.light_counts
+            [gl_GlobalInvocationID.z]
+            [gl_GlobalInvocationID.x]
+            [gl_GlobalInvocationID.y] += 1;
+        light_clusters.clusters
+            [gl_GlobalInvocationID.z]
+            [gl_GlobalInvocationID.x]
+            [gl_GlobalInvocationID.y]
+            [light_idx] = i;
+        light_idx += 1;
+    }
+}

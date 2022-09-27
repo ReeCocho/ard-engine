@@ -85,7 +85,7 @@ impl HzbGlobal {
             ComputePipelineCreateInfo {
                 layouts: vec![layout.clone()],
                 module,
-                work_group_size: (1, 1, 1),
+                work_group_size: (2, 2, 1),
                 push_constants_size: Some(std::mem::size_of::<HzbPushConstants>() as u32),
                 debug_name: Some(String::from("hzb_gen_pipeline")),
             },

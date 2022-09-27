@@ -2,9 +2,11 @@ use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
+use ard_pal::prelude::PresentMode;
 use ard_render::{
     camera::{Camera, CameraDescriptor},
     factory::{Factory, ShaderCreateInfo},
+    lighting::PointLight,
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
     mesh::{MeshBounds, MeshCreateInfo, VertexLayout},
     renderer::{Model, PreRender, RenderLayer, Renderable, RendererSettings},
@@ -29,6 +31,10 @@ fn main() {
         .add_plugin(WinitPlugin)
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
+            settings: RendererSettings {
+                present_mode: PresentMode::Immediate,
+                ..Default::default()
+            },
             debug: true,
         })
         .add_system(FrameRate::default())
@@ -300,6 +306,30 @@ fn setup(app: &mut App) {
                 pack.1.push(Model(model));
             }
         }
+    }
+
+    app.world.entities_mut().commands().create(pack, &mut []);
+
+    // Create point lights
+    const LIGHT_COUNT: usize = 8;
+    const LIGHT_SPACING: f32 = 4.0;
+    const LIGHT_RANGE: f32 = 4.0;
+
+    let mut pack = (
+        Vec::with_capacity(LIGHT_COUNT),
+        Vec::with_capacity(LIGHT_COUNT),
+    );
+
+    for i in 0..LIGHT_COUNT {
+        let t = Vec3::new(i as f32 * LIGHT_SPACING, 8.0, 8.0);
+        let model = Mat4::from_translation(t);
+        println!("{}", t.x);
+        pack.0.push(Model(model));
+        pack.1.push(PointLight {
+            color: Vec3::ONE,
+            intensity: 1.0,
+            range: LIGHT_RANGE,
+        });
     }
 
     app.world.entities_mut().commands().create(pack, &mut []);

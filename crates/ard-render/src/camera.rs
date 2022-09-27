@@ -1,6 +1,7 @@
-use ard_ecs::prelude::Component;
-use ard_math::{Mat4, Vec3, Vec4};
-use ard_pal::prelude::{ClearColor, Context};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use ard_math::{Mat4, Vec2, Vec3, Vec4};
+use ard_pal::prelude::Context;
 use bytemuck::{Pod, Zeroable};
 
 use crate::{
@@ -8,12 +9,8 @@ use crate::{
         allocator::{EscapeHandle, ResourceId},
         Layouts,
     },
-    renderer::{
-        occlusion::{HzbGlobal, HzbImage},
-        render_data::RenderData,
-        RenderLayer,
-    },
-    shader_constants::FROXEL_TABLE_DIMS,
+    renderer::{render_data::RenderData, RenderLayer},
+    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +60,8 @@ pub struct Camera {
 pub(crate) struct CameraInner {
     pub descriptor: CameraDescriptor,
     pub render_data: RenderData,
+    /// Flags to indicate if a froxel regen is required.
+    pub regen_froxels: [AtomicBool; FRAMES_IN_FLIGHT],
 }
 
 #[repr(C)]
@@ -76,9 +75,23 @@ pub(crate) struct CameraUbo {
     pub vp_inv: Mat4,
     pub frustum: Frustum,
     pub position: Vec4,
+    pub cluster_scale_bias: Vec2,
     pub fov: f32,
     pub near_clip: f32,
     pub far_clip: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub(crate) struct Froxel {
+    pub planes: [Vec4; 4],
+    pub min_max_z: Vec4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub(crate) struct CameraFroxels {
+    pub frustums: [Froxel; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
 }
 
 unsafe impl Pod for CameraUbo {}
@@ -86,6 +99,12 @@ unsafe impl Zeroable for CameraUbo {}
 
 unsafe impl Pod for Frustum {}
 unsafe impl Zeroable for Frustum {}
+
+unsafe impl Pod for Froxel {}
+unsafe impl Zeroable for Froxel {}
+
+unsafe impl Pod for CameraFroxels {}
+unsafe impl Zeroable for CameraFroxels {}
 
 impl CameraInner {
     pub fn new(ctx: &Context, descriptor: CameraDescriptor, layouts: &Layouts) -> Self {
@@ -96,8 +115,23 @@ impl CameraInner {
                 "camera",
                 &layouts.global,
                 &layouts.draw_gen,
+                &layouts.froxel_gen,
                 &layouts.camera,
+                &layouts.light_cluster,
             ),
+            regen_froxels: Default::default(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn needs_froxel_regen(&self, frame: usize) -> bool {
+        self.regen_froxels[frame].swap(false, Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn mark_froxel_regen(&self) {
+        for mark in &self.regen_froxels {
+            mark.store(true, Ordering::Relaxed);
         }
     }
 }
@@ -130,6 +164,11 @@ impl CameraUbo {
                 descriptor.position.z,
                 0.0,
             ),
+            cluster_scale_bias: Vec2::new(
+                (FROXEL_TABLE_DIMS.2 as f32) / (descriptor.far / descriptor.near).ln(),
+                ((FROXEL_TABLE_DIMS.2 as f32) * descriptor.near.ln())
+                    / (descriptor.far / descriptor.near).ln(),
+            ),
             fov: descriptor.fov,
             near_clip: descriptor.near,
             far_clip: descriptor.far,
@@ -144,7 +183,7 @@ impl Default for CameraDescriptor {
             target: Vec3::Z,
             up: Vec3::Y,
             near: 0.03,
-            far: 100.0,
+            far: 500.0,
             fov: 80.0f32.to_radians(),
             order: 0,
             clear_color: Some(Vec3::ZERO),
