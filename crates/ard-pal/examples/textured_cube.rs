@@ -262,6 +262,7 @@ fn main() {
                         min_lod: NotNan::new(0.0).unwrap(),
                         max_lod: None,
                         unnormalize_coords: false,
+                        border_color: None,
                     },
                     base_mip: 0,
                     mip_count: 1,

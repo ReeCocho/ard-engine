@@ -7,6 +7,7 @@ use crate::{
         Factory, Layouts,
     },
     mesh::VertexLayout,
+    shader_constants::FRAMES_IN_FLIGHT,
 };
 
 pub struct MaterialCreateInfo {
@@ -40,12 +41,13 @@ pub struct MaterialInstance {
 pub(crate) struct MaterialInner {
     pub pipelines: Pipelines,
     pub data_size: u64,
+    pub layout: VertexLayout,
     pub texture_count: usize,
 }
 
 pub(crate) struct MaterialInstanceInner {
     pub data: Vec<u8>,
-    pub textures: Vec<Option<Texture>>,
+    pub textures: Vec<Option<crate::texture::Texture>>,
     pub material_block: Option<MaterialBlock>,
     pub texture_block: Option<MaterialBlock>,
 }
@@ -124,7 +126,7 @@ impl MaterialInner {
                     depth_clamp: true,
                     depth_test: true,
                     depth_write: true,
-                    depth_compare: CompareOp::Greater,
+                    depth_compare: CompareOp::Less,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }),
@@ -186,6 +188,7 @@ impl MaterialInner {
             },
             data_size: create_info.data_size,
             texture_count: create_info.texture_count,
+            layout: create_info.vertex_layout,
         }
     }
 }
@@ -196,6 +199,10 @@ impl MaterialInstanceInner {
         create_info: MaterialInstanceCreateInfo,
     ) -> Self {
         let material_block = if create_info.material.data_size > 0 {
+            // Ensure the sets exists
+            for i in 0..FRAMES_IN_FLIGHT {
+                material_buffers.get_set_mut(create_info.material.data_size, i);
+            }
             Some(material_buffers.allocate_ubo(create_info.material.data_size))
         } else {
             None

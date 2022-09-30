@@ -35,6 +35,7 @@ const DEFAULT_SAMPLER: Sampler = Sampler {
     min_lod: unsafe { NotNan::new_unchecked(0.0) },
     max_lod: None,
     unnormalize_coords: false,
+    border_color: None,
 };
 
 impl TextureSets {
@@ -220,6 +221,7 @@ impl TextureSets {
                             min_lod: NotNan::new(0.0).unwrap(),
                             max_lod: None,
                             unnormalize_coords: false,
+                            border_color: None,
                         },
                         base_mip: base_mip as usize,
                         mip_count: mip_count as usize,

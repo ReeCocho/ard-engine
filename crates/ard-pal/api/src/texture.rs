@@ -1,8 +1,8 @@
 use crate::{
     context::Context,
     types::{
-        AnisotropyLevel, CompareOp, Filter, MemoryUsage, SamplerAddressMode, TextureFormat,
-        TextureType, TextureUsage,
+        AnisotropyLevel, BorderColor, CompareOp, Filter, MemoryUsage, SamplerAddressMode,
+        TextureFormat, TextureType, TextureUsage,
     },
     Backend,
 };
@@ -34,6 +34,7 @@ pub struct Sampler {
     pub compare: Option<CompareOp>,
     pub min_lod: NotNan<f32>,
     pub max_lod: Option<NotNan<f32>>,
+    pub border_color: Option<BorderColor>,
     pub unnormalize_coords: bool,
 }
 

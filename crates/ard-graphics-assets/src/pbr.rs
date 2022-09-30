@@ -91,7 +91,7 @@ impl AssetLoader for PbrMaterialLoader {
 
         let meta = match ron::from_str::<PbrMaterialDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Load the pipeline

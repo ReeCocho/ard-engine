@@ -113,8 +113,7 @@ impl<T: Asset> Into<AnyHandle> for Handle<T> {
 impl Drop for HandleEscaper {
     #[inline]
     fn drop(&mut self) {
-        let guard = self.assets.0.assets.guard();
-        let asset_data = self.assets.0.assets.get(&self.id, &guard).unwrap();
+        let asset_data = self.assets.0.assets.get(&self.id).unwrap();
         let mut asset = asset_data.asset.write().unwrap();
         if asset_data.decrement_handle_counter() {
             *asset = None;

@@ -9,7 +9,7 @@ use crate::{
         allocator::{EscapeHandle, ResourceId},
         Layouts,
     },
-    renderer::{render_data::RenderData, RenderLayer},
+    renderer::{render_data::RenderData, shadows::Shadows, RenderLayer},
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
 
@@ -34,6 +34,16 @@ pub struct CameraDescriptor {
     pub clear_color: Option<Vec3>,
     /// The layers this camera renders.
     pub layers: RenderLayer,
+    /// If this camera should render shadow maps.
+    pub shadows: Option<CameraShadows>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct CameraShadows {
+    /// The resolution of the base shadow map.
+    pub resolution: u32,
+    /// The number of cascades to use.
+    pub cascades: usize,
 }
 
 /// Describes a view frustum using planes.
@@ -60,6 +70,7 @@ pub struct Camera {
 pub(crate) struct CameraInner {
     pub descriptor: CameraDescriptor,
     pub render_data: RenderData,
+    pub shadows: Shadows,
     /// Flags to indicate if a froxel regen is required.
     pub regen_froxels: [AtomicBool; FRAMES_IN_FLIGHT],
 }
@@ -81,44 +92,23 @@ pub(crate) struct CameraUbo {
     pub far_clip: f32,
 }
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub(crate) struct Froxel {
-    pub planes: [Vec4; 4],
-    pub min_max_z: Vec4,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub(crate) struct CameraFroxels {
-    pub frustums: [Froxel; FROXEL_TABLE_DIMS.0 * FROXEL_TABLE_DIMS.1 * FROXEL_TABLE_DIMS.2],
-}
-
 unsafe impl Pod for CameraUbo {}
 unsafe impl Zeroable for CameraUbo {}
 
 unsafe impl Pod for Frustum {}
 unsafe impl Zeroable for Frustum {}
 
-unsafe impl Pod for Froxel {}
-unsafe impl Zeroable for Froxel {}
-
-unsafe impl Pod for CameraFroxels {}
-unsafe impl Zeroable for CameraFroxels {}
-
 impl CameraInner {
     pub fn new(ctx: &Context, descriptor: CameraDescriptor, layouts: &Layouts) -> Self {
+        let shadows = match &descriptor.shadows {
+            Some(shadows) => Shadows::new(ctx, layouts, shadows.resolution, shadows.cascades),
+            None => Shadows::new(ctx, layouts, 0, 0),
+        };
+
         Self {
             descriptor,
-            render_data: RenderData::new(
-                ctx,
-                "camera",
-                &layouts.global,
-                &layouts.draw_gen,
-                &layouts.froxel_gen,
-                &layouts.camera,
-                &layouts.light_cluster,
-            ),
+            shadows,
+            render_data: RenderData::new(ctx, "camera", &layouts, true),
             regen_froxels: Default::default(),
         }
     }
@@ -188,6 +178,7 @@ impl Default for CameraDescriptor {
             order: 0,
             clear_color: Some(Vec3::ZERO),
             layers: RenderLayer::OPAQUE,
+            shadows: None,
         }
     }
 }

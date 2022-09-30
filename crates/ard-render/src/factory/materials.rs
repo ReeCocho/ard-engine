@@ -1,18 +1,18 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use ard_pal::prelude::*;
 
 use crate::{
     material::{Material, MaterialInstance, MaterialInstanceInner},
-    shader_constants::{FRAMES_IN_FLIGHT, MAX_TEXTURES_PER_MATERIAL},
+    shader_constants::{FRAMES_IN_FLIGHT, MAX_TEXTURES_PER_MATERIAL, NO_TEXTURE},
 };
 
 use super::allocator::ResourceAllocator;
 
 const INITIAL_MATERIAL_UBO_CAPACITY: u64 = 32;
 
-const MATERIAL_BINDING: u32 = 0;
-const TEXTURE_BINDING: u32 = 1;
+const TEXTURE_BINDING: u32 = 0;
+const MATERIAL_BINDING: u32 = 1;
 
 pub(crate) struct MaterialBuffers {
     ctx: Context,
@@ -31,6 +31,7 @@ pub(crate) struct MaterialBuffer {
     capacity: u64,
     free: Vec<MaterialBlock>,
     slot_counter: usize,
+    is_textures: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -70,6 +71,7 @@ impl MaterialBuffers {
         let texture_arrays = MaterialBuffer::new(
             &ctx,
             (std::mem::size_of::<u32>() * MAX_TEXTURES_PER_MATERIAL) as u64,
+            true,
         );
 
         Self {
@@ -88,18 +90,40 @@ impl MaterialBuffers {
 
     #[inline(always)]
     pub fn mark_dirty(&mut self, material: MaterialInstance) {
-        self.buffers
-            .get_mut(&material.material.data_size)
-            .unwrap()
-            .mark_dirty(&material);
+        if let Some(buffer) = self.buffers.get_mut(&material.material.data_size) {
+            buffer.mark_dirty(&material);
+        }
+
+        if material.material.texture_count > 0 {
+            self.texture_arrays.mark_dirty(&material);
+        }
     }
 
     pub fn flush(&mut self, materials: &ResourceAllocator<MaterialInstanceInner>, frame: usize) {
+        // Flush textures
+        let textures_resized = self.texture_arrays.flush(&self.ctx, materials, frame);
+
+        // Flush for every buffer
         for buffer in self.buffers.values_mut() {
-            buffer.flush(&self.ctx, materials, frame);
+            let materials_resized = buffer.flush(&self.ctx, materials, frame);
+
+            // If the material buffer was resized go for a rebind.
+            if materials_resized {
+                let sets = self.sets.get_mut(&buffer.data_size).unwrap();
+                for (frame, set) in sets.iter_mut().enumerate() {
+                    set.check_rebind_buffer(frame, buffer);
+                }
+            }
         }
 
-        self.texture_arrays.flush(&self.ctx, materials, frame);
+        // If textures were resized, rebind everything
+        if textures_resized {
+            for sets in self.sets.values_mut() {
+                for (frame, set) in sets.iter_mut().enumerate() {
+                    set.check_rebind_textures(frame, &self.texture_arrays);
+                }
+            }
+        }
     }
 
     #[inline(always)]
@@ -132,39 +156,18 @@ impl MaterialBuffers {
         }
 
         let set = self.sets.get_mut(&data_size).unwrap();
-        let textures = &self.texture_arrays.buffer;
 
         // Rebind UBO if needed
         if data_size != 0 {
             let buffer = self
                 .buffers
                 .entry(data_size)
-                .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size));
-
-            if set[frame].last_buffer_size != buffer.buffer.size() {
-                set[frame].last_buffer_size = buffer.buffer.size();
-                set[frame].set.update(&[DescriptorSetUpdate {
-                    binding: MATERIAL_BINDING,
-                    array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &buffer.buffer,
-                        array_element: frame,
-                    },
-                }]);
-            }
-
-            if set[frame].last_texture_size != textures.size() {
-                set[frame].last_texture_size = textures.size();
-                set[frame].set.update(&[DescriptorSetUpdate {
-                    binding: TEXTURE_BINDING,
-                    array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &textures,
-                        array_element: frame,
-                    },
-                }]);
-            }
+                .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size, false));
+            set[frame].check_rebind_buffer(frame, &buffer);
         }
+
+        // Rebind textures
+        set[frame].check_rebind_textures(frame, &self.texture_arrays);
 
         &set[frame].set
     }
@@ -174,7 +177,7 @@ impl MaterialBuffers {
         let buffer = self
             .buffers
             .entry(data_size)
-            .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size));
+            .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size, false));
         buffer.allocate()
     }
 
@@ -195,7 +198,7 @@ impl MaterialBuffers {
 }
 
 impl MaterialBuffer {
-    fn new(context: &Context, data_size: u64) -> Self {
+    fn new(context: &Context, data_size: u64, is_textures: bool) -> Self {
         let buffer = Buffer::new(
             context.clone(),
             BufferCreateInfo {
@@ -215,6 +218,7 @@ impl MaterialBuffer {
             capacity: INITIAL_MATERIAL_UBO_CAPACITY,
             free: Vec::default(),
             slot_counter: 0,
+            is_textures,
         }
     }
 
@@ -241,21 +245,24 @@ impl MaterialBuffer {
         }
     }
 
+    /// Flushes dirty material values to the buffer.
+    ///
+    /// Returns `true`, if the buffer was resized.
     fn flush(
         &mut self,
         ctx: &Context,
         materials: &ResourceAllocator<MaterialInstanceInner>,
         frame: usize,
-    ) {
+    ) -> bool {
         // Resize the buffer if required
-        if self.slot_counter as u64 >= self.capacity {
+        let resized = if self.slot_counter as u64 >= self.capacity {
             let old_cap = self.capacity;
             let mut new_cap = old_cap;
             while new_cap < self.slot_counter as u64 {
                 new_cap *= 2;
             }
 
-            let mut new_buffer = Buffer::new(
+            let new_buffer = Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
                     size: self.data_size * new_cap,
@@ -271,20 +278,72 @@ impl MaterialBuffer {
             for frame in 0..FRAMES_IN_FLIGHT {
                 let old_view = self.buffer.read(frame).unwrap();
                 let mut new_view = new_buffer.write(frame).unwrap();
-                new_view.copy_from_slice(&old_view);
+                new_view[..old_view.len()].copy_from_slice(&old_view);
             }
 
             // Swap the old buffer with the new
             self.buffer = new_buffer;
             self.capacity = new_cap;
-        }
+            true
+        } else {
+            false
+        };
 
         // Flush dirty values
         let mut view = self.buffer.write(frame).unwrap();
-        for dirty_mat in self.dirty[frame].drain(..) {
-            let material = materials.get(dirty_mat.id).unwrap();
-            let offset = material.material_block.unwrap().0 * self.data_size as usize;
-            view[offset..].copy_from_slice(&material.data);
+        if self.is_textures {
+            for dirty_mat in self.dirty[frame].drain(..) {
+                let material = materials.get(dirty_mat.id).unwrap();
+                let offset = material.texture_block.unwrap().0 * self.data_size as usize;
+                for (i, texture) in material.textures.iter().enumerate() {
+                    let offset = offset + (i * std::mem::size_of::<u32>());
+                    let rng = offset..(offset + std::mem::size_of::<u32>());
+                    let id = match texture {
+                        Some(tex) => tex.id.0 as u32,
+                        None => NO_TEXTURE,
+                    };
+                    view[rng].copy_from_slice(bytemuck::bytes_of(&id));
+                }
+            }
+        } else {
+            for dirty_mat in self.dirty[frame].drain(..) {
+                let material = materials.get(dirty_mat.id).unwrap();
+                let offset = material.material_block.unwrap().0 * self.data_size as usize;
+                let rng = offset..(offset + self.data_size as usize);
+                view[rng].copy_from_slice(&material.data);
+            }
+        }
+
+        resized
+    }
+}
+
+impl MaterialSet {
+    pub fn check_rebind_textures(&mut self, frame: usize, texture_buffer: &MaterialBuffer) {
+        if self.last_texture_size != texture_buffer.buffer.size() {
+            self.set.update(&[DescriptorSetUpdate {
+                binding: TEXTURE_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &texture_buffer.buffer,
+                    array_element: frame,
+                },
+            }]);
+            self.last_texture_size = texture_buffer.buffer.size();
+        }
+    }
+
+    pub fn check_rebind_buffer(&mut self, frame: usize, material_buffer: &MaterialBuffer) {
+        if self.last_buffer_size != material_buffer.buffer.size() {
+            self.set.update(&[DescriptorSetUpdate {
+                binding: MATERIAL_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &material_buffer.buffer,
+                    array_element: frame,
+                },
+            }]);
+            self.last_buffer_size = material_buffer.buffer.size();
         }
     }
 }

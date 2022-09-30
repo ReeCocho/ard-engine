@@ -53,7 +53,7 @@ impl AssetLoader for CubeMapLoader {
         let meta = package.read_str(asset).await?;
         let mut meta = match ron::from_str::<CubeMapDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Need at least one mip
@@ -221,7 +221,7 @@ async fn load_cube_image(
     let data = package.read(&file).await?;
     let image = match image::load_from_memory_with_format(&data, codec) {
         Ok(image) => image,
-        Err(err) => return Err(AssetLoadError::Other(err.into())),
+        Err(err) => return Err(AssetLoadError::Other(err.to_string())),
     };
 
     // Make sure dimensions match

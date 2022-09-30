@@ -13,6 +13,7 @@ ard-ecs = { version = "0.1", path = "../ard-ecs" }
 ard-math = { version = "0.1", path = "../ard-math" }
 ard-pal = { version = "0.1", path = "../ard-pal" }
 ard-log = { version = "0.1", path = "../ard-log" }
+ard-assets = { version = "0.1", path = "../ard-assets" }
 bitflags = "1"
 ordered-float = "3"
 raw-window-handle = "0.4.2"
@@ -20,6 +21,12 @@ winit = "0.27"
 bytemuck = "1.7"
 crossbeam-channel = "0.5"
 crossbeam-utils = "0.8"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+gltf = "1"
+image = "0.24"
+rayon = "1"
 
 [features]
 default = [ "vulkan" ]

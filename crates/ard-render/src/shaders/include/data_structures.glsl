@@ -24,6 +24,13 @@ struct LightClusters {
     uint[FROXEL_TABLE_Z][FROXEL_TABLE_X][FROXEL_TABLE_Y][MAX_LIGHTS_PER_FROXEL] clusters;
 };
 
+struct LightingInfo {
+    vec4 ambient_color_intensity;
+    vec4 sun_color_intensity;
+    vec4 sun_direction;
+    float sun_size;
+};
+
 //////////////
 /// CAMERA ///
 //////////////
@@ -56,12 +63,29 @@ struct Camera {
     float far_clip;
 };
 
+struct ShadowCascadeInfo {
+    mat4 vp;
+    mat4 view;
+    mat4 proj;
+    vec2 uv_size;
+    float far_plane;
+    float min_bias;
+    float max_bias;
+    float depth_range;
+};
+
+struct ShadowInfo {
+    ShadowCascadeInfo cascades[MAX_SHADOW_CASCADES];
+    uint cascade_count;
+};
+
 ///////////////////////
 /// DRAW GENERATION ///
 ///////////////////////
 
 struct ObjectData {
     mat4 model;
+    mat4 normal;
     uint material;
     uint textures;
     uint entity_id;

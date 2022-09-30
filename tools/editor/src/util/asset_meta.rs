@@ -268,7 +268,7 @@ impl AssetLoader for AssetMetaLoader {
         let meta = package.read_str(asset).await?;
         let meta = match ron::from_str::<AssetMeta>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         Ok(AssetLoadResult::Loaded {

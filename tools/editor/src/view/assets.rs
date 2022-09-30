@@ -350,7 +350,8 @@ impl Folder {
         let mut root = Folder::default();
 
         // First pass to register assets
-        for asset in assets.assets().values() {
+        for pair in assets.assets() {
+            let asset = pair.value();
             let name = asset.name().file_name().unwrap();
 
             // Skip if editor assets or fallback

@@ -24,6 +24,8 @@ layout(location = 17) flat out uint ARD_MATERIAL_IDX;
 layout(location = 18) flat out uint ARD_TEXTURES_IDX;
 layout(location = 19) out vec3 ARD_FRAG_POS;
 layout(location = 20) out vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 21) out vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 21 + MAX_SHADOW_CASCADES) out vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 #ifdef ARD_FRAGMENT_SHADER
@@ -32,6 +34,8 @@ layout(location = 17) flat in uint ARD_MATERIAL_IDX;
 layout(location = 18) flat in uint ARD_TEXTURES_IDX;
 layout(location = 19) in vec3 ARD_FRAG_POS;
 layout(location = 20) in vec3 ARD_FRAG_POS_VIEW_SPACE;
+layout(location = 21) in vec4 ARD_FRAG_POS_LIGHT_SPACE[MAX_SHADOW_CASCADES];
+layout(location = 21 + MAX_SHADOW_CASCADES) in vec3 ARD_FRAG_POS_LIGHT_VIEW_SPACE[MAX_SHADOW_CASCADES];
 #endif
 
 //////////////////
@@ -54,6 +58,10 @@ layout(set = GLOBAL_SET_ID, binding = 3) restrict readonly buffer ARD_Clusters {
     LightClusters ARD_CLUSTERS;
 };
 
+layout(set = GLOBAL_SET_ID, binding = 4) uniform ARD_LightingInfo {
+    LightingInfo ARD_LIGHTING_INFO;
+};
+
 //////////////
 /// CAMERA ///
 //////////////
@@ -61,6 +69,12 @@ layout(set = GLOBAL_SET_ID, binding = 3) restrict readonly buffer ARD_Clusters {
 layout(set = CAMERA_SET_ID, binding = 0) uniform ARD_Camera {
     Camera camera;
 };
+
+layout(set = CAMERA_SET_ID, binding = 1) uniform ARD_ShadowInfo {
+    ShadowInfo ARD_SHADOW_INFO;
+};
+
+layout(set = CAMERA_SET_ID, binding = 2) uniform sampler2DShadow ARD_SHADOW_MAPS[MAX_SHADOW_CASCADES];
 
 ////////////////
 /// TEXTURES ///
@@ -99,6 +113,11 @@ void main() { \
     VsOut vs_out = func(); \
     ARD_FRAG_POS = vs_out.frag_pos; \
     ARD_FRAG_POS_VIEW_SPACE = vec3(camera.view * vec4(vs_out.frag_pos, 1.0)); \
+    for (int i = 0; i < ARD_SHADOW_INFO.cascade_count; ++i) { \
+        ARD_FRAG_POS_LIGHT_VIEW_SPACE[i] = \
+            vec3(ARD_SHADOW_INFO.cascades[i].view * vec4(vs_out.frag_pos, 1.0)); \
+        ARD_FRAG_POS_LIGHT_SPACE[i] = ARD_SHADOW_INFO.cascades[i].vp * vec4(vs_out.frag_pos, 1.0); \
+    } \
 } \
 
 #else
@@ -117,6 +136,11 @@ void main() { \
 /// Gets the model matrix for object.
 mat4 get_model_matrix() {
     return ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].model;
+}
+
+/// Gets the normal model matrix for object.
+mat4 get_normal_matrix() {
+    return ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].normal;
 }
 
 #ifdef ARD_TEXTURE_COUNT

@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use ard_log::*;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 
 use crate::mesh::{AttributeType, VertexLayout};
 
-const DEFAULT_VB_LEN: usize = 1;
-const DEFAULT_IB_LEN: usize = 1;
+const DEFAULT_VB_LEN: usize = 65536;
+const DEFAULT_IB_LEN: usize = 65536;
 const BASE_VERTEX_BLOCK_LEN: usize = 64;
 const BASE_INDEX_BLOCK_LEN: usize = 256;
 

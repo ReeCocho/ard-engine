@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 paste = "1.0"
 anymap = "0.12"
-rayon = "1.5"
+rayon = "1"
 unsafe_unwrap = "0.1"
 crossbeam-channel = "0.5"
 bitvec = "1.0"

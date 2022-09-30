@@ -58,7 +58,7 @@ impl AssetLoader for TextureLoader {
         let meta = package.read_str(asset).await?;
         let meta = match ron::from_str::<TextureDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         let ext = match meta.file.extension() {
@@ -96,7 +96,7 @@ impl AssetLoader for TextureLoader {
         let data = package.read(&meta.file).await?;
         let image = match image::load_from_memory_with_format(&data, codec) {
             Ok(image) => image,
-            Err(err) => return Err(AssetLoadError::Other(err.into())),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Turn into RGBA8 for upload to GPU

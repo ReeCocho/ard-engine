@@ -1,5 +1,6 @@
 use ard_ecs::resource::Resource;
 use ard_pal::prelude::*;
+use bytemuck::{Pod, Zeroable};
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -221,12 +222,17 @@ impl Factory {
         let inner = MaterialInstanceInner::new(&mut material_buffers, create_info);
         let escaper = material_instances.insert(inner);
 
-        MaterialInstance {
+        let instance = MaterialInstance {
             id: escaper.id(),
             escaper,
             factory: self.clone(),
             material,
-        }
+        };
+
+        // Mark as dirty
+        material_buffers.mark_dirty(instance.clone());
+
+        instance
     }
 
     pub fn create_mesh(&self, create_info: MeshCreateInfo) -> Mesh {
@@ -317,5 +323,36 @@ impl Factory {
         }
 
         camera.descriptor = descriptor;
+    }
+
+    pub fn update_material_data<T: Pod + Zeroable>(&self, material: &MaterialInstance, data: &T) {
+        let mut material_instances = self.0.material_instances.lock().unwrap();
+        let mut material_buffers = self.0.material_buffers.lock().unwrap();
+        let material_inner = material_instances.get_mut(material.id).unwrap();
+
+        // Mark as dirty
+        material_buffers.mark_dirty(material.clone());
+
+        // Copy in the data
+        material_inner
+            .data
+            .copy_from_slice(bytemuck::bytes_of(data));
+    }
+
+    pub fn update_material_texture(
+        &self,
+        material: &MaterialInstance,
+        texture: Option<&Texture>,
+        slot: usize,
+    ) {
+        let mut material_instances = self.0.material_instances.lock().unwrap();
+        let mut material_buffers = self.0.material_buffers.lock().unwrap();
+        let material_inner = material_instances.get_mut(material.id).unwrap();
+
+        // Mark as dirty
+        material_buffers.mark_dirty(material.clone());
+
+        // Copy in texture
+        material_inner.textures[slot] = texture.map(|tex| tex.clone());
     }
 }

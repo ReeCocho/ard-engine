@@ -20,6 +20,7 @@ const HZB_INPUT_SAMPLER: Sampler = Sampler {
     min_lod: unsafe { NotNan::new_unchecked(0.0) },
     max_lod: None,
     unnormalize_coords: false,
+    border_color: None,
 };
 
 pub(crate) struct HzbGlobal {

@@ -69,14 +69,14 @@ impl AssetLoader for ModelLoader {
         let meta = package.read_str(asset).await?;
         let meta = match ron::from_str::<ModelDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Load in the model
         let data = package.read(&meta.model).await?;
         let glb = match Glb::from_slice(&data) {
             Ok(glb) => glb,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Extract the binary component
@@ -85,7 +85,7 @@ impl AssetLoader for ModelLoader {
         // Load the GLTF section
         let gltf_info = match Gltf::from_slice(&glb.json.into_owned()) {
             Ok(gltf_info) => gltf_info,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Load in the pipeline for materials
@@ -138,7 +138,7 @@ impl AssetLoader for ModelLoader {
                     codec,
                 ) {
                     Ok(image) => image,
-                    Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+                    Err(err) => return Err(AssetLoadError::Other(err.to_string())),
                 },
             };
 

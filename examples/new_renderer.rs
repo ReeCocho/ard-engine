@@ -1,10 +1,12 @@
+use ard_assets::prelude::*;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
 use ard_pal::prelude::PresentMode;
 use ard_render::{
-    camera::{Camera, CameraDescriptor},
+    asset::{model::ModelAsset, RenderAssetsPlugin},
+    camera::{Camera, CameraDescriptor, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
     lighting::PointLight,
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
@@ -29,13 +31,17 @@ fn main() {
             exit_on_close: true,
         })
         .add_plugin(WinitPlugin)
+        .add_plugin(AssetsPlugin)
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
             settings: RendererSettings {
-                present_mode: PresentMode::Immediate,
+                present_mode: PresentMode::FifoRelaxed,
                 ..Default::default()
             },
             debug: true,
+        })
+        .add_plugin(RenderAssetsPlugin {
+            pbr_material: AssetNameBuf::from("pbr.mat"),
         })
         .add_system(FrameRate::default())
         .add_startup_function(setup)
@@ -127,7 +133,8 @@ impl CameraMover {
                 position: self.position,
                 target: self.position + forward.xyz(),
                 up: up.xyz(),
-                far: 1000.0,
+                near: 0.3,
+                far: 100.0,
                 ..Default::default()
             },
         );
@@ -179,6 +186,8 @@ impl Into<System> for FrameRate {
 
 fn setup(app: &mut App) {
     let factory = app.resources.get::<Factory>().unwrap();
+    let assets = app.resources.get::<Assets>().unwrap();
+    let static_geo = app.resources.get::<StaticGeometry>().unwrap();
 
     // Disable frame rate limit
     app.resources
@@ -235,7 +244,13 @@ fn setup(app: &mut App) {
     });
 
     // Create the main camera
-    let camera = factory.create_camera(CameraDescriptor::default());
+    let camera = factory.create_camera(CameraDescriptor {
+        shadows: Some(CameraShadows {
+            resolution: 4096,
+            cascades: 4,
+        }),
+        ..Default::default()
+    });
     let mut camera_entity = [Entity::null()];
     app.world
         .entities_mut()
@@ -246,12 +261,21 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 3.0,
+        move_speed: 10.0,
         entity: camera_entity[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,
     });
 
+    // Load in the scene
+    let handle = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
+    assets.wait_for_load(&handle);
+
+    let asset = assets.get(&handle).unwrap();
+    let handles = asset.instantiate_static(&static_geo);
+    app.resources.add(StaticHandles(handles));
+
+    /*
     // Create static triangle objects
     const WIDTH: usize = 16;
     const DEPTH: usize = 16;
@@ -333,4 +357,5 @@ fn setup(app: &mut App) {
     }
 
     app.world.entities_mut().commands().create(pack, &mut []);
+    */
 }

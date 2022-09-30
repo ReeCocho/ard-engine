@@ -44,6 +44,10 @@ impl SamplerCache {
                     Some(max_lod) => max_lod.into(),
                     None => vk::LOD_CLAMP_NONE,
                 })
+                .border_color(match sampler.border_color {
+                    Some(border_color) => crate::util::to_vk_border_color(border_color),
+                    None => vk::BorderColor::FLOAT_OPAQUE_WHITE,
+                })
                 .unnormalized_coordinates(sampler.unnormalize_coords)
                 .build();
 

@@ -1,7 +1,12 @@
+pub mod clustering;
 pub mod occlusion;
 pub mod render_data;
+pub mod shadows;
 
-use std::time::{Duration, Instant};
+use std::{
+    ops::DerefMut,
+    time::{Duration, Instant},
+};
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
@@ -14,7 +19,7 @@ use raw_window_handle::HasRawWindowHandle;
 use crate::{
     camera::CameraUbo,
     factory::Factory,
-    lighting::PointLight,
+    lighting::{Lighting, PointLight},
     material::{MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
@@ -25,6 +30,7 @@ use crate::{
 use self::{
     occlusion::HzbImage,
     render_data::{GlobalRenderData, RenderArgs},
+    shadows::{ShadowRenderArgs, Shadows},
 };
 
 #[derive(Resource, Copy, Clone)]
@@ -104,6 +110,7 @@ type RenderResources = (
     Read<Windows>,
     Write<Factory>,
     Write<StaticGeometry>,
+    Write<Lighting>,
 );
 
 impl Renderer {
@@ -113,7 +120,7 @@ impl Renderer {
         window_id: WindowId,
         window_size: (u32, u32),
         settings: &RendererSettings,
-    ) -> (Self, Factory, StaticGeometry) {
+    ) -> (Self, Factory, StaticGeometry, Lighting) {
         // Initialize the backend based on what renderer we want
         #[cfg(feature = "vulkan")]
         let backend = {
@@ -198,6 +205,9 @@ impl Renderer {
         // Create the HZB image
         let hzb_image = factory.0.hzb.new_image(width, height);
 
+        // Create lighting data
+        let lighting = Lighting::new(&ctx);
+
         (
             Self {
                 ctx,
@@ -215,6 +225,7 @@ impl Renderer {
             },
             factory,
             StaticGeometry::default(),
+            lighting,
         )
     }
 
@@ -258,6 +269,7 @@ impl Renderer {
         let windows = res.1.unwrap();
         let factory = res.2.unwrap();
         let static_geometry = res.3.unwrap();
+        let mut lighting = res.4.unwrap();
 
         // Check if the window is minimized. If it is, we should skip rendering
         let window = windows
@@ -361,7 +373,6 @@ impl Renderer {
             camera
                 .render_data
                 .prepare_draw_calls(self.frame, use_alternate, &factory);
-            camera.render_data.prepare_light_table(self.frame);
 
             // Update the camera's UBO
             camera.render_data.update_camera_ubo(
@@ -373,20 +384,46 @@ impl Renderer {
                 ),
             );
 
+            // Prepare lighting stuff if required
+            if let Some(clustering) = &mut camera.render_data.clustering {
+                clustering.prepare_light_table(self.frame);
+                clustering.update_light_clustering_set(self.frame, &self.global_data);
+            }
+
+            // Prepare shadows
+            camera.shadows.prepare(
+                self.frame,
+                lighting.deref_mut(),
+                &queries,
+                &static_geometry,
+                &factory,
+                &camera.descriptor,
+                use_alternate,
+                (canvas_width as f32, canvas_height as f32),
+            );
+
             // Update sets
             camera.render_data.update_draw_gen_set(
                 &self.global_data,
-                &self.hzb_image,
+                Some(&self.hzb_image),
                 self.frame,
                 use_alternate,
             );
             camera
                 .render_data
-                .update_global_set(&self.global_data, self.frame);
+                .update_global_set(&self.global_data, &lighting, self.frame);
+            camera.render_data.update_camera_with_shadows(
+                self.frame,
+                &self.global_data,
+                Some(&camera.shadows),
+            );
             camera
-                .render_data
-                .update_light_cluster_set(&self.global_data, self.frame);
+                .shadows
+                .update_sets(self.frame, &self.global_data, &lighting, use_alternate);
         }
+
+        // Update lighting UBO
+        lighting.update_ubo(self.frame);
 
         // Grab resources for rendering
         let texture_sets = factory.0.texture_sets.lock().unwrap();
@@ -456,22 +493,29 @@ impl Renderer {
                 Some(camera) => camera,
                 None => continue,
             };
-            if camera.needs_froxel_regen(self.frame) {
-                camera.render_data.generate_camera_froxels(
-                    self.frame,
-                    &self.global_data,
-                    &mut commands,
-                );
+
+            // Froxel regen and light clustering
+            if let Some(clustering) = &camera.render_data.clustering {
+                if camera.needs_froxel_regen(self.frame) {
+                    clustering.generate_camera_froxels(
+                        self.frame,
+                        &self.global_data,
+                        &mut commands,
+                    );
+                }
+                clustering.cluster_lights(self.frame, &self.global_data, &mut commands);
             }
-            camera
-                .render_data
-                .cluster_lights(self.frame, &self.global_data, &mut commands);
+
             camera.render_data.generate_draw_calls(
                 self.frame,
                 &self.global_data,
+                true,
                 Vec2::new(canvas_width as f32, canvas_height as f32),
                 &mut commands,
             );
+            camera
+                .shadows
+                .generate_draw_calls(self.frame, &self.global_data, &mut commands);
         }
 
         // Render from every camera
@@ -485,6 +529,19 @@ impl Renderer {
                 Some(clear) => LoadOp::Clear(ClearColor::RgbaF32(clear.x, clear.y, clear.z, 0.0)),
                 None => LoadOp::Load,
             };
+
+            // Render shadow maps
+            camera.shadows.render(
+                self.frame,
+                ShadowRenderArgs {
+                    texture_sets: &texture_sets,
+                    material_buffers: &material_buffers,
+                    mesh_buffers: &mesh_buffers,
+                    materials: &materials,
+                    meshes: &meshes,
+                },
+                &mut commands,
+            );
 
             // Perform the depth prepass
             commands.render_pass(

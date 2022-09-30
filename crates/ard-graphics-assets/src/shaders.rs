@@ -44,7 +44,7 @@ impl AssetLoader for ShaderLoader {
         let meta = package.read_str(asset).await?;
         let meta = match ron::from_str::<ShaderDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Read in the shader source code

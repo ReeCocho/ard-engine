@@ -5,7 +5,9 @@ pub enum TextureFormat {
     R8Unorm,
     R32Sfloat,
     Rgba8Unorm,
+    Rgba8Srgb,
     Bgra8Unorm,
+    Bgra8Srgb,
     D16Unorm,
     D24UnormS8Uint,
     D32Sfloat,
@@ -196,6 +198,17 @@ pub enum SamplerAddressMode {
     Repeat,
     MirroredRepeat,
     ClampToEdge,
+    ClampToBorder,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum BorderColor {
+    FloatTransparentBlack,
+    IntTransparentBlack,
+    FloatOpaqueBlack,
+    IntOpaqueBlack,
+    FloatOpaqueWhite,
+    IntOpaqueWhite,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

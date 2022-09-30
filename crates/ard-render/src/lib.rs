@@ -1,8 +1,10 @@
+pub mod asset;
 pub mod camera;
 pub mod factory;
 pub mod lighting;
 pub mod material;
 pub mod mesh;
+pub mod pbr;
 pub mod renderer;
 pub mod shader_constants;
 pub mod static_geometry;
@@ -37,7 +39,7 @@ fn late_render_init(app: &mut App) {
     let window = windows.get_window(plugin.0.window).unwrap();
     let size = window.inner_size();
 
-    let (renderer, factory, static_geo) = Renderer::new(
+    let (renderer, factory, static_geo, lighting) = Renderer::new(
         plugin.0,
         window,
         plugin.0.window,
@@ -46,6 +48,7 @@ fn late_render_init(app: &mut App) {
     );
 
     app.dispatcher.add_system(renderer);
+    app.resources.add(lighting);
     app.resources.add(plugin.0.settings);
     app.resources.add(factory);
     app.resources.add(static_geo);

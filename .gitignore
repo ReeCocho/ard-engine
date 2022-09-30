@@ -25,3 +25,7 @@ Cargo.lock
 log.txt
 *.ini
 *.meta
+
+# Very big files
+sponza.glb
+sponza2.glb

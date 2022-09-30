@@ -1,0 +1,15 @@
+(
+	vertex_shader_path: "pbr.vert.spv",
+	fragment_shader_path: "pbr.frag.spv",
+	vertex_layout: (
+		normals: true,
+		tangents: false,
+		colors: false,
+		uv0: true,
+		uv1: false,
+		uv2: false,
+		uv3: false,
+	),
+	material_data_size: 32,
+	texture_count: 3,
+)

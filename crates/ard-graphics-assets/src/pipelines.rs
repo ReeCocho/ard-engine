@@ -52,7 +52,7 @@ impl AssetLoader for PipelineLoader {
 
         let meta = match ron::from_str::<PipelineDescriptor>(&meta) {
             Ok(meta) => meta,
-            Err(err) => return Err(AssetLoadError::Other(Box::new(err))),
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
         // Load both of the shaders

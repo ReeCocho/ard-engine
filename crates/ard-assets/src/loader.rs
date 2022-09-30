@@ -26,10 +26,10 @@ pub enum AssetPostLoadResult {
 
 #[derive(Debug, Error)]
 pub enum AssetLoadError {
-    #[error("there was an error while trying to read from a package")]
-    ReadError,
+    #[error("there was an error while trying to read from a package: {0}")]
+    ReadError(PackageReadError),
     #[error("an error occured: {0}")]
-    Other(Box<dyn std::error::Error>),
+    Other(String),
     #[error("an unknown error occured while loading the asset")]
     Unknown,
 }
@@ -68,7 +68,7 @@ impl<T: AssetLoader + 'static> AnyAssetLoader for T {
 }
 
 impl From<PackageReadError> for AssetLoadError {
-    fn from(_: PackageReadError) -> Self {
-        AssetLoadError::ReadError
+    fn from(err: PackageReadError) -> Self {
+        AssetLoadError::ReadError(err)
     }
 }

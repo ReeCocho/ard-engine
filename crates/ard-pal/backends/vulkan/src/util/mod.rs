@@ -49,7 +49,9 @@ pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
         TextureFormat::R8Unorm => vk::Format::R8_UNORM,
         TextureFormat::R32Sfloat => vk::Format::R32_SFLOAT,
         TextureFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
+        TextureFormat::Rgba8Srgb => vk::Format::R8G8B8A8_SRGB,
         TextureFormat::Bgra8Unorm => vk::Format::B8G8R8A8_UNORM,
+        TextureFormat::Bgra8Srgb => vk::Format::B8G8R8A8_SRGB,
         TextureFormat::D16Unorm => vk::Format::D16_UNORM,
         TextureFormat::D24UnormS8Uint => vk::Format::D24_UNORM_S8_UINT,
         TextureFormat::D32Sfloat => vk::Format::D32_SFLOAT,
@@ -218,6 +220,19 @@ pub(crate) fn to_vk_address_mode(sam: SamplerAddressMode) -> vk::SamplerAddressM
         SamplerAddressMode::Repeat => vk::SamplerAddressMode::REPEAT,
         SamplerAddressMode::MirroredRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
         SamplerAddressMode::ClampToEdge => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        SamplerAddressMode::ClampToBorder => vk::SamplerAddressMode::CLAMP_TO_BORDER,
+    }
+}
+
+#[inline(always)]
+pub(crate) fn to_vk_border_color(bc: BorderColor) -> vk::BorderColor {
+    match bc {
+        BorderColor::FloatTransparentBlack => vk::BorderColor::FLOAT_TRANSPARENT_BLACK,
+        BorderColor::IntTransparentBlack => vk::BorderColor::INT_TRANSPARENT_BLACK,
+        BorderColor::FloatOpaqueBlack => vk::BorderColor::FLOAT_OPAQUE_BLACK,
+        BorderColor::IntOpaqueBlack => vk::BorderColor::INT_OPAQUE_BLACK,
+        BorderColor::FloatOpaqueWhite => vk::BorderColor::FLOAT_OPAQUE_WHITE,
+        BorderColor::IntOpaqueWhite => vk::BorderColor::INT_OPAQUE_WHITE,
     }
 }
 

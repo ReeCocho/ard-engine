@@ -1,5 +1,6 @@
 PackageList(
     packages: [
         "example",
+		"new_render",
     ]
 )
