@@ -58,6 +58,12 @@ pub(crate) enum SubResource {
         array_elem: u32,
         mip_level: u32,
     },
+    CubeMap {
+        cube_map: vk::Image,
+        aspect_mask: vk::ImageAspectFlags,
+        array_elem: u32,
+        mip_level: u32,
+    },
 }
 
 #[derive(Default)]
@@ -178,6 +184,17 @@ impl<'a> PipelineTracker<'a> {
                         .register_image(*texture, *array_elem, Some(resc_usage)),
                     self.global
                         .register_layout(*texture, *array_elem, *mip_level, usage.layout),
+                ),
+                SubResource::CubeMap {
+                    cube_map,
+                    aspect_mask,
+                    array_elem,
+                    mip_level,
+                } => (
+                    self.global
+                        .register_image(*cube_map, *array_elem, Some(resc_usage)),
+                    self.global
+                        .register_layout(*cube_map, *array_elem, *mip_level, usage.layout),
                 ),
             };
 
@@ -303,6 +320,32 @@ impl<'a> PipelineTracker<'a> {
                                     level_count: 1,
                                     base_array_layer: array_elem,
                                     layer_count: 1,
+                                })
+                                .build(),
+                        );
+                    }
+                    SubResource::CubeMap {
+                        cube_map,
+                        aspect_mask,
+                        array_elem,
+                        mip_level,
+                    } => {
+                        image_barriers.insert(
+                            (cube_map, array_elem, mip_level),
+                            vk::ImageMemoryBarrier::builder()
+                                .src_access_mask(src_access)
+                                .dst_access_mask(usage.access)
+                                .old_layout(old_layout)
+                                .new_layout(usage.layout)
+                                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                                .image(cube_map)
+                                .subresource_range(vk::ImageSubresourceRange {
+                                    aspect_mask: aspect_mask,
+                                    base_mip_level: mip_level,
+                                    level_count: 1,
+                                    base_array_layer: array_elem * 6,
+                                    layer_count: 6,
                                 })
                                 .build(),
                         );

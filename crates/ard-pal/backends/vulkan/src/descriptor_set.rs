@@ -63,6 +63,14 @@ pub(crate) enum BoundValue {
         mip_count: u32,
         array_element: usize,
     },
+    CubeMap {
+        _ref_counter: TextureRefCounter,
+        image: vk::Image,
+        view: vk::ImageView,
+        aspect_mask: vk::ImageAspectFlags,
+        mip_count: u32,
+        array_element: usize,
+    },
 }
 
 impl DescriptorSetLayout {
@@ -151,6 +159,9 @@ impl DescriptorSet {
                     BoundValue::Texture { view, .. } => {
                         ctx.device.destroy_image_view(view, None);
                     }
+                    BoundValue::CubeMap { view, .. } => {
+                        ctx.device.destroy_image_view(view, None);
+                    }
                     BoundValue::StorageImage { view, .. } => {
                         ctx.device.destroy_image_view(view, None);
                     }
@@ -176,6 +187,7 @@ impl DescriptorSet {
                             vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE
                         }
                     },
+                    DescriptorType::CubeMap => vk::AccessFlags::SHADER_READ,
                 };
                 let stage = match binding.stage {
                     ShaderStage::Vertex => vk::PipelineStageFlags::VERTEX_SHADER,
@@ -368,6 +380,68 @@ impl DescriptorSet {
                                 view,
                                 aspect_mask: texture.aspect_flags,
                                 mip: *mip as u32,
+                                array_element: *array_element,
+                            },
+                        }
+                    }
+                    DescriptorValue::CubeMap {
+                        cube_map,
+                        array_element,
+                        sampler,
+                        base_mip,
+                        mip_count,
+                    } => {
+                        let cube_map = cube_map.internal();
+
+                        // Create a view for the texture
+                        let create_info = vk::ImageViewCreateInfo::builder()
+                            .format(cube_map.format)
+                            .view_type(vk::ImageViewType::CUBE)
+                            .subresource_range(vk::ImageSubresourceRange {
+                                aspect_mask: cube_map.aspect_flags,
+                                base_mip_level: *base_mip as u32,
+                                level_count: *mip_count as u32,
+                                base_array_layer: 6 * *array_element as u32,
+                                layer_count: 6,
+                            })
+                            .components(vk::ComponentMapping {
+                                r: vk::ComponentSwizzle::R,
+                                g: vk::ComponentSwizzle::G,
+                                b: vk::ComponentSwizzle::B,
+                                a: vk::ComponentSwizzle::A,
+                            })
+                            .image(cube_map.image)
+                            .build();
+
+                        let view = ctx.device.create_image_view(&create_info, None).unwrap();
+
+                        images.push(
+                            vk::DescriptorImageInfo::builder()
+                                .sampler(sampler_cache.get(&ctx.device, *sampler))
+                                .image_view(view)
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .build(),
+                        );
+
+                        writes.push(
+                            vk::WriteDescriptorSet::builder()
+                                .dst_set(self.set)
+                                .dst_binding(update.binding)
+                                .dst_array_element(update.array_element as u32)
+                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                                .image_info(&images[images.len() - 1..])
+                                .build(),
+                        );
+
+                        Binding {
+                            access,
+                            stage,
+                            value: BoundValue::CubeMap {
+                                _ref_counter: cube_map.ref_counter.clone(),
+                                image: cube_map.image,
+                                view,
+                                aspect_mask: cube_map.aspect_flags,
+                                mip_count: cube_map.mip_count,
                                 array_element: *array_element,
                             },
                         }

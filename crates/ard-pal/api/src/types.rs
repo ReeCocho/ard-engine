@@ -19,6 +19,7 @@ pub enum VertexFormat {
     XF32,
     XyF32,
     XyzwF32,
+    XyzwU8,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -262,6 +263,14 @@ pub enum MemoryUsage {
 pub enum AccessType {
     Read,
     ReadWrite,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Scissor {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl TextureFormat {

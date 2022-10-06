@@ -5,11 +5,17 @@
 
 layout(location = 0) in vec4 POSITION;
 layout(location = 1) in vec4 NORMAL;
-layout(location = 2) in vec2 UV0;
+layout(location = 2) in vec4 TANGENT;
+layout(location = 3) in vec4 COLOR;
+layout(location = 4) in vec2 UV0;
+layout(location = 5) in vec2 UV1;
+layout(location = 6) in vec2 UV2;
+layout(location = 7) in vec2 UV3;
 
 layout(location = 0) out vec4 SCREEN_POS;
 layout(location = 1) out vec4 OUT_NORMAL;
 layout(location = 2) out vec2 UV;
+layout(location = 3) out mat3 TBN;
 
 VsOut entry() {
     VsOut vs_out;
@@ -21,6 +27,13 @@ VsOut entry() {
         (gl_Position.w * camera.near_clip) / gl_Position.z, 
         gl_Position.w
     );
+
+    vec3 T = normalize(vec3(model * vec4(normalize(TANGENT.xyz), 0.0)));
+    vec3 N = normalize(vec3(model * vec4(normalize(NORMAL.xyz), 0.0)));
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = cross(N, T);
+    TBN = mat3(T, B, N);
+
     OUT_NORMAL = vec4(normalize((get_normal_matrix() * vec4(normalize(NORMAL.xyz), 0.0)).xyz), 0.0);
     UV = UV0;
     vs_out.frag_pos = frag_pos.xyz;

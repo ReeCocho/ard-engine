@@ -58,6 +58,7 @@ pub(crate) struct ShadowRenderArgs<'a> {
     pub mesh_buffers: &'a MeshBuffers,
     pub materials: &'a ResourceAllocator<MaterialInner>,
     pub meshes: &'a ResourceAllocator<MeshInner>,
+    pub global: &'a GlobalRenderData,
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -328,9 +329,11 @@ impl Shadows {
                             mesh_buffers: args.mesh_buffers,
                             materials: args.materials,
                             meshes: args.meshes,
+                            global: args.global,
                             pipeline_ty: PipelineType::Shadow,
                             draw_offset: 0,
                             draw_count,
+                            draw_sky_box: false,
                         },
                     )
                 },
@@ -361,8 +364,8 @@ impl Default for ShadowCascadeInfo {
             proj: Mat4::IDENTITY,
             uv_size: Vec2::ONE,
             far_plane: 0.0,
-            min_bias: 0.2,
-            max_bias: 0.5,
+            min_bias: 0.05,
+            max_bias: 0.2,
             depth_range: 1.0,
         }
     }

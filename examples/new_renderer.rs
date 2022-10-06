@@ -5,14 +5,13 @@ use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
 use ard_pal::prelude::PresentMode;
 use ard_render::{
-    asset::{model::ModelAsset, RenderAssetsPlugin},
-    camera::{Camera, CameraDescriptor, CameraShadows},
+    asset::{cube_map::CubeMapAsset, model::ModelAsset, RenderAssetsPlugin},
+    camera::{Camera, CameraClearColor, CameraDescriptor, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
-    lighting::PointLight,
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
     mesh::{MeshBounds, MeshCreateInfo, VertexLayout},
-    renderer::{Model, PreRender, RenderLayer, Renderable, RendererSettings},
-    static_geometry::{StaticGeometry, StaticRenderable, StaticRenderableHandle},
+    renderer::{PreRender, RendererSettings},
+    static_geometry::{StaticGeometry, StaticRenderableHandle},
     *,
 };
 use ard_window::prelude::*;
@@ -20,7 +19,7 @@ use ard_winit::prelude::*;
 use std::time::Instant;
 
 fn main() {
-    AppBuilder::new(ard_log::LevelFilter::Error)
+    AppBuilder::new(ard_log::LevelFilter::Warn)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
             add_primary_window: Some(WindowDescriptor {
@@ -35,10 +34,10 @@ fn main() {
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
             settings: RendererSettings {
-                present_mode: PresentMode::FifoRelaxed,
+                present_mode: PresentMode::Immediate,
                 ..Default::default()
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("pbr.mat"),
@@ -62,6 +61,7 @@ struct CameraMover {
     pub entity: Entity,
     pub position: Vec3,
     pub rotation: Vec3,
+    pub descriptor: CameraDescriptor,
 }
 
 impl CameraMover {
@@ -127,17 +127,12 @@ impl CameraMover {
         }
 
         // Update the camera
-        factory.update_camera(
-            &main_camera.0,
-            CameraDescriptor {
-                position: self.position,
-                target: self.position + forward.xyz(),
-                up: up.xyz(),
-                near: 0.3,
-                far: 100.0,
-                ..Default::default()
-            },
-        );
+        self.descriptor.position = self.position;
+        self.descriptor.target = self.position + forward.xyz();
+        self.descriptor.up = up.xyz();
+        self.descriptor.near = 0.1;
+        self.descriptor.far = 100.0;
+        factory.update_camera(&main_camera.0, self.descriptor.clone());
     }
 }
 
@@ -212,6 +207,7 @@ fn setup(app: &mut App) {
     // Create the material
     let material = factory.create_material(MaterialCreateInfo {
         vertex_shader: vshd,
+        depth_only_shader: None,
         fragment_shader: fshd,
         vertex_layout: VertexLayout::COLOR,
         texture_count: 0,
@@ -243,14 +239,25 @@ fn setup(app: &mut App) {
         uv3: None,
     });
 
+    //*
+    // Load in the scene
+    let model_handle = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
+    let cube_map_handle = assets.load::<CubeMapAsset>(AssetName::new("sky_box.cube"));
+    assets.wait_for_load(&model_handle);
+    assets.wait_for_load(&cube_map_handle);
+    //*/
     // Create the main camera
-    let camera = factory.create_camera(CameraDescriptor {
+    let camera_descriptor = CameraDescriptor {
         shadows: Some(CameraShadows {
             resolution: 4096,
             cascades: 4,
         }),
+        clear_color: CameraClearColor::SkyBox(
+            assets.get(&cube_map_handle).unwrap().cube_map.clone(),
+        ),
         ..Default::default()
-    });
+    };
+    let camera = factory.create_camera(camera_descriptor.clone());
     let mut camera_entity = [Entity::null()];
     app.world
         .entities_mut()
@@ -265,15 +272,15 @@ fn setup(app: &mut App) {
         entity: camera_entity[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,
+        descriptor: camera_descriptor,
     });
 
-    // Load in the scene
-    let handle = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    assets.wait_for_load(&handle);
-
-    let asset = assets.get(&handle).unwrap();
-    let handles = asset.instantiate_static(&static_geo);
+    ///*
+    // Instantiate the model
+    let asset = assets.get(&model_handle).unwrap();
+    let (handles, _) = asset.instantiate_static(&static_geo, app.world.entities().commands());
     app.resources.add(StaticHandles(handles));
+    //*/
 
     /*
     // Create static triangle objects

@@ -14,6 +14,7 @@ pub struct PbrMaterial {
     pub base_color: Vec4,
     pub metallic: f32,
     pub roughness: f32,
+    pub alpha_cutoff: f32,
 }
 
 unsafe impl Pod for PbrMaterial {}

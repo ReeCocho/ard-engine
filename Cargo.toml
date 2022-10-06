@@ -9,7 +9,7 @@ edition = "2021"
 members = [ "crates/*", "tools/editor" ]
 
 [features]
-default = [ "input", "assets", "graphics_vk", "render", "window", "graphics_assets" ]
+default = [ "input", "assets", "render", "window", ]
 input = [ "ard-input" ]
 assets = [ "ard-assets" ]
 graphics_assets = [ "ard-graphics-assets" ]

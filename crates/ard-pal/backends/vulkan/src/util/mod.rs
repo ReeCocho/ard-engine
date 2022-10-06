@@ -91,6 +91,7 @@ pub(crate) fn to_vk_descriptor_type(ty: DescriptorType) -> vk::DescriptorType {
         DescriptorType::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
         DescriptorType::StorageBuffer(_) => vk::DescriptorType::STORAGE_BUFFER,
         DescriptorType::StorageImage(_) => vk::DescriptorType::STORAGE_IMAGE,
+        DescriptorType::CubeMap => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
     }
 }
 
@@ -108,6 +109,7 @@ pub(crate) fn to_vk_vertex_format(format: VertexFormat) -> vk::Format {
         VertexFormat::XF32 => vk::Format::R32_SFLOAT,
         VertexFormat::XyF32 => vk::Format::R32G32_SFLOAT,
         VertexFormat::XyzwF32 => vk::Format::R32G32B32A32_SFLOAT,
+        VertexFormat::XyzwU8 => vk::Format::R8G8B8A8_UNORM,
     }
 }
 

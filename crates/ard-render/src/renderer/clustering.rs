@@ -81,7 +81,7 @@ impl LightClustering {
                 size: std::mem::size_of::<LightTable>() as u64,
                 array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
-                memory_usage: MemoryUsage::CpuToGpu,
+                memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("light_table")),
             },
         )
@@ -193,14 +193,6 @@ impl LightClustering {
                 array_element: frame,
             },
         }])
-    }
-
-    pub fn prepare_light_table(&mut self, frame: usize) {
-        let mut view = self.light_table.write(frame).unwrap();
-        let elem = bytemuck::cast_slice_mut::<_, LightTable>(view.as_mut());
-        for count in &mut elem[0].light_counts {
-            *count = 0;
-        }
     }
 
     /// Dispatches a compute pass to generate camera froxels.

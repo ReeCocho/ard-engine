@@ -2,6 +2,7 @@ use api::{
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
     command_buffer::{BlitDestination, Command},
     compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo},
+    cube_map::{CubeMapCreateError, CubeMapCreateInfo},
     descriptor_set::{
         DescriptorSetCreateError, DescriptorSetCreateInfo, DescriptorSetLayoutCreateError,
         DescriptorSetLayoutCreateInfo, DescriptorSetUpdate,
@@ -22,6 +23,7 @@ use ash::vk::{self, DebugUtilsMessageSeverityFlagsEXT};
 use buffer::Buffer;
 use compute_pipeline::ComputePipeline;
 use crossbeam_utils::sync::ShardedLock;
+use cube_map::CubeMap;
 use descriptor_set::{DescriptorSet, DescriptorSetLayout};
 use gpu_allocator::vulkan::*;
 use graphics_pipeline::GraphicsPipeline;
@@ -52,6 +54,7 @@ use util::{
 
 pub mod buffer;
 pub mod compute_pipeline;
+pub mod cube_map;
 pub mod descriptor_set;
 pub mod graphics_pipeline;
 pub mod job;
@@ -131,6 +134,7 @@ struct PhysicalDeviceQuery {
 impl Backend for VulkanBackend {
     type Buffer = Buffer;
     type Texture = Texture;
+    type CubeMap = CubeMap;
     type Surface = Surface;
     type SurfaceImage = SurfaceImage;
     type Shader = Shader;
@@ -472,6 +476,25 @@ impl Backend for VulkanBackend {
                         crate::util::to_vk_index_type(*ty),
                     );
                 }
+                Command::Scissor {
+                    attachment,
+                    scissor,
+                } => {
+                    self.device.cmd_set_scissor(
+                        cb,
+                        *attachment as u32,
+                        &[vk::Rect2D {
+                            offset: vk::Offset2D {
+                                x: scissor.x,
+                                y: scissor.y,
+                            },
+                            extent: vk::Extent2D {
+                                width: scissor.width,
+                                height: scissor.height,
+                            },
+                        }],
+                    );
+                }
                 Command::Draw {
                     vertex_count,
                     instance_count,
@@ -597,6 +620,39 @@ impl Backend for VulkanBackend {
                         src.image,
                         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                         dst.buffer,
+                        &copy,
+                    );
+                }
+                Command::CopyBufferToCubeMap {
+                    buffer,
+                    cube_map,
+                    copy,
+                } => {
+                    let size = cube_map.size();
+                    let dst = cube_map.internal();
+                    let src = buffer.internal();
+                    let copy = [vk::BufferImageCopy::builder()
+                        .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
+                        .buffer_row_length(0)
+                        .buffer_image_height(0)
+                        .image_subresource(vk::ImageSubresourceLayers {
+                            aspect_mask: dst.aspect_flags,
+                            mip_level: copy.cube_map_mip_level as u32,
+                            base_array_layer: copy.cube_map_array_element as u32,
+                            layer_count: 6,
+                        })
+                        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                        .image_extent(vk::Extent3D {
+                            width: size,
+                            height: size,
+                            depth: 1,
+                        })
+                        .build()];
+                    self.device.cmd_copy_buffer_to_image(
+                        cb,
+                        src.buffer,
+                        dst.image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                         &copy,
                     );
                 }
@@ -840,6 +896,20 @@ impl Backend for VulkanBackend {
     }
 
     #[inline(always)]
+    unsafe fn create_cube_map(
+        &self,
+        create_info: CubeMapCreateInfo,
+    ) -> Result<Self::CubeMap, CubeMapCreateError> {
+        CubeMap::new(
+            &self.device,
+            self.debug.as_ref().map(|(utils, _)| utils),
+            self.garbage.sender(),
+            &mut self.allocator.lock().unwrap(),
+            create_info,
+        )
+    }
+
+    #[inline(always)]
     unsafe fn create_shader(
         &self,
         create_info: ShaderCreateInfo,
@@ -903,6 +973,10 @@ impl Backend for VulkanBackend {
     }
 
     unsafe fn destroy_texture(&self, _id: &mut Self::Texture) {
+        // Handled in drop
+    }
+
+    unsafe fn destroy_cube_map(&self, _id: &mut Self::CubeMap) {
         // Handled in drop
     }
 

@@ -1,9 +1,10 @@
 (
 	vertex_shader_path: "pbr.vert.spv",
+	depth_only_shader_path: Some("pbr.depth.frag.spv"),
 	fragment_shader_path: "pbr.frag.spv",
 	vertex_layout: (
 		normals: true,
-		tangents: false,
+		tangents: true,
 		colors: false,
 		uv0: true,
 		uv1: false,

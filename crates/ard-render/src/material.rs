@@ -12,6 +12,7 @@ use crate::{
 
 pub struct MaterialCreateInfo {
     pub vertex_shader: Shader,
+    pub depth_only_shader: Option<Shader>,
     pub fragment_shader: Shader,
     pub vertex_layout: VertexLayout,
     pub texture_count: usize,
@@ -74,7 +75,7 @@ impl MaterialInner {
             GraphicsPipelineCreateInfo {
                 stages: ShaderStages {
                     vertex: create_info.vertex_shader.clone(),
-                    fragment: None,
+                    fragment: create_info.depth_only_shader.clone(),
                 },
                 layouts: vec![
                     layouts.global.clone(),
@@ -108,7 +109,7 @@ impl MaterialInner {
             GraphicsPipelineCreateInfo {
                 stages: ShaderStages {
                     vertex: create_info.vertex_shader.clone(),
-                    fragment: None,
+                    fragment: create_info.depth_only_shader.clone(),
                 },
                 layouts: vec![
                     layouts.global.clone(),

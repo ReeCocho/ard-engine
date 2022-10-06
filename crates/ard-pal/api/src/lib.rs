@@ -9,6 +9,7 @@ pub mod command_buffer;
 pub mod compute_pass;
 pub mod compute_pipeline;
 pub mod context;
+pub mod cube_map;
 pub mod descriptor_set;
 pub mod graphics_pipeline;
 pub mod queue;
@@ -23,6 +24,7 @@ use std::{ptr::NonNull, time::Duration};
 use buffer::{BufferCreateError, BufferCreateInfo, BufferViewError};
 use command_buffer::Command;
 use compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
+use cube_map::{CubeMapCreateError, CubeMapCreateInfo};
 use descriptor_set::{
     DescriptorSetCreateError, DescriptorSetCreateInfo, DescriptorSetLayoutCreateError,
     DescriptorSetLayoutCreateInfo, DescriptorSetUpdate,
@@ -45,6 +47,7 @@ use types::{JobStatus, QueueType};
 pub trait Backend: Sized + 'static {
     type Buffer;
     type Texture;
+    type CubeMap;
     type Surface;
     type SurfaceImage;
     type Shader;
@@ -93,6 +96,10 @@ pub trait Backend: Sized + 'static {
         &self,
         create_info: TextureCreateInfo,
     ) -> Result<Self::Texture, TextureCreateError>;
+    unsafe fn create_cube_map(
+        &self,
+        create_info: CubeMapCreateInfo,
+    ) -> Result<Self::CubeMap, CubeMapCreateError>;
     unsafe fn create_shader(
         &self,
         create_info: ShaderCreateInfo,
@@ -115,6 +122,7 @@ pub trait Backend: Sized + 'static {
     ) -> Result<Self::DescriptorSetLayout, DescriptorSetLayoutCreateError>;
     unsafe fn destroy_buffer(&self, id: &mut Self::Buffer);
     unsafe fn destroy_texture(&self, id: &mut Self::Texture);
+    unsafe fn destroy_cube_map(&self, id: &mut Self::CubeMap);
     unsafe fn destroy_shader(&self, id: &mut Self::Shader);
     unsafe fn destroy_graphics_pipeline(&self, id: &mut Self::GraphicsPipeline);
     unsafe fn destroy_compute_pipeline(&self, id: &mut Self::ComputePipeline);

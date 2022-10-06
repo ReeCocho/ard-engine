@@ -4,6 +4,7 @@ struct PbrMaterial {
     vec4 base_color;
     float metallic;
     float roughness;
+    float alpha_cutoff;
 };
 
 #define ARD_FRAGMENT_SHADER
@@ -16,6 +17,7 @@ layout(location = 0) out vec4 FRAGMENT_COLOR;
 layout(location = 0) in vec4 SCREEN_POS;
 layout(location = 1) in vec4 NORMAL;
 layout(location = 2) in vec2 UV;
+layout(location = 3) in mat3 TBN;
 
 float distribution_GGX(vec3 N, vec3 H, float roughness) {
     float a = roughness * roughness;
@@ -99,7 +101,7 @@ float shadow_calculation(vec3 normal) {
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
     proj_coords.y = 1.0 - proj_coords.y;
 
-    vec2 filter_radius_uv = 0.05 * ARD_SHADOW_INFO.cascades[layer].uv_size;
+    vec2 filter_radius_uv = 0.01 * ARD_SHADOW_INFO.cascades[layer].uv_size;
 
 	// Filtering
 	return pcf_filter(
@@ -291,19 +293,27 @@ void entry() {
     }
     */
     PbrMaterial material = get_material_data();
-    vec3 tex_color = sample_texture_default(0, UV, vec4(1)).rgb;
+    vec4 tex_color = sample_texture_default(0, UV, vec4(1));
+
+    if (tex_color.a < material.alpha_cutoff) {
+        discard;
+    }
+
     vec4 met_rgh = sample_texture_default(2, UV, vec4(0.0, 1.0, 0.0, 0.0));
+    vec3 normal = sample_texture_default(1, UV, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
+    normal = normal * 2.0 - 1.0;
+    normal = normalize(TBN * normal);
 
     vec3 color = lighting(
-        tex_color * material.base_color.rgb,
+        tex_color.rgb * material.base_color.rgb,
         material.roughness * met_rgh.g,
         material.metallic * met_rgh.b,
-        NORMAL.xyz,
+        normal,
         SCREEN_POS
     );
 
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0/2.2));  
+    //color = color / (color + vec3(1.0));
+    //color = pow(color, vec3(1.0/2.2));  
 
     FRAGMENT_COLOR = vec4(color, 1.0);
 }

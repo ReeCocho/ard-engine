@@ -96,6 +96,26 @@ fn main() {
         Path::new("./src/shaders/light_clustering.comp.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/shaders/skybox.frag"),
+        Path::new("./src/shaders/skybox.frag.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/skybox.vert"),
+        Path::new("./src/shaders/skybox.vert.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/gui.frag"),
+        Path::new("./src/shaders/gui.frag.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/gui.vert"),
+        Path::new("./src/shaders/gui.vert.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

@@ -5,6 +5,7 @@ use ard_pal::prelude::Context;
 use bytemuck::{Pod, Zeroable};
 
 use crate::{
+    cube_map::CubeMap,
     factory::{
         allocator::{EscapeHandle, ResourceId},
         Layouts,
@@ -13,7 +14,7 @@ use crate::{
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 pub struct CameraDescriptor {
     /// The global position of the camera.
     pub position: Vec3,
@@ -31,11 +32,21 @@ pub struct CameraDescriptor {
     /// Cameras with an equal ordering have an unspecified rendering order.
     pub order: i32,
     /// Clear color options for this camera.
-    pub clear_color: Option<Vec3>,
+    pub clear_color: CameraClearColor,
     /// The layers this camera renders.
     pub layers: RenderLayer,
     /// If this camera should render shadow maps.
     pub shadows: Option<CameraShadows>,
+}
+
+#[derive(Clone)]
+pub enum CameraClearColor {
+    /// No clearin is done.
+    None,
+    /// The screen is cleared a solid color.
+    Color(Vec3),
+    /// A skybox is used as the background.
+    SkyBox(CubeMap),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -176,7 +187,7 @@ impl Default for CameraDescriptor {
             far: 500.0,
             fov: 80.0f32.to_radians(),
             order: 0,
-            clear_color: Some(Vec3::ZERO),
+            clear_color: CameraClearColor::Color(Vec3::ZERO),
             layers: RenderLayer::OPAQUE,
             shadows: None,
         }

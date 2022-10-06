@@ -16,6 +16,7 @@ pub struct MaterialAsset {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MaterialDescriptor {
     pub vertex_shader_path: AssetNameBuf,
+    pub depth_only_shader_path: Option<AssetNameBuf>,
     pub fragment_shader_path: AssetNameBuf,
     pub vertex_layout: MaterialVertexLayout,
     pub material_data_size: u64,
@@ -78,6 +79,20 @@ impl AssetLoader for MaterialLoader {
             Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
+        let depth_only_shd = match &desc.depth_only_shader_path {
+            Some(path) => {
+                let shd = package.read(path).await?;
+                match self.factory.create_shader(ShaderCreateInfo {
+                    code: &shd,
+                    debug_name: Some(path.to_string_lossy().to_string()),
+                }) {
+                    Ok(shd) => Some(shd),
+                    Err(err) => return Err(AssetLoadError::Other(err.to_string())),
+                }
+            }
+            None => None,
+        };
+
         let fragment_shd = match self.factory.create_shader(ShaderCreateInfo {
             code: &fragment_shd,
             debug_name: Some(desc.fragment_shader_path.to_string_lossy().to_string()),
@@ -89,6 +104,7 @@ impl AssetLoader for MaterialLoader {
         // Create material
         let material = self.factory.create_material(MaterialCreateInfo {
             vertex_shader: vertex_shd,
+            depth_only_shader: depth_only_shd,
             fragment_shader: fragment_shd,
             vertex_layout: desc.vertex_layout.into(),
             texture_count: desc.texture_count,

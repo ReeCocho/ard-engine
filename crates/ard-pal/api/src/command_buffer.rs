@@ -2,12 +2,13 @@ use crate::{
     buffer::Buffer,
     compute_pass::ComputePass,
     compute_pipeline::ComputePipeline,
+    cube_map::CubeMap,
     descriptor_set::DescriptorSet,
     graphics_pipeline::GraphicsPipeline,
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
     surface::SurfaceImage,
     texture::{Blit, Texture},
-    types::{Filter, IndexType, QueueType, ShaderStage},
+    types::{Filter, IndexType, QueueType, Scissor, ShaderStage},
     Backend,
 };
 
@@ -55,6 +56,18 @@ pub struct BufferTextureCopy {
     pub texture_array_element: usize,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BufferCubeMapCopy {
+    /// Offset from the start of the buffer array element to begin read/write.
+    pub buffer_offset: u64,
+    /// The array element of the buffer to read/write.
+    pub buffer_array_element: usize,
+    /// The mip level of the cube map to read/write.
+    pub cube_map_mip_level: usize,
+    /// The array element of the texture to read/write.
+    pub cube_map_array_element: usize,
+}
+
 pub enum Command<'a, B: Backend> {
     BeginRenderPass(RenderPassDescriptor<'a, B>),
     EndRenderPass,
@@ -81,6 +94,10 @@ pub enum Command<'a, B: Backend> {
         array_element: usize,
         offset: u64,
         ty: IndexType,
+    },
+    Scissor {
+        attachment: usize,
+        scissor: Scissor,
     },
     Draw {
         vertex_count: usize,
@@ -112,6 +129,11 @@ pub enum Command<'a, B: Backend> {
         buffer: &'a Buffer<B>,
         texture: &'a Texture<B>,
         copy: BufferTextureCopy,
+    },
+    CopyBufferToCubeMap {
+        buffer: &'a Buffer<B>,
+        cube_map: &'a CubeMap<B>,
+        copy: BufferCubeMapCopy,
     },
     BlitTexture {
         src: &'a Texture<B>,
@@ -259,6 +281,36 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         self.commands.push(Command::CopyTextureToBuffer {
             buffer,
             texture,
+            copy,
+        });
+    }
+
+    /// Copies data from a buffer into a cube map.
+    ///
+    /// # Arguments
+    /// - `cube_map` - The destination cube map to write to.
+    /// - `buffer` - The source buffer to copy from.
+    /// - `copy` - A description of the copy to perform.
+    ///
+    /// # Panics
+    /// - If the queue type this command buffer was created with does not support transfer
+    /// commands.
+    #[inline(always)]
+    pub fn copy_buffer_to_cube_map(
+        &mut self,
+        cube_map: &'a CubeMap<B>,
+        buffer: &'a Buffer<B>,
+        copy: BufferCubeMapCopy,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Transfer,
+            "queue `{:?}` does not support transfer commands",
+            self.queue_ty
+        );
+
+        self.commands.push(Command::CopyBufferToCubeMap {
+            buffer,
+            cube_map,
             copy,
         });
     }

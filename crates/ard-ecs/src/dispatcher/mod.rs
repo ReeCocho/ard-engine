@@ -61,9 +61,10 @@ struct DispatcherState {
     type_to_state: TypeIdMap<usize>,
     /// Maps each system to a `SystemSet` of compatible systems.
     compatibility: Vec<SystemSet>,
-    /// Cache that maps a set of systems that we want to run in parallel with a subset of those
-    /// systems that are actually compatible. Each bit in the `BitArr` represents a system.
-    cache: HashMap<SystemSet, Vec<usize>>,
+    /// Cache that maps a set of running systems and pending systems (in that order) with a subset
+    /// of those systems that are actually compatible. Each bit in the `BitArr` represents a
+    /// system.
+    cache: HashMap<(SystemSet, SystemSet), Vec<usize>>,
     bron_kerbosch: Vec<SystemSet>,
     to_remove: Vec<usize>,
     pending: HashSet<usize, BuildHasherDefault<FastIntHasher>>,
@@ -226,13 +227,33 @@ impl Dispatcher {
                     }
 
                     // Check if we've seen this combo already in the cache
-                    let all_systems = running_set.bitor(pending_set);
-
-                    let to_run = if let Some(result) = dispatcher_state.cache.get(&all_systems) {
+                    let cache_set = (running_set, pending_set);
+                    let to_run = if let Some(result) = dispatcher_state.cache.get(&cache_set) {
                         result
                     } else {
                         let max_cliques = &mut dispatcher_state.bron_kerbosch;
                         max_cliques.clear();
+
+                        // It is currently 10:29 PM, 10/5/22. I have been beating my head against a
+                        // brick wall trying to figure out why this algorithm is breaking for this
+                        // particular example:
+                        //
+                        // A - B - C
+                        //
+                        // Where A and B form the running set and C forms the pending set. As it
+                        // turns out, I am a fool who does not know how to read. The Bron-Kerbosch
+                        // algorithm !!REQUIRES!! that each vertex in the pending set form a clique
+                        // with !!ALL!! vertices in the running set.
+                        //
+                        // I have seen the light.
+                        //
+                        // This little loop guarantees that condition.
+                        for i in pending_set.clone().iter_ones() {
+                            let compatibility = dispatcher_state.compatibility[i];
+                            if (compatibility & running_set) != running_set {
+                                pending_set.set(i, false);
+                            }
+                        }
 
                         bron_kerbosch(
                             running_set,
@@ -261,15 +282,15 @@ impl Dispatcher {
                         };
 
                         // Get rid of the running systems
-                        result = result.bitxor(running_set);
+                        result = result & running_set.not();
                         let mut to_cache = Vec::with_capacity(result.count_ones());
                         for i in result.iter_ones() {
                             to_cache.push(i);
                         }
 
                         // Add to the cache
-                        dispatcher_state.cache.insert(all_systems, to_cache);
-                        dispatcher_state.cache.get(&all_systems).unwrap()
+                        dispatcher_state.cache.insert(cache_set, to_cache);
+                        dispatcher_state.cache.get(&cache_set).unwrap()
                     };
 
                     // Send all compatible systems to the thread pool
@@ -579,9 +600,7 @@ fn bron_kerbosch(
 
         let mut new_r = r;
         new_r.set(v, true);
-
         let new_p = p.bitand(nh_v);
-
         let new_x = x.bitand(nh_v);
 
         bron_kerbosch(new_r, new_p, new_x, compatibility, out);

@@ -5,7 +5,7 @@ use crate::{
     graphics_pipeline::GraphicsPipeline,
     surface::SurfaceImage,
     texture::Texture,
-    types::{IndexType, LoadOp, ShaderStage, StoreOp},
+    types::{IndexType, LoadOp, Scissor, ShaderStage, StoreOp},
     Backend,
 };
 
@@ -145,6 +145,19 @@ impl<'a, B: Backend> RenderPass<'a, B> {
         });
     }
 
+    /// Sets the scissor area to render.
+    ///
+    /// # Arguments
+    /// - `idx` - The index of the attachment to apply the scissor to.
+    /// - `scissor` - The scissor value.
+    #[inline]
+    pub fn set_scissor(&mut self, attachment: usize, scissor: Scissor) {
+        self.commands.push(Command::Scissor {
+            attachment,
+            scissor,
+        });
+    }
+
     /// Draws an unindexed sequence of triangles.
     ///
     /// # Arguments
@@ -167,7 +180,7 @@ impl<'a, B: Backend> RenderPass<'a, B> {
     ) {
         assert_ne!(vertex_count, 0, "vertex count cannot be 0");
         assert_ne!(instance_count, 0, "instance count cannot be 0");
-        assert_ne!(vertex_count % 3, 0, "vertex count must be a multiple of 3");
+        assert_eq!(vertex_count % 3, 0, "vertex count must be a multiple of 3");
         self.commands.push(Command::Draw {
             vertex_count,
             instance_count,

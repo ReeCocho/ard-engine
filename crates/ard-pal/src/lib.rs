@@ -28,7 +28,9 @@ pub mod prelude {
     };
 
     // Command buffer
-    pub use api::command_buffer::{BlitDestination, BufferTextureCopy, CopyBufferToBuffer};
+    pub use api::command_buffer::{
+        BlitDestination, BufferCubeMapCopy, BufferTextureCopy, CopyBufferToBuffer,
+    };
     pub type CommandBuffer<'a> = api::command_buffer::CommandBuffer<'a, crate::Backend>;
 
     // Queue
@@ -60,6 +62,10 @@ pub mod prelude {
     // Texture
     pub type Texture = api::texture::Texture<crate::Backend>;
     pub use api::texture::{Blit, Sampler, TextureCreateError, TextureCreateInfo};
+
+    // Cube map
+    pub type CubeMap = api::cube_map::CubeMap<crate::Backend>;
+    pub use api::cube_map::{CubeMapCreateError, CubeMapCreateInfo};
 
     // Descriptor set & layout
     pub type DescriptorSetLayout = api::descriptor_set::DescriptorSetLayout<crate::Backend>;

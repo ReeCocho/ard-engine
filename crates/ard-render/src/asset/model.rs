@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     factory::Factory,
+    lighting::PointLight,
     material::{Material, MaterialInstance, MaterialInstanceCreateInfo},
     mesh::{Mesh, MeshBounds, MeshCreateInfo},
     pbr::{
@@ -22,6 +23,7 @@ use crate::{
 };
 
 pub struct ModelAsset {
+    pub lights: Vec<Option<PointLight>>,
     pub textures: Vec<Texture>,
     pub materials: Vec<MaterialInstance>,
     pub mesh_groups: Vec<MeshGroup>,
@@ -39,10 +41,16 @@ pub struct Node {
     pub name: String,
     /// Model matrix for this node in local space.
     pub model: Mat4,
-    /// Index of the mesh group for this node.
-    pub mesh_group: Option<usize>,
+    /// Data contained within this node.
+    pub data: NodeData,
     /// All child nodes of this node.
     pub children: Vec<Node>,
+}
+
+pub enum NodeData {
+    Empty,
+    Mesh { mesh_group: usize },
+    Light { index: usize },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,6 +111,9 @@ impl AssetLoader for ModelLoader {
             Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
+        // Load lights
+        let lights = load_gltf_lights(&gltf_info)?;
+
         // Load textures
         let textures = load_gltf_textures(&self.factory, &gltf_info, &bin)?;
 
@@ -128,6 +139,7 @@ impl AssetLoader for ModelLoader {
 
         Ok(AssetLoadResult::Loaded {
             asset: ModelAsset {
+                lights,
                 textures,
                 materials,
                 mesh_groups,
@@ -150,80 +162,181 @@ impl AssetLoader for ModelLoader {
 
 impl ModelAsset {
     pub fn instantiate_dyn(&self, commands: &EntityCommands) -> Vec<Entity> {
-        let mut components = (
+        let mut renderables = (
             // Models
-            Vec::with_capacity(self.node_count),
+            Vec::default(),
             // Renderables
-            Vec::with_capacity(self.node_count),
+            Vec::default(),
+        );
+
+        let mut lights = (
+            // Models
+            Vec::default(),
+            // Lights
+            Vec::default(),
         );
 
         fn traverse(
             parent_model: Mat4,
             node: &Node,
             asset: &ModelAsset,
-            components: &mut (Vec<Model>, Vec<Renderable>),
+            renderables: &mut (Vec<Model>, Vec<Renderable>),
+            lights: &mut (Vec<Model>, Vec<PointLight>),
         ) {
-            if let Some(mesh_group_idx) = node.mesh_group {
-                let mesh_group = &asset.mesh_groups[mesh_group_idx];
-                for (mesh, material_idx) in &mesh_group.meshes {
-                    let material = &asset.materials[*material_idx];
-                    components.0.push(Model(parent_model * node.model));
-                    components.1.push(Renderable {
-                        mesh: mesh.clone(),
-                        material: material.clone(),
-                        layers: RenderLayer::OPAQUE | RenderLayer::SHADOW_CASTER,
-                    });
+            match &node.data {
+                NodeData::Empty => {}
+                NodeData::Mesh { mesh_group } => {
+                    let mesh_group = &asset.mesh_groups[*mesh_group];
+                    for (mesh, material_idx) in &mesh_group.meshes {
+                        let material = &asset.materials[*material_idx];
+                        renderables.0.push(Model(parent_model * node.model));
+                        renderables.1.push(Renderable {
+                            mesh: mesh.clone(),
+                            material: material.clone(),
+                            layers: RenderLayer::OPAQUE | RenderLayer::SHADOW_CASTER,
+                        });
+                    }
                 }
+                NodeData::Light { index } => {
+                    let light = &asset.lights[*index];
+                    if let Some(light) = light {
+                        lights.0.push(Model(parent_model * node.model));
+                        lights.1.push(*light);
+                    }
+                }
+            }
+
+            for root in &node.children {
+                traverse(node.model, root, asset, renderables, lights);
             }
         }
 
         for root in &self.roots {
-            traverse(Mat4::IDENTITY, root, self, &mut components);
+            traverse(Mat4::IDENTITY, root, self, &mut renderables, &mut lights);
         }
 
-        let mut entities = Vec::with_capacity(components.0.len());
-        entities.resize(components.0.len(), Entity::null());
-        commands.create(components, &mut entities);
+        let mut entities = Vec::with_capacity(renderables.0.len() + lights.0.len());
+        let light_offset = renderables.0.len();
+
+        entities.resize(renderables.0.len() + lights.0.len(), Entity::null());
+        commands.create(renderables, &mut entities);
+        commands.create(lights, &mut entities[light_offset..]);
 
         entities
     }
 
-    pub fn instantiate_static(&self, static_geo: &StaticGeometry) -> Vec<StaticRenderableHandle> {
+    pub fn instantiate_static(
+        &self,
+        static_geo: &StaticGeometry,
+        commands: &EntityCommands,
+    ) -> (Vec<StaticRenderableHandle>, Vec<Entity>) {
         let mut renderables = Vec::with_capacity(self.node_count);
+
+        let mut lights = (
+            // Models
+            Vec::default(),
+            // Lights
+            Vec::default(),
+        );
 
         fn traverse(
             parent_model: Mat4,
             node: &Node,
             asset: &ModelAsset,
             renderables: &mut Vec<StaticRenderable>,
+            lights: &mut (Vec<Model>, Vec<PointLight>),
         ) {
-            if let Some(mesh_group_idx) = node.mesh_group {
-                let mesh_group = &asset.mesh_groups[mesh_group_idx];
-                for (mesh, material_idx) in &mesh_group.meshes {
-                    let material = &asset.materials[*material_idx];
-                    renderables.push(StaticRenderable {
-                        renderable: Renderable {
-                            mesh: mesh.clone(),
-                            material: material.clone(),
-                            layers: RenderLayer::OPAQUE | RenderLayer::SHADOW_CASTER,
-                        },
-                        model: Model(parent_model * node.model),
-                        entity: Entity::null(),
-                    });
+            match &node.data {
+                NodeData::Empty => {}
+                NodeData::Mesh { mesh_group } => {
+                    let mesh_group = &asset.mesh_groups[*mesh_group];
+                    for (mesh, material_idx) in &mesh_group.meshes {
+                        let material = &asset.materials[*material_idx];
+                        renderables.push(StaticRenderable {
+                            renderable: Renderable {
+                                mesh: mesh.clone(),
+                                material: material.clone(),
+                                layers: RenderLayer::OPAQUE | RenderLayer::SHADOW_CASTER,
+                            },
+                            model: Model(parent_model * node.model),
+                            entity: Entity::null(),
+                        });
+                    }
+                }
+                NodeData::Light { index } => {
+                    let light = &asset.lights[*index];
+                    if let Some(light) = light {
+                        lights.0.push(Model(parent_model * node.model));
+                        lights.1.push(*light);
+                    }
                 }
             }
 
             for child in &node.children {
-                traverse(node.model, child, asset, renderables);
+                traverse(node.model, child, asset, renderables, lights);
             }
         }
 
         for root in &self.roots {
-            traverse(Mat4::IDENTITY, root, self, &mut renderables);
+            traverse(Mat4::IDENTITY, root, self, &mut renderables, &mut lights);
         }
 
-        static_geo.register(&renderables)
+        let handles = static_geo.register(&renderables);
+        let mut entities = Vec::with_capacity(lights.0.len());
+        entities.resize(lights.0.len(), Entity::null());
+        commands.create(lights, &mut entities);
+
+        (handles, entities)
     }
+}
+
+fn load_gltf_lights(gltf: &Gltf) -> Result<Vec<Option<PointLight>>, AssetLoadError> {
+    use rayon::prelude::*;
+
+    let mut results: Vec<(usize, Option<PointLight>)> = match gltf.lights() {
+        Some(lights) => lights
+            .enumerate()
+            .par_bridge()
+            .into_par_iter()
+            .map(|(i, light)| match light.kind() {
+                gltf::khr_lights_punctual::Kind::Directional => {
+                    warn!("Model contains directional light. Ignoring.");
+                    (i, None)
+                }
+                gltf::khr_lights_punctual::Kind::Spot { .. } => {
+                    warn!("Model contains spot light. Ignoring.");
+                    (i, None)
+                }
+                gltf::khr_lights_punctual::Kind::Point => {
+                    let range = match light.range() {
+                        Some(range) => range,
+                        None => {
+                            warn!("Model contains point light with no range. Ignoring.");
+                            return (i, None);
+                        }
+                    };
+
+                    (
+                        i,
+                        Some(PointLight {
+                            color: Vec3::from(light.color()),
+                            intensity: light.intensity(),
+                            range,
+                        }),
+                    )
+                }
+            })
+            .collect(),
+        None => Vec::default(),
+    };
+
+    // Par-bridge does not gaurantee ordering, so we must do it ourselves
+    results.sort_unstable_by_key(|(i, _)| *i);
+
+    // Check if any are err
+    let lights = results.into_iter().map(|(_, light)| light).collect();
+
+    Ok(lights)
 }
 
 fn load_gltf_textures(
@@ -288,8 +401,8 @@ fn load_gltf_textures(
                 },
             };
 
-            let (width, height) = image.dimensions();
-            let image = image.resize(width / 4, height / 4, image::imageops::FilterType::Nearest);
+            //let (width, height) = image.dimensions();
+            //let image = image.resize(width / 2, height / 2, image::imageops::FilterType::Nearest);
             let raw = image.to_rgba8();
 
             let max = gltf_to_pal_mag_filter(
@@ -311,7 +424,7 @@ fn load_gltf_textures(
             let create_info = TextureCreateInfo {
                 width: image.width(),
                 height: image.height(),
-                format: TextureFormat::Rgba8Srgb,
+                format: TextureFormat::Rgba8Unorm,
                 data: &raw,
                 mip_type: if mip.is_some() {
                     MipType::Generate
@@ -380,6 +493,10 @@ fn load_gltf_materials(
                     base_color: Vec4::from(info.base_color_factor()),
                     metallic: info.metallic_factor(),
                     roughness: info.roughness_factor(),
+                    alpha_cutoff: match material.alpha_cutoff() {
+                        Some(cutoff) => cutoff,
+                        None => 0.0,
+                    },
                 },
             );
 
@@ -708,7 +825,21 @@ fn load_gltf_node(node_idx: usize, all_nodes: &[gltf::json::Node]) -> Node {
             .unwrap_or("")
             .to_string(),
         model,
-        mesh_group: node.mesh.map(|m| m.value()),
+        data: if let Some(mesh) = node.mesh {
+            NodeData::Mesh {
+                mesh_group: mesh.value(),
+            }
+        } else if let Some(ext) = &node.extensions {
+            if let Some(light) = &ext.khr_lights_punctual {
+                NodeData::Light {
+                    index: light.light.value(),
+                }
+            } else {
+                NodeData::Empty
+            }
+        } else {
+            NodeData::Empty
+        },
         children: Vec::default(),
     };
 

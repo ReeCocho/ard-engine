@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::{
     buffer::Buffer,
     context::Context,
+    cube_map::CubeMap,
     texture::{Sampler, Texture},
     types::{AccessType, ShaderStage},
     Backend,
@@ -38,6 +39,8 @@ pub struct DescriptorBinding {
 pub enum DescriptorType {
     /// A read-only sampled texture.
     Texture,
+    /// A read-only sampled cube map.
+    CubeMap,
     /// A read-only uniform buffer object.
     UniformBuffer,
     /// A read-only or read-write storage buffer object.
@@ -102,6 +105,18 @@ pub enum DescriptorValue<'a, B: Backend> {
         /// The array element of the texture to bind.
         array_element: usize,
         /// How the texture should be sampled.
+        sampler: Sampler,
+        /// The base mip to bind.
+        base_mip: usize,
+        /// The number of mip levels to bind.
+        mip_count: usize,
+    },
+    CubeMap {
+        /// The cube map to bind.
+        cube_map: &'a CubeMap<B>,
+        /// The array element of the cube map to bind.
+        array_element: usize,
+        /// How the cube map should be sampled.
         sampler: Sampler,
         /// The base mip to bind.
         base_mip: usize,

@@ -184,6 +184,9 @@ impl GarbageCollector {
                                     BoundValue::Texture { view, .. } => {
                                         device.destroy_image_view(view, None);
                                     }
+                                    BoundValue::CubeMap { view, .. } => {
+                                        device.destroy_image_view(view, None);
+                                    }
                                     BoundValue::StorageImage { view, .. } => {
                                         device.destroy_image_view(view, None);
                                     }

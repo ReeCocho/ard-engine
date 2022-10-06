@@ -1,4 +1,5 @@
 pub mod clustering;
+pub mod gui;
 pub mod occlusion;
 pub mod render_data;
 pub mod shadows;
@@ -10,14 +11,15 @@ use std::{
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_math::{Mat4, Vec2};
+use ard_input::InputState;
+use ard_math::{IVec2, Mat4, Vec2};
 use ard_pal::prelude::*;
 use ard_window::{window::WindowId, windows::Windows};
 use bitflags::bitflags;
 use raw_window_handle::HasRawWindowHandle;
 
 use crate::{
-    camera::CameraUbo,
+    camera::{CameraClearColor, CameraUbo},
     factory::Factory,
     lighting::{Lighting, PointLight},
     material::{MaterialInstance, PipelineType},
@@ -28,6 +30,7 @@ use crate::{
 };
 
 use self::{
+    gui::Gui,
     occlusion::HzbImage,
     render_data::{GlobalRenderData, RenderArgs},
     shadows::{ShadowRenderArgs, Shadows},
@@ -58,6 +61,7 @@ pub struct Renderer {
     last_render_time: Instant,
     frame: usize,
     global_data: GlobalRenderData,
+    gui: Gui,
     depth_buffer: Texture,
     final_image: Texture,
     hzb_image: HzbImage,
@@ -208,6 +212,9 @@ impl Renderer {
         // Create lighting data
         let lighting = Lighting::new(&ctx);
 
+        // Create GUI data
+        let gui = Gui::new(ctx.clone());
+
         (
             Self {
                 ctx,
@@ -218,6 +225,7 @@ impl Renderer {
                 last_render_time: Instant::now(),
                 frame: 0,
                 global_data,
+                gui,
                 final_image,
                 hzb_image,
                 use_alternate: [false; FRAMES_IN_FLIGHT],
@@ -234,10 +242,16 @@ impl Renderer {
         _: Tick,
         commands: Commands,
         _: Queries<()>,
-        res: Res<(Read<RendererSettings>,)>,
+        res: Res<(Read<RendererSettings>, Read<InputState>, Read<Windows>)>,
     ) {
         let res = res.get();
         let settings = res.0.unwrap();
+        let input = res.1.unwrap();
+        let windows = res.2.unwrap();
+
+        // Update input state for egui
+        let window = windows.get(self.surface_window).unwrap();
+        self.gui.update_input(&input, window);
 
         // See if rendering needs to be performed
         let now = Instant::now();
@@ -259,7 +273,7 @@ impl Renderer {
 
     fn render(
         &mut self,
-        _: Render,
+        evt: Render,
         _: Commands,
         queries: Queries<RenderQuery>,
         res: Res<RenderResources>,
@@ -344,10 +358,19 @@ impl Renderer {
         // Perform our main pass
         let mut commands = self.ctx.main().command_buffer();
 
+        // Prepare GUI state
+        self.gui.prepare_draw(
+            self.frame,
+            IVec2::new(canvas_width as i32, canvas_height as i32),
+            evt.0.as_secs_f32(),
+        );
+
         // Prepare global object data
         self.global_data
             .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
         self.global_data.prepare_lights(self.frame, &queries);
+
+        let cube_maps = factory.0.cube_maps.lock().unwrap();
 
         // Prepare rendering data
         let mut cameras = factory.0.cameras.lock().unwrap();
@@ -386,7 +409,6 @@ impl Renderer {
 
             // Prepare lighting stuff if required
             if let Some(clustering) = &mut camera.render_data.clustering {
-                clustering.prepare_light_table(self.frame);
                 clustering.update_light_clustering_set(self.frame, &self.global_data);
             }
 
@@ -417,6 +439,11 @@ impl Renderer {
                 &self.global_data,
                 Some(&camera.shadows),
             );
+            if let CameraClearColor::SkyBox(sky_box) = &camera.descriptor.clear_color {
+                camera
+                    .render_data
+                    .update_sky_box_set(self.frame, cube_maps.get(sky_box.id).unwrap());
+            }
             camera
                 .shadows
                 .update_sets(self.frame, &self.global_data, &lighting, use_alternate);
@@ -467,9 +494,11 @@ impl Renderer {
                             mesh_buffers: &mesh_buffers,
                             materials: &materials,
                             meshes: &meshes,
+                            global: &self.global_data,
                             pipeline_ty: PipelineType::DepthOnly,
                             draw_offset: 0,
                             draw_count,
+                            draw_sky_box: false,
                         },
                     );
                 },
@@ -525,9 +554,13 @@ impl Renderer {
                 None => continue,
             };
 
-            let load_op = match camera.descriptor.clear_color {
-                Some(clear) => LoadOp::Clear(ClearColor::RgbaF32(clear.x, clear.y, clear.z, 0.0)),
-                None => LoadOp::Load,
+            let (load_op, sky_box) = match &camera.descriptor.clear_color {
+                CameraClearColor::None => (LoadOp::DontCare, None),
+                CameraClearColor::Color(color) => (
+                    LoadOp::Clear(ClearColor::RgbaF32(color.x, color.y, color.z, 0.0)),
+                    None,
+                ),
+                CameraClearColor::SkyBox(sky_box) => (LoadOp::DontCare, Some(sky_box)),
             };
 
             // Render shadow maps
@@ -539,6 +572,7 @@ impl Renderer {
                     mesh_buffers: &mesh_buffers,
                     materials: &materials,
                     meshes: &meshes,
+                    global: &self.global_data,
                 },
                 &mut commands,
             );
@@ -567,9 +601,11 @@ impl Renderer {
                             mesh_buffers: &mesh_buffers,
                             materials: &materials,
                             meshes: &meshes,
+                            global: &self.global_data,
                             pipeline_ty: PipelineType::DepthOnly,
                             draw_offset: 0,
                             draw_count,
+                            draw_sky_box: false,
                         },
                     );
                 },
@@ -607,14 +643,42 @@ impl Renderer {
                             mesh_buffers: &mesh_buffers,
                             materials: &materials,
                             meshes: &meshes,
+                            global: &self.global_data,
                             pipeline_ty: PipelineType::Opaque,
                             draw_offset: 0,
                             draw_count,
+                            draw_sky_box: sky_box.is_some(),
                         },
                     );
                 },
             );
         }
+
+        // Copy GUI texture data
+        self.gui.update_textures(&mut commands);
+
+        // Render the GUI
+        commands.render_pass(
+            RenderPassDescriptor {
+                color_attachments: vec![ColorAttachment {
+                    source: ColorAttachmentSource::Texture {
+                        texture: &self.final_image,
+                        array_element: self.frame,
+                        mip_level: 0,
+                    },
+                    load_op: LoadOp::Load,
+                    store_op: StoreOp::Store,
+                }],
+                depth_stencil_attachment: None,
+            },
+            |pass| {
+                self.gui.draw(
+                    self.frame,
+                    Vec2::new(canvas_width as f32, canvas_height as f32),
+                    pass,
+                );
+            },
+        );
 
         // Blit the final image onto the surface image
         let (surface_width, surface_height) = self.surface.dimensions();

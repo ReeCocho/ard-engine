@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     camera::{Camera, CameraDescriptor, CameraInner},
+    cube_map::{CubeMap, CubeMapCreateInfo, CubeMapInner},
     material::{
         Material, MaterialCreateInfo, MaterialInner, MaterialInstance, MaterialInstanceCreateInfo,
         MaterialInstanceInner,
@@ -34,6 +35,7 @@ pub const MAX_MATERIALS: usize = 512;
 pub const MAX_MATERIAL_INSTANCES: usize = 2048;
 pub const MAX_MESHES: usize = 2048;
 pub const MAX_TEXTURES: usize = 2048;
+pub const MAX_CUBE_MAPS: usize = 128;
 pub const MAX_CAMERAS: usize = 32;
 
 #[derive(Clone, Resource)]
@@ -51,6 +53,7 @@ pub(crate) struct FactoryInner {
     pub material_instances: Mutex<ResourceAllocator<MaterialInstanceInner>>,
     pub meshes: Mutex<ResourceAllocator<MeshInner>>,
     pub textures: Mutex<ResourceAllocator<TextureInner>>,
+    pub cube_maps: Mutex<ResourceAllocator<CubeMapInner>>,
     pub cameras: Mutex<ResourceAllocator<CameraInner>>,
     pub active_cameras: Mutex<Vec<ResourceId>>,
 }
@@ -63,6 +66,7 @@ pub(crate) struct Layouts {
     pub draw_gen: DescriptorSetLayout,
     pub light_cluster: DescriptorSetLayout,
     pub froxel_gen: DescriptorSetLayout,
+    pub sky_box: DescriptorSetLayout,
 }
 
 impl Factory {
@@ -85,6 +89,7 @@ impl Factory {
             draw_gen: global_data.draw_gen_layout.clone(),
             light_cluster: global_data.light_cluster_layout.clone(),
             froxel_gen: global_data.froxel_gen_layout.clone(),
+            sky_box: global_data.sky_box_layout.clone(),
         };
 
         let hzb = HzbGlobal::new(&ctx);
@@ -101,6 +106,7 @@ impl Factory {
             material_instances: Mutex::new(ResourceAllocator::new(MAX_MATERIAL_INSTANCES)),
             meshes: Mutex::new(ResourceAllocator::new(MAX_MESHES)),
             textures: Mutex::new(ResourceAllocator::new(MAX_TEXTURES)),
+            cube_maps: Mutex::new(ResourceAllocator::new(MAX_CUBE_MAPS)),
             cameras: Mutex::new(ResourceAllocator::new(MAX_CAMERAS)),
             active_cameras: Mutex::new(Vec::with_capacity(MAX_CAMERAS)),
         }))
@@ -115,6 +121,7 @@ impl Factory {
         let mut material_instances = self.0.material_instances.lock().unwrap();
         let mut meshes = self.0.meshes.lock().unwrap();
         let mut textures = self.0.textures.lock().unwrap();
+        let mut cube_maps = self.0.cube_maps.lock().unwrap();
         let mut cameras = self.0.cameras.lock().unwrap();
         let mut active_cameras = self.0.active_cameras.lock().unwrap();
 
@@ -126,10 +133,11 @@ impl Factory {
                 }
             }
             StagingResource::Texture(id) => texture_sets.texture_ready(id),
+            StagingResource::CubeMap(_) => {}
         });
 
         // Check for any new upload requests
-        staging.upload(&mut mesh_buffers, &mut textures);
+        staging.upload(&mut mesh_buffers, &mut textures, &mut cube_maps);
 
         // Flush material UBOs
         material_buffers.flush(&material_instances, frame);
@@ -165,6 +173,7 @@ impl Factory {
                 texture_sets.texture_dropped(id);
             },
         );
+        cube_maps.drop_pending(frame, |_, _| {}, |_, _| {});
         cameras.drop_pending(
             frame,
             |_, _| {},
@@ -280,6 +289,28 @@ impl Factory {
         };
 
         staging.add(StagingRequest::Texture {
+            id: handle.id,
+            staging_buffer,
+            mip_type,
+        });
+
+        handle
+    }
+
+    pub fn create_cube_map(&self, create_info: CubeMapCreateInfo) -> CubeMap {
+        let mut staging = self.0.staging.lock().unwrap();
+        let mut cube_maps = self.0.cube_maps.lock().unwrap();
+
+        let mip_type = create_info.mip_type;
+        let (cube_map, staging_buffer) = CubeMapInner::new(&self.0.ctx, create_info);
+        let escaper = cube_maps.insert(cube_map);
+
+        let handle = CubeMap {
+            id: escaper.id(),
+            escaper,
+        };
+
+        staging.add(StagingRequest::CubeMap {
             id: handle.id,
             staging_buffer,
             mip_type,

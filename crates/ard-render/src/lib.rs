@@ -1,5 +1,6 @@
 pub mod asset;
 pub mod camera;
+pub mod cube_map;
 pub mod factory;
 pub mod lighting;
 pub mod material;

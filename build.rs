@@ -46,6 +46,10 @@ fn main() {
         Path::new("./examples/assets/new_render/"),
     );
     compile(
+        Path::new("./examples/shaders/pbr.depth.frag"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
         Path::new("./examples/shaders/pbr.vert"),
         Path::new("./examples/assets/new_render/"),
     );

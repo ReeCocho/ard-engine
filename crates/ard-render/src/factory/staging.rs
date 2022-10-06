@@ -4,6 +4,7 @@ use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 
 use crate::{
+    cube_map::CubeMapInner,
     mesh::VertexLayout,
     texture::{MipType, TextureInner},
 };
@@ -28,6 +29,11 @@ pub(crate) enum StagingRequest {
         staging_buffer: Buffer,
         mip_type: MipType,
     },
+    CubeMap {
+        id: ResourceId,
+        staging_buffer: Buffer,
+        mip_type: MipType,
+    },
 }
 
 pub(crate) struct Staging {
@@ -46,6 +52,7 @@ struct Upload {
 pub(crate) enum StagingResource {
     Mesh(ResourceId),
     Texture(ResourceId),
+    CubeMap(ResourceId),
 }
 
 impl Staging {
@@ -96,6 +103,7 @@ impl Staging {
         &mut self,
         mesh_buffers: &mut MeshBuffers,
         textures: &mut ResourceAllocator<TextureInner>,
+        cube_maps: &mut ResourceAllocator<CubeMapInner>,
     ) {
         if self.pending.is_empty() {
             return;
@@ -129,48 +137,46 @@ impl Staging {
                     });
 
                     // Copy vertex data
-                    let mut cur_buffer = 0;
                     let mut cur_vertex_offset = 0;
                     let vbs = mesh_buffers.get_vertex_buffer(*layout).unwrap();
 
-                    let mut copy_to_buffer = |elem_size: usize| {
+                    let mut copy_to_buffer = |elem_size: usize, element: VertexLayout| {
                         let copy_len = (*vertex_count * elem_size) as u64;
                         transfer_commands.copy_buffer_to_buffer(CopyBufferToBuffer {
                             src: vertex_staging,
                             src_array_element: 0,
                             src_offset: cur_vertex_offset,
-                            dst: vbs.buffer(cur_buffer),
+                            dst: vbs.buffer(element).unwrap(),
                             dst_array_element: 0,
                             dst_offset: vertex_dst.base() as u64 * elem_size as u64,
                             len: copy_len,
                         });
                         cur_vertex_offset += copy_len;
-                        cur_buffer += 1;
                     };
 
                     // Position
-                    copy_to_buffer(std::mem::size_of::<Vec4>());
+                    copy_to_buffer(std::mem::size_of::<Vec4>(), VertexLayout::empty());
 
                     if layout.contains(VertexLayout::NORMAL) {
-                        copy_to_buffer(std::mem::size_of::<Vec4>());
+                        copy_to_buffer(std::mem::size_of::<Vec4>(), VertexLayout::NORMAL);
                     }
                     if layout.contains(VertexLayout::TANGENT) {
-                        copy_to_buffer(std::mem::size_of::<Vec4>());
+                        copy_to_buffer(std::mem::size_of::<Vec4>(), VertexLayout::TANGENT);
                     }
                     if layout.contains(VertexLayout::COLOR) {
-                        copy_to_buffer(std::mem::size_of::<Vec4>());
+                        copy_to_buffer(std::mem::size_of::<Vec4>(), VertexLayout::COLOR);
                     }
                     if layout.contains(VertexLayout::UV0) {
-                        copy_to_buffer(std::mem::size_of::<Vec2>());
+                        copy_to_buffer(std::mem::size_of::<Vec2>(), VertexLayout::UV0);
                     }
                     if layout.contains(VertexLayout::UV1) {
-                        copy_to_buffer(std::mem::size_of::<Vec2>());
+                        copy_to_buffer(std::mem::size_of::<Vec2>(), VertexLayout::UV1);
                     }
                     if layout.contains(VertexLayout::UV2) {
-                        copy_to_buffer(std::mem::size_of::<Vec2>());
+                        copy_to_buffer(std::mem::size_of::<Vec2>(), VertexLayout::UV2);
                     }
                     if layout.contains(VertexLayout::UV3) {
-                        copy_to_buffer(std::mem::size_of::<Vec2>());
+                        copy_to_buffer(std::mem::size_of::<Vec2>(), VertexLayout::UV3);
                     }
 
                     StagingResource::Mesh(*id)
@@ -264,6 +270,39 @@ impl Staging {
                         );
 
                         StagingResource::Texture(*id)
+                    }
+                },
+                StagingRequest::CubeMap {
+                    id,
+                    staging_buffer,
+                    mip_type,
+                } => match *mip_type {
+                    MipType::Generate => {
+                        todo!()
+                    }
+                    MipType::Upload => {
+                        let dst = match cube_maps.get(*id) {
+                            Some(cube_map) => cube_map,
+                            // Cube map was dropped so upload is no longer needed
+                            None => continue,
+                        };
+
+                        let mip_level = dst.mip_levels.saturating_sub(1) as usize;
+                        let mut size = dst.cube_map.size();
+                        size = size.shr(mip_level).max(1);
+
+                        transfer_commands.copy_buffer_to_cube_map(
+                            &dst.cube_map,
+                            staging_buffer,
+                            BufferCubeMapCopy {
+                                buffer_offset: 0,
+                                buffer_array_element: 0,
+                                cube_map_mip_level: mip_level,
+                                cube_map_array_element: 0,
+                            },
+                        );
+
+                        StagingResource::CubeMap(*id)
                     }
                 },
             };

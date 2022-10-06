@@ -8,7 +8,8 @@ use bytemuck::{Pod, Zeroable};
 use ordered_float::NotNan;
 
 use crate::{
-    camera::{CameraShadows, CameraUbo},
+    camera::CameraUbo,
+    cube_map::CubeMapInner,
     factory::{
         allocator::{ResourceAllocator, ResourceId},
         materials::MaterialBuffers,
@@ -58,7 +59,25 @@ const CAMERA_UBO_BINDING: u32 = 0;
 const CAMERA_SHADOW_INFO_BINDING: u32 = 1;
 const CAMERA_SHADOW_MAPS_BINDING: u32 = 2;
 
+const SKYBOX_CAMERA_BINDING: u32 = 0;
+const SKYBOX_CUBE_MAP_BINDING: u32 = 1;
+
 const DRAW_GEN_WORKGROUP_SIZE: u32 = 256;
+
+pub(crate) const SKY_BOX_SAMPLER: Sampler = Sampler {
+    min_filter: Filter::Linear,
+    mag_filter: Filter::Linear,
+    mipmap_filter: Filter::Linear,
+    address_u: SamplerAddressMode::ClampToEdge,
+    address_v: SamplerAddressMode::ClampToEdge,
+    address_w: SamplerAddressMode::ClampToEdge,
+    anisotropy: None,
+    compare: None,
+    min_lod: unsafe { NotNan::new_unchecked(0.0) },
+    max_lod: None,
+    border_color: None,
+    unnormalize_coords: false,
+};
 
 pub(crate) struct GlobalRenderData {
     /// Layout for global rendering data.
@@ -71,6 +90,8 @@ pub(crate) struct GlobalRenderData {
     pub froxel_gen_layout: DescriptorSetLayout,
     /// Layout for camera view information.
     pub camera_layout: DescriptorSetLayout,
+    /// Layout for skybox rendering.
+    pub sky_box_layout: DescriptorSetLayout,
     /// Pipeline to perform draw call generation.
     pub draw_gen_pipeline: ComputePipeline,
     /// Pipeline to perform draw call generation without high-z culling.
@@ -79,6 +100,8 @@ pub(crate) struct GlobalRenderData {
     pub light_cluster_pipeline: ComputePipeline,
     /// Pipeline to generate camera froxels.
     pub froxel_gen_pipeline: ComputePipeline,
+    /// Pipeline to render the skybox.
+    pub sky_box_pipeline: GraphicsPipeline,
     /// Empty shadow map for unbound cascades.
     pub empty_shadow: Texture,
     /// Contains all object data.
@@ -96,6 +119,8 @@ pub(crate) struct RenderData {
     pub camera_sets: Vec<DescriptorSet>,
     /// Draw generation descriptor sets.
     pub draw_gen_sets: Vec<DescriptorSet>,
+    /// Sets for skybox rendering.
+    pub sky_box_sets: Vec<DescriptorSet>,
     /// Draw keys used during render sorting. Holds the key and number of objects that use the key.
     pub keys: [Vec<(DrawKey, usize)>; FRAMES_IN_FLIGHT],
     /// Optional data for light clustering.
@@ -130,6 +155,8 @@ pub(crate) struct RenderArgs<'a, 'b> {
     pub mesh_buffers: &'a MeshBuffers,
     pub materials: &'a ResourceAllocator<MaterialInner>,
     pub meshes: &'a ResourceAllocator<MeshInner>,
+    pub global: &'a GlobalRenderData,
+    pub draw_sky_box: bool,
     pub pipeline_ty: PipelineType,
     pub draw_offset: usize,
     pub draw_count: usize,
@@ -419,6 +446,29 @@ impl GlobalRenderData {
         )
         .unwrap();
 
+        let sky_box_layout = DescriptorSetLayout::new(
+            ctx.clone(),
+            DescriptorSetLayoutCreateInfo {
+                bindings: vec![
+                    // Camera
+                    DescriptorBinding {
+                        binding: SKYBOX_CAMERA_BINDING,
+                        ty: DescriptorType::UniformBuffer,
+                        count: 1,
+                        stage: ShaderStage::Vertex,
+                    },
+                    // Sky box
+                    DescriptorBinding {
+                        binding: SKYBOX_CUBE_MAP_BINDING,
+                        ty: DescriptorType::CubeMap,
+                        count: 1,
+                        stage: ShaderStage::Fragment,
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
         let draw_gen_shader = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
@@ -505,6 +555,66 @@ impl GlobalRenderData {
         )
         .unwrap();
 
+        let skybox_frag_shader = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!("../shaders/skybox.frag.spv"),
+                debug_name: Some(String::from("sky_box_fragment_shader")),
+            },
+        )
+        .unwrap();
+
+        let skybox_vert_shader = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!("../shaders/skybox.vert.spv"),
+                debug_name: Some(String::from("sky_box_vertex_shader")),
+            },
+        )
+        .unwrap();
+
+        let sky_box_pipeline = GraphicsPipeline::new(
+            ctx.clone(),
+            GraphicsPipelineCreateInfo {
+                stages: ShaderStages {
+                    vertex: skybox_vert_shader,
+                    fragment: Some(skybox_frag_shader),
+                },
+                layouts: vec![sky_box_layout.clone()],
+                vertex_input: VertexInputState {
+                    attributes: Vec::default(),
+                    bindings: Vec::default(),
+                    topology: PrimitiveTopology::TriangleList,
+                },
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::None,
+                    front_face: FrontFace::Clockwise,
+                },
+                depth_stencil: Some(DepthStencilState {
+                    depth_clamp: false,
+                    depth_test: false,
+                    depth_write: false,
+                    depth_compare: CompareOp::Always,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }),
+                color_blend: Some(ColorBlendState {
+                    attachments: vec![ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R
+                            | ColorComponents::G
+                            | ColorComponents::B
+                            | ColorComponents::A,
+                        ..Default::default()
+                    }],
+                }),
+                push_constants_size: None,
+                debug_name: Some(String::from("sky_box_pipeline")),
+            },
+        )
+        .unwrap();
+
         // Render the empty shadow map
         let empty_shadow = Texture::new(
             ctx.clone(),
@@ -548,10 +658,12 @@ impl GlobalRenderData {
             light_cluster_layout,
             camera_layout,
             froxel_gen_layout,
+            sky_box_layout,
             draw_gen_pipeline,
             draw_gen_no_hzb_pipeline,
             light_cluster_pipeline,
             froxel_gen_pipeline,
+            sky_box_pipeline,
             object_data,
             empty_shadow,
             lights,
@@ -827,10 +939,35 @@ impl RenderData {
             camera_sets.push(set);
         }
 
+        // Create skybox sets
+        let mut sky_box_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for frame in 0..FRAMES_IN_FLIGHT {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.sky_box.clone(),
+                    debug_name: Some(format!("{name}_sky_box_set{frame}")),
+                },
+            )
+            .unwrap();
+
+            set.update(&[DescriptorSetUpdate {
+                binding: SKYBOX_CAMERA_BINDING,
+                array_element: 0,
+                value: DescriptorValue::UniformBuffer {
+                    buffer: &camera_ubo,
+                    array_element: frame,
+                },
+            }]);
+
+            sky_box_sets.push(set);
+        }
+
         let out = Self {
             global_sets,
             draw_gen_sets,
             camera_sets,
+            sky_box_sets,
             keys: Default::default(),
             camera_ubo,
             clustering,
@@ -920,6 +1057,22 @@ impl RenderData {
                 },
             }]);
         }
+    }
+
+    /// Updates the skybox descriptor set.
+    pub fn update_sky_box_set(&mut self, frame: usize, sky_box: &CubeMapInner) {
+        let set = &mut self.sky_box_sets[frame];
+        set.update(&[DescriptorSetUpdate {
+            binding: SKYBOX_CUBE_MAP_BINDING,
+            array_element: 0,
+            value: DescriptorValue::CubeMap {
+                cube_map: &sky_box.cube_map,
+                array_element: 0,
+                sampler: SKY_BOX_SAMPLER,
+                base_mip: 0,
+                mip_count: sky_box.cube_map.mip_count(),
+            },
+        }]);
     }
 
     /// Rebinds all global descriptor set values.
@@ -1311,12 +1464,21 @@ impl RenderData {
     pub fn render<'a, 'b>(&'a self, frame: usize, use_alternate: bool, args: RenderArgs<'a, 'b>) {
         let alternate_frame = (frame * 2) + use_alternate as usize;
 
+        // Draw in the skybox if requested
+        if args.draw_sky_box {
+            args.pass
+                .bind_pipeline(args.global.sky_box_pipeline.clone());
+            args.pass.bind_sets(0, vec![&self.sky_box_sets[frame]]);
+            args.pass.draw(36, 1, 0, 0);
+        }
+
         // State:
 
         // These values keep track of the active resource type
         let mut last_material = ResourceId(usize::MAX);
         let mut last_mesh = ResourceId(usize::MAX);
-        let mut last_vertex_layout = None;
+        let mut last_mesh_vl = None;
+        let mut last_mat_vl = None;
         let mut last_ubo_size = u64::MAX;
 
         // The number of draws to perform (if needed) and the offset within the draw buffer to
@@ -1339,13 +1501,25 @@ impl RenderData {
             .skip(args.draw_offset)
         {
             let (material_id, vertex_layout, mesh_id, _) = from_draw_key(*key);
+            let mat_vertex_layout = args.materials.get(material_id).unwrap().layout;
 
             // Determine what needs a rebind
             let new_material = last_material != material_id;
-            let new_vb = match &mut last_vertex_layout {
+            let mut new_vb = match &mut last_mesh_vl {
                 Some(old_layout) => {
                     if *old_layout != vertex_layout {
                         *old_layout = vertex_layout;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => true,
+            };
+            new_vb |= match &mut last_mat_vl {
+                Some(old_layout) => {
+                    if *old_layout != mat_vertex_layout {
+                        *old_layout = mat_vertex_layout;
                         true
                     } else {
                         false
@@ -1422,9 +1596,10 @@ impl RenderData {
 
             // Rebind vertex buffers
             if new_vb {
-                last_vertex_layout = Some(vertex_layout);
+                last_mesh_vl = Some(vertex_layout);
+                last_mat_vl = Some(mat_vertex_layout);
                 let vbuffer = args.mesh_buffers.get_vertex_buffer(vertex_layout).unwrap();
-                vbuffer.bind(args.pass, material.layout);
+                vbuffer.bind(args.pass, args.mesh_buffers, mat_vertex_layout);
             }
 
             draw_count += 1;
