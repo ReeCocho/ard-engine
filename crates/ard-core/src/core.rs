@@ -104,8 +104,7 @@ impl ArdCore {
         _: Queries<()>,
         res: Res<(Write<ArdCoreState>,)>,
     ) {
-        let res = res.get();
-        let core_state = res.0.unwrap();
+        let core_state = res.get_mut::<ArdCoreState>().unwrap();
 
         let duration = tick.0;
 
@@ -129,8 +128,7 @@ impl ArdCore {
         _: Queries<()>,
         res: Res<(Write<ArdCoreState>,)>,
     ) {
-        let res = res.get();
-        let mut core_state = res.0.unwrap();
+        let mut core_state = res.get_mut::<ArdCoreState>().unwrap();
 
         core_state.stopping = true;
         commands.events.submit(Stopping);

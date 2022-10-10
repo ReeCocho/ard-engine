@@ -677,7 +677,7 @@ impl GlobalRenderData {
         &mut self,
         frame: usize,
         factory: &Factory,
-        queries: &Queries<RenderQuery>,
+        queries: &Queries<Everything>,
         static_geometry: &StaticGeometryInner,
     ) -> bool {
         let query = queries.make::<(Entity, (Read<Renderable>, Read<Model>))>();
@@ -751,7 +751,7 @@ impl GlobalRenderData {
     }
 
     /// Writes all possibly rendered lights into the global buffer.
-    pub fn prepare_lights(&mut self, frame: usize, queries: &Queries<RenderQuery>) -> bool {
+    pub fn prepare_lights(&mut self, frame: usize, queries: &Queries<Everything>) -> bool {
         let query = queries.make::<(Entity, (Read<PointLight>, Read<Model>), (Read<Disabled>,))>();
 
         // Expand light buffer if needed
@@ -1202,7 +1202,7 @@ impl RenderData {
         &mut self,
         frame: usize,
         layers: RenderLayer,
-        queries: &Queries<RenderQuery>,
+        queries: &Queries<Everything>,
         static_geometry: &StaticGeometryInner,
     ) -> bool {
         // Record last static draw count

@@ -139,8 +139,7 @@ impl Renderer {
         _: Queries<()>,
         res: Res<(Read<RendererSettings>, Write<DebugGui>, Read<InputState>)>,
     ) {
-        let res = res.get();
-        let settings = res.0.unwrap();
+        let settings = res.get::<RendererSettings>().unwrap();
 
         // See if rendering needs to be performed
         let now = Instant::now();
@@ -151,8 +150,8 @@ impl Renderer {
         };
 
         // Update input events
-        if let Some(input) = res.2 {
-            let mut debug_gui = res.1.unwrap();
+        if let Some(input) = res.get::<InputState>() {
+            let mut debug_gui = res.get_mut::<DebugGui>().unwrap();
             let mut io = debug_gui.context.io_mut();
 
             let scroll = input.mouse_scroll();
@@ -241,14 +240,13 @@ impl Renderer {
         )>,
         res: Res<RenderResources>,
     ) {
-        let mut res = res.get();
-        let settings = res.0.unwrap();
-        let surface = res.1.unwrap();
+        let settings = res.get::<RendererSettings>().unwrap();
+        let surface = res.get::<Surface>().unwrap();
         let mut surface_lock = surface.0.lock().expect("mutex poisoned");
-        let windows = res.2.unwrap();
-        let mut lighting = res.3.unwrap();
-        let mut debug_gui = res.4.unwrap();
-        let mut entity_image = res.6.unwrap();
+        let windows = res.get::<Windows>().unwrap();
+        let mut lighting = res.get_mut::<Lighting>().unwrap();
+        let mut debug_gui = res.get_mut::<DebugGui>().unwrap();
+        let mut entity_image = res.get_mut::<EntityImage>().unwrap();
 
         let _static_geo_lock = self.static_geometry.acquire();
         let _factory_lock = self.factory.acquire();
@@ -386,7 +384,7 @@ impl Renderer {
             io.display_size = [canvas_size.width as f32, canvas_size.height as f32];
 
             // Update keys if input exists
-            if let Some(input) = res.5.as_mut() {
+            if let Some(input) = res.get_mut::<InputState>() {
                 let mouse_pos = input.mouse_pos();
                 io.mouse_pos = [mouse_pos.0 as f32, mouse_pos.1 as f32];
             }

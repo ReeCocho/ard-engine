@@ -67,7 +67,7 @@ unsafe fn track_render_pass(
 
     // Track color attachments used in the pass
     for attachment in &descriptor.color_attachments {
-        let subresource = match attachment.source {
+        let (subresource, layout) = match attachment.source {
             ColorAttachmentSource::SurfaceImage(image) => {
                 // Surface image has special semaphores
                 let semaphores = image.internal().semaphores();
@@ -82,23 +82,29 @@ unsafe fn track_render_pass(
                     },
                 );
 
-                SubResource::Texture {
-                    texture: image.internal().image(),
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    array_elem: 0,
-                    mip_level: 0,
-                }
+                (
+                    SubResource::Texture {
+                        texture: image.internal().image(),
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        array_elem: 0,
+                        mip_level: 0,
+                    },
+                    vk::ImageLayout::PRESENT_SRC_KHR,
+                )
             }
             ColorAttachmentSource::Texture {
                 texture,
                 array_element,
                 mip_level,
-            } => SubResource::Texture {
-                texture: texture.internal().image,
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                array_elem: array_element as u32,
-                mip_level: mip_level as u32,
-            },
+            } => (
+                SubResource::Texture {
+                    texture: texture.internal().image,
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    array_elem: array_element as u32,
+                    mip_level: mip_level as u32,
+                },
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            ),
         };
         scope.use_resource(
             subresource,
@@ -106,7 +112,7 @@ unsafe fn track_render_pass(
                 access: vk::AccessFlags::COLOR_ATTACHMENT_WRITE
                     | vk::AccessFlags::COLOR_ATTACHMENT_READ,
                 stage: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                layout,
             },
         );
     }

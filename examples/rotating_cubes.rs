@@ -44,8 +44,7 @@ impl SpinningCubes {
         let dt = tick.0.as_secs_f32();
         self.rot += dt * SPIN_SPEED;
 
-        let res = res.get();
-        let factory = res.0.unwrap();
+        let factory = res.get_mut::<Factory>().unwrap();
         let main_camera = factory.main_camera();
 
         let position = Vec3::new(0.0, 0.0, -10.0);

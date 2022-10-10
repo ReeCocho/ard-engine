@@ -150,7 +150,7 @@ impl Shadows {
         &mut self,
         frame: usize,
         lighting: &Lighting,
-        queries: &Queries<RenderQuery>,
+        queries: &Queries<Everything>,
         static_geometry: &StaticGeometryInner,
         factory: &Factory,
         camera: &CameraDescriptor,

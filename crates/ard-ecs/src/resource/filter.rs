@@ -1,10 +1,14 @@
 use crate::{
     key::TypeKey,
     resource::{access::ResourceAccess, Resources},
+    system::data::Everything,
 };
 
 /// Represents a set of resources used by a system.
 pub trait ResourceFilter {
+    /// Does this resource filter request every resource?
+    const EVERYTHING: bool;
+
     /// Tuple containing the requested resources.
     type Set;
 
@@ -24,7 +28,31 @@ pub trait ResourceFilter {
     fn get(resources: &Resources) -> Self::Set;
 }
 
+impl ResourceFilter for Everything {
+    const EVERYTHING: bool = true;
+    type Set = ();
+
+    #[inline]
+    fn type_key() -> TypeKey {
+        TypeKey::default()
+    }
+
+    #[inline]
+    fn read_type_key() -> TypeKey {
+        TypeKey::default()
+    }
+
+    #[inline]
+    fn mut_type_key() -> TypeKey {
+        TypeKey::default()
+    }
+
+    #[inline]
+    fn get(_: &Resources) -> Self::Set {}
+}
+
 impl ResourceFilter for () {
+    const EVERYTHING: bool = false;
     type Set = ();
 
     #[inline]
@@ -49,6 +77,7 @@ impl ResourceFilter for () {
 macro_rules! resource_set_impl {
     ( $n:expr, $( $name:ident )+ ) => {
         impl<$($name: ResourceAccess + 'static,)*> ResourceFilter for ($($name,)*) {
+            const EVERYTHING: bool = false;
             type Set = ($(Option<$name::Lock>,)*);
 
             #[inline]

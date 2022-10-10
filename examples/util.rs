@@ -69,12 +69,11 @@ impl CameraMovement {
         _: Queries<(Read<Model>, Read<PointLight>)>,
         res: Res<CameraMovementRes>,
     ) {
-        let res = res.get();
-        let factory = res.0.unwrap();
-        let input = res.1.unwrap();
-        let mut windows = res.2.unwrap();
-        let debug_drawing = res.3.unwrap();
-        let mut camera_state = res.4.unwrap();
+        let factory = res.get::<Factory>().unwrap();
+        let input = res.get::<InputState>().unwrap();
+        let mut windows = res.get_mut::<Windows>().unwrap();
+        let debug_drawing = res.get::<DebugDrawing>().unwrap();
+        let mut camera_state = res.get_mut::<MainCameraState>().unwrap();
 
         let main_camera = factory.main_camera();
 
@@ -145,10 +144,9 @@ impl CameraMovement {
         _: Queries<()>,
         res: Res<CameraMovementRes>,
     ) {
-        let res = res.get();
-        let factory = res.0.unwrap();
-        let debug_drawing = res.3.unwrap();
-        let camera_state = res.4.unwrap();
+        let factory = res.get::<Factory>().unwrap();
+        let debug_drawing = res.get::<DebugGui>().unwrap();
+        let camera_state = res.get::<MainCameraState>().unwrap();
 
         let main_camera = factory.main_camera();
 

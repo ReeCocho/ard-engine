@@ -26,9 +26,8 @@ impl BoundingBoxSystem {
         _: Queries<()>,
         res: Res<(Read<Factory>, Write<DebugGui>)>,
     ) {
-        let res = res.get();
-        let factory = res.0.unwrap();
-        let mut gui = res.1.unwrap();
+        let factory = res.get::<Factory>().unwrap();
+        let mut gui = res.get_mut::<DebugGui>().unwrap();
 
         let mut opened = true;
         gui.ui().show_demo_window(&mut opened);

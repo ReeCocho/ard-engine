@@ -116,6 +116,21 @@ fn main() {
         Path::new("./src/shaders/gui.vert.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/shaders/tonemapping.frag"),
+        Path::new("./src/shaders/tonemapping.frag.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/fxaa.frag"),
+        Path::new("./src/shaders/fxaa.frag.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/post_process.vert"),
+        Path::new("./src/shaders/post_process.vert.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

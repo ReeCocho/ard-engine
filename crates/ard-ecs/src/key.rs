@@ -118,6 +118,12 @@ impl TypeKey {
 
         false
     }
+
+    /// Checks if the type key contains a value.
+    #[inline]
+    pub fn contains(&self, id: TypeId) -> bool {
+        self.types.binary_search(&id).is_ok()
+    }
 }
 
 impl Add for TypeKey {

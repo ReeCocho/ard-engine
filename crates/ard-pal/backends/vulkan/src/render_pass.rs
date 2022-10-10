@@ -51,6 +51,8 @@ pub(crate) struct VkRenderPassDescriptor {
 #[derive(Hash, PartialEq, Eq)]
 pub(crate) struct VkAttachment {
     pub image_format: vk::Format,
+    pub initial_layout: vk::ImageLayout,
+    pub final_layout: vk::ImageLayout,
     pub load_op: vk::AttachmentLoadOp,
     pub store_op: vk::AttachmentStoreOp,
 }
@@ -68,22 +70,22 @@ impl RenderPassCache {
             // Create attachment descriptors
             let mut attachments = Vec::with_capacity(pass.color_attachments.len());
             for attachment in &pass.color_attachments {
+                let layout = match &attachment.source {
+                    ColorAttachmentSource::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
+                    ColorAttachmentSource::Texture { .. } => {
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                    }
+                };
+
                 attachments.push(
                     vk::AttachmentDescription::builder()
                         .samples(vk::SampleCountFlags::TYPE_1)
                         .initial_layout(match attachment.load_op {
-                            LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            LoadOp::Load => layout,
                             LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                             LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
                         })
-                        .final_layout(match &attachment.source {
-                            ColorAttachmentSource::SurfaceImage(_) => {
-                                vk::ImageLayout::PRESENT_SRC_KHR
-                            }
-                            ColorAttachmentSource::Texture { .. } => {
-                                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-                            }
-                        })
+                        .final_layout(layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(match &attachment.source {
@@ -273,18 +275,46 @@ impl VkRenderPassDescriptor {
     ) -> VkRenderPassDescriptor {
         let mut out = VkRenderPassDescriptor::default();
         for attachment in &descriptor.color_attachments {
+            let (image_format, initial_layout, final_layout) = match &attachment.source {
+                ColorAttachmentSource::SurfaceImage(image) => (
+                    image.internal().format(),
+                    match &attachment.load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::PRESENT_SRC_KHR,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    vk::ImageLayout::PRESENT_SRC_KHR,
+                ),
+                ColorAttachmentSource::Texture { texture, .. } => (
+                    texture.internal().format,
+                    match &attachment.load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ),
+            };
+
             out.color_attachments.push(VkAttachment {
-                image_format: match &attachment.source {
-                    ColorAttachmentSource::SurfaceImage(image) => image.internal().format(),
-                    ColorAttachmentSource::Texture { texture, .. } => texture.internal().format,
-                },
+                image_format,
+                initial_layout,
+                final_layout,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
             });
         }
         if let Some(attachment) = &descriptor.depth_stencil_attachment {
+            let initial_layout = match &attachment.load_op {
+                LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                LoadOp::Load => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+            };
+
             out.depth_stencil_attachment = Some(VkAttachment {
                 image_format: attachment.texture.internal().format,
+                initial_layout,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
             })

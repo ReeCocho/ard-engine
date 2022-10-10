@@ -16,7 +16,7 @@ impl ApplyRenderableData {
         queries: Queries<Read<RenderableData>>,
         res: Res<(Read<Assets>,)>,
     ) {
-        let assets = res.get().0.unwrap();
+        let assets = res.get::<Assets>().unwrap();
 
         // Find every entity that has renderable data but no active renderer
         for (entity, data) in queries

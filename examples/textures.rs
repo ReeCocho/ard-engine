@@ -48,8 +48,7 @@ impl Into<System> for TextureUpdate {
 
 impl TextureUpdate {
     fn tick(&mut self, tick: Tick, _: Commands, _: Queries<()>, res: Res<(Write<Factory>,)>) {
-        let res = res.get();
-        let factory = res.0.unwrap();
+        let factory = res.get_mut::<Factory>().unwrap();
 
         self.time_to_update += tick.0;
         if self.update_count < 2 && self.time_to_update.as_secs() >= 3 {

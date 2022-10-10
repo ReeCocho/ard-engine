@@ -1,6 +1,7 @@
 pub mod clustering;
 pub mod gui;
 pub mod occlusion;
+pub mod post_process;
 pub mod render_data;
 pub mod shadows;
 
@@ -32,8 +33,9 @@ use crate::{
 use self::{
     gui::Gui,
     occlusion::HzbImage,
+    post_process::{PostProcessing, PostProcessingSettings},
     render_data::{GlobalRenderData, RenderArgs},
-    shadows::{ShadowRenderArgs, Shadows},
+    shadows::ShadowRenderArgs,
 };
 
 #[derive(Resource, Copy, Clone)]
@@ -45,6 +47,10 @@ pub struct RendererSettings {
     pub render_time: Option<Duration>,
     /// Preferred presentation mode.
     pub present_mode: PresentMode,
+    /// Super resolution scale factor. A value of `1.0` means no super sampling is performed.
+    pub render_scale: f32,
+    /// Post processing settings.
+    pub post_processing: PostProcessingSettings,
     /// Width and height of the renderer image. `None` indicates the dimensions should match that
     /// of the surface being presented to.
     pub canvas_size: Option<(u32, u32)>,
@@ -61,9 +67,9 @@ pub struct Renderer {
     last_render_time: Instant,
     frame: usize,
     global_data: GlobalRenderData,
-    gui: Gui,
+    post_processing: PostProcessing,
     depth_buffer: Texture,
-    final_image: Texture,
+    hdr_image: Texture,
     hzb_image: HzbImage,
     use_alternate: [bool; FRAMES_IN_FLIGHT],
     ctx: Context,
@@ -124,7 +130,7 @@ impl Renderer {
         window_id: WindowId,
         window_size: (u32, u32),
         settings: &RendererSettings,
-    ) -> (Self, Factory, StaticGeometry, Lighting) {
+    ) -> (Self, Factory, StaticGeometry, Lighting, Gui) {
         // Initialize the backend based on what renderer we want
         #[cfg(feature = "vulkan")]
         let backend = {
@@ -163,26 +169,30 @@ impl Renderer {
         .unwrap();
 
         // Create the final texture to copy to the swapchain image
-        let (width, height) = match settings.canvas_size {
+        let (mut width, mut height) = match settings.canvas_size {
             Some(dims) => dims,
             None => window_size,
         };
-        let final_image = Texture::new(
+        width = (width as f32 * settings.render_scale) as u32;
+        height = (height as f32 * settings.render_scale) as u32;
+
+        let hdr_image = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Bgra8Unorm,
+                format: TextureFormat::Rgba16SFloat,
                 ty: TextureType::Type2D,
                 width,
                 height,
                 depth: 1,
                 array_elements: FRAMES_IN_FLIGHT,
                 mip_levels: 1,
-                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::TRANSFER_SRC,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
-                debug_name: Some(String::from("final_image")),
+                debug_name: Some(String::from("hdr_image")),
             },
         )
         .unwrap();
+
         let depth_buffer = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
@@ -215,6 +225,9 @@ impl Renderer {
         // Create GUI data
         let gui = Gui::new(ctx.clone());
 
+        // Create post processing data
+        let post_processing = PostProcessing::new(&ctx, width, height);
+
         (
             Self {
                 ctx,
@@ -225,8 +238,8 @@ impl Renderer {
                 last_render_time: Instant::now(),
                 frame: 0,
                 global_data,
-                gui,
-                final_image,
+                post_processing,
+                hdr_image,
                 hzb_image,
                 use_alternate: [false; FRAMES_IN_FLIGHT],
                 depth_buffer,
@@ -234,6 +247,7 @@ impl Renderer {
             factory,
             StaticGeometry::default(),
             lighting,
+            gui,
         )
     }
 
@@ -242,16 +256,21 @@ impl Renderer {
         _: Tick,
         commands: Commands,
         _: Queries<()>,
-        res: Res<(Read<RendererSettings>, Read<InputState>, Read<Windows>)>,
+        res: Res<(
+            Read<RendererSettings>,
+            Read<InputState>,
+            Read<Windows>,
+            Write<Gui>,
+        )>,
     ) {
-        let res = res.get();
-        let settings = res.0.unwrap();
-        let input = res.1.unwrap();
-        let windows = res.2.unwrap();
+        let settings = res.get::<RendererSettings>().unwrap();
+        let input = res.get::<InputState>().unwrap();
+        let windows = res.get::<Windows>().unwrap();
+        let mut gui = res.get_mut::<Gui>().unwrap();
 
         // Update input state for egui
         let window = windows.get(self.surface_window).unwrap();
-        self.gui.update_input(&input, window);
+        gui.update_input(&input, window);
 
         // See if rendering needs to be performed
         let now = Instant::now();
@@ -274,16 +293,15 @@ impl Renderer {
     fn render(
         &mut self,
         evt: Render,
-        _: Commands,
-        queries: Queries<RenderQuery>,
-        res: Res<RenderResources>,
+        ecs_commands: Commands,
+        queries: Queries<Everything>,
+        res: Res<Everything>,
     ) {
-        let res = res.get();
-        let settings = res.0.unwrap();
-        let windows = res.1.unwrap();
-        let factory = res.2.unwrap();
-        let static_geometry = res.3.unwrap();
-        let mut lighting = res.4.unwrap();
+        let settings = res.get::<RendererSettings>().unwrap();
+        let windows = res.get::<Windows>().unwrap();
+        let factory = res.get::<Factory>().unwrap();
+        let static_geometry = res.get::<StaticGeometry>().unwrap();
+        let mut gui = res.get_mut::<Gui>().unwrap();
 
         // Check if the window is minimized. If it is, we should skip rendering
         let window = windows
@@ -294,30 +312,33 @@ impl Renderer {
         }
 
         // Determine the dimensions of the canvas
-        let (canvas_width, canvas_height) = match settings.canvas_size {
+        let (mut canvas_width, mut canvas_height) = match settings.canvas_size {
             Some(dims) => dims,
             None => self.surface.dimensions(),
         };
+        canvas_width = (canvas_width as f32 * settings.render_scale) as u32;
+        canvas_height = (canvas_height as f32 * settings.render_scale) as u32;
 
         // Resize the canvas images if the dimensions don't match
-        let (old_width, old_height, _) = self.final_image.dims();
+        let (old_width, old_height, _) = self.hdr_image.dims();
         let resized = if old_width != canvas_width || old_height != canvas_height {
-            self.final_image = Texture::new(
+            self.hdr_image = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::Bgra8Unorm,
+                    format: TextureFormat::Rgba16SFloat,
                     ty: TextureType::Type2D,
                     width: canvas_width,
                     height: canvas_height,
                     depth: 1,
                     array_elements: FRAMES_IN_FLIGHT,
                     mip_levels: 1,
-                    texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::TRANSFER_SRC,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                     memory_usage: MemoryUsage::GpuOnly,
-                    debug_name: Some(String::from("final_image")),
+                    debug_name: Some(String::from("hdr_image")),
                 },
             )
             .unwrap();
+            self.post_processing.resize(canvas_width, canvas_height);
             self.depth_buffer = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
@@ -346,8 +367,8 @@ impl Renderer {
         let use_alternate = self.use_alternate[self.frame];
 
         // Cleanup dropped static geometry
-        let mut static_geometry = static_geometry.0.lock().unwrap();
-        static_geometry.cleanup();
+        let mut static_geo = static_geometry.0.lock().unwrap();
+        static_geo.cleanup();
 
         // Process factory resources
         factory.process(self.frame);
@@ -359,11 +380,35 @@ impl Renderer {
         let mut commands = self.ctx.main().command_buffer();
 
         // Prepare GUI state
-        self.gui.prepare_draw(
+        // NOTE: We have to drop and then re-request a bunch of resources since some GUI views
+        // might want access to them.
+        let (screen_width, screen_height) = self.surface.dimensions();
+        std::mem::drop(settings);
+        std::mem::drop(window);
+        std::mem::drop(windows);
+        std::mem::drop(factory);
+        std::mem::drop(static_geo);
+        std::mem::drop(static_geometry);
+        gui.prepare_draw(
             self.frame,
-            IVec2::new(canvas_width as i32, canvas_height as i32),
+            IVec2::new(screen_width as i32, screen_height as i32),
             evt.0.as_secs_f32(),
+            &ecs_commands,
+            &queries,
+            &res,
         );
+        let settings = res.get::<RendererSettings>().unwrap();
+        let windows = res.get::<Windows>().unwrap();
+        let window = windows
+            .get(self.surface_window)
+            .expect("surface window is destroyed");
+        let factory = res.get::<Factory>().unwrap();
+        let static_geometry = res.get::<StaticGeometry>().unwrap();
+        let mut static_geometry = static_geometry.0.lock().unwrap();
+        let mut lighting = res.get_mut::<Lighting>().unwrap();
+
+        // Prepare post processing
+        self.post_processing.prepare(self.frame, &self.hdr_image);
 
         // Prepare global object data
         self.global_data
@@ -616,7 +661,7 @@ impl Renderer {
                 RenderPassDescriptor {
                     color_attachments: vec![ColorAttachment {
                         source: ColorAttachmentSource::Texture {
-                            texture: &self.final_image,
+                            texture: &self.hdr_image,
                             array_element: self.frame,
                             mip_level: 0,
                         },
@@ -654,48 +699,35 @@ impl Renderer {
             );
         }
 
-        // Copy GUI texture data
-        self.gui.update_textures(&mut commands);
+        // Update GUI texture data
+        gui.update_textures(&mut commands);
+
+        // Post processing
+        self.post_processing.draw(
+            self.frame,
+            &surface_image,
+            Vec2::new(canvas_width as f32, canvas_height as f32),
+            &settings.post_processing,
+            &mut commands,
+        );
 
         // Render the GUI
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
-                        texture: &self.final_image,
-                        array_element: self.frame,
-                        mip_level: 0,
-                    },
+                    source: ColorAttachmentSource::SurfaceImage(&surface_image),
                     load_op: LoadOp::Load,
                     store_op: StoreOp::Store,
                 }],
                 depth_stencil_attachment: None,
             },
             |pass| {
-                self.gui.draw(
+                gui.draw(
                     self.frame,
-                    Vec2::new(canvas_width as f32, canvas_height as f32),
+                    Vec2::new(screen_width as f32, screen_height as f32),
                     pass,
                 );
             },
-        );
-
-        // Blit the final image onto the surface image
-        let (surface_width, surface_height) = self.surface.dimensions();
-        commands.blit_texture(
-            &self.final_image,
-            BlitDestination::SurfaceImage(&surface_image),
-            Blit {
-                src_min: (0, 0, 0),
-                src_max: self.final_image.dims(),
-                src_mip: 0,
-                src_array_element: self.frame,
-                dst_min: (0, 0, 0),
-                dst_max: (surface_width, surface_height, 1),
-                dst_mip: 0,
-                dst_array_element: 0,
-            },
-            Filter::Linear,
         );
 
         // Submit for rendering
@@ -737,8 +769,10 @@ impl Default for RendererSettings {
         RendererSettings {
             render_scene: true,
             render_time: Some(Duration::from_secs_f32(1.0 / 60.0)),
+            render_scale: 1.0,
             canvas_size: None,
             anisotropy_level: None,
+            post_processing: PostProcessingSettings::default(),
             present_mode: PresentMode::Fifo,
         }
     }

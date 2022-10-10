@@ -123,7 +123,7 @@ impl AssetLoader for CubeMapLoader {
         // Create the texture
         let create_info = CubeMapCreateInfo {
             size,
-            format: TextureFormat::Rgba8Unorm,
+            format: TextureFormat::Rgba8Srgb,
             data: &image_data,
             sampler: Sampler {
                 min_filter: Filter::Linear,

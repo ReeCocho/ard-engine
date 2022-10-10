@@ -56,6 +56,7 @@ pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
         TextureFormat::D24UnormS8Uint => vk::Format::D24_UNORM_S8_UINT,
         TextureFormat::D32Sfloat => vk::Format::D32_SFLOAT,
         TextureFormat::D32SfloatS8Uint => vk::Format::D32_SFLOAT_S8_UINT,
+        TextureFormat::Rgba16SFloat => vk::Format::R16G16B16A16_SFLOAT,
     }
 }
 

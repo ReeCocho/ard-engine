@@ -261,8 +261,7 @@ fn resources() {
 
     impl SysA {
         fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<ResourceA>,)>) {
-            let resource = res.get();
-            let resource = resource.0.as_ref().unwrap();
+            let resource = res.get::<ResourceA>().unwrap();
             assert_eq!(resource.x, 1);
             assert_eq!(resource.y, 2);
         }
@@ -276,7 +275,7 @@ fn resources() {
 
     impl SysB {
         fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<ResourceB>,)>) {
-            assert!(res.get().0.is_none());
+            assert!(res.get::<ResourceB>().is_none());
         }
     }
 

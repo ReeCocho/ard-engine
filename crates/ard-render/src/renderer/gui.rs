@@ -1,3 +1,7 @@
+use ard_ecs::{
+    prelude::{Commands, Everything, Queries, Res},
+    resource::Resource,
+};
 use ard_input::{InputState, Key, MouseButton};
 use ard_log::warn;
 use ard_math::{IVec2, UVec2, Vec2};
@@ -26,8 +30,10 @@ const FONT_SAMPLER: Sampler = Sampler {
     unnormalize_coords: false,
 };
 
+#[derive(Resource)]
 pub struct Gui {
     ctx: Context,
+    views: Vec<Box<dyn View + 'static>>,
     egui: egui::Context,
     input: egui::RawInput,
     layout: DescriptorSetLayout,
@@ -38,6 +44,16 @@ pub struct Gui {
     index_buffer: Buffer,
     draw_calls: Vec<DrawCall>,
     texture_deltas: Vec<TextureDelta>,
+}
+
+pub trait View {
+    fn show(
+        &mut self,
+        ctx: &egui::Context,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    );
 }
 
 #[derive(Copy, Clone)]
@@ -65,7 +81,11 @@ unsafe impl Pod for GuiPushConstants {}
 unsafe impl Zeroable for GuiPushConstants {}
 
 // API
-impl Gui {}
+impl Gui {
+    pub fn add_view(&mut self, view: impl View + 'static) {
+        self.views.push(Box::new(view));
+    }
+}
 
 // Internal
 impl Gui {
@@ -231,6 +251,7 @@ impl Gui {
 
         Self {
             ctx,
+            views: Vec::default(),
             egui: egui::Context::default(),
             input: egui::RawInput::default(),
             layout,
@@ -306,7 +327,15 @@ impl Gui {
         }
     }
 
-    pub(crate) fn prepare_draw(&mut self, frame: usize, canvas_size: IVec2, dt: f32) {
+    pub(crate) fn prepare_draw(
+        &mut self,
+        frame: usize,
+        canvas_size: IVec2,
+        dt: f32,
+        commands: &ard_ecs::prelude::Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) {
         self.input.predicted_dt = dt;
         self.input.screen_rect = Some(egui::Rect {
             min: egui::Pos2::ZERO,
@@ -316,10 +345,9 @@ impl Gui {
         // Draw all views
         let raw_input = std::mem::take(&mut self.input);
         let full_output = self.egui.run(raw_input, |ctx| {
-            // TODO: Make a `View` API like we did for table top tool
-            egui::Window::new("Test Window").show(ctx, |ui| {
-                ui.label("Hello world!");
-            });
+            for view in &mut self.views {
+                view.show(ctx, commands, queries, res)
+            }
         });
 
         // Tesselate output

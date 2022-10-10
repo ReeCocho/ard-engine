@@ -10,7 +10,10 @@ use ard_render::{
     factory::{Factory, ShaderCreateInfo},
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
     mesh::{MeshBounds, MeshCreateInfo, VertexLayout},
-    renderer::{PreRender, RendererSettings},
+    renderer::{
+        gui::{Gui, View},
+        PreRender, RendererSettings,
+    },
     static_geometry::{StaticGeometry, StaticRenderableHandle},
     *,
 };
@@ -37,7 +40,7 @@ fn main() {
                 present_mode: PresentMode::Immediate,
                 ..Default::default()
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("pbr.mat"),
@@ -72,10 +75,9 @@ impl CameraMover {
         queries: Queries<(Write<MainCamera>,)>,
         res: Res<(Read<Factory>, Read<InputState>, Write<Windows>)>,
     ) {
-        let res = res.get();
-        let factory = res.0.unwrap();
-        let input = res.1.unwrap();
-        let mut windows = res.2.unwrap();
+        let factory = res.get::<Factory>().unwrap();
+        let input = res.get::<InputState>().unwrap();
+        let mut windows = res.get_mut::<Windows>().unwrap();
         let main_camera = queries.get::<Write<MainCamera>>(self.entity).unwrap();
 
         // Rotate the camera
@@ -179,16 +181,41 @@ impl Into<System> for FrameRate {
     }
 }
 
+struct Settings {}
+
+impl View for Settings {
+    fn show(
+        &mut self,
+        ctx: &egui::Context,
+        _: &Commands,
+        _: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) {
+        let mut settings = res.get_mut::<RendererSettings>().unwrap();
+        egui::Window::new("Settings").show(ctx, |ui| {
+            ui.add(
+                egui::Slider::new(&mut settings.post_processing.exposure, 0.0..=3.0)
+                    .step_by(0.01)
+                    .text("Exposure"),
+            );
+            ui.toggle_value(&mut settings.post_processing.fxaa, "FXAA");
+        });
+    }
+}
+
 fn setup(app: &mut App) {
     let factory = app.resources.get::<Factory>().unwrap();
     let assets = app.resources.get::<Assets>().unwrap();
     let static_geo = app.resources.get::<StaticGeometry>().unwrap();
+    let mut gui = app.resources.get_mut::<Gui>().unwrap();
 
     // Disable frame rate limit
-    app.resources
-        .get_mut::<RendererSettings>()
-        .unwrap()
-        .render_time = None;
+    let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
+    settings.render_time = None;
+    settings.render_scale = 1.0;
+
+    // Add in GUI views
+    gui.add_view(Settings {});
 
     // Load in the shaders
     let vshd = factory
@@ -268,7 +295,7 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 10.0,
+        move_speed: 8.0,
         entity: camera_entity[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,

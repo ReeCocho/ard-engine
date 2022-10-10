@@ -29,7 +29,8 @@ pub trait SystemData: Sized {
 #[derive(Component)]
 pub struct DummyComponent;
 
-/// This system data indicates that the query may access any and all components and tags.
+/// This system data indicates that the query may access any and all components and tags, or that
+/// a system may access all resources.
 pub struct Everything;
 
 impl SystemData for Everything {

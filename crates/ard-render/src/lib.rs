@@ -40,7 +40,7 @@ fn late_render_init(app: &mut App) {
     let window = windows.get_window(plugin.0.window).unwrap();
     let size = window.inner_size();
 
-    let (renderer, factory, static_geo, lighting) = Renderer::new(
+    let (renderer, factory, static_geo, lighting, gui) = Renderer::new(
         plugin.0,
         window,
         plugin.0.window,
@@ -49,6 +49,7 @@ fn late_render_init(app: &mut App) {
     );
 
     app.dispatcher.add_system(renderer);
+    app.resources.add(gui);
     app.resources.add(lighting);
     app.resources.add(plugin.0.settings);
     app.resources.add(factory);

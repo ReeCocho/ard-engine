@@ -312,9 +312,6 @@ void entry() {
         SCREEN_POS
     );
 
-    //color = color / (color + vec3(1.0));
-    //color = pow(color, vec3(1.0/2.2));  
-
     FRAGMENT_COLOR = vec4(color, 1.0);
 }
 ARD_ENTRY(entry)

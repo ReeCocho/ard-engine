@@ -12,7 +12,8 @@ use super::{commands::Commands, data::SystemData, SystemState, SystemStateExt};
 
 /// Describes the data accesses of a handler.
 pub struct HandlerAccesses {
-    pub everything: bool,
+    pub every_tag_comp: bool,
+    pub every_resource: bool,
     pub all_components: TypeKey,
     pub read_components: TypeKey,
     pub write_components: TypeKey,
@@ -86,7 +87,8 @@ impl<
 
     fn accesses(&self) -> HandlerAccesses {
         HandlerAccesses {
-            everything: C::EVERYTHING,
+            every_tag_comp: C::EVERYTHING,
+            every_resource: R::EVERYTHING,
             all_components: <C::Components as ComponentFilter>::type_key(),
             read_components: <C::Components as ComponentFilter>::read_type_key(),
             write_components: <C::Components as ComponentFilter>::mut_type_key(),
@@ -104,8 +106,10 @@ impl HandlerAccesses {
     /// Returns `true` if this access does not access data in an incompatible with another.
     #[inline]
     pub fn compatible(&self, other: &HandlerAccesses) -> bool {
-        !self.everything
-            && !other.everything
+        !self.every_resource
+            && !other.every_resource
+            && !self.every_tag_comp
+            && !other.every_tag_comp
             && self.write_components.none_of(&other.all_components)
             && self.write_resources.none_of(&other.all_resources)
             && self.write_tags.none_of(&other.all_tags)
