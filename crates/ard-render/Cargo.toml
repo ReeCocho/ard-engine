@@ -29,6 +29,7 @@ gltf = { version = "1", features = ["KHR_lights_punctual"] }
 image = "0.24"
 rayon = "1"
 egui = { version = "0.19", features = ["bytemuck"] }
+half = { version = "2.1.0", features = ["bytemuck"] }
 
 [features]
 default = [ "vulkan" ]

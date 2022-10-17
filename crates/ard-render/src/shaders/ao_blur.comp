@@ -1,0 +1,55 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+// Normal reconstruction logic comes from here:
+// https://wickedengine.net/2019/09/22/improved-normal-reconstruction-from-depth/
+
+#include "data_structures.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(set = 0, binding = 0) uniform sampler2D input_tex;
+
+layout(set = 0, binding = 1, r16f) uniform restrict writeonly image2D ao_image;
+
+shared float samples[4 * 4];
+
+layout(push_constant) uniform constants {
+    /// Screen size.
+    vec2 render_area;
+    /// Reciprocal of the screen size.
+    vec2 inv_render_area;
+    /// Noise scale.
+    vec2 noise_scale;
+    float radius;
+    float bias;
+};
+
+void main() {
+    // Fetch sample
+    vec2 texel_coord = vec2(gl_WorkGroupID.xy) - vec2(1.0);
+    texel_coord += vec2(gl_LocalInvocationID.xy);
+    texel_coord /= render_area;
+
+    samples[(gl_LocalInvocationID.y * 4) + gl_LocalInvocationID.x] = texture(input_tex, texel_coord).r;
+
+    // Wait for sample collection
+    memoryBarrierShared();
+    barrier();
+
+    // Compute average
+    float avg = 0.0;
+    for (uint i = 0; i < 16; ++i) {
+        avg += samples[i];
+    }
+    avg /= 16.0;
+
+    // Store AO result
+    imageStore(
+        ao_image,
+        ivec2(gl_WorkGroupID.xy),
+        vec4(avg)
+    );
+}

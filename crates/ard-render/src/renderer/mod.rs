@@ -1,3 +1,4 @@
+pub mod ao;
 pub mod clustering;
 pub mod gui;
 pub mod occlusion;
@@ -31,6 +32,7 @@ use crate::{
 };
 
 use self::{
+    ao::AmbientOcclusion,
     gui::Gui,
     occlusion::HzbImage,
     post_process::{PostProcessing, PostProcessingSettings},
@@ -68,6 +70,7 @@ pub struct Renderer {
     frame: usize,
     global_data: GlobalRenderData,
     post_processing: PostProcessing,
+    ao: AmbientOcclusion,
     depth_buffer: Texture,
     hdr_image: Texture,
     hzb_image: HzbImage,
@@ -213,8 +216,11 @@ impl Renderer {
         // Create render data
         let global_data = GlobalRenderData::new(&ctx);
 
+        // Create ambient occlusion data
+        let ao = AmbientOcclusion::new(&ctx);
+
         // Create the factory
-        let factory = Factory::new(ctx.clone(), settings.anisotropy_level, &global_data);
+        let factory = Factory::new(ctx.clone(), settings.anisotropy_level, &global_data, &ao);
 
         // Create the HZB image
         let hzb_image = factory.0.hzb.new_image(width, height);
@@ -239,6 +245,7 @@ impl Renderer {
                 frame: 0,
                 global_data,
                 post_processing,
+                ao,
                 hdr_image,
                 hzb_image,
                 use_alternate: [false; FRAMES_IN_FLIGHT],
@@ -457,6 +464,9 @@ impl Renderer {
                 clustering.update_light_clustering_set(self.frame, &self.global_data);
             }
 
+            // Resize AO image if needed
+            camera.ao.resize_to_fit(canvas_width, canvas_height);
+
             // Prepare shadows
             camera.shadows.prepare(
                 self.frame,
@@ -484,6 +494,9 @@ impl Renderer {
                 &self.global_data,
                 Some(&camera.shadows),
             );
+            camera
+                .render_data
+                .update_camera_ao(self.frame, camera.ao.texture());
             if let CameraClearColor::SkyBox(sky_box) = &camera.descriptor.clear_color {
                 camera
                     .render_data
@@ -492,6 +505,12 @@ impl Renderer {
             camera
                 .shadows
                 .update_sets(self.frame, &self.global_data, &lighting, use_alternate);
+            camera.ao.update_set(
+                self.frame,
+                &self.ao,
+                &camera.render_data.camera_ubo,
+                &self.depth_buffer,
+            );
         }
 
         // Update lighting UBO
@@ -592,20 +611,11 @@ impl Renderer {
                 .generate_draw_calls(self.frame, &self.global_data, &mut commands);
         }
 
-        // Render from every camera
+        // Render shadows and perform the depth-prepass for every camera
         for camera_id in active_cameras.iter() {
             let camera = match cameras.get(*camera_id) {
                 Some(camera) => camera,
                 None => continue,
-            };
-
-            let (load_op, sky_box) = match &camera.descriptor.clear_color {
-                CameraClearColor::None => (LoadOp::DontCare, None),
-                CameraClearColor::Color(color) => (
-                    LoadOp::Clear(ClearColor::RgbaF32(color.x, color.y, color.z, 0.0)),
-                    None,
-                ),
-                CameraClearColor::SkyBox(sky_box) => (LoadOp::DontCare, Some(sky_box)),
             };
 
             // Render shadow maps
@@ -655,6 +665,33 @@ impl Renderer {
                     );
                 },
             );
+        }
+
+        // Generate ambient occlusion images for each camera
+        for camera_id in active_cameras.iter() {
+            let camera = match cameras.get(*camera_id) {
+                Some(camera) => camera,
+                None => continue,
+            };
+
+            camera.ao.generate(self.frame, &self.ao, &mut commands);
+        }
+
+        // Opaque rendering for every camera
+        for camera_id in active_cameras.iter() {
+            let camera = match cameras.get(*camera_id) {
+                Some(camera) => camera,
+                None => continue,
+            };
+
+            let (load_op, sky_box) = match &camera.descriptor.clear_color {
+                CameraClearColor::None => (LoadOp::DontCare, None),
+                CameraClearColor::Color(color) => (
+                    LoadOp::Clear(ClearColor::RgbaF32(color.x, color.y, color.z, 0.0)),
+                    None,
+                ),
+                CameraClearColor::SkyBox(sky_box) => (LoadOp::DontCare, Some(sky_box)),
+            };
 
             // Perform opaque rendering
             commands.render_pass(

@@ -131,6 +131,16 @@ fn main() {
         Path::new("./src/shaders/post_process.vert.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/shaders/ao_construct.comp"),
+        Path::new("./src/shaders/ao_construct.comp.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/ao_blur.comp"),
+        Path::new("./src/shaders/ao_blur.comp.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

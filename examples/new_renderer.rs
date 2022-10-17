@@ -102,20 +102,22 @@ impl CameraMover {
         let up = rot.col(1);
         let forward = rot.col(2);
 
-        if input.key(Key::W) {
-            self.position += forward.xyz() * delta * self.move_speed;
-        }
+        if self.cursor_locked {
+            if input.key(Key::W) {
+                self.position += forward.xyz() * delta * self.move_speed;
+            }
 
-        if input.key(Key::S) {
-            self.position -= forward.xyz() * delta * self.move_speed;
-        }
+            if input.key(Key::S) {
+                self.position -= forward.xyz() * delta * self.move_speed;
+            }
 
-        if input.key(Key::A) {
-            self.position -= right.xyz() * delta * self.move_speed;
-        }
+            if input.key(Key::A) {
+                self.position -= right.xyz() * delta * self.move_speed;
+            }
 
-        if input.key(Key::D) {
-            self.position += right.xyz() * delta * self.move_speed;
+            if input.key(Key::D) {
+                self.position += right.xyz() * delta * self.move_speed;
+            }
         }
 
         // Lock cursor
@@ -181,7 +183,9 @@ impl Into<System> for FrameRate {
     }
 }
 
-struct Settings {}
+struct Settings {
+    x: String,
+}
 
 impl View for Settings {
     fn show(
@@ -199,6 +203,7 @@ impl View for Settings {
                     .text("Exposure"),
             );
             ui.toggle_value(&mut settings.post_processing.fxaa, "FXAA");
+            ui.text_edit_singleline(&mut self.x);
         });
     }
 }
@@ -215,7 +220,9 @@ fn setup(app: &mut App) {
     settings.render_scale = 1.0;
 
     // Add in GUI views
-    gui.add_view(Settings {});
+    gui.add_view(Settings {
+        x: String::default(),
+    });
 
     // Load in the shaders
     let vshd = factory

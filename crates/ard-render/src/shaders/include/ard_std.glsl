@@ -76,6 +76,8 @@ layout(set = CAMERA_SET_ID, binding = 1) uniform ARD_ShadowInfo {
 
 layout(set = CAMERA_SET_ID, binding = 2) uniform sampler2DShadow ARD_SHADOW_MAPS[MAX_SHADOW_CASCADES];
 
+layout(set = CAMERA_SET_ID, binding = 3) uniform sampler2D ARD_AO_TEXTURE;
+
 ////////////////
 /// TEXTURES ///
 ////////////////

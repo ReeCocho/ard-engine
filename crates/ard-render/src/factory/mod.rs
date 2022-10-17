@@ -11,7 +11,7 @@ use crate::{
         MaterialInstanceInner,
     },
     mesh::{Mesh, MeshCreateInfo, MeshInner},
-    renderer::{occlusion::HzbGlobal, render_data::GlobalRenderData},
+    renderer::{ao::AmbientOcclusion, occlusion::HzbGlobal, render_data::GlobalRenderData},
     texture::{Texture, TextureCreateInfo, TextureInner},
 };
 
@@ -67,6 +67,7 @@ pub(crate) struct Layouts {
     pub light_cluster: DescriptorSetLayout,
     pub froxel_gen: DescriptorSetLayout,
     pub sky_box: DescriptorSetLayout,
+    pub ao: DescriptorSetLayout,
 }
 
 impl Factory {
@@ -74,6 +75,7 @@ impl Factory {
         ctx: Context,
         anisotropy: Option<AnisotropyLevel>,
         global_data: &GlobalRenderData,
+        ao: &AmbientOcclusion,
     ) -> Self {
         // Create containers
         let material_buffers = MaterialBuffers::new(ctx.clone());
@@ -90,6 +92,7 @@ impl Factory {
             light_cluster: global_data.light_cluster_layout.clone(),
             froxel_gen: global_data.froxel_gen_layout.clone(),
             sky_box: global_data.sky_box_layout.clone(),
+            ao: ao.layout().clone(),
         };
 
         let hzb = HzbGlobal::new(&ctx);

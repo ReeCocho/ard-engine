@@ -298,6 +298,40 @@ impl Gui {
                     x as f32, y as f32,
                 )));
         }
+
+        // Keyboard input
+        fn keyboard_input(
+            ard_key: Key,
+            egui_key: egui::Key,
+            ard_input: &InputState,
+            egui_input: &mut egui::RawInput,
+        ) {
+            if ard_input.key_down_repeat(ard_key) {
+                egui_input.events.push(egui::Event::Key {
+                    key: egui_key,
+                    pressed: true,
+                    modifiers: egui_input.modifiers,
+                });
+            }
+        }
+
+        keyboard_input(Key::Left, egui::Key::ArrowLeft, input, &mut self.input);
+        keyboard_input(Key::Right, egui::Key::ArrowRight, input, &mut self.input);
+        keyboard_input(Key::Up, egui::Key::ArrowUp, input, &mut self.input);
+        keyboard_input(Key::Down, egui::Key::ArrowDown, input, &mut self.input);
+
+        keyboard_input(Key::Escape, egui::Key::Escape, input, &mut self.input);
+        keyboard_input(Key::Tab, egui::Key::Tab, input, &mut self.input);
+        keyboard_input(Key::Back, egui::Key::Backspace, input, &mut self.input);
+        keyboard_input(Key::Return, egui::Key::Enter, input, &mut self.input);
+        keyboard_input(Key::Space, egui::Key::Space, input, &mut self.input);
+
+        keyboard_input(Key::Insert, egui::Key::Insert, input, &mut self.input);
+        keyboard_input(Key::Delete, egui::Key::Delete, input, &mut self.input);
+        keyboard_input(Key::Home, egui::Key::Home, input, &mut self.input);
+        keyboard_input(Key::End, egui::Key::End, input, &mut self.input);
+        keyboard_input(Key::PageUp, egui::Key::PageUp, input, &mut self.input);
+        keyboard_input(Key::PageDown, egui::Key::PageDown, input, &mut self.input);
     }
 
     fn handle_mouse_button(

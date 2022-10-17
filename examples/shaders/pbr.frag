@@ -260,6 +260,7 @@ vec3 lighting(
     vec3 ambient = 
         ARD_LIGHTING_INFO.ambient_color_intensity.xyz * 
         ARD_LIGHTING_INFO.ambient_color_intensity.w * 
+        texture(ARD_AO_TEXTURE, vec2(uv.x, 1.0 - uv.y)).r *
         base_color;
 
     return ambient + Lo;

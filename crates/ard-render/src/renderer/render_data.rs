@@ -25,6 +25,7 @@ use crate::{
 };
 
 use super::{
+    ao::AO_SAMPLER,
     clustering::{
         LightClustering, LightClusteringPushConstants, FROXEL_GEN_CAMERA_BINDING,
         FROXEL_GEN_CLUSTERS_BINDING, LIGHT_CLUSTERING_CAMERA_BINDING,
@@ -58,6 +59,7 @@ const DRAW_GEN_HZB_BINDING: u32 = 5;
 const CAMERA_UBO_BINDING: u32 = 0;
 const CAMERA_SHADOW_INFO_BINDING: u32 = 1;
 const CAMERA_SHADOW_MAPS_BINDING: u32 = 2;
+const CAMERA_AO_BINDING: u32 = 3;
 
 const SKYBOX_CAMERA_BINDING: u32 = 0;
 const SKYBOX_CUBE_MAP_BINDING: u32 = 1;
@@ -284,6 +286,13 @@ impl GlobalRenderData {
                         binding: CAMERA_SHADOW_MAPS_BINDING,
                         ty: DescriptorType::Texture,
                         count: MAX_SHADOW_CASCADES,
+                        stage: ShaderStage::AllGraphics,
+                    },
+                    // AO texture
+                    DescriptorBinding {
+                        binding: CAMERA_AO_BINDING,
+                        ty: DescriptorType::Texture,
+                        count: 1,
                         stage: ShaderStage::AllGraphics,
                     },
                 ],
@@ -1124,6 +1133,21 @@ impl RenderData {
     pub fn update_camera_ubo(&mut self, frame: usize, data: CameraUbo) {
         let mut view = self.camera_ubo.write(frame).unwrap();
         bytemuck::cast_slice_mut::<_, CameraUbo>(view.deref_mut())[0] = data;
+    }
+
+    /// Updates the camera set with the AO texture.
+    pub fn update_camera_ao(&mut self, frame: usize, ao_tex: &Texture) {
+        self.camera_sets[frame].update(&[DescriptorSetUpdate {
+            binding: CAMERA_AO_BINDING,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: ao_tex,
+                array_element: frame,
+                sampler: AO_SAMPLER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }])
     }
 
     /// Updates the camera set with shadow info.

@@ -10,7 +10,7 @@ use crate::{
         allocator::{EscapeHandle, ResourceId},
         Layouts,
     },
-    renderer::{render_data::RenderData, shadows::Shadows, RenderLayer},
+    renderer::{ao::AoImage, render_data::RenderData, shadows::Shadows, RenderLayer},
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS},
 };
 
@@ -82,6 +82,7 @@ pub(crate) struct CameraInner {
     pub descriptor: CameraDescriptor,
     pub render_data: RenderData,
     pub shadows: Shadows,
+    pub ao: AoImage,
     /// Flags to indicate if a froxel regen is required.
     pub regen_froxels: [AtomicBool; FRAMES_IN_FLIGHT],
 }
@@ -119,6 +120,7 @@ impl CameraInner {
         Self {
             descriptor,
             shadows,
+            ao: AoImage::new(ctx, &layouts.ao),
             render_data: RenderData::new(ctx, "camera", &layouts, true),
             regen_froxels: Default::default(),
         }
