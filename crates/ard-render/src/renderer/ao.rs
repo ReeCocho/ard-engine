@@ -154,7 +154,7 @@ impl AmbientOcclusion {
                 width: 1,
                 height: 1,
                 depth: 1,
-                array_elements: 1,
+                array_elements: FRAMES_IN_FLIGHT,
                 mip_levels: 1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -192,20 +192,22 @@ impl AmbientOcclusion {
                 texture_array_element: 0,
             },
         );
-        commands.copy_buffer_to_texture(
-            &default_ao,
-            &ao_staging,
-            BufferTextureCopy {
-                buffer_offset: 0,
-                buffer_row_length: 0,
-                buffer_image_height: 0,
-                buffer_array_element: 0,
-                texture_offset: (0, 0, 0),
-                texture_extent: (1, 1, 1),
-                texture_mip_level: 0,
-                texture_array_element: 0,
-            },
-        );
+        for frame in 0..FRAMES_IN_FLIGHT {
+            commands.copy_buffer_to_texture(
+                &default_ao,
+                &ao_staging,
+                BufferTextureCopy {
+                    buffer_offset: 0,
+                    buffer_row_length: 0,
+                    buffer_image_height: 0,
+                    buffer_array_element: 0,
+                    texture_offset: (0, 0, 0),
+                    texture_extent: (1, 1, 1),
+                    texture_mip_level: 0,
+                    texture_array_element: frame,
+                },
+            );
+        }
         ctx.transfer().submit(Some("ssao_noise_upload"), commands);
 
         let layout = DescriptorSetLayout::new(
@@ -298,6 +300,11 @@ impl AmbientOcclusion {
             noise,
             default_ao,
         }
+    }
+
+    #[inline(always)]
+    pub fn default_texture(&self) -> &Texture {
+        &self.default_ao
     }
 
     #[inline(always)]
@@ -515,7 +522,7 @@ impl AoImage {
                 screen_size: Vec2::new(width as f32, height as f32),
                 inv_screen_size: Vec2::new(1.0 / width as f32, 1.0 / height as f32),
                 noise_scale: Vec2::new(width as f32, height as f32) / 4.0,
-                radius: 0.5,
+                radius: 0.3,
                 bias: 0.025,
             }];
 

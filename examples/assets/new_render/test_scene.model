@@ -1,3 +1,4 @@
 (
-	model: "sponza3.glb"
+	model: "sponza3.ard_mdl",
+	ty: Ard,
 )

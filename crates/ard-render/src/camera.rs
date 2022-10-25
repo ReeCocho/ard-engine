@@ -37,6 +37,8 @@ pub struct CameraDescriptor {
     pub layers: RenderLayer,
     /// If this camera should render shadow maps.
     pub shadows: Option<CameraShadows>,
+    /// If this camera should use ambient occlusion.
+    pub ao: bool,
 }
 
 #[derive(Clone)]
@@ -192,6 +194,7 @@ impl Default for CameraDescriptor {
             clear_color: CameraClearColor::Color(Vec3::ZERO),
             layers: RenderLayer::OPAQUE,
             shadows: None,
+            ao: false,
         }
     }
 }

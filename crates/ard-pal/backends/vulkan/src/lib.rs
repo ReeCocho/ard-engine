@@ -248,6 +248,7 @@ impl Backend for VulkanBackend {
             &mut pipelines,
             current_values,
             target_values,
+            false,
         );
 
         // State
@@ -1315,30 +1316,38 @@ impl Drop for VulkanBackend {
             let transfer = self.transfer.get_mut().unwrap();
             let compute = self.compute.get_mut().unwrap();
 
-            let current = TimelineValues {
-                main: main.current_timeline_value(&self.device),
-                transfer: transfer.current_timeline_value(&self.device),
-                compute: compute.current_timeline_value(&self.device),
-            };
-
-            let target = TimelineValues {
-                main: main.target_timeline_value(),
-                transfer: transfer.target_timeline_value(),
-                compute: compute.target_timeline_value(),
-            };
-
             let mut allocator = self.allocator.lock().unwrap();
             let mut pools = self.pools.lock().unwrap();
             let mut pipelines = self.pipelines.lock().unwrap();
             let mut samplers = self.samplers.lock().unwrap();
-            self.garbage.cleanup_all(
-                &self.device,
-                &mut allocator,
-                &mut pools,
-                &mut pipelines,
-                current,
-                target,
-            );
+
+            loop {
+                let current = TimelineValues {
+                    main: main.current_timeline_value(&self.device),
+                    transfer: transfer.current_timeline_value(&self.device),
+                    compute: compute.current_timeline_value(&self.device),
+                };
+
+                let target = TimelineValues {
+                    main: main.target_timeline_value(),
+                    transfer: transfer.target_timeline_value(),
+                    compute: compute.target_timeline_value(),
+                };
+
+                self.garbage.cleanup(
+                    &self.device,
+                    &mut allocator,
+                    &mut pools,
+                    &mut pipelines,
+                    current,
+                    target,
+                    true,
+                );
+                if self.garbage.is_empty() {
+                    break;
+                }
+            }
+
             pools.release(&self.device);
             pipelines.release_all(&self.device);
             samplers.release(&self.device);

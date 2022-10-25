@@ -75,6 +75,7 @@ pub struct Renderer {
     hdr_image: Texture,
     hzb_image: HzbImage,
     use_alternate: [bool; FRAMES_IN_FLIGHT],
+    jobs: Vec<Option<Job>>,
     ctx: Context,
 }
 
@@ -234,6 +235,11 @@ impl Renderer {
         // Create post processing data
         let post_processing = PostProcessing::new(&ctx, width, height);
 
+        let mut jobs = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for _ in 0..FRAMES_IN_FLIGHT {
+            jobs.push(None);
+        }
+
         (
             Self {
                 ctx,
@@ -249,6 +255,7 @@ impl Renderer {
                 hdr_image,
                 hzb_image,
                 use_alternate: [false; FRAMES_IN_FLIGHT],
+                jobs,
                 depth_buffer,
             },
             factory,
@@ -287,8 +294,15 @@ impl Renderer {
             true
         };
 
-        // Send events
         if do_render {
+            // If the next frames job is uncomplete, skip rendering
+            if let Some(job) = &self.jobs[(self.frame + 1) % FRAMES_IN_FLIGHT] {
+                if job.poll_status() == JobStatus::Running {
+                    return;
+                }
+            }
+
+            // Send events
             let dur = now.duration_since(self.last_render_time);
             self.last_render_time = now;
             commands.events.submit(PreRender(dur));
@@ -465,7 +479,9 @@ impl Renderer {
             }
 
             // Resize AO image if needed
-            camera.ao.resize_to_fit(canvas_width, canvas_height);
+            if camera.descriptor.ao {
+                camera.ao.resize_to_fit(canvas_width, canvas_height);
+            }
 
             // Prepare shadows
             camera.shadows.prepare(
@@ -494,9 +510,14 @@ impl Renderer {
                 &self.global_data,
                 Some(&camera.shadows),
             );
-            camera
-                .render_data
-                .update_camera_ao(self.frame, camera.ao.texture());
+            camera.render_data.update_camera_ao(
+                self.frame,
+                if camera.descriptor.ao {
+                    camera.ao.texture()
+                } else {
+                    self.ao.default_texture()
+                },
+            );
             if let CameraClearColor::SkyBox(sky_box) = &camera.descriptor.clear_color {
                 camera
                     .render_data
@@ -674,7 +695,9 @@ impl Renderer {
                 None => continue,
             };
 
-            camera.ao.generate(self.frame, &self.ao, &mut commands);
+            if camera.descriptor.ao {
+                camera.ao.generate(self.frame, &self.ao, &mut commands);
+            }
         }
 
         // Opaque rendering for every camera
@@ -768,7 +791,7 @@ impl Renderer {
         );
 
         // Submit for rendering
-        self.ctx.main().submit(Some("main_pass"), commands);
+        self.jobs[self.frame] = Some(self.ctx.main().submit(Some("main_pass"), commands));
 
         // Mark static geometry as being clean
         static_geometry.dirty[self.frame] = false;

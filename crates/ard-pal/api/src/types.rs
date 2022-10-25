@@ -1,9 +1,11 @@
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TextureFormat {
     R8Unorm,
     R32Sfloat,
+    Rg8Unorm,
     Rgba8Unorm,
     Rgba8Srgb,
     Bgra8Unorm,
@@ -11,13 +13,15 @@ pub enum TextureFormat {
     Rgba16SFloat,
     Rg16SFloat,
     R16SFloat,
+    BC7Srgb,
+    BC7Unorm,
     D16Unorm,
     D24UnormS8Uint,
     D32Sfloat,
     D32SfloatS8Uint,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum VertexFormat {
     XF32,
     XyF32,
@@ -25,33 +29,33 @@ pub enum VertexFormat {
     XyzwU8,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IndexType {
     U16,
     U32,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum VertexInputRate {
     Vertex,
     Instance,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PrimitiveTopology {
     PontList,
     LineList,
     TriangleList,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PolygonMode {
     Fill,
     Line,
     Point,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CullMode {
     None,
     Front,
@@ -59,13 +63,13 @@ pub enum CullMode {
     FrontAndBack,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FrontFace {
     CounterClockwise,
     Clockwise,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CompareOp {
     Never,
     Less,
@@ -86,7 +90,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BlendFactor {
     Zero,
     One,
@@ -100,7 +104,7 @@ pub enum BlendFactor {
     OneMinusDstAlpha,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BlendOp {
     Add,
     Subtract,
@@ -109,7 +113,7 @@ pub enum BlendOp {
     Max,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum JobStatus {
     /// The job is still running.
     Running,
@@ -117,7 +121,7 @@ pub enum JobStatus {
     Complete,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum QueueType {
     /// The main queue is guaranteed to support graphics, transfer, and compute operations.
     Main,
@@ -131,7 +135,7 @@ pub enum QueueType {
     Present,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum StoreOp {
     /// We don't care what happens to the contents of the image after the pass.
     DontCare,
@@ -156,7 +160,7 @@ pub enum ClearColor {
     D32S32(f32, u32),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PresentMode {
     /// The presentation engine will not wait for a vertical blanking period to update the current
     /// image. Visisble tearing may occur.
@@ -177,7 +181,7 @@ pub enum PresentMode {
     FifoRelaxed,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ShaderStage {
     AllGraphics,
     Vertex,
@@ -185,19 +189,19 @@ pub enum ShaderStage {
     Compute,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Filter {
     Nearest,
     Linear,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ReductionMode {
     Min,
     Max,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SamplerAddressMode {
     Repeat,
     MirroredRepeat,
@@ -205,7 +209,7 @@ pub enum SamplerAddressMode {
     ClampToBorder,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BorderColor {
     FloatTransparentBlack,
     IntTransparentBlack,
@@ -215,7 +219,7 @@ pub enum BorderColor {
     IntOpaqueWhite,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AnisotropyLevel {
     X1,
     X2,
@@ -247,14 +251,14 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TextureType {
     Type1D,
     Type2D,
     Type3D,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MemoryUsage {
     Unknown,
     GpuOnly,
@@ -262,7 +266,7 @@ pub enum MemoryUsage {
     GpuToCpu,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AccessType {
     Read,
     ReadWrite,

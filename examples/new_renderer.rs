@@ -1,25 +1,31 @@
 use ard_assets::prelude::*;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
+use ard_formats::mesh::VertexLayout;
 use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
-use ard_pal::prelude::PresentMode;
+use ard_pal::prelude::{CullMode, FrontFace, PresentMode};
 use ard_render::{
     asset::{cube_map::CubeMapAsset, model::ModelAsset, RenderAssetsPlugin},
     camera::{Camera, CameraClearColor, CameraDescriptor, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
+    lighting::PointLight,
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
-    mesh::{MeshBounds, MeshCreateInfo, VertexLayout},
+    mesh::{MeshBounds, MeshCreateInfo, Vertices},
     renderer::{
         gui::{Gui, View},
-        PreRender, RendererSettings,
+        Model, PreRender, RenderLayer, Renderable, RendererSettings,
     },
     static_geometry::{StaticGeometry, StaticRenderableHandle},
     *,
 };
 use ard_window::prelude::*;
 use ard_winit::prelude::*;
+use rand::Rng;
 use std::time::Instant;
+
+#[path = "./util.rs"]
+mod util;
 
 fn main() {
     AppBuilder::new(ard_log::LevelFilter::Warn)
@@ -130,6 +136,11 @@ impl CameraMover {
             window.set_cursor_visibility(!self.cursor_locked);
         }
 
+        // Toggle AO
+        if input.key_up(Key::O) {
+            self.descriptor.ao = !self.descriptor.ao;
+        }
+
         // Update the camera
         self.descriptor.position = self.position;
         self.descriptor.target = self.position + forward.xyz();
@@ -224,55 +235,6 @@ fn setup(app: &mut App) {
         x: String::default(),
     });
 
-    // Load in the shaders
-    let vshd = factory
-        .create_shader(ShaderCreateInfo {
-            code: include_bytes!("./assets/example/new_rend.vert.spv"),
-            debug_name: None,
-        })
-        .unwrap();
-    let fshd = factory
-        .create_shader(ShaderCreateInfo {
-            code: include_bytes!("./assets/example/new_rend.frag.spv"),
-            debug_name: None,
-        })
-        .unwrap();
-
-    // Create the material
-    let material = factory.create_material(MaterialCreateInfo {
-        vertex_shader: vshd,
-        depth_only_shader: None,
-        fragment_shader: fshd,
-        vertex_layout: VertexLayout::COLOR,
-        texture_count: 0,
-        data_size: 0,
-    });
-
-    let material_instance =
-        factory.create_material_instance(MaterialInstanceCreateInfo { material });
-
-    // Create the triangle mesh
-    let mesh = factory.create_mesh(MeshCreateInfo {
-        bounds: MeshBounds::Generate,
-        indices: &[0, 1, 2, 0, 2, 1],
-        positions: &[
-            Vec4::new(1.0, 0.0, 0.5, 1.0),
-            Vec4::new(0.0, 1.0, 0.5, 1.0),
-            Vec4::new(-1.0, 0.0, 0.5, 1.0),
-        ],
-        normals: None,
-        tangents: None,
-        colors: Some(&[
-            Vec4::new(1.0, 0.0, 0.0, 1.0),
-            Vec4::new(0.0, 1.0, 0.0, 1.0),
-            Vec4::new(0.0, 0.0, 1.0, 1.0),
-        ]),
-        uv0: None,
-        uv1: None,
-        uv2: None,
-        uv3: None,
-    });
-
     //*
     // Load in the scene
     let model_handle = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
@@ -315,6 +277,92 @@ fn setup(app: &mut App) {
     let (handles, _) = asset.instantiate_static(&static_geo, app.world.entities().commands());
     app.resources.add(StaticHandles(handles));
     //*/
+    // Create light cube data
+    let vshd = factory
+        .create_shader(ShaderCreateInfo {
+            code: include_bytes!("./assets/new_render/color.vert.spv"),
+            debug_name: None,
+        })
+        .unwrap();
+    let fshd = factory
+        .create_shader(ShaderCreateInfo {
+            code: include_bytes!("./assets/new_render/color.frag.spv"),
+            debug_name: None,
+        })
+        .unwrap();
+
+    let material = factory.create_material(MaterialCreateInfo {
+        vertex_shader: vshd,
+        depth_only_shader: None,
+        fragment_shader: fshd,
+        vertex_layout: VertexLayout::empty(),
+        texture_count: 0,
+        data_size: 0,
+        cull_mode: CullMode::None,
+        front_face: FrontFace::Clockwise,
+    });
+
+    let material_instance =
+        factory.create_material_instance(MaterialInstanceCreateInfo { material });
+
+    let mesh = factory.create_mesh(MeshCreateInfo {
+        bounds: MeshBounds::Generate,
+        indices: &util::CUBE_INDICES,
+        vertices: Vertices::Attributes {
+            positions: &util::CUBE_VERTICES,
+            normals: None,
+            tangents: None,
+            colors: None,
+            uv0: None,
+            uv1: None,
+            uv2: None,
+            uv3: None,
+        },
+    });
+
+    /*
+    // Create some random lights
+    const LIGHT_COUNT: usize = 4096 * 2;
+    const LIGHT_SPACING: (f32, f32, f32) = (16.0, 8.0, 12.0);
+    const LIGHT_OFFSET: (f32, f32, f32) = (0.0, 5.0, 0.0);
+    const LIGHT_RANGE: (f32, f32) = (1.0, 2.0);
+    const LIGHT_INTENSITY: (f32, f32) = (3.0, 6.0);
+
+    let mut rng = rand::thread_rng();
+
+    let mut light_pack = (
+        Vec::with_capacity(LIGHT_COUNT),
+        Vec::with_capacity(LIGHT_COUNT),
+        Vec::with_capacity(LIGHT_COUNT),
+    );
+
+    for i in 0..LIGHT_COUNT {
+        let t = Vec3::new(
+            rng.gen_range(-LIGHT_SPACING.0..=LIGHT_SPACING.0) + LIGHT_OFFSET.0,
+            rng.gen_range(-LIGHT_SPACING.1..=LIGHT_SPACING.1) + LIGHT_OFFSET.1,
+            rng.gen_range(-LIGHT_SPACING.2..=LIGHT_SPACING.2) + LIGHT_OFFSET.2,
+        );
+        let model = Mat4::from_translation(t) * Mat4::from_scale(Vec3::new(0.1, 0.1, 0.1));
+
+        light_pack.0.push(Model(model));
+        light_pack.1.push(PointLight {
+            color: Vec3::new(
+                if i % 3 == 0 { 1.0 } else { 0.0 },
+                if i % 3 == 1 { 1.0 } else { 0.0 },
+                if i % 3 == 2 { 1.0 } else { 0.0 },
+            ),
+            intensity: rng.gen_range(LIGHT_INTENSITY.0..=LIGHT_INTENSITY.1),
+            range: rng.gen_range(LIGHT_RANGE.0..=LIGHT_RANGE.1),
+        });
+        light_pack.2.push(Renderable {
+            mesh: mesh.clone(),
+            material: material_instance.clone(),
+            layers: RenderLayer::OPAQUE,
+        });
+    }
+
+    app.world.entities_mut().commands().create(light_pack, &mut []);
+    */
 
     /*
     // Create static triangle objects

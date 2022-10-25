@@ -1,5 +1,6 @@
 #version 450
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_control_flow_attributes: enable
 
 #include "data_structures.glsl"
 
@@ -64,6 +65,7 @@ BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
     bb.max_pt = vec2(uintBitsToFloat(0xFF800000));
     bb.depth = uintBitsToFloat(0x7F800000);
 
+    [[unroll]]
     for (int i = 0; i < 8; i++) {
         // Depth
         bb.depth = min(bb.depth, bb.corners[i].z);
@@ -103,6 +105,8 @@ void main() {
         dot(model[2].xyz, model[2].xyz)
     );
     float radius = bounds_center.w * sqrt(max(scale.x, max(scale.y, scale.z)));
+
+    [[unroll]]
     for (int i = 0; i < 6; i++) { 
         if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
             return;

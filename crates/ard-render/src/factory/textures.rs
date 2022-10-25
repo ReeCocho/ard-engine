@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ard_pal::prelude::{
     AnisotropyLevel, Buffer, BufferTextureCopy, Context, DescriptorBinding, DescriptorSet,
     DescriptorSetCreateInfo, DescriptorSetLayout, DescriptorSetLayoutCreateInfo,
@@ -20,7 +22,13 @@ pub(crate) struct TextureSets {
     layout: DescriptorSetLayout,
     sets: Vec<DescriptorSet>,
     new_textures: [Vec<ResourceId>; FRAMES_IN_FLIGHT],
+    mip_updates: [Vec<MipUpdate>; FRAMES_IN_FLIGHT],
     dropped_textures: [Vec<ResourceId>; FRAMES_IN_FLIGHT],
+}
+
+#[derive(Copy, Clone)]
+pub(crate) enum MipUpdate {
+    Texture(ResourceId),
 }
 
 const DEFAULT_SAMPLER: Sampler = Sampler {
@@ -135,6 +143,7 @@ impl TextureSets {
             layout,
             sets,
             new_textures: Default::default(),
+            mip_updates: Default::default(),
             dropped_textures: Default::default(),
         }
     }
@@ -190,13 +199,32 @@ impl TextureSets {
         }
     }
 
+    /// Signal that an image has had a mip level updates and might need rebinding.
+    #[inline(always)]
+    pub fn mip_update(&mut self, update: MipUpdate) {
+        for list in &mut self.mip_updates {
+            list.push(update);
+        }
+    }
+
     /// Binds ready textures to the main set for the given frame and unbinds destroyed textures.
     pub fn update_set(&mut self, frame: usize, textures: &ResourceAllocator<TextureInner>) {
-        let cap = self.new_textures[frame].len() + self.dropped_textures[frame].len();
+        let cap = self.new_textures[frame].len()
+            + self.dropped_textures[frame].len()
+            + self.mip_updates[frame].len();
         let mut updates = Vec::with_capacity(cap);
+
+        // Hash set of already observed image ids so we don't double update
+        let mut observed = HashSet::<ResourceId>::default();
 
         // Write new textures to the set
         for id in self.new_textures[frame].drain(..) {
+            if observed.contains(&id) {
+                continue;
+            }
+
+            observed.insert(id);
+
             if let Some(texture) = textures.get(id) {
                 let (base_mip, mip_count) = texture.loaded_mips();
                 updates.push(DescriptorSetUpdate {
@@ -227,6 +255,51 @@ impl TextureSets {
                         mip_count: mip_count as usize,
                     },
                 });
+            }
+        }
+
+        // Update mips
+        for update in self.mip_updates[frame].drain(..) {
+            match update {
+                MipUpdate::Texture(id) => {
+                    if observed.contains(&id) {
+                        continue;
+                    }
+
+                    observed.insert(id);
+
+                    if let Some(texture) = textures.get(id) {
+                        let (base_mip, mip_count) = texture.loaded_mips();
+                        updates.push(DescriptorSetUpdate {
+                            binding: 0,
+                            array_element: usize::from(id),
+                            value: DescriptorValue::Texture {
+                                texture: &texture.texture,
+                                array_element: 0,
+                                sampler: Sampler {
+                                    min_filter: texture.sampler.min_filter,
+                                    mag_filter: texture.sampler.mag_filter,
+                                    mipmap_filter: texture.sampler.mipmap_filter,
+                                    address_u: texture.sampler.address_u,
+                                    address_v: texture.sampler.address_v,
+                                    address_w: SamplerAddressMode::ClampToEdge,
+                                    anisotropy: if texture.sampler.anisotropy {
+                                        self.anisotropy
+                                    } else {
+                                        None
+                                    },
+                                    compare: None,
+                                    min_lod: NotNan::new(0.0).unwrap(),
+                                    max_lod: None,
+                                    unnormalize_coords: false,
+                                    border_color: None,
+                                },
+                                base_mip: base_mip as usize,
+                                mip_count: mip_count as usize,
+                            },
+                        });
+                    }
+                }
             }
         }
 

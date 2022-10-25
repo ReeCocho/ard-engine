@@ -1,21 +1,12 @@
-// Compile with:
-// glslc triangle.frag -o triangle.frag.spv
-#version 450
-
-struct Material {
-    vec4 color;
-};
+#version 450 core
+#extension GL_EXT_debug_printf : enable
 
 #define ARD_FRAGMENT_SHADER
-#define ARD_MATERIAL Material
-#include "user_shaders.glsl"
+#include "ard_std.glsl"
 
 layout(location = 0) out vec4 FRAGMENT_COLOR;
 
-layout(location = 1) in vec4 VERT_COLOR;
-
 void entry() {
-    FRAGMENT_COLOR = get_material_data().color;
+    FRAGMENT_COLOR = vec4(1.0);
 }
-
 ARD_ENTRY(entry)

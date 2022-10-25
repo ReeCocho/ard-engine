@@ -1,3 +1,4 @@
+/*
 #[path = "./util.rs"]
 mod util;
 
@@ -317,3 +318,6 @@ fn setup(app: &mut App) {
         }
     }
 }
+*/
+
+fn main() {}

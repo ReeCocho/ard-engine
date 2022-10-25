@@ -34,6 +34,14 @@ fn main() {
     //     Path::new("./examples/assets/example/"),
     // );
     compile(
+        Path::new("./examples/shaders/color.frag"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/color.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
         Path::new("./examples/shaders/new_rend.frag"),
         Path::new("./examples/assets/new_render/"),
     );
@@ -69,6 +77,7 @@ fn compile(in_path: &Path, out_path: &Path) {
     let err = format!("unable to compile {:?}", out_name);
     let stderr = Command::new("glslc")
         .arg(in_path)
+        .arg("-O")
         .arg("--target-env=vulkan1.2")
         .arg("-I./crates/ard-render/src/shaders/include")
         .arg("-o")

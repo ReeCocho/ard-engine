@@ -2,6 +2,7 @@ use std::ops::DerefMut;
 
 use ard_core::prelude::Disabled;
 use ard_ecs::prelude::*;
+use ard_formats::mesh::VertexLayout;
 use ard_math::{Mat4, Vec2, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -19,8 +20,8 @@ use crate::{
     },
     lighting::{Lighting, PointLight, RawLight, RawPointLight},
     material::{MaterialInner, MaterialInstance, PipelineType},
-    mesh::{Mesh, MeshInner, ObjectBounds, VertexLayout},
-    shader_constants::{FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES},
+    mesh::{Mesh, MeshInner, ObjectBounds},
+    shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_SHADOW_CASCADES},
     static_geometry::StaticGeometryInner,
 };
 
@@ -555,7 +556,7 @@ impl GlobalRenderData {
             ComputePipelineCreateInfo {
                 layouts: vec![light_cluster_layout.clone()],
                 module: light_cluster_shader,
-                work_group_size: (1, 1, 1),
+                work_group_size: (FROXEL_TABLE_DIMS.0 as u32, FROXEL_TABLE_DIMS.1 as u32, 1),
                 push_constants_size: Some(
                     std::mem::size_of::<LightClusteringPushConstants>() as u32
                 ),

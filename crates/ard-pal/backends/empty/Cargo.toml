@@ -1,9 +1,10 @@
 [package]
-name = "ard-math"
+name = "empty"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glam = { version = "0.21", features = ["serde", "bytemuck", "mint"] }
+api = { path = "../../api", version = "0.1" }
+raw-window-handle = "0.4"

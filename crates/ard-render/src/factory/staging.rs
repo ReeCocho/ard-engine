@@ -1,11 +1,11 @@
 use std::ops::{Div, Shr};
 
+use ard_formats::mesh::VertexLayout;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 
 use crate::{
     cube_map::CubeMapInner,
-    mesh::VertexLayout,
     texture::{MipType, TextureInner},
 };
 
@@ -28,6 +28,12 @@ pub(crate) enum StagingRequest {
         id: ResourceId,
         staging_buffer: Buffer,
         mip_type: MipType,
+    },
+    TextureMip {
+        id: ResourceId,
+        dst: crate::texture::Texture,
+        mip_level: usize,
+        staging_buffer: Buffer,
     },
     CubeMap {
         id: ResourceId,
@@ -52,6 +58,7 @@ struct Upload {
 pub(crate) enum StagingResource {
     Mesh(ResourceId),
     Texture(ResourceId),
+    TextureMip { mip_level: usize, id: ResourceId },
     CubeMap(ResourceId),
 }
 
@@ -272,6 +279,43 @@ impl Staging {
                         StagingResource::Texture(*id)
                     }
                 },
+                StagingRequest::TextureMip {
+                    id,
+                    mip_level,
+                    staging_buffer,
+                    ..
+                } => {
+                    let dst = match textures.get(*id) {
+                        Some(tex) => tex,
+                        // Texture was dropped so upload is no longer needed
+                        None => continue,
+                    };
+                    let (width, height, _) = dst.texture.dims();
+
+                    transfer_commands.copy_buffer_to_texture(
+                        &dst.texture,
+                        staging_buffer,
+                        BufferTextureCopy {
+                            buffer_offset: 0,
+                            buffer_row_length: 0,
+                            buffer_image_height: 0,
+                            buffer_array_element: 0,
+                            texture_offset: (0, 0, 0),
+                            texture_extent: (
+                                width.shr(mip_level).max(1),
+                                height.shr(mip_level).max(1),
+                                1,
+                            ),
+                            texture_mip_level: *mip_level,
+                            texture_array_element: 0,
+                        },
+                    );
+
+                    StagingResource::TextureMip {
+                        mip_level: *mip_level,
+                        id: *id,
+                    }
+                }
                 StagingRequest::CubeMap {
                     id,
                     staging_buffer,

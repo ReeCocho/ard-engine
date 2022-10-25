@@ -1,9 +1,15 @@
-#[cfg(feature = "vulkan")]
-pub type Backend = vulkan::VulkanBackend;
-
-#[cfg(feature = "vulkan")]
-pub mod backend {
-    pub use vulkan::{VulkanBackend, VulkanBackendCreateError, VulkanBackendCreateInfo};
+cfg_if::cfg_if! {
+    if #[cfg(feature = "vulkan")] {
+        pub type Backend = vulkan::VulkanBackend;
+        pub mod backend {
+            pub use vulkan::{VulkanBackend, VulkanBackendCreateError, VulkanBackendCreateInfo};
+        }
+    } else {
+        pub type Backend = empty::EmptyBackend;
+        pub mod backend {
+            pub use empty::EmptyBackend;
+        }
+    }
 }
 
 pub mod prelude {

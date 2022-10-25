@@ -1,12 +1,12 @@
 use ard_assets::prelude::*;
-use ard_pal::prelude::ShaderCreateInfo;
+use ard_formats::mesh::VertexLayout;
+use ard_pal::prelude::{CullMode, FrontFace, ShaderCreateInfo};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     factory::Factory,
     material::{Material, MaterialCreateInfo},
-    mesh::VertexLayout,
 };
 
 pub struct MaterialAsset {
@@ -109,6 +109,8 @@ impl AssetLoader for MaterialLoader {
             vertex_layout: desc.vertex_layout.into(),
             texture_count: desc.texture_count,
             data_size: desc.material_data_size,
+            cull_mode: CullMode::Back,
+            front_face: FrontFace::Clockwise,
         });
 
         Ok(AssetLoadResult::Loaded {

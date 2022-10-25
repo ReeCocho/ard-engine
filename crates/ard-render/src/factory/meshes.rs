@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
+use ard_formats::mesh::VertexLayout;
 use ard_log::*;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 
-use crate::mesh::{AttributeType, VertexLayout};
+use crate::mesh::AttributeType;
 
 const DEFAULT_VB_LEN: usize = 65536;
 const DEFAULT_IB_LEN: usize = 65536;

@@ -20,7 +20,7 @@ use self::{
     materials::MaterialBuffers,
     meshes::MeshBuffers,
     staging::{Staging, StagingRequest, StagingResource},
-    textures::TextureSets,
+    textures::{MipUpdate, TextureSets},
 };
 
 pub mod allocator;
@@ -136,6 +136,15 @@ impl Factory {
                 }
             }
             StagingResource::Texture(id) => texture_sets.texture_ready(id),
+            StagingResource::TextureMip { mip_level, id } => {
+                if let Some(texture) = textures.get_mut(id) {
+                    // Update mip level
+                    texture.loaded_mips |= 1 << mip_level;
+
+                    // Tell tetures sets about the new mip
+                    texture_sets.mip_update(MipUpdate::Texture(id));
+                }
+            }
             StagingResource::CubeMap(_) => {}
         });
 
@@ -388,5 +397,30 @@ impl Factory {
 
         // Copy in texture
         material_inner.textures[slot] = texture.map(|tex| tex.clone());
+    }
+
+    pub fn load_texture_mip(&self, texture: &Texture, level: usize, data: &[u8]) {
+        let mut staging = self.0.staging.lock().unwrap();
+        let textures = self.0.textures.lock().unwrap();
+        let texture_inner = textures.get(texture.id).unwrap();
+
+        // Mip level must not already be loaded
+        if texture_inner.loaded_mips & (1 << level) != 0 {
+            return;
+        }
+
+        let staging_buffer = Buffer::new_staging(
+            self.0.ctx.clone(),
+            Some(format!("texture_mip_level_{level}_staging")),
+            data,
+        )
+        .unwrap();
+
+        staging.add(StagingRequest::TextureMip {
+            id: texture.id,
+            dst: texture.clone(),
+            mip_level: level,
+            staging_buffer,
+        });
     }
 }

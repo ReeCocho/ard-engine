@@ -89,13 +89,13 @@ layout(set = TEXTURES_SET_ID, binding = 0) uniform sampler2D[] ARD_TEXTURES;
 /////////////////
 
 #ifdef ARD_TEXTURE_COUNT
-layout(set = MATERIALS_SET_ID, binding = 0) readonly buffer ARD_TextureData {
+layout(set = MATERIALS_SET_ID, binding = 0) restrict readonly buffer ARD_TextureData {
     uint[][MAX_TEXTURES_PER_MATERIAL] ARD_MATERIAL_TEXTURES;
 };
 #endif
 
 #ifdef ARD_MATERIAL
-layout(set = MATERIALS_SET_ID, binding = 1) readonly buffer ARD_MaterialData {
+layout(set = MATERIALS_SET_ID, binding = 1) restrict readonly buffer ARD_MaterialData {
     ARD_MATERIAL[] ARD_MATERIALS;
 };
 #endif

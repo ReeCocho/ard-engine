@@ -25,6 +25,7 @@ Cargo.lock
 log.txt
 *.ini
 *.meta
+*.ard_mdl
 
 # Very big files
 sponza.glb

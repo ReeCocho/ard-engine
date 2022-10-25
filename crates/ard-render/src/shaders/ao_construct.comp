@@ -84,7 +84,7 @@ void main() {
         tile_z[i] = position.z;
     }
 
-    memoryBarrierShared();
+    // memoryBarrierShared();
     barrier();
 
     // Load view-space Z values in a cross pattern and compare

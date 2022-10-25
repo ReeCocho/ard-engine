@@ -1,3 +1,4 @@
+use ard_formats::mesh::VertexLayout;
 use ard_pal::prelude::*;
 
 use crate::{
@@ -6,7 +7,6 @@ use crate::{
         materials::{MaterialBlock, MaterialBuffers},
         Factory, Layouts,
     },
-    mesh::VertexLayout,
     shader_constants::FRAMES_IN_FLIGHT,
 };
 
@@ -17,6 +17,8 @@ pub struct MaterialCreateInfo {
     pub vertex_layout: VertexLayout,
     pub texture_count: usize,
     pub data_size: u64,
+    pub front_face: FrontFace,
+    pub cull_mode: CullMode,
 }
 
 pub struct MaterialInstanceCreateInfo {
@@ -86,8 +88,8 @@ impl MaterialInner {
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
-                    cull_mode: CullMode::Back,
-                    front_face: FrontFace::Clockwise,
+                    cull_mode: create_info.cull_mode,
+                    front_face: create_info.front_face,
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,
@@ -120,8 +122,8 @@ impl MaterialInner {
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
-                    cull_mode: CullMode::Back,
-                    front_face: FrontFace::Clockwise,
+                    cull_mode: create_info.cull_mode,
+                    front_face: create_info.front_face,
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: true,
@@ -154,8 +156,8 @@ impl MaterialInner {
                 vertex_input: vertex_input.clone(),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
-                    cull_mode: CullMode::Back,
-                    front_face: FrontFace::Clockwise,
+                    cull_mode: create_info.cull_mode,
+                    front_face: create_info.front_face,
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,

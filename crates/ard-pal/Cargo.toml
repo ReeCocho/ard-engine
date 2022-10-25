@@ -12,6 +12,8 @@ vulkan = [ "dep:vulkan" ]
 [dependencies]
 api = { path = "./api/", version = "0.1" }
 vulkan = { path = "./backends/vulkan/", version = "0.1", optional = true }
+empty = { path = "./backends/empty/", version = "0.1" }
+cfg-if = "1.0.0"
 
 [dev-dependencies]
 winit = "0.27"

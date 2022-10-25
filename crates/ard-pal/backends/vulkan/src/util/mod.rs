@@ -48,6 +48,7 @@ pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
     match format {
         TextureFormat::R8Unorm => vk::Format::R8_UNORM,
         TextureFormat::R32Sfloat => vk::Format::R32_SFLOAT,
+        TextureFormat::Rg8Unorm => vk::Format::R8G8_UNORM,
         TextureFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
         TextureFormat::Rgba8Srgb => vk::Format::R8G8B8A8_SRGB,
         TextureFormat::Bgra8Unorm => vk::Format::B8G8R8A8_UNORM,
@@ -59,6 +60,8 @@ pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
         TextureFormat::Rgba16SFloat => vk::Format::R16G16B16A16_SFLOAT,
         TextureFormat::Rg16SFloat => vk::Format::R16G16_SFLOAT,
         TextureFormat::R16SFloat => vk::Format::R16_SFLOAT,
+        TextureFormat::BC7Srgb => vk::Format::BC7_SRGB_BLOCK,
+        TextureFormat::BC7Unorm => vk::Format::BC7_UNORM_BLOCK,
     }
 }
 

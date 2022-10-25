@@ -10,3 +10,4 @@ thiserror = "1"
 raw-window-handle = "0.4.2"
 bitflags = "1"
 ordered-float = "3"
+serde = { version = "1", features = ["derive"] }

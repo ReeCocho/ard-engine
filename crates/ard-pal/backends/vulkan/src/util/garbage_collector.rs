@@ -73,25 +73,13 @@ impl GarbageCollector {
         }
     }
 
-    pub fn sender(&self) -> Sender<Garbage> {
-        self.sender.clone()
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.to_destroy.lock().unwrap().is_empty()
     }
 
-    pub unsafe fn cleanup_all(
-        &self,
-        device: &ash::Device,
-        allocator: &mut Allocator,
-        pools: &mut DescriptorPools,
-        pipelines: &mut PipelineCache,
-        current: TimelineValues,
-        target: TimelineValues,
-    ) {
-        loop {
-            self.cleanup(device, allocator, pools, pipelines, current, target);
-            if self.to_destroy.lock().unwrap().is_empty() {
-                break;
-            }
-        }
+    pub fn sender(&self) -> Sender<Garbage> {
+        self.sender.clone()
     }
 
     pub unsafe fn cleanup(
@@ -102,6 +90,7 @@ impl GarbageCollector {
         pipelines: &mut PipelineCache,
         current: TimelineValues,
         target: TimelineValues,
+        override_ref_counter: bool,
     ) {
         // Receive all incoming garbage
         let mut to_destroy = self.to_destroy.lock().unwrap();
@@ -120,18 +109,20 @@ impl GarbageCollector {
         let mut marked = self.marked.lock().unwrap();
         marked.clear();
         for (id, garbage) in to_destroy.iter() {
-            match &garbage.garbage {
-                Garbage::Buffer { ref_counter, .. } => {
-                    if !ref_counter.is_last() {
-                        continue;
+            if !override_ref_counter {
+                match &garbage.garbage {
+                    Garbage::Buffer { ref_counter, .. } => {
+                        if !ref_counter.is_last() {
+                            continue;
+                        }
                     }
-                }
-                Garbage::Texture { ref_counter, .. } => {
-                    if !ref_counter.is_last() {
-                        continue;
+                    Garbage::Texture { ref_counter, .. } => {
+                        if !ref_counter.is_last() {
+                            continue;
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
 
             if garbage.values.main <= current.main

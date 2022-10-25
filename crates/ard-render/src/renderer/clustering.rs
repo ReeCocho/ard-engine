@@ -228,11 +228,7 @@ impl LightClustering {
                 light_count: global.light_count as u32,
             }];
             pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(
-                FROXEL_TABLE_DIMS.0 as u32,
-                FROXEL_TABLE_DIMS.1 as u32,
-                FROXEL_TABLE_DIMS.2 as u32,
-            );
+            pass.dispatch(1, 1, FROXEL_TABLE_DIMS.2 as u32);
         });
     }
 }

@@ -1,3 +1,4 @@
+/*
 #[path = "./util.rs"]
 mod util;
 
@@ -220,3 +221,6 @@ fn setup(app: &mut App) {
 
     app.world.entities().commands().create(lights, &mut []);
 }
+*/
+
+fn main() {}
