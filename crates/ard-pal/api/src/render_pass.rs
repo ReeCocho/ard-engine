@@ -1,11 +1,12 @@
 use crate::{
     buffer::Buffer,
     command_buffer::Command,
+    cube_map::CubeMap,
     descriptor_set::DescriptorSet,
     graphics_pipeline::GraphicsPipeline,
     surface::SurfaceImage,
     texture::Texture,
-    types::{IndexType, LoadOp, Scissor, ShaderStage, StoreOp},
+    types::{CubeFace, IndexType, LoadOp, Scissor, ShaderStage, StoreOp},
     Backend,
 };
 
@@ -33,6 +34,12 @@ pub enum ColorAttachmentSource<'a, B: Backend> {
     Texture {
         texture: &'a Texture<B>,
         array_element: usize,
+        mip_level: usize,
+    },
+    CubeMap {
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
+        face: CubeFace,
         mip_level: usize,
     },
 }

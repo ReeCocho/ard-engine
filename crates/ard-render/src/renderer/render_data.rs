@@ -9,7 +9,7 @@ use bytemuck::{Pod, Zeroable};
 use ordered_float::NotNan;
 
 use crate::{
-    camera::CameraUbo,
+    camera::{CameraIbl, CameraUbo},
     cube_map::CubeMapInner,
     factory::{
         allocator::{ResourceAllocator, ResourceId},
@@ -49,6 +49,9 @@ const GLOBAL_OBJECT_ID_BINDING: u32 = 1;
 const GLOBAL_LIGHTS_BINDING: u32 = 2;
 const GLOBAL_CLUSTER_BINDING: u32 = 3;
 const GLOBAL_LIGHTING_BINDING: u32 = 4;
+const GLOBAL_BRDF_LUT_BINDING: u32 = 5;
+const GLOBAL_DIFFUSE_IRRADIANCE_MAP_BINDING: u32 = 6;
+const GLOBAL_PREFILTERED_ENV_MAP_BINDING: u32 = 7;
 
 const DRAW_GEN_DRAW_CALLS_BINDING: u32 = 0;
 const DRAW_GEN_OBJECT_DATA_BINDING: u32 = 1;
@@ -68,6 +71,21 @@ const SKYBOX_CUBE_MAP_BINDING: u32 = 1;
 const DRAW_GEN_WORKGROUP_SIZE: u32 = 256;
 
 pub(crate) const SKY_BOX_SAMPLER: Sampler = Sampler {
+    min_filter: Filter::Linear,
+    mag_filter: Filter::Linear,
+    mipmap_filter: Filter::Linear,
+    address_u: SamplerAddressMode::ClampToEdge,
+    address_v: SamplerAddressMode::ClampToEdge,
+    address_w: SamplerAddressMode::ClampToEdge,
+    anisotropy: None,
+    compare: None,
+    min_lod: unsafe { NotNan::new_unchecked(0.0) },
+    max_lod: None,
+    border_color: None,
+    unnormalize_coords: false,
+};
+
+pub(crate) const BRDF_LUT_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,
     mag_filter: Filter::Linear,
     mipmap_filter: Filter::Linear,
@@ -105,6 +123,10 @@ pub(crate) struct GlobalRenderData {
     pub froxel_gen_pipeline: ComputePipeline,
     /// Pipeline to render the skybox.
     pub sky_box_pipeline: GraphicsPipeline,
+    /// BRDF look-up texture.
+    pub brdf_lut: Texture,
+    /// White cube map.
+    pub white_cube_map: CubeMap,
     /// Empty shadow map for unbound cascades.
     pub empty_shadow: Texture,
     /// Contains all object data.
@@ -400,6 +422,27 @@ impl GlobalRenderData {
                         count: 1,
                         stage: ShaderStage::AllGraphics,
                     },
+                    // Diffuse irradiance map
+                    DescriptorBinding {
+                        binding: GLOBAL_BRDF_LUT_BINDING,
+                        ty: DescriptorType::Texture,
+                        count: 1,
+                        stage: ShaderStage::AllGraphics,
+                    },
+                    // Diffuse irradiance map
+                    DescriptorBinding {
+                        binding: GLOBAL_DIFFUSE_IRRADIANCE_MAP_BINDING,
+                        ty: DescriptorType::CubeMap,
+                        count: 1,
+                        stage: ShaderStage::AllGraphics,
+                    },
+                    // Prefiltered environment map
+                    DescriptorBinding {
+                        binding: GLOBAL_PREFILTERED_ENV_MAP_BINDING,
+                        ty: DescriptorType::CubeMap,
+                        count: 1,
+                        stage: ShaderStage::AllGraphics,
+                    },
                 ],
             },
         )
@@ -625,7 +668,24 @@ impl GlobalRenderData {
         )
         .unwrap();
 
-        // Render the empty shadow map
+        // Create default images
+        let brdf_lut = Texture::new(
+            ctx.clone(),
+            TextureCreateInfo {
+                format: TextureFormat::Rg16SFloat,
+                ty: TextureType::Type2D,
+                width: 512,
+                height: 512,
+                depth: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                texture_usage: TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
+                memory_usage: MemoryUsage::GpuOnly,
+                debug_name: Some(String::from("brdf_lut")),
+            },
+        )
+        .unwrap();
+
         let empty_shadow = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
@@ -640,6 +700,35 @@ impl GlobalRenderData {
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("empty_shadow")),
             },
+        )
+        .unwrap();
+
+        let white_cube_map = CubeMap::new(
+            ctx.clone(),
+            CubeMapCreateInfo {
+                format: TextureFormat::Rgba8Unorm,
+                size: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                texture_usage: TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
+                memory_usage: MemoryUsage::GpuOnly,
+                debug_name: Some(String::from("white_cube_map")),
+            },
+        )
+        .unwrap();
+
+        let white_cube_map_staging = Buffer::new_staging(
+            ctx.clone(),
+            Some(String::from("white_cube_map_staging")),
+            // 1x1 face, 6 faces, each pixel is 4 bytes so 6 * 4 elements
+            &[255; 4 * 6],
+        )
+        .unwrap();
+
+        let brdf_lut_staging = Buffer::new_staging(
+            ctx.clone(),
+            Some(String::from("brdf_lut_staging")),
+            include_bytes!("./brdf_lut.bin"),
         )
         .unwrap();
 
@@ -659,6 +748,33 @@ impl GlobalRenderData {
                 |_pass| {},
             );
         }
+
+        command_buffer.copy_buffer_to_cube_map(
+            &white_cube_map,
+            &white_cube_map_staging,
+            BufferCubeMapCopy {
+                buffer_offset: 0,
+                buffer_array_element: 0,
+                cube_map_mip_level: 0,
+                cube_map_array_element: 0,
+            },
+        );
+
+        command_buffer.copy_buffer_to_texture(
+            &brdf_lut,
+            &brdf_lut_staging,
+            BufferTextureCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                buffer_array_element: 0,
+                texture_offset: (0, 0, 0),
+                texture_extent: (512, 512, 1),
+                texture_mip_level: 0,
+                texture_array_element: 0,
+            },
+        );
+
         ctx.main()
             .submit(Some("empty_shadow_prepare"), command_buffer);
 
@@ -675,7 +791,9 @@ impl GlobalRenderData {
             froxel_gen_pipeline,
             sky_box_pipeline,
             object_data,
+            brdf_lut,
             empty_shadow,
+            white_cube_map,
             lights,
             light_count: 0,
         }
@@ -1090,6 +1208,8 @@ impl RenderData {
         &mut self,
         global: &GlobalRenderData,
         lighting: &Lighting,
+        ibl: &CameraIbl,
+        cube_maps: &ResourceAllocator<CubeMapInner>,
         frame: usize,
     ) {
         let set = &mut self.global_sets[frame];
@@ -1124,6 +1244,59 @@ impl RenderData {
                 value: DescriptorValue::UniformBuffer {
                     buffer: &lighting.ubo,
                     array_element: frame,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: GLOBAL_BRDF_LUT_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: &global.brdf_lut,
+                    array_element: 0,
+                    sampler: BRDF_LUT_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: GLOBAL_DIFFUSE_IRRADIANCE_MAP_BINDING,
+                array_element: 0,
+                value: DescriptorValue::CubeMap {
+                    cube_map: match &ibl.diffuse_irradiance {
+                        Some(di) => &cube_maps.get(di.id).unwrap().cube_map,
+                        None => &global.white_cube_map,
+                    },
+                    array_element: 0,
+                    sampler: SKY_BOX_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+            match &ibl.prefiltered_environment {
+                Some(di) => {
+                    let cube_map = cube_maps.get(di.id).unwrap();
+                    let (base_mip, mip_count) = cube_map.loaded_mips();
+                    DescriptorSetUpdate {
+                        binding: GLOBAL_PREFILTERED_ENV_MAP_BINDING,
+                        array_element: 0,
+                        value: DescriptorValue::CubeMap {
+                            cube_map: &cube_map.cube_map,
+                            array_element: 0,
+                            sampler: SKY_BOX_SAMPLER,
+                            base_mip: base_mip as usize,
+                            mip_count: mip_count as usize,
+                        },
+                    }
+                }
+                None => DescriptorSetUpdate {
+                    binding: GLOBAL_PREFILTERED_ENV_MAP_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::CubeMap {
+                        cube_map: &global.white_cube_map,
+                        array_element: 0,
+                        sampler: SKY_BOX_SAMPLER,
+                        base_mip: 0,
+                        mip_count: 1,
+                    },
                 },
             },
         ]);

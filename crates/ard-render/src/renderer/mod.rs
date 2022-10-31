@@ -436,10 +436,9 @@ impl Renderer {
             .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
         self.global_data.prepare_lights(self.frame, &queries);
 
-        let cube_maps = factory.0.cube_maps.lock().unwrap();
-
         // Prepare rendering data
         let mut cameras = factory.0.cameras.lock().unwrap();
+        let cube_maps = factory.0.cube_maps.lock().unwrap();
         let active_cameras = factory.0.active_cameras.lock().unwrap();
         for camera_id in active_cameras.iter() {
             let camera = match cameras.get_mut(*camera_id) {
@@ -502,9 +501,13 @@ impl Renderer {
                 self.frame,
                 use_alternate,
             );
-            camera
-                .render_data
-                .update_global_set(&self.global_data, &lighting, self.frame);
+            camera.render_data.update_global_set(
+                &self.global_data,
+                &lighting,
+                &camera.descriptor.ibl,
+                &cube_maps,
+                self.frame,
+            );
             camera.render_data.update_camera_with_shadows(
                 self.frame,
                 &self.global_data,
@@ -523,9 +526,13 @@ impl Renderer {
                     .render_data
                     .update_sky_box_set(self.frame, cube_maps.get(sky_box.id).unwrap());
             }
-            camera
-                .shadows
-                .update_sets(self.frame, &self.global_data, &lighting, use_alternate);
+            camera.shadows.update_sets(
+                self.frame,
+                &self.global_data,
+                &lighting,
+                &cube_maps,
+                use_alternate,
+            );
             camera.ao.update_set(
                 self.frame,
                 &self.ao,
@@ -661,7 +668,7 @@ impl Renderer {
                         texture: &self.depth_buffer,
                         array_element: self.frame,
                         mip_level: 0,
-                        load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
+                        load_op: LoadOp::Load,
                         store_op: StoreOp::Store,
                     }),
                 },

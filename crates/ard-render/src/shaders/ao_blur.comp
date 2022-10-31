@@ -1,5 +1,6 @@
 #version 450
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_control_flow_attributes: enable
 
 // Normal reconstruction logic comes from here:
 // https://wickedengine.net/2019/09/22/improved-normal-reconstruction-from-depth/
@@ -14,7 +15,13 @@ layout(set = 0, binding = 0) uniform sampler2D input_tex;
 
 layout(set = 0, binding = 1, r16f) uniform restrict writeonly image2D ao_image;
 
-shared float samples[4 * 4];
+const uint KERNEL_SIZE = 4;
+
+const uint BLOCK_SIZE = 8;
+const uint TILE_BORDER = (KERNEL_SIZE / 2) + (KERNEL_SIZE % 2);
+const uint TILE_SIZE = BLOCK_SIZE + TILE_BORDER * 2;
+
+shared float samples[TILE_SIZE * TILE_SIZE];
 
 layout(push_constant) uniform constants {
     /// Screen size.
@@ -27,29 +34,60 @@ layout(push_constant) uniform constants {
     float bias;
 };
 
-void main() {
-    // Fetch sample
-    vec2 texel_coord = vec2(gl_WorkGroupID.xy) - vec2(1.0);
-    texel_coord += vec2(gl_LocalInvocationID.xy);
-    texel_coord /= render_area;
+uvec2 unflatten2D(uint i, uint dim) {
+    return uvec2(
+        i % dim,
+        i / dim
+    );
+}
 
-    samples[(gl_LocalInvocationID.y * 4) + gl_LocalInvocationID.x] = texture(input_tex, texel_coord).r;
+uint flatten2D(uvec2 coord, uint dim) {
+    return coord.x + coord.y * dim;
+}
+
+void main() {
+    // Fetch samples
+    const ivec2 tile_upper_left = 
+        ivec2(gl_WorkGroupID.xy) * ivec2(BLOCK_SIZE) - ivec2(TILE_BORDER);
+
+    for (
+        uint i = gl_LocalInvocationIndex; 
+        i < TILE_SIZE * TILE_SIZE; 
+        i += (BLOCK_SIZE * BLOCK_SIZE)
+    ) {
+        const uvec2 tile = tile_upper_left + unflatten2D(i, TILE_SIZE);
+        const vec2 texel_coord = (vec2(tile) + vec2(0.5)) * inv_render_area;
+        samples[i] = texture(input_tex, texel_coord).r;
+    }
 
     // Wait for sample collection
-    memoryBarrierShared();
     barrier();
 
     // Compute average
     float avg = 0.0;
-    for (uint i = 0; i < 16; ++i) {
-        avg += samples[i];
+    const ivec2 liid = ivec2(gl_LocalInvocationID.xy);
+    const int HALF_KERNEL = int(KERNEL_SIZE / 2);
+
+    [[unroll]]
+    for (int x = 0; x < int(KERNEL_SIZE); ++x) {
+        [[unroll]]
+        for (int y = 0; y < int(KERNEL_SIZE); ++y) {
+            uint idx = flatten2D(
+                ivec2(TILE_BORDER) + 
+                liid.xy + 
+                ivec2(x, y) -
+                ivec2(HALF_KERNEL), 
+                TILE_SIZE
+            );
+            avg += samples[idx];
+        }
     }
-    avg /= 16.0;
+    avg /= float(KERNEL_SIZE * KERNEL_SIZE);
 
     // Store AO result
     imageStore(
         ao_image,
-        ivec2(gl_WorkGroupID.xy),
+        ivec2(gl_GlobalInvocationID.xy),
         vec4(avg)
     );
 }

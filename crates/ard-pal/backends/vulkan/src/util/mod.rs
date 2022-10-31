@@ -58,10 +58,13 @@ pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
         TextureFormat::D32Sfloat => vk::Format::D32_SFLOAT,
         TextureFormat::D32SfloatS8Uint => vk::Format::D32_SFLOAT_S8_UINT,
         TextureFormat::Rgba16SFloat => vk::Format::R16G16B16A16_SFLOAT,
+        TextureFormat::Rgba16Unorm => vk::Format::R16G16B16A16_UNORM,
         TextureFormat::Rg16SFloat => vk::Format::R16G16_SFLOAT,
         TextureFormat::R16SFloat => vk::Format::R16_SFLOAT,
         TextureFormat::BC7Srgb => vk::Format::BC7_SRGB_BLOCK,
         TextureFormat::BC7Unorm => vk::Format::BC7_UNORM_BLOCK,
+        TextureFormat::BC6HUFloat => vk::Format::BC6H_UFLOAT_BLOCK,
+        TextureFormat::Rgba32SFloat => vk::Format::R32G32B32A32_SFLOAT,
     }
 }
 
@@ -241,6 +244,18 @@ pub(crate) fn to_vk_border_color(bc: BorderColor) -> vk::BorderColor {
         BorderColor::IntOpaqueBlack => vk::BorderColor::INT_OPAQUE_BLACK,
         BorderColor::FloatOpaqueWhite => vk::BorderColor::FLOAT_OPAQUE_WHITE,
         BorderColor::IntOpaqueWhite => vk::BorderColor::INT_OPAQUE_WHITE,
+    }
+}
+
+#[inline(always)]
+pub(crate) fn cube_face_to_idx(face: CubeFace) -> usize {
+    match face {
+        CubeFace::East => 0,
+        CubeFace::West => 1,
+        CubeFace::Top => 2,
+        CubeFace::Bottom => 3,
+        CubeFace::North => 4,
+        CubeFace::South => 5,
     }
 }
 

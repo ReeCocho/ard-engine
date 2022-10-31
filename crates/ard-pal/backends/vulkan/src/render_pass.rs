@@ -75,6 +75,9 @@ impl RenderPassCache {
                     ColorAttachmentSource::Texture { .. } => {
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                     }
+                    ColorAttachmentSource::CubeMap { .. } => {
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                    }
                 };
 
                 attachments.push(
@@ -92,6 +95,9 @@ impl RenderPassCache {
                             ColorAttachmentSource::SurfaceImage(image) => image.internal().format(),
                             ColorAttachmentSource::Texture { texture, .. } => {
                                 texture.internal().format
+                            }
+                            ColorAttachmentSource::CubeMap { cube_map, .. } => {
+                                cube_map.internal().format
                             }
                         })
                         .build(),
@@ -287,6 +293,15 @@ impl VkRenderPassDescriptor {
                 ),
                 ColorAttachmentSource::Texture { texture, .. } => (
                     texture.internal().format,
+                    match &attachment.load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ),
+                ColorAttachmentSource::CubeMap { cube_map, .. } => (
+                    cube_map.internal().format,
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                         LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,

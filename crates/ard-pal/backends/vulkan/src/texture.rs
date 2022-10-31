@@ -163,7 +163,7 @@ impl Texture {
             image_usage: create_info.texture_usage,
             memory_usage: create_info.memory_usage,
             array_elements: create_info.array_elements,
-            size: mem_reqs.size,
+            size: mem_reqs.size / create_info.array_elements as u64,
             on_drop,
             ref_counter: TextureRefCounter::default(),
             format,

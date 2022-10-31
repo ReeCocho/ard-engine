@@ -1,22 +1,32 @@
-use std::{ffi::CString, mem::ManuallyDrop, sync::Arc};
+use std::{ffi::CString, mem::ManuallyDrop};
 
-use api::cube_map::{CubeMapCreateError, CubeMapCreateInfo};
+use api::{
+    cube_map::{CubeMapCreateError, CubeMapCreateInfo},
+    types::CubeFace,
+};
 use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 
-use crate::{texture::TextureRefCounter, util::garbage_collector::Garbage};
+use crate::{
+    texture::TextureRefCounter,
+    util::{cube_face_to_idx, garbage_collector::Garbage},
+};
 
 pub struct CubeMap {
     pub(crate) image: vk::Image,
     /// Image view for each array element and mip level. This array is flattened like so.
     /// A0M0 -> A0M1 -> A0M2 ... A1M0 -> A1M1 -> A1M2 -> ...
     pub(crate) views: Vec<vk::ImageView>,
+    /// Image view for each array element, each mip level, and each face. This array is flattened
+    /// like `views` but, the third "dimension" is the cube face as in `cube_face_to_idx`.
+    pub(crate) face_views: Vec<vk::ImageView>,
     pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) ref_counter: TextureRefCounter,
     pub(crate) format: vk::Format,
     pub(crate) mip_count: u32,
     pub(crate) aspect_flags: vk::ImageAspectFlags,
+    pub(crate) size: u64,
     on_drop: Sender<Garbage>,
 }
 
@@ -118,6 +128,132 @@ impl CubeMap {
             }
         }
 
+        // Create face views
+        let mut face_views = Vec::with_capacity(views.len() * 6);
+        for i in 0..create_info.array_elements {
+            for j in 0..create_info.mip_levels {
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::East)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::West)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::Top)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::Bottom)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::North)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+
+                let view_create_info = vk::ImageViewCreateInfo::builder()
+                    .format(format)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect_flags,
+                        base_mip_level: j as u32,
+                        level_count: 1,
+                        base_array_layer: ((6 * i) + cube_face_to_idx(CubeFace::South)) as u32,
+                        layer_count: 1,
+                    })
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .image(image)
+                    .build();
+                face_views.push(device.create_image_view(&view_create_info, None).unwrap());
+            }
+        }
+
         // Setup debug name is requested
         if let Some(name) = create_info.debug_name {
             if let Some(debug) = debug {
@@ -150,13 +286,26 @@ impl CubeMap {
         Ok(CubeMap {
             image,
             views,
+            face_views,
             block: ManuallyDrop::new(block),
             on_drop,
             ref_counter: TextureRefCounter::default(),
             format,
             mip_count: create_info.mip_levels as u32,
+            size: mem_reqs.size / create_info.array_elements as u64,
             aspect_flags,
         })
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_face_view(
+        &self,
+        array_elem: usize,
+        mip: usize,
+        face: CubeFace,
+    ) -> vk::ImageView {
+        self.face_views
+            [(array_elem * 6 * self.mip_count as usize) + (mip * 6) + cube_face_to_idx(face)]
     }
 }
 
@@ -164,7 +313,12 @@ impl Drop for CubeMap {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Texture {
             image: self.image,
-            views: std::mem::take(&mut self.views),
+            views: {
+                let face_views = std::mem::take(&mut self.face_views);
+                let mut views = std::mem::take(&mut self.views);
+                views.extend(face_views.into_iter());
+                views
+            },
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),
         });

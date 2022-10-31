@@ -37,6 +37,8 @@ pub struct CameraDescriptor {
     pub layers: RenderLayer,
     /// If this camera should render shadow maps.
     pub shadows: Option<CameraShadows>,
+    /// Image based lighting settings.
+    pub ibl: CameraIbl,
     /// If this camera should use ambient occlusion.
     pub ao: bool,
 }
@@ -57,6 +59,12 @@ pub struct CameraShadows {
     pub resolution: u32,
     /// The number of cascades to use.
     pub cascades: usize,
+}
+
+#[derive(Default, Clone)]
+pub struct CameraIbl {
+    pub diffuse_irradiance: Option<CubeMap>,
+    pub prefiltered_environment: Option<CubeMap>,
 }
 
 /// Describes a view frustum using planes.
@@ -104,6 +112,7 @@ pub(crate) struct CameraUbo {
     pub fov: f32,
     pub near_clip: f32,
     pub far_clip: f32,
+    pub pem_mip_count: u32,
 }
 
 unsafe impl Pod for CameraUbo {}
@@ -177,6 +186,10 @@ impl CameraUbo {
             fov: descriptor.fov,
             near_clip: descriptor.near,
             far_clip: descriptor.far,
+            pem_mip_count: match &descriptor.ibl.prefiltered_environment {
+                Some(cube_map) => cube_map.mip_count,
+                None => 1,
+            },
         }
     }
 }
@@ -194,6 +207,7 @@ impl Default for CameraDescriptor {
             clear_color: CameraClearColor::Color(Vec3::ZERO),
             layers: RenderLayer::OPAQUE,
             shadows: None,
+            ibl: CameraIbl::default(),
             ao: false,
         }
     }

@@ -11,8 +11,11 @@ pub enum TextureFormat {
     Bgra8Unorm,
     Bgra8Srgb,
     Rgba16SFloat,
+    Rgba16Unorm,
+    Rgba32SFloat,
     Rg16SFloat,
     R16SFloat,
+    BC6HUFloat,
     BC7Srgb,
     BC7Unorm,
     D16Unorm,
@@ -87,6 +90,7 @@ bitflags! {
         const G = 0b0010;
         const B = 0b0100;
         const A = 0b1000;
+        const ALL = 0b1111;
     }
 }
 
@@ -111,6 +115,16 @@ pub enum BlendOp {
     ReverseSubtract,
     Min,
     Max,
+}
+
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CubeFace {
+    North,
+    East,
+    South,
+    West,
+    Top,
+    Bottom,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

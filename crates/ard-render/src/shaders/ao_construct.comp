@@ -30,6 +30,7 @@ layout(set = 0, binding = 4) uniform KernelSamples {
 };
 
 
+
 /// View-space positions
 shared vec2 tile_xy[TILE_SIZE * TILE_SIZE];
 shared float tile_z[TILE_SIZE * TILE_SIZE];
@@ -84,7 +85,6 @@ void main() {
         tile_z[i] = position.z;
     }
 
-    // memoryBarrierShared();
     barrier();
 
     // Load view-space Z values in a cross pattern and compare
@@ -139,9 +139,9 @@ void main() {
 
     // Iterate over sample kernel and compute occlusion factor
     float occlusion = 0.0;
-    for (int i = 0; i < KERNEL_SIZE; ++i) {
+    for (int i = 0; i < KERNEL_SIZE / 2; ++i) {
         // Get sample position
-        vec3 sample_pos = TBN * samples[i].xyz;
+        vec3 sample_pos = TBN * normalize(samples[i].xyz);
         sample_pos = position + sample_pos * radius;
 
         vec4 offset = vec4(sample_pos, 1.0);
@@ -154,9 +154,9 @@ void main() {
         float sample_depth = camera.near_clip / texture(depth_tex, offset.xy).r;
 
         float range_check = smoothstep(0.0, 1.0, radius / abs(position.z - sample_depth));
-        occlusion += sample_depth <= sample_pos.z + bias ? range_check : 0.0;
+        occlusion += sample_depth <= sample_pos.z - bias ? range_check : 0.0;
     }
-    occlusion = 1.0 - (occlusion / KERNEL_SIZE);
+    occlusion = 1.0 - (occlusion / (KERNEL_SIZE / 2));
 
     // Store AO result
     imageStore(

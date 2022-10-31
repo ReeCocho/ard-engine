@@ -138,6 +138,9 @@ pub trait Backend: Sized + 'static {
     unsafe fn flush_range(&self, id: &Self::Buffer, idx: usize);
     unsafe fn invalidate_range(&self, id: &Self::Buffer, idx: usize);
 
+    unsafe fn texture_size(&self, id: &Self::Texture) -> u64;
+    unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64;
+
     unsafe fn update_descriptor_sets(
         &self,
         id: &mut Self::DescriptorSet,

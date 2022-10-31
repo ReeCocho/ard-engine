@@ -7,7 +7,7 @@ use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
 use ard_pal::prelude::{CullMode, FrontFace, PresentMode};
 use ard_render::{
     asset::{cube_map::CubeMapAsset, model::ModelAsset, RenderAssetsPlugin},
-    camera::{Camera, CameraClearColor, CameraDescriptor, CameraShadows},
+    camera::{Camera, CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
     lighting::PointLight,
     material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
@@ -238,19 +238,41 @@ fn setup(app: &mut App) {
     //*
     // Load in the scene
     let model_handle = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    let cube_map_handle = assets.load::<CubeMapAsset>(AssetName::new("sky_box.cube"));
+    let sky_box_handle = assets.load::<CubeMapAsset>(AssetName::new("sky_box.cube"));
+    let diffuse_irradiance_handle =
+        assets.load::<CubeMapAsset>(AssetName::new("diffuse_irradiance.cube"));
+    let prefiltered_env_handle =
+        assets.load::<CubeMapAsset>(AssetName::new("prefiltered_env.cube"));
     assets.wait_for_load(&model_handle);
-    assets.wait_for_load(&cube_map_handle);
+    assets.wait_for_load(&sky_box_handle);
+    assets.wait_for_load(&diffuse_irradiance_handle);
+    assets.wait_for_load(&prefiltered_env_handle);
     //*/
     // Create the main camera
     let camera_descriptor = CameraDescriptor {
         shadows: Some(CameraShadows {
             resolution: 4096,
-            cascades: 4,
+            cascades: 3,
         }),
         clear_color: CameraClearColor::SkyBox(
-            assets.get(&cube_map_handle).unwrap().cube_map.clone(),
+            assets.get(&sky_box_handle).unwrap().cube_map.clone(),
         ),
+        ibl: CameraIbl {
+            diffuse_irradiance: Some(
+                assets
+                    .get(&diffuse_irradiance_handle)
+                    .unwrap()
+                    .cube_map
+                    .clone(),
+            ),
+            prefiltered_environment: Some(
+                assets
+                    .get(&prefiltered_env_handle)
+                    .unwrap()
+                    .cube_map
+                    .clone(),
+            ),
+        },
         ..Default::default()
     };
     let camera = factory.create_camera(camera_descriptor.clone());
@@ -271,12 +293,12 @@ fn setup(app: &mut App) {
         descriptor: camera_descriptor,
     });
 
-    ///*
     // Instantiate the model
     let asset = assets.get(&model_handle).unwrap();
     let (handles, _) = asset.instantiate_static(&static_geo, app.world.entities().commands());
     app.resources.add(StaticHandles(handles));
-    //*/
+
+    /*
     // Create light cube data
     let vshd = factory
         .create_shader(ShaderCreateInfo {
@@ -290,6 +312,7 @@ fn setup(app: &mut App) {
             debug_name: None,
         })
         .unwrap();
+
 
     let material = factory.create_material(MaterialCreateInfo {
         vertex_shader: vshd,
@@ -320,7 +343,6 @@ fn setup(app: &mut App) {
         },
     });
 
-    /*
     // Create some random lights
     const LIGHT_COUNT: usize = 4096 * 2;
     const LIGHT_SPACING: (f32, f32, f32) = (16.0, 8.0, 12.0);

@@ -29,6 +29,7 @@ pub(crate) struct TextureSets {
 #[derive(Copy, Clone)]
 pub(crate) enum MipUpdate {
     Texture(ResourceId),
+    CubeMap(ResourceId),
 }
 
 const DEFAULT_SAMPLER: Sampler = Sampler {
@@ -300,6 +301,7 @@ impl TextureSets {
                         });
                     }
                 }
+                MipUpdate::CubeMap(_) => {}
             }
         }
 

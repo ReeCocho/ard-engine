@@ -20,7 +20,7 @@ pub enum CubeMapCreateError {
 
 pub struct CubeMap<B: Backend> {
     ctx: Context<B>,
-    size: u32,
+    dim: u32,
     mip_count: usize,
     pub(crate) id: B::CubeMap,
 }
@@ -35,7 +35,7 @@ impl<B: Backend> CubeMap<B> {
         let id = unsafe { ctx.0.create_cube_map(create_info)? };
         Ok(Self {
             ctx,
-            size,
+            dim: size,
             mip_count,
             id,
         })
@@ -47,8 +47,14 @@ impl<B: Backend> CubeMap<B> {
     }
 
     #[inline(always)]
-    pub fn size(&self) -> u32 {
-        self.size
+    pub fn dim(&self) -> u32 {
+        self.dim
+    }
+
+    /// Gets the size in bytes of a single array element of the cube map.
+    #[inline(always)]
+    pub fn size(&self) -> u64 {
+        unsafe { self.ctx.0.cube_map_size(&self.id) }
     }
 
     #[inline(always)]

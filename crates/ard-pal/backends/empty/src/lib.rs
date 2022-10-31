@@ -168,4 +168,12 @@ impl Backend for EmptyBackend {
         _updates: &[api::descriptor_set::DescriptorSetUpdate<Self>],
     ) {
     }
+
+    unsafe fn texture_size(&self, _id: &Self::Texture) -> u64 {
+        0
+    }
+
+    unsafe fn cube_map_size(&self, _id: &Self::CubeMap) -> u64 {
+        0
+    }
 }

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ard_assets::prelude::*;
 use ard_pal::prelude::{Filter, SamplerAddressMode, TextureFormat};
 use async_trait::async_trait;
@@ -9,11 +11,22 @@ use crate::{
     texture::{MipType, Sampler},
 };
 
+pub mod ard;
+
 pub struct CubeMapAsset {
     pub cube_map: CubeMap,
-    /// Remaining mips to load
-    mips: Vec<CubeFaces>,
-    size: u32,
+    pub(self) post_load: Option<CubeMapPostLoad>,
+}
+
+/// Information required for post load operations on a cube map.
+pub(self) enum CubeMapPostLoad {
+    Faces,
+    Ard {
+        /// Path to the folder which holds each cube map mip.
+        path: PathBuf,
+        /// The mip level that needs to be loaded next.
+        next_mip: Option<usize>,
+    },
 }
 
 pub struct CubeMapLoader {
@@ -21,11 +34,15 @@ pub struct CubeMapLoader {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CubeMapDescriptor {
-    pub generate_mips: bool,
-    pub size: u32,
-    /// Mips should be in order from most detailed to least detailed.
-    pub mips: Vec<CubeFaces>,
+pub enum CubeMapDescriptor {
+    Faces {
+        generate_mips: bool,
+        size: u32,
+        mips: Vec<CubeFaces>,
+    },
+    Ard {
+        path: AssetNameBuf,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,6 +83,21 @@ impl AssetLoader for CubeMapLoader {
             Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };
 
+        let asset = match meta {
+            CubeMapDescriptor::Faces {
+                generate_mips,
+                size,
+                mips,
+            } => todo!(),
+            CubeMapDescriptor::Ard { path } => ard::to_asset(&path, &package, self).await?,
+        };
+
+        Ok(AssetLoadResult::NeedsPostLoad {
+            asset,
+            persistent: true,
+        })
+
+        /*
         // Need at least one mip
         if meta.mips.is_empty() {
             return Err(AssetLoadError::Other(
@@ -167,6 +199,7 @@ impl AssetLoader for CubeMapLoader {
                 persistent: false,
             })
         }
+        */
     }
 
     async fn post_load(
@@ -175,7 +208,37 @@ impl AssetLoader for CubeMapLoader {
         package: Package,
         handle: Handle<Self::Asset>,
     ) -> Result<AssetPostLoadResult, AssetLoadError> {
-        todo!()
+        let post_load_info = assets.get_mut(&handle).unwrap().post_load.take().unwrap();
+
+        match post_load_info {
+            CubeMapPostLoad::Faces => {}
+            CubeMapPostLoad::Ard { path, mut next_mip } => {
+                while next_mip.is_some() {
+                    let mip = next_mip.unwrap();
+
+                    // Load mip
+                    let mut path = path.clone();
+                    path.push(format!("{mip}"));
+                    let data = package.read(&path).await?;
+
+                    // Update mip
+                    self.factory.load_cube_map_mip(
+                        &assets.get(&handle).unwrap().cube_map,
+                        mip as usize,
+                        &data,
+                    );
+
+                    // Move to next mip
+                    if mip == 0 {
+                        next_mip = None;
+                    } else {
+                        next_mip = Some(mip - 1)
+                    }
+                }
+            }
+        }
+
+        Ok(AssetPostLoadResult::Loaded)
         /*
         // Get the next set of faces to load
         let (faces, level, dims) = {

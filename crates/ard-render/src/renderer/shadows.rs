@@ -7,7 +7,8 @@ use bytemuck::{Pod, Zeroable};
 use ordered_float::NotNan;
 
 use crate::{
-    camera::{CameraDescriptor, CameraUbo, Frustum},
+    camera::{CameraDescriptor, CameraIbl, CameraUbo, Frustum},
+    cube_map::CubeMapInner,
     factory::{
         allocator::ResourceAllocator, materials::MaterialBuffers, meshes::MeshBuffers,
         textures::TextureSets, Factory, Layouts,
@@ -21,7 +22,7 @@ use crate::{
 
 use super::{
     render_data::{GlobalRenderData, RenderArgs, RenderData},
-    RenderLayer, RenderQuery,
+    RenderLayer,
 };
 
 const SHADOW_MAP_FORMAT: TextureFormat = TextureFormat::D32Sfloat;
@@ -267,6 +268,7 @@ impl Shadows {
                     fov: 1.0,
                     near_clip: 1.0,
                     far_clip: 1.0,
+                    pem_mip_count: 1,
                 },
             );
         }
@@ -282,15 +284,20 @@ impl Shadows {
         frame: usize,
         global_data: &GlobalRenderData,
         lighting: &Lighting,
+        cube_maps: &ResourceAllocator<CubeMapInner>,
         use_alternate: bool,
     ) {
         for cascade in &mut self.cascades {
             cascade
                 .render_data
                 .update_draw_gen_set(global_data, None, frame, use_alternate);
-            cascade
-                .render_data
-                .update_global_set(global_data, lighting, frame);
+            cascade.render_data.update_global_set(
+                global_data,
+                lighting,
+                &CameraIbl::default(),
+                cube_maps,
+                frame,
+            );
             cascade
                 .render_data
                 .update_camera_with_shadows(frame, global_data, None);

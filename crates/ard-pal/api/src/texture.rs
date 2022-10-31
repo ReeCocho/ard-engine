@@ -89,6 +89,12 @@ impl<B: Backend> Texture<B> {
         self.dims
     }
 
+    /// Gets the size in bytes of a single array element of the texture.
+    #[inline(always)]
+    pub fn size(&self) -> u64 {
+        unsafe { self.ctx.0.texture_size(&self.id) }
+    }
+
     #[inline(always)]
     pub fn mip_count(&self) -> usize {
         self.mip_count

@@ -18,6 +18,7 @@ pub struct CubeMapCreateInfo<'a> {
 pub struct CubeMap {
     pub(crate) id: ResourceId,
     pub(crate) escaper: EscapeHandle,
+    pub(crate) mip_count: u32,
 }
 
 pub(crate) struct CubeMapInner {

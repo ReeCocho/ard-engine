@@ -36,6 +36,7 @@ use std::{
     borrow::Cow,
     ffi::{CStr, CString},
     mem::ManuallyDrop,
+    ops::Shr,
     ptr::NonNull,
     sync::Mutex,
 };
@@ -313,8 +314,25 @@ impl Backend for VulkanBackend {
                                 array_element,
                                 mip_level,
                             } => {
-                                dims = (texture.dims().0, texture.dims().1);
+                                dims = (
+                                    texture.dims().0.shr(mip_level).max(1),
+                                    texture.dims().1.shr(mip_level).max(1),
+                                );
                                 texture.internal().get_view(*array_element, *mip_level)
+                            }
+                            ColorAttachmentSource::CubeMap {
+                                cube_map,
+                                array_element,
+                                face,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map
+                                    .internal()
+                                    .get_face_view(*array_element, *mip_level, *face)
                             }
                         });
                     }
@@ -629,7 +647,7 @@ impl Backend for VulkanBackend {
                     cube_map,
                     copy,
                 } => {
-                    let size = cube_map.size();
+                    let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
                     let dst = cube_map.internal();
                     let src = buffer.internal();
                     let copy = [vk::BufferImageCopy::builder()
@@ -639,7 +657,7 @@ impl Backend for VulkanBackend {
                         .image_subresource(vk::ImageSubresourceLayers {
                             aspect_mask: dst.aspect_flags,
                             mip_level: copy.cube_map_mip_level as u32,
-                            base_array_layer: copy.cube_map_array_element as u32,
+                            base_array_layer: copy.cube_map_array_element as u32 * 6,
                             layer_count: 6,
                         })
                         .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
@@ -654,6 +672,39 @@ impl Backend for VulkanBackend {
                         src.buffer,
                         dst.image,
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &copy,
+                    );
+                }
+                Command::CopyCubeMapToBuffer {
+                    buffer,
+                    cube_map,
+                    copy,
+                } => {
+                    let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
+                    let src = cube_map.internal();
+                    let dst = buffer.internal();
+                    let copy = [vk::BufferImageCopy::builder()
+                        .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
+                        .buffer_row_length(0)
+                        .buffer_image_height(0)
+                        .image_subresource(vk::ImageSubresourceLayers {
+                            aspect_mask: src.aspect_flags,
+                            mip_level: copy.cube_map_mip_level as u32,
+                            base_array_layer: copy.cube_map_array_element as u32 * 6,
+                            layer_count: 6,
+                        })
+                        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                        .image_extent(vk::Extent3D {
+                            width: size,
+                            height: size,
+                            depth: 1,
+                        })
+                        .build()];
+                    self.device.cmd_copy_image_to_buffer(
+                        cb,
+                        src.image,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        dst.buffer,
                         &copy,
                     );
                 }
@@ -1000,6 +1051,16 @@ impl Backend for VulkanBackend {
 
     unsafe fn destroy_descriptor_set_layout(&self, _layout: &mut Self::DescriptorSetLayout) {
         // Not needed
+    }
+
+    #[inline(always)]
+    unsafe fn texture_size(&self, id: &Self::Texture) -> u64 {
+        id.size
+    }
+
+    #[inline(always)]
+    unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64 {
+        id.size
     }
 
     #[inline(always)]

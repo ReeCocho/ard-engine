@@ -14,6 +14,9 @@ use super::{
     meshes::{MeshBlock, MeshBuffers},
 };
 
+// TODO: Make this configurable.
+const MAX_UPLOAD_COUNT: usize = 32;
+
 pub(crate) enum StagingRequest {
     Mesh {
         id: ResourceId,
@@ -32,6 +35,12 @@ pub(crate) enum StagingRequest {
     TextureMip {
         id: ResourceId,
         dst: crate::texture::Texture,
+        mip_level: usize,
+        staging_buffer: Buffer,
+    },
+    CubeMapMip {
+        id: ResourceId,
+        dst: crate::cube_map::CubeMap,
         mip_level: usize,
         staging_buffer: Buffer,
     },
@@ -59,6 +68,7 @@ pub(crate) enum StagingResource {
     Mesh(ResourceId),
     Texture(ResourceId),
     TextureMip { mip_level: usize, id: ResourceId },
+    CubeMapMip { mip_level: usize, id: ResourceId },
     CubeMap(ResourceId),
 }
 
@@ -120,7 +130,13 @@ impl Staging {
         let mut transfer_commands = self.ctx.transfer().command_buffer();
         let mut main_commands = None;
 
+        let mut upload_count = 0;
         for request in &self.pending {
+            if upload_count >= MAX_UPLOAD_COUNT {
+                break;
+            }
+            upload_count += 1;
+
             let resc = match request {
                 StagingRequest::Mesh {
                     id,
@@ -316,6 +332,34 @@ impl Staging {
                         id: *id,
                     }
                 }
+                StagingRequest::CubeMapMip {
+                    id,
+                    mip_level,
+                    staging_buffer,
+                    ..
+                } => {
+                    let dst = match cube_maps.get(*id) {
+                        Some(cm) => cm,
+                        // Cube map was dropped so upload is no longer needed
+                        None => continue,
+                    };
+
+                    transfer_commands.copy_buffer_to_cube_map(
+                        &dst.cube_map,
+                        staging_buffer,
+                        BufferCubeMapCopy {
+                            buffer_offset: 0,
+                            buffer_array_element: 0,
+                            cube_map_mip_level: *mip_level,
+                            cube_map_array_element: 0,
+                        },
+                    );
+
+                    StagingResource::CubeMapMip {
+                        mip_level: *mip_level,
+                        id: *id,
+                    }
+                }
                 StagingRequest::CubeMap {
                     id,
                     staging_buffer,
@@ -332,8 +376,6 @@ impl Staging {
                         };
 
                         let mip_level = dst.mip_levels.saturating_sub(1) as usize;
-                        let mut size = dst.cube_map.size();
-                        size = size.shr(mip_level).max(1);
 
                         transfer_commands.copy_buffer_to_cube_map(
                             &dst.cube_map,
@@ -362,7 +404,7 @@ impl Staging {
             main_commands.map(|commands| self.ctx.main().submit(Some("main_staging"), commands));
 
         // Clear staging requests now that they are processed
-        self.pending.clear();
+        self.pending.drain(..upload_count);
 
         self.uploads.push(Upload {
             transfer_job,

@@ -346,7 +346,7 @@ fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
                     data: &bytes,
                 };
                 bytes = intel_tex_2::bc7::compress_blocks(
-                    &intel_tex_2::bc7::alpha_basic_settings(),
+                    &intel_tex_2::bc7::alpha_ultra_fast_settings(),
                     &surface,
                 );
             }

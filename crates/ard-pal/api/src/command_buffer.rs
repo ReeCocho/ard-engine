@@ -135,6 +135,11 @@ pub enum Command<'a, B: Backend> {
         cube_map: &'a CubeMap<B>,
         copy: BufferCubeMapCopy,
     },
+    CopyCubeMapToBuffer {
+        cube_map: &'a CubeMap<B>,
+        buffer: &'a Buffer<B>,
+        copy: BufferCubeMapCopy,
+    },
     BlitTexture {
         src: &'a Texture<B>,
         dst: BlitDestination<'a, B>,
@@ -309,6 +314,35 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         );
 
         self.commands.push(Command::CopyBufferToCubeMap {
+            buffer,
+            cube_map,
+            copy,
+        });
+    }
+
+    /// Copies data from a cube map into a buffer.
+    /// # Arguments
+    /// - `buffer` - The destination buffer to write to.
+    /// - `cube_map` - The source cube map to copy from.
+    /// - `copy` - A description of the copy to perform.
+    ///
+    /// # Panics
+    /// - If the queue type this command buffer was created with does not support transfer
+    /// commands.
+    #[inline(always)]
+    pub fn copy_cube_map_to_buffer(
+        &mut self,
+        buffer: &'a Buffer<B>,
+        cube_map: &'a CubeMap<B>,
+        copy: BufferCubeMapCopy,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Transfer,
+            "queue `{:?}` does not support transfer commands",
+            self.queue_ty
+        );
+
+        self.commands.push(Command::CopyCubeMapToBuffer {
             buffer,
             cube_map,
             copy,

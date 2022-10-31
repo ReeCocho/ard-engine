@@ -257,11 +257,23 @@ vec3 lighting(
         }
     }
 
-    vec3 ambient = 
+    // Ambient lighting
+    vec3 kS = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;
+    vec3 irradiance = texture(ARD_DIFFUSE_IRRADIANCE_MAP, N).rgb;
+    vec3 diffuse = irradiance * base_color;
+    float ao = texture(ARD_AO_TEXTURE, vec2(uv.x, 1.0 - uv.y)).r;
+
+    vec3 prefiltered_color = 
+        textureLod(ARD_PREFILTERED_ENV_MAP, R, roughness * float(camera.pem_mip_count)).rgb;
+    vec2 env_brdf  = texture(ARD_BRDF_LUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    vec3 specular = prefiltered_color * (kS * env_brdf.x + env_brdf.y);
+
+    vec3 ambient = (kD * diffuse + specular) * 
+        ao * 
         ARD_LIGHTING_INFO.ambient_color_intensity.xyz * 
-        ARD_LIGHTING_INFO.ambient_color_intensity.w * 
-        texture(ARD_AO_TEXTURE, vec2(uv.x, 1.0 - uv.y)).r *
-        base_color;
+        ARD_LIGHTING_INFO.ambient_color_intensity.w;
 
     return ambient + Lo;
 }

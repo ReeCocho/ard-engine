@@ -145,6 +145,15 @@ impl Factory {
                     texture_sets.mip_update(MipUpdate::Texture(id));
                 }
             }
+            StagingResource::CubeMapMip { mip_level, id } => {
+                if let Some(cube_map) = cube_maps.get_mut(id) {
+                    // Update mip level
+                    cube_map.loaded_mips |= 1 << mip_level;
+
+                    // Tell tetures sets about the new mip
+                    texture_sets.mip_update(MipUpdate::CubeMap(id));
+                }
+            }
             StagingResource::CubeMap(_) => {}
         });
 
@@ -314,12 +323,14 @@ impl Factory {
         let mut cube_maps = self.0.cube_maps.lock().unwrap();
 
         let mip_type = create_info.mip_type;
+        let mip_count = create_info.mip_count as u32;
         let (cube_map, staging_buffer) = CubeMapInner::new(&self.0.ctx, create_info);
         let escaper = cube_maps.insert(cube_map);
 
         let handle = CubeMap {
             id: escaper.id(),
             escaper,
+            mip_count,
         };
 
         staging.add(StagingRequest::CubeMap {
@@ -419,6 +430,31 @@ impl Factory {
         staging.add(StagingRequest::TextureMip {
             id: texture.id,
             dst: texture.clone(),
+            mip_level: level,
+            staging_buffer,
+        });
+    }
+
+    pub fn load_cube_map_mip(&self, cube_map: &CubeMap, level: usize, data: &[u8]) {
+        let mut staging = self.0.staging.lock().unwrap();
+        let cube_maps = self.0.cube_maps.lock().unwrap();
+        let cube_map_inner = cube_maps.get(cube_map.id).unwrap();
+
+        // Mip level must not already be loaded
+        if cube_map_inner.loaded_mips & (1 << level) != 0 {
+            return;
+        }
+
+        let staging_buffer = Buffer::new_staging(
+            self.0.ctx.clone(),
+            Some(format!("cube_map_mip_level_{level}_staging")),
+            data,
+        )
+        .unwrap();
+
+        staging.add(StagingRequest::CubeMapMip {
+            id: cube_map.id,
+            dst: cube_map.clone(),
             mip_level: level,
             staging_buffer,
         });

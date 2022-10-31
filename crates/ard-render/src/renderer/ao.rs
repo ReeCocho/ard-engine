@@ -284,7 +284,7 @@ impl AmbientOcclusion {
             ComputePipelineCreateInfo {
                 layouts: vec![layout.clone()],
                 module: shader,
-                work_group_size: (4, 4, 1),
+                work_group_size: (8, 8, 1),
                 push_constants_size: Some(std::mem::size_of::<AoConstructPushConstants>() as u32),
                 debug_name: Some(String::from("ao_blur_pipeline")),
             },
@@ -522,7 +522,7 @@ impl AoImage {
                 screen_size: Vec2::new(width as f32, height as f32),
                 inv_screen_size: Vec2::new(1.0 / width as f32, 1.0 / height as f32),
                 noise_scale: Vec2::new(width as f32, height as f32) / 4.0,
-                radius: 0.3,
+                radius: 0.5,
                 bias: 0.025,
             }];
 
@@ -539,7 +539,11 @@ impl AoImage {
             pass.bind_pipeline(ao.blur_pipeline.clone());
             pass.bind_sets(0, vec![&self.blur_sets[frame]]);
             pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(width, height, 1);
+            pass.dispatch(
+                (width as f32 / 8.0).ceil() as u32,
+                (height as f32 / 8.0).ceil() as u32,
+                1,
+            );
         });
     }
 }

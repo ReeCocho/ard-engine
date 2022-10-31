@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = [ "crates/*", "tools/editor", "tools/gltf-oven" ]
+members = [ "crates/*", "tools/editor", "tools/gltf-oven", "tools/ibl-oven" ]
 
 [features]
 default = [ "input", "assets", "render", "window", ]
@@ -45,6 +45,6 @@ egui = { version = "0.19", features = ["bytemuck"] }
 
 [profile.release]
 debug = 1
-lto = "fat"
-codegen-units = 1
+# lto = "fat"
 panic = "abort"
+incremental = true

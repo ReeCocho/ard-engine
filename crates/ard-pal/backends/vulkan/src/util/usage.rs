@@ -187,9 +187,9 @@ impl<'a> PipelineTracker<'a> {
                 ),
                 SubResource::CubeMap {
                     cube_map,
-                    aspect_mask,
                     array_elem,
                     mip_level,
+                    ..
                 } => (
                     self.global
                         .register_image(*cube_map, *array_elem, Some(resc_usage)),

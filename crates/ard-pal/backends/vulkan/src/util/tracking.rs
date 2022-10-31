@@ -53,6 +53,11 @@ pub(crate) unsafe fn track_resources(mut state: TrackState) {
             cube_map,
             copy,
         } => track_buffer_to_cube_map_copy(&mut state, buffer, cube_map, copy),
+        Command::CopyCubeMapToBuffer {
+            cube_map,
+            buffer,
+            copy,
+        } => track_cube_map_to_buffer_copy(&mut state, cube_map, buffer, copy),
         Command::BlitTexture { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
         // All other commands do not need state tracking
         _ => {}
@@ -99,6 +104,20 @@ unsafe fn track_render_pass(
             } => (
                 SubResource::Texture {
                     texture: texture.internal().image,
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    array_elem: array_element as u32,
+                    mip_level: mip_level as u32,
+                },
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            ),
+            ColorAttachmentSource::CubeMap {
+                cube_map,
+                array_element,
+                mip_level,
+                ..
+            } => (
+                SubResource::CubeMap {
+                    cube_map: cube_map.internal().image,
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     array_elem: array_element as u32,
                     mip_level: mip_level as u32,
@@ -421,6 +440,46 @@ unsafe fn track_buffer_to_cube_map_copy(
             access: vk::AccessFlags::TRANSFER_WRITE,
             stage: vk::PipelineStageFlags::TRANSFER,
             layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        },
+    );
+
+    if let Some(barrier) = state.pipeline_tracker.submit(scope) {
+        barrier.execute(state.device, state.command_buffer);
+    }
+}
+
+unsafe fn track_cube_map_to_buffer_copy(
+    state: &mut TrackState,
+    cube_map: &CubeMap<crate::VulkanBackend>,
+    buffer: &Buffer<crate::VulkanBackend>,
+    copy: &BufferCubeMapCopy,
+) {
+    // Barrier check
+    let buffer = buffer.internal();
+    let cube_map = cube_map.internal();
+    let mut scope = UsageScope::default();
+    scope.use_resource(
+        SubResource::Buffer {
+            buffer: buffer.buffer,
+            array_elem: copy.buffer_array_element as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_WRITE,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::UNDEFINED,
+        },
+    );
+    scope.use_resource(
+        SubResource::CubeMap {
+            cube_map: cube_map.image,
+            aspect_mask: cube_map.aspect_flags,
+            array_elem: copy.cube_map_array_element as u32,
+            mip_level: copy.cube_map_mip_level as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_READ,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         },
     );
 

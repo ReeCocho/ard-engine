@@ -61,6 +61,7 @@ struct Camera {
     float fov;
     float near_clip;
     float far_clip;
+    uint pem_mip_count;
 };
 
 struct ShadowCascadeInfo {

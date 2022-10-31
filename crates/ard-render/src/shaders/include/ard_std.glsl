@@ -62,6 +62,12 @@ layout(set = GLOBAL_SET_ID, binding = 4) uniform ARD_LightingInfo {
     LightingInfo ARD_LIGHTING_INFO;
 };
 
+layout(set = GLOBAL_SET_ID, binding = 5) uniform sampler2D ARD_BRDF_LUT;
+
+layout(set = GLOBAL_SET_ID, binding = 6) uniform samplerCube ARD_DIFFUSE_IRRADIANCE_MAP;
+
+layout(set = GLOBAL_SET_ID, binding = 7) uniform samplerCube ARD_PREFILTERED_ENV_MAP;
+
 //////////////
 /// CAMERA ///
 //////////////
