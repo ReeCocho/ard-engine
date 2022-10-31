@@ -1,0 +1,57 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_control_flow_attributes: enable
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+#define HISTOGRAM_SIZE 256
+
+layout(set = 0, binding = 0) restrict buffer Histogram {
+    uint[HISTOGRAM_SIZE] histogram;
+};
+
+layout(set = 0, binding = 1) restrict buffer Luminance {
+    float out_luminance;
+};
+
+shared uint histogram_shared[HISTOGRAM_SIZE];
+
+layout(push_constant) uniform constants {
+    float min_log_lum;
+    float log_lum_range;
+    float time_coeff;
+    float num_pixels;
+};
+
+void main() {
+    uint bin_count = histogram[gl_LocalInvocationIndex];
+    histogram_shared[uint(gl_LocalInvocationIndex)] = bin_count * gl_LocalInvocationIndex;
+    barrier();
+
+    // Reset histogram for the next pass
+    histogram[uint(gl_LocalInvocationIndex)] = 0;
+
+    [[unroll]]
+    for (uint cutoff = (HISTOGRAM_SIZE >> 1); cutoff > 0; cutoff >>= 1) {
+        if (uint(gl_LocalInvocationIndex) < cutoff) {
+            histogram_shared[uint(gl_LocalInvocationIndex)] += 
+                histogram_shared[uint(gl_LocalInvocationIndex + cutoff)];
+        }
+
+        barrier();
+    }
+
+    if (gl_LocalInvocationIndex == 0) {
+        float weighted_log_average = 
+            (histogram_shared[0] / max(num_pixels - float(bin_count), 1.0)) - 1.0;
+
+        float weighted_avg_lum = 
+            exp2(((weighted_log_average / 254.0) * log_lum_range) + min_log_lum);
+
+        float lum_last_frame = out_luminance;
+        float adapted_lum = lum_last_frame + (weighted_avg_lum - lum_last_frame) * time_coeff;
+        out_luminance = adapted_lum;
+    }
+}

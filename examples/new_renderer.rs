@@ -46,7 +46,7 @@ fn main() {
                 present_mode: PresentMode::Immediate,
                 ..Default::default()
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("pbr.mat"),
@@ -209,7 +209,7 @@ impl View for Settings {
         let mut settings = res.get_mut::<RendererSettings>().unwrap();
         egui::Window::new("Settings").show(ctx, |ui| {
             ui.add(
-                egui::Slider::new(&mut settings.post_processing.exposure, 0.0..=3.0)
+                egui::Slider::new(&mut settings.post_processing.exposure, 0.0..=1.0)
                     .step_by(0.01)
                     .text("Exposure"),
             );

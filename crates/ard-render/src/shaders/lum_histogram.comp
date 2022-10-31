@@ -1,0 +1,57 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+const uint HISTOGRAM_SIZE = 256;
+const float EPSILON = 0.005;
+
+layout(set = 0, binding = 0) uniform sampler2D hdr_src;
+
+layout(set = 0, binding = 1) restrict writeonly buffer Histogram {
+    uint[HISTOGRAM_SIZE] histogram;
+};
+
+layout(push_constant) uniform constants {
+    float min_log2_lum;
+    float inv_log2_lum;
+    float unused1;
+    float unused2;
+};
+
+shared uint histogram_shared[HISTOGRAM_SIZE];
+
+// Convert color and luminance range to histogram bin index.
+uint color_to_bin(vec3 hdr_color) {
+    float lum = dot(hdr_color, vec3(0.2125, 0.7154, 0.0721));
+
+    if (lum < EPSILON) {
+        return 0;
+    }
+
+    // Compute log2 of luminance and get it on the range [0, 1]
+    float log_lum = clamp((log2(lum) - min_log2_lum) * inv_log2_lum, 0.0, 1.0);
+    return uint(log_lum * 254.0 + 1.0);
+}
+
+void main() {
+    // Initialize bin to 0
+    histogram_shared[gl_LocalInvocationIndex] = 0;
+    barrier();
+
+    uvec2 dim = textureSize(hdr_src, 0).xy;
+
+    // Ignore out of bounds
+    if (gl_GlobalInvocationID.x < dim.x && gl_GlobalInvocationID.y < dim.y) {
+        vec3 hdr_color = texture(hdr_src, vec2(gl_GlobalInvocationID.xy)).rgb;
+        uint bin_idx = color_to_bin(hdr_color);
+
+        atomicAdd(histogram_shared[bin_idx], 1);
+    }
+
+    barrier();
+
+    atomicAdd(histogram[gl_LocalInvocationIndex], histogram_shared[gl_LocalInvocationIndex]);
+}

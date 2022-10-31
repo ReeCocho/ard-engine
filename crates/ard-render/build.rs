@@ -141,6 +141,16 @@ fn main() {
         Path::new("./src/shaders/ao_blur.comp.spv"),
         &[],
     );
+    compile(
+        Path::new("./src/shaders/lum_histogram.comp"),
+        Path::new("./src/shaders/lum_histogram.comp.spv"),
+        &[],
+    );
+    compile(
+        Path::new("./src/shaders/luminance.comp"),
+        Path::new("./src/shaders/luminance.comp.spv"),
+        &[],
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {

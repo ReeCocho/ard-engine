@@ -5,6 +5,10 @@ use ordered_float::NotNan;
 
 use crate::shader_constants::FRAMES_IN_FLIGHT;
 
+use self::adaptive_luminance::AdaptiveLuminance;
+
+pub mod adaptive_luminance;
+
 const SCREEN_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,
     mag_filter: Filter::Linear,
@@ -28,7 +32,9 @@ pub struct PostProcessingSettings {
 
 pub(crate) struct PostProcessing {
     ctx: Context,
+    adaptive_lum: AdaptiveLuminance,
     layout: DescriptorSetLayout,
+    lum_layout: DescriptorSetLayout,
     sets: Vec<PostProcessingSets>,
     tonemapping_pipeline: GraphicsPipeline,
     fxaa_pipeline: GraphicsPipeline,
@@ -39,6 +45,8 @@ pub(crate) struct PostProcessing {
 struct PostProcessingSets {
     /// Source HDR image to sample.
     src: DescriptorSet,
+    /// Set to hold luminance value.
+    lum: DescriptorSet,
     /// Image to render while sampling `src` or `pong`.
     ping: DescriptorSet,
     /// Image to render to while sampling `ping`.
@@ -70,6 +78,21 @@ impl PostProcessing {
             },
         )
         .unwrap();
+
+        let lum_layout = DescriptorSetLayout::new(
+            ctx.clone(),
+            DescriptorSetLayoutCreateInfo {
+                bindings: vec![DescriptorBinding {
+                    binding: 0,
+                    ty: DescriptorType::StorageBuffer(AccessType::Read),
+                    count: 1,
+                    stage: ShaderStage::Fragment,
+                }],
+            },
+        )
+        .unwrap();
+
+        let adaptive_lum = AdaptiveLuminance::new(ctx);
 
         let post_proc_images = Texture::new(
             ctx.clone(),
@@ -141,13 +164,36 @@ impl PostProcessing {
                 },
             }]);
 
-            sets.push(PostProcessingSets { src, ping, pong });
+            let mut lum = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: lum_layout.clone(),
+                    debug_name: Some(format!("post_processing_lum_set_{i}")),
+                },
+            )
+            .unwrap();
+
+            lum.update(&[DescriptorSetUpdate {
+                binding: 0,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: adaptive_lum.luminance(),
+                    array_element: i,
+                },
+            }]);
+
+            sets.push(PostProcessingSets {
+                src,
+                ping,
+                pong,
+                lum,
+            });
         }
 
         let vertex = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
-                code: include_bytes!("../shaders/post_process.vert.spv"),
+                code: include_bytes!("../../shaders/post_process.vert.spv"),
                 debug_name: Some(String::from("post_processing_vertex_shader")),
             },
         )
@@ -156,7 +202,7 @@ impl PostProcessing {
         let tonemapping = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
-                code: include_bytes!("../shaders/tonemapping.frag.spv"),
+                code: include_bytes!("../../shaders/tonemapping.frag.spv"),
                 debug_name: Some(String::from("tonemapping_fragment_shader")),
             },
         )
@@ -165,7 +211,7 @@ impl PostProcessing {
         let fxaa = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
-                code: include_bytes!("../shaders/fxaa.frag.spv"),
+                code: include_bytes!("../../shaders/fxaa.frag.spv"),
                 debug_name: Some(String::from("fxaa_fragment_shader")),
             },
         )
@@ -179,7 +225,7 @@ impl PostProcessing {
                         vertex: vertex.clone(),
                         fragment: Some(tonemapping),
                     },
-                    layouts: vec![layout.clone()],
+                    layouts: vec![layout.clone(), lum_layout.clone()],
                     vertex_input: VertexInputState {
                         attributes: Vec::default(),
                         bindings: Vec::default(),
@@ -249,7 +295,9 @@ impl PostProcessing {
 
         Self {
             ctx: ctx.clone(),
+            adaptive_lum,
             layout,
+            lum_layout,
             sets,
             tonemapping_pipeline,
             fxaa_pipeline,
@@ -315,6 +363,8 @@ impl PostProcessing {
                 mip_count: 1,
             },
         }]);
+
+        self.adaptive_lum.update_set(frame, image);
     }
 
     pub fn draw<'a, 'b>(
@@ -333,6 +383,9 @@ impl PostProcessing {
             fxaa_enabled: settings.fxaa as u32,
         }];
 
+        // Compute luminance
+        self.adaptive_lum.compute(frame, commands);
+
         // First pass: Tonemapping.
         commands.render_pass(
             RenderPassDescriptor {
@@ -350,7 +403,7 @@ impl PostProcessing {
             },
             |pass| {
                 pass.bind_pipeline(self.tonemapping_pipeline.clone());
-                pass.bind_sets(0, vec![&self.sets[frame].src]);
+                pass.bind_sets(0, vec![&self.sets[frame].src, &self.sets[frame].lum]);
                 pass.push_constants(bytemuck::cast_slice(&constants));
                 pass.draw(3, 1, 0, 0);
             },
@@ -379,7 +432,7 @@ impl PostProcessing {
 impl Default for PostProcessingSettings {
     fn default() -> Self {
         PostProcessingSettings {
-            exposure: 1.0,
+            exposure: 0.1,
             fxaa: true,
         }
     }

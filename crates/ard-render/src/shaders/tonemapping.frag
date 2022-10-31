@@ -10,6 +10,10 @@ layout(location = 0) in vec2 UV;
 
 layout(set = 0, binding = 0) uniform sampler2D screen_tex;
 
+layout(set = 1, binding = 0) restrict readonly buffer Luminance {
+    float luminance;
+};
+
 layout(push_constant) uniform constants {
     vec2 screen_size;
     float exposure;
@@ -18,7 +22,7 @@ layout(push_constant) uniform constants {
 
 void main() {
     vec3 color = texture(screen_tex, UV).rgb;
-    color = vec3(1.0) - exp(-color * exposure);
+    color = vec3(1.0) - exp(-color * (exposure / luminance));
     color = pow(color, vec3(1.0 / GAMMA));
 
     FRAGMENT_COLOR = vec4(color, 1.0);
