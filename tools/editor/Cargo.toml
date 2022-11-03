@@ -17,7 +17,7 @@ thiserror = "1.0"
 fs_extra = "1"
 smallvec = { version = "1", features = ["serde"] }
 rfd = "0.9"
-ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "graphics_assets", "graphics_vk", "window" ] }
+ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "window" ] }
 paste = "1"
 
 [profile.dev]

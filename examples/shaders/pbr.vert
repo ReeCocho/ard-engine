@@ -12,7 +12,7 @@ layout(location = 5) in vec2 UV1;
 layout(location = 6) in vec2 UV2;
 layout(location = 7) in vec2 UV3;
 
-layout(location = 0) out vec4 SCREEN_POS;
+layout(location = 0) out vec4 VPOS;
 layout(location = 1) out vec4 OUT_NORMAL;
 layout(location = 2) out vec2 UV;
 layout(location = 3) out mat3 TBN;
@@ -22,11 +22,7 @@ VsOut entry() {
     mat4 model = get_model_matrix();
     vec4 frag_pos = model * vec4(POSITION.xyz, 1.0);
     gl_Position = camera.vp * frag_pos;
-    SCREEN_POS = vec4(
-        gl_Position.xy, 
-        (gl_Position.w * camera.near_clip) / gl_Position.z, 
-        gl_Position.w
-    );
+    VPOS = gl_Position;
 
     vec3 T = normalize(vec3(model * vec4(normalize(TANGENT.xyz), 0.0)));
     vec3 N = normalize(vec3(model * vec4(normalize(NORMAL.xyz), 0.0)));

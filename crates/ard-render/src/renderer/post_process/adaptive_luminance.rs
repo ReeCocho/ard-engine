@@ -257,8 +257,8 @@ impl AdaptiveLuminance {
     }
 
     pub fn compute<'a, 'b>(&'a self, frame: usize, commands: &'b mut CommandBuffer<'a>) {
-        const MIN_LOG_LUM: f32 = -16.0;
-        const MAX_LOG_LUM: f32 = 8.0;
+        const MIN_LOG_LUM: f32 = -5.0;
+        const MAX_LOG_LUM: f32 = 4.0;
 
         let histogram_params = [Vec4::new(
             MIN_LOG_LUM,

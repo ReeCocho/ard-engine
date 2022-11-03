@@ -100,7 +100,7 @@ impl Shadows {
             let name = format!("shadow_cascade_{i}");
 
             // Create shadow map
-            let dim = shadow_map_resolution.shr(i).max(1);
+            let dim = shadow_map_resolution; // shadow_map_resolution.shr(i).max(1);
             let map = Texture::new(
                 ctx.clone(),
                 TextureCreateInfo {

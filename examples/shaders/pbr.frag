@@ -1,4 +1,5 @@
 #version 450 core
+#extension GL_EXT_debug_printf : enable
 
 struct PbrMaterial {
     vec4 base_color;
@@ -14,8 +15,8 @@ struct PbrMaterial {
 
 layout(location = 0) out vec4 FRAGMENT_COLOR;
 
-layout(location = 0) in vec4 SCREEN_POS;
-layout(location = 1) in vec4 NORMAL;
+layout(location = 0) in vec4 VPOS;
+layout(location = 1) in vec4 OUT_NORMAL;
 layout(location = 2) in vec2 UV;
 layout(location = 3) in mat3 TBN;
 
@@ -180,17 +181,18 @@ vec3 lighting(
     float roughness, 
     float metallic, 
     vec3 normal, 
-    vec4 screen_pos
+    vec3 screen_pos
 ) {
     // Determine which cluster the fragment is in
     vec3 world_pos = ARD_FRAG_POS;
-    vec2 uv = ((screen_pos.xy / screen_pos.w) * 0.5) + vec2(0.5);
+    vec2 uv = screen_pos.xy;
+
     ivec3 cluster = ivec3(
         clamp(int(uv.x * float(FROXEL_TABLE_X)), 0, FROXEL_TABLE_X - 1),
         clamp(int(uv.y * float(FROXEL_TABLE_Y)), 0, FROXEL_TABLE_Y - 1),
         clamp(
             int(log(screen_pos.z) * camera.cluster_scale_bias.x - camera.cluster_scale_bias.y), 
-            0, 
+            0,
             FROXEL_TABLE_Z - 1
         )
     );
@@ -317,12 +319,15 @@ void entry() {
     normal = normal * 2.0 - 1.0;
     normal = normalize(TBN * normal);
 
+    vec2 screen_uv = (VPOS.xy / VPOS.w) * vec2(0.5) + vec2(0.5);
+    float depth = (VPOS.w * camera.near_clip) / VPOS.z;
+
     vec3 color = lighting(
         tex_color.rgb * material.base_color.rgb,
         material.roughness * met_rgh.g,
         material.metallic * met_rgh.b,
         normal,
-        SCREEN_POS
+        vec3(screen_uv, depth)
     );
 
     FRAGMENT_COLOR = vec4(color, 1.0);

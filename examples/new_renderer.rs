@@ -252,7 +252,7 @@ fn setup(app: &mut App) {
     let camera_descriptor = CameraDescriptor {
         shadows: Some(CameraShadows {
             resolution: 4096,
-            cascades: 3,
+            cascades: 4,
         }),
         clear_color: CameraClearColor::SkyBox(
             assets.get(&sky_box_handle).unwrap().cube_map.clone(),
@@ -298,7 +298,7 @@ fn setup(app: &mut App) {
     let (handles, _) = asset.instantiate_static(&static_geo, app.world.entities().commands());
     app.resources.add(StaticHandles(handles));
 
-    /*
+    ///*
     // Create light cube data
     let vshd = factory
         .create_shader(ShaderCreateInfo {
@@ -312,7 +312,6 @@ fn setup(app: &mut App) {
             debug_name: None,
         })
         .unwrap();
-
 
     let material = factory.create_material(MaterialCreateInfo {
         vertex_shader: vshd,
@@ -345,10 +344,10 @@ fn setup(app: &mut App) {
 
     // Create some random lights
     const LIGHT_COUNT: usize = 4096 * 2;
-    const LIGHT_SPACING: (f32, f32, f32) = (16.0, 8.0, 12.0);
-    const LIGHT_OFFSET: (f32, f32, f32) = (0.0, 5.0, 0.0);
+    const LIGHT_SPACING: (f32, f32, f32) = (32.0, 16.0, 24.0);
+    const LIGHT_OFFSET: (f32, f32, f32) = (0.0, 10.0, 0.0);
     const LIGHT_RANGE: (f32, f32) = (1.0, 2.0);
-    const LIGHT_INTENSITY: (f32, f32) = (3.0, 6.0);
+    const LIGHT_INTENSITY: (f32, f32) = (6.0, 12.0);
 
     let mut rng = rand::thread_rng();
 
@@ -383,8 +382,11 @@ fn setup(app: &mut App) {
         });
     }
 
-    app.world.entities_mut().commands().create(light_pack, &mut []);
-    */
+    app.world
+        .entities_mut()
+        .commands()
+        .create(light_pack, &mut []);
+    //*/
 
     /*
     // Create static triangle objects

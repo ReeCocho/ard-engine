@@ -12,8 +12,6 @@ members = [ "crates/*", "tools/editor", "tools/gltf-oven", "tools/ibl-oven" ]
 default = [ "input", "assets", "render", "window", ]
 input = [ "ard-input" ]
 assets = [ "ard-assets" ]
-graphics_assets = [ "ard-graphics-assets" ]
-graphics_vk = [ "window", "ard-graphics-api", "ard-graphics-vk" ]
 render = [ "window", "ard-render", "ard-pal" ]
 window = [ "ard-window", "ard-winit" ]
 
@@ -29,13 +27,10 @@ ard-game = { path = "./crates/ard-game", version = "0.1" }
 # Optional
 ard-input = { path = "./crates/ard-input", version = "0.1", optional = true }
 ard-assets = { path = "./crates/ard-assets", version = "0.1", optional = true }
-ard-graphics-api = { path = "./crates/ard-graphics-api", version = "0.1", optional = true }
-ard-graphics-vk = { path = "./crates/ard-graphics-vk", version = "0.1", optional = true }
 ard-window = { path = "./crates/ard-window", version = "0.1", optional = true }
 ard-winit = { path = "./crates/ard-winit", version = "0.1", optional = true }
 ard-render = { path = "./crates/ard-render", version = "0.1", optional = true }
 ard-pal = { path = "./crates/ard-pal", version = "0.1", optional = true }
-ard-graphics-assets = { path = "./crates/ard-graphics-assets", version = "0.1", optional = true }
 
 [dev-dependencies]
 bytemuck = "1.7"

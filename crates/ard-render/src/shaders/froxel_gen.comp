@@ -15,36 +15,37 @@ layout(set = 0, binding = 1) writeonly restrict buffer ARD_CameraFroxels {
 };
 
 void main() {
+    // Corners are clockwise so we get correct normals when computing the plane
     vec4 corners[4];
     corners[0] = vec4(
-        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.x + 0) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 0) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
     corners[1] = vec4(
         ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 0) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
     corners[2] = vec4(
-        ((float(gl_WorkGroupID.x) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
-        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
-        1.0,
-        1.0
-    );
-
-    corners[3] = vec4(
         ((float(gl_WorkGroupID.x + 1) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
         ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
         1.0,
         1.0
     );
 
-    float f_over_n = camera.far_clip / camera.near_clip;
+    corners[3] = vec4(
+        ((float(gl_WorkGroupID.x + 0) / float(FROXEL_TABLE_X)) * 2.0) - 1.0,
+        ((float(gl_WorkGroupID.y + 1) / float(FROXEL_TABLE_Y)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    const float f_over_n = camera.far_clip / camera.near_clip;
     vec2 min_max_z = camera.near_clip * vec2(
         pow(
             f_over_n, 
@@ -75,11 +76,10 @@ void main() {
     frustum[3] /= frustum[3].w;
 
     Froxel froxel;
-    froxel.planes[0] = vec4(normalize(cross(frustum[0].xyz, frustum[1].xyz)), 1.0);
-    froxel.planes[1] = vec4(normalize(cross(frustum[1].xyz, frustum[2].xyz)), 1.0);
-    froxel.planes[2] = vec4(normalize(cross(frustum[2].xyz, frustum[3].xyz)), 1.0);
-    froxel.planes[3] = vec4(normalize(cross(frustum[3].xyz, frustum[0].xyz)), 1.0);
-
+    froxel.planes[0] = vec4(-normalize(cross(frustum[0].xyz, frustum[1].xyz)), 0.0);
+    froxel.planes[1] = vec4(-normalize(cross(frustum[1].xyz, frustum[2].xyz)), 0.0);
+    froxel.planes[2] = vec4(-normalize(cross(frustum[2].xyz, frustum[3].xyz)), 0.0);
+    froxel.planes[3] = vec4(-normalize(cross(frustum[3].xyz, frustum[0].xyz)), 0.0);
     froxel.min_max_z = vec4(min_max_z, 0.0, 0.0);
 
     clusters.froxels

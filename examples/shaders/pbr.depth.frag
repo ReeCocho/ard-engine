@@ -12,9 +12,10 @@ struct PbrMaterial {
 #define ARD_MATERIAL PbrMaterial
 #include "ard_std.glsl"
 
-layout(location = 0) in vec4 SCREEN_POS;
-layout(location = 1) in vec4 NORMAL;
+layout(location = 0) in vec4 VPOS;
+layout(location = 1) in vec4 OUT_NORMAL;
 layout(location = 2) in vec2 UV;
+layout(location = 3) in mat3 TBN;
 
 void entry() {
     PbrMaterial material = get_material_data();

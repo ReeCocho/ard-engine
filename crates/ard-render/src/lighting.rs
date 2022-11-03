@@ -78,8 +78,8 @@ impl Lighting {
         Self {
             ubo,
             data: LightingUbo {
-                ambient_color_intensity: Vec4::new(1.0, 1.0, 1.0, 0.7),
-                sun_color_intensity: Vec4::new(1.0, 1.0, 1.0, 16.0),
+                ambient_color_intensity: Vec4::new(1.0, 0.98, 0.92, 0.2),
+                sun_color_intensity: Vec4::new(1.0, 0.98, 0.92, 16.0),
                 sun_direction: Vec4::new(1.0, -5.0, 1.0, 0.0).normalize(),
                 sun_size: 0.5,
             },
