@@ -2,7 +2,7 @@ use std::{
     any::TypeId,
     collections::{HashMap, HashSet},
     hash::BuildHasherDefault,
-    ops::{BitAnd, BitOr, BitXor, Div, Not},
+    ops::{BitAnd, BitOr, Div, Not},
     ptr::NonNull,
 };
 
@@ -77,7 +77,7 @@ struct SystemState {
     system: usize,
     /// Indicates this system must run on the main thread.
     /// TODO: Not actually used yet.
-    main_thread: bool,
+    _main_thread: bool,
     /// Handler data acceses to check for compatibility.
     accesses: HandlerAccesses,
     /// Receiver that threads use to notify the main thread that the system has finished running.
@@ -453,7 +453,7 @@ impl DispatcherBuilder {
 
                 dispatcher_state.states.push(SystemState {
                     system: system_idx,
-                    main_thread: system.main_thread,
+                    _main_thread: system.main_thread,
                     finished,
                     thread_sender,
                     dependency_count: 0,

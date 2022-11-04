@@ -156,6 +156,7 @@ impl Shadows {
         factory: &Factory,
         camera: &CameraDescriptor,
         use_alternate: bool,
+        lock_occlusion: bool,
         camera_dims: (f32, f32),
     ) {
         let aspect_ratio = camera_dims.0 / camera_dims.1;
@@ -241,15 +242,18 @@ impl Shadows {
             frustum.planes[4] = Vec4::ZERO;
 
             // Update render data
-            cascade.render_data.prepare_input_ids(
-                frame,
-                RenderLayer::SHADOW_CASTER,
-                queries,
-                static_geometry,
-            );
-            cascade
-                .render_data
-                .prepare_draw_calls(frame, use_alternate, factory);
+            if !lock_occlusion {
+                cascade.render_data.prepare_input_ids(
+                    frame,
+                    RenderLayer::SHADOW_CASTER,
+                    queries,
+                    static_geometry,
+                );
+                cascade
+                    .render_data
+                    .prepare_draw_calls(frame, use_alternate, factory);
+            }
+
             cascade.render_data.update_camera_ubo(
                 frame,
                 CameraUbo {
@@ -341,6 +345,7 @@ impl Shadows {
                             draw_offset: 0,
                             draw_count,
                             draw_sky_box: false,
+                            material_override: None,
                         },
                     )
                 },

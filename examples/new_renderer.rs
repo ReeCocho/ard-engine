@@ -6,11 +6,13 @@ use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
 use ard_pal::prelude::{CullMode, FrontFace, PresentMode};
 use ard_render::{
-    asset::{cube_map::CubeMapAsset, model::ModelAsset, RenderAssetsPlugin},
+    asset::{
+        cube_map::CubeMapAsset, material::MaterialAsset, model::ModelAsset, RenderAssetsPlugin,
+    },
     camera::{Camera, CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
     lighting::PointLight,
-    material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
+    material::{Material, MaterialCreateInfo, MaterialInstanceCreateInfo},
     mesh::{MeshBounds, MeshCreateInfo, Vertices},
     renderer::{
         gui::{Gui, View},
@@ -146,7 +148,7 @@ impl CameraMover {
         self.descriptor.target = self.position + forward.xyz();
         self.descriptor.up = up.xyz();
         self.descriptor.near = 0.1;
-        self.descriptor.far = 100.0;
+        self.descriptor.far = 150.0;
         factory.update_camera(&main_camera.0, self.descriptor.clone());
     }
 }
@@ -194,8 +196,19 @@ impl Into<System> for FrameRate {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Visualization {
+    None,
+    ClusterSlices,
+    ShadowCascades,
+    ClusterHeatMap,
+}
+
 struct Settings {
-    x: String,
+    slice_view_mat: Material,
+    cluster_heatmap_mat: Material,
+    cascade_view_mat: Material,
+    visualization: Visualization,
 }
 
 impl View for Settings {
@@ -214,8 +227,36 @@ impl View for Settings {
                     .text("Exposure"),
             );
             ui.toggle_value(&mut settings.post_processing.fxaa, "FXAA");
-            ui.text_edit_singleline(&mut self.x);
+            ui.toggle_value(&mut settings.lock_occlusion, "Lock Occlusion");
+
+            egui::ComboBox::from_label("Visualization")
+                .selected_text(format!("{:?}", self.visualization))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.visualization, Visualization::None, "None");
+                    ui.selectable_value(
+                        &mut self.visualization,
+                        Visualization::ClusterSlices,
+                        "Cluster Slices",
+                    );
+                    ui.selectable_value(
+                        &mut self.visualization,
+                        Visualization::ClusterHeatMap,
+                        "Cluster Heat Map",
+                    );
+                    ui.selectable_value(
+                        &mut self.visualization,
+                        Visualization::ShadowCascades,
+                        "Shadow Cascades",
+                    );
+                });
         });
+
+        settings.material_override = match &self.visualization {
+            Visualization::None => None,
+            Visualization::ClusterSlices => Some(self.slice_view_mat.clone()),
+            Visualization::ClusterHeatMap => Some(self.cluster_heatmap_mat.clone()),
+            Visualization::ShadowCascades => Some(self.cascade_view_mat.clone()),
+        };
     }
 }
 
@@ -231,8 +272,23 @@ fn setup(app: &mut App) {
     settings.render_scale = 1.0;
 
     // Add in GUI views
+    let slice_view_handle = assets.load::<MaterialAsset>(AssetName::new("slice_vis.mat"));
+    let cascade_view_handle = assets.load::<MaterialAsset>(AssetName::new("cascade_vis.mat"));
+    let cluster_heatmap_handle =
+        assets.load::<MaterialAsset>(AssetName::new("cluster_heatmap.mat"));
+    assets.wait_for_load(&slice_view_handle);
+    assets.wait_for_load(&cascade_view_handle);
+    assets.wait_for_load(&cluster_heatmap_handle);
+
     gui.add_view(Settings {
-        x: String::default(),
+        visualization: Visualization::None,
+        slice_view_mat: assets.get(&slice_view_handle).unwrap().material.clone(),
+        cascade_view_mat: assets.get(&cascade_view_handle).unwrap().material.clone(),
+        cluster_heatmap_mat: assets
+            .get(&cluster_heatmap_handle)
+            .unwrap()
+            .material
+            .clone(),
     });
 
     //*

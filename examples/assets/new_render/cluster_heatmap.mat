@@ -1,0 +1,16 @@
+(
+	vertex_shader_path: "cluster_heatmap.vert.spv",
+	depth_only_shader_path: None,
+	fragment_shader_path: "cluster_heatmap.frag.spv",
+	vertex_layout: (
+		normals: false,
+		tangents: false,
+		colors: false,
+		uv0: false,
+		uv1: false,
+		uv2: false,
+		uv3: false,
+	),
+	material_data_size: 0,
+	texture_count: 0,
+)

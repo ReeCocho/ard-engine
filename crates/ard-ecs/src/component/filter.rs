@@ -1,4 +1,3 @@
-use core::arch;
 use std::any::TypeId;
 
 use crate::{

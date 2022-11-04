@@ -271,11 +271,27 @@ impl Gui {
             return;
         }
 
-        // Copy-paste
+        // Copy-paste and text input
         if !input.input_string().is_empty() {
-            self.input
-                .events
-                .push(egui::Event::Text(input.input_string().to_string()));
+            let mut final_txt = String::with_capacity(input.input_string().bytes().len());
+
+            // Ignore non-printable characters
+            for chr in input.input_string().chars() {
+                // Gonna be real, I grabbed this from the egui-winit integration. Idk how it works
+                let is_printable_char = {
+                    let is_in_private_use_area = '\u{e000}' <= chr && chr <= '\u{f8ff}'
+                        || '\u{f0000}' <= chr && chr <= '\u{ffffd}'
+                        || '\u{100000}' <= chr && chr <= '\u{10fffd}';
+
+                    !is_in_private_use_area && !chr.is_ascii_control()
+                };
+
+                if is_printable_char {
+                    final_txt.push(chr);
+                }
+            }
+
+            self.input.events.push(egui::Event::Text(final_txt));
         }
 
         // Modifiers

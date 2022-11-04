@@ -17,31 +17,31 @@ use ard_window::window::WindowId;
 use ard_winit::windows::WinitWindows;
 use renderer::{Renderer, RendererSettings};
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct RenderPlugin {
     pub window: WindowId,
     pub settings: RendererSettings,
     pub debug: bool,
 }
 
-#[derive(Resource, Clone, Copy)]
+#[derive(Resource, Clone)]
 struct LateRenderInit(RenderPlugin);
 
 impl Plugin for RenderPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
-        app.add_resource(LateRenderInit(*self));
+        app.add_resource(LateRenderInit(self.clone()));
         app.add_startup_function(late_render_init);
     }
 }
 
 fn late_render_init(app: &mut App) {
-    let plugin = *app.resources.get::<LateRenderInit>().unwrap();
+    let plugin = app.resources.get::<LateRenderInit>().unwrap().clone();
     let windows = app.resources.get::<WinitWindows>().unwrap();
     let window = windows.get_window(plugin.0.window).unwrap();
     let size = window.inner_size();
 
     let (renderer, factory, static_geo, lighting, gui) = Renderer::new(
-        plugin.0,
+        plugin.0.clone(),
         window,
         plugin.0.window,
         (size.width, size.height),

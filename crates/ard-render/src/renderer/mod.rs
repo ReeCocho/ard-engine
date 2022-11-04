@@ -24,7 +24,7 @@ use crate::{
     camera::{CameraClearColor, CameraUbo},
     factory::Factory,
     lighting::{Lighting, PointLight},
-    material::{MaterialInstance, PipelineType},
+    material::{Material, MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
     static_geometry::StaticGeometry,
@@ -40,7 +40,7 @@ use self::{
     shadows::ShadowRenderArgs,
 };
 
-#[derive(Resource, Copy, Clone)]
+#[derive(Resource, Clone)]
 pub struct RendererSettings {
     /// Flag to enable drawing the game scene. For games, this should be `true` all the time. This
     /// is useful for things like editors where you only want a GUI.
@@ -58,6 +58,10 @@ pub struct RendererSettings {
     pub canvas_size: Option<(u32, u32)>,
     /// Anisotropy level to be used for textures. Can be `None` for no filtering.
     pub anisotropy_level: Option<AnisotropyLevel>,
+    /// A debugging setting that locks the currently drawn objects in place.
+    pub lock_occlusion: bool,
+    /// A debugging setting that allows you to override the material of every drawn object.
+    pub material_override: Option<Material>,
 }
 
 #[derive(SystemState)]
@@ -431,10 +435,12 @@ impl Renderer {
         // Prepare post processing
         self.post_processing.prepare(self.frame, &self.hdr_image);
 
-        // Prepare global object data
-        self.global_data
-            .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
-        self.global_data.prepare_lights(self.frame, &queries);
+        // Prepare global object data. Don't prepare if we are locking occlusion
+        if !settings.lock_occlusion {
+            self.global_data
+                .prepare_object_data(self.frame, &factory, &queries, &static_geometry);
+            self.global_data.prepare_lights(self.frame, &queries);
+        }
 
         // Prepare rendering data
         let mut cameras = factory.0.cameras.lock().unwrap();
@@ -452,15 +458,17 @@ impl Renderer {
             }
 
             // Prepare IDs and draw calls
-            camera.render_data.prepare_input_ids(
-                self.frame,
-                camera.descriptor.layers,
-                &queries,
-                &static_geometry,
-            );
-            camera
-                .render_data
-                .prepare_draw_calls(self.frame, use_alternate, &factory);
+            if !settings.lock_occlusion {
+                camera.render_data.prepare_input_ids(
+                    self.frame,
+                    camera.descriptor.layers,
+                    &queries,
+                    &static_geometry,
+                );
+                camera
+                    .render_data
+                    .prepare_draw_calls(self.frame, use_alternate, &factory);
+            }
 
             // Update the camera's UBO
             camera.render_data.update_camera_ubo(
@@ -491,6 +499,7 @@ impl Renderer {
                 &factory,
                 &camera.descriptor,
                 use_alternate,
+                settings.lock_occlusion,
                 (canvas_width as f32, canvas_height as f32),
             );
 
@@ -591,6 +600,7 @@ impl Renderer {
                             draw_offset: 0,
                             draw_count,
                             draw_sky_box: false,
+                            material_override: settings.material_override.clone(),
                         },
                     );
                 },
@@ -624,19 +634,23 @@ impl Renderer {
                         &mut commands,
                     );
                 }
+
                 clustering.cluster_lights(self.frame, &self.global_data, &mut commands);
             }
 
-            camera.render_data.generate_draw_calls(
-                self.frame,
-                &self.global_data,
-                true,
-                Vec2::new(canvas_width as f32, canvas_height as f32),
-                &mut commands,
-            );
-            camera
-                .shadows
-                .generate_draw_calls(self.frame, &self.global_data, &mut commands);
+            if !settings.lock_occlusion {
+                camera.render_data.generate_draw_calls(
+                    self.frame,
+                    &self.global_data,
+                    true,
+                    Vec2::new(canvas_width as f32, canvas_height as f32),
+                    &mut commands,
+                );
+
+                camera
+                    .shadows
+                    .generate_draw_calls(self.frame, &self.global_data, &mut commands);
+            }
         }
 
         // Render shadows and perform the depth-prepass for every camera
@@ -689,6 +703,7 @@ impl Renderer {
                             draw_offset: 0,
                             draw_count,
                             draw_sky_box: false,
+                            material_override: settings.material_override.clone(),
                         },
                     );
                 },
@@ -760,6 +775,7 @@ impl Renderer {
                             draw_offset: 0,
                             draw_count,
                             draw_sky_box: sky_box.is_some(),
+                            material_override: settings.material_override.clone(),
                         },
                     );
                 },
@@ -841,6 +857,8 @@ impl Default for RendererSettings {
             anisotropy_level: None,
             post_processing: PostProcessingSettings::default(),
             present_mode: PresentMode::Fifo,
+            lock_occlusion: false,
+            material_override: None,
         }
     }
 }

@@ -15,7 +15,7 @@ use super::{
 };
 
 // TODO: Make this configurable.
-const MAX_UPLOAD_COUNT: usize = 32;
+const MAX_UPLOAD_COUNT: usize = 64;
 
 pub(crate) enum StagingRequest {
     Mesh {

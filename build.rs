@@ -4,35 +4,6 @@ use std::{
 };
 
 fn main() {
-    // Compile shaders
-    // compile(
-    //     Path::new("./examples/shaders/color.frag"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/pbr.frag"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/pbr.vert"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/textured.frag"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/textured.vert"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/triangle.frag"),
-    //     Path::new("./examples/assets/example/"),
-    // );
-    // compile(
-    //     Path::new("./examples/shaders/triangle.vert"),
-    //     Path::new("./examples/assets/example/"),
-    // );
     compile(
         Path::new("./examples/shaders/color.frag"),
         Path::new("./examples/assets/new_render/"),
@@ -59,6 +30,30 @@ fn main() {
     );
     compile(
         Path::new("./examples/shaders/pbr.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/slice_vis.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/slice_vis.frag"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/cluster_heatmap.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/cluster_heatmap.frag"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/cascade_vis.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/cascade_vis.frag"),
         Path::new("./examples/assets/new_render/"),
     );
 }

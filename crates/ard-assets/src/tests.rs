@@ -141,7 +141,7 @@ impl AssetLoader for PersistentAssetLoader {
 /// Basic test to check that assets get loaded in.
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn asset_loading() {
-    let mut assets = Assets::new();
+    let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
     let asset = assets.load::<TestAsset>(AssetName::new("test_file.dat"));
@@ -159,7 +159,7 @@ async fn asset_loading() {
 /// package furthest in the load order will have it's asset loaded.
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn shadowing() {
-    let mut assets = Assets::new();
+    let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
     let asset = assets.load::<TestAsset>(AssetName::new("shadowed.dat"));
@@ -175,7 +175,7 @@ async fn shadowing() {
 /// Tests that assets are dropped when they have no more references.
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn ref_counting() {
-    let mut assets = Assets::new();
+    let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
     let handle = assets.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
@@ -196,7 +196,7 @@ async fn ref_counting() {
 /// Tests that default asset works and drop as expected.
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn default_assets() {
-    let mut assets = Assets::new();
+    let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
     let handle = assets.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
@@ -236,7 +236,7 @@ async fn many_requests() {
     const ITER_COUNT: usize = 1_000;
 
     for _ in 0..ITER_COUNT {
-        let mut assets = Assets::new();
+        let assets = Assets::new();
         assets.register::<TestAsset>(TestAssetLoader);
         assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
@@ -277,7 +277,7 @@ async fn load_drop() {
     const ITER_COUNT: usize = 1_000;
 
     for _ in 0..ITER_COUNT {
-        let mut assets = Assets::new();
+        let assets = Assets::new();
         assets.register::<TestAsset>(TestAssetLoader);
 
         let mut handles = Vec::with_capacity(2);
@@ -325,7 +325,7 @@ async fn load_drop() {
 /// Test to check persistent assets.
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn persistent_assets() {
-    let mut assets = Assets::new();
+    let assets = Assets::new();
     assets.register::<PersistentAsset>(PersistentAssetLoader);
 
     // Load the asset

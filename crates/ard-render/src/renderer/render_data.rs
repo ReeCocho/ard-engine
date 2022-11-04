@@ -19,7 +19,7 @@ use crate::{
         Factory, Layouts,
     },
     lighting::{Lighting, PointLight, RawLight, RawPointLight},
-    material::{MaterialInner, MaterialInstance, PipelineType},
+    material::{Material, MaterialInner, MaterialInstance, PipelineType},
     mesh::{Mesh, MeshInner, ObjectBounds},
     shader_constants::{FRAMES_IN_FLIGHT, FROXEL_TABLE_DIMS, MAX_SHADOW_CASCADES},
     static_geometry::StaticGeometryInner,
@@ -185,6 +185,7 @@ pub(crate) struct RenderArgs<'a, 'b> {
     pub pipeline_ty: PipelineType,
     pub draw_offset: usize,
     pub draw_count: usize,
+    pub material_override: Option<Material>,
 }
 
 #[repr(C)]
@@ -1698,7 +1699,15 @@ impl RenderData {
             .enumerate()
             .skip(args.draw_offset)
         {
-            let (material_id, vertex_layout, mesh_id, _) = from_draw_key(*key);
+            let (material_id, vertex_layout, mesh_id, _) = match &args.material_override {
+                Some(material) => {
+                    let (_, vertex_layout, mesh_id, unused) = from_draw_key(*key);
+                    (material.id, vertex_layout, mesh_id, unused)
+                }
+                None => from_draw_key(*key),
+            };
+
+            from_draw_key(*key);
             let mat_vertex_layout = args.materials.get(material_id).unwrap().layout;
 
             // Determine what needs a rebind

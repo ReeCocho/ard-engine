@@ -20,7 +20,7 @@ layout(push_constant) uniform constants {
 const float LUMA_THRESHOLD = 0.25;
 const float MUL_REDUCE = 1.0 / 8.0;
 const float MIN_REDUCE = 1.0 / 128.0;
-const float MAX_SPAN = 16.0;
+const float MAX_SPAN = 8.0;
 
 void main() {
     vec3 color = texture(screen_tex, UV).rgb;
