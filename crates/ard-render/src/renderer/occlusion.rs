@@ -110,7 +110,7 @@ impl HzbGlobal {
                 width: (width / 2).max(1),
                 height: (height / 2).max(1),
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 mip_levels,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -139,7 +139,7 @@ impl HzbGlobal {
                         array_element: 0,
                         value: DescriptorValue::StorageImage {
                             texture: &image,
-                            array_element: frame,
+                            array_element: 0,
                             mip: 0,
                         },
                     }]);
@@ -150,7 +150,7 @@ impl HzbGlobal {
                             array_element: 0,
                             value: DescriptorValue::Texture {
                                 texture: &image,
-                                array_element: frame,
+                                array_element: 0,
                                 sampler: HZB_INPUT_SAMPLER,
                                 base_mip: i - 1,
                                 mip_count: 1,
@@ -161,7 +161,7 @@ impl HzbGlobal {
                             array_element: 0,
                             value: DescriptorValue::StorageImage {
                                 texture: &image,
-                                array_element: frame,
+                                array_element: 0,
                                 mip: i,
                             },
                         },
@@ -199,7 +199,7 @@ impl HzbGlobal {
             array_element: 0,
             value: DescriptorValue::Texture {
                 texture: &src,
-                array_element: frame,
+                array_element: 0,
                 sampler: HZB_INPUT_SAMPLER,
                 base_mip: 0,
                 mip_count: 1,

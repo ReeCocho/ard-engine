@@ -38,7 +38,7 @@ pub(crate) struct PostProcessing {
     sets: Vec<PostProcessingSets>,
     tonemapping_pipeline: GraphicsPipeline,
     fxaa_pipeline: GraphicsPipeline,
-    /// `2 * FRAMES_IN_FLIGHT` LDR images to ping-ping between when applying post processing.
+    /// 2 LDR images to ping-ping between when applying post processing.
     images: Texture,
 }
 
@@ -102,7 +102,7 @@ impl PostProcessing {
                 width,
                 height,
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT * 2,
+                array_elements: 2,
                 mip_levels: 1,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -136,7 +136,7 @@ impl PostProcessing {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: &post_proc_images,
-                    array_element: (i * 2) + 1,
+                    array_element: 1,
                     sampler: SCREEN_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,
@@ -157,7 +157,7 @@ impl PostProcessing {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: &post_proc_images,
-                    array_element: i * 2,
+                    array_element: 0,
                     sampler: SCREEN_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,
@@ -178,7 +178,7 @@ impl PostProcessing {
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: adaptive_lum.luminance(),
-                    array_element: i,
+                    array_element: 0,
                 },
             }]);
 
@@ -314,7 +314,7 @@ impl PostProcessing {
                 width: width,
                 height: height,
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT * 2,
+                array_elements: 2,
                 mip_levels: 1,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -330,7 +330,7 @@ impl PostProcessing {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: &self.images,
-                    array_element: (frame * 2) + 1,
+                    array_element: 1,
                     sampler: SCREEN_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,
@@ -342,7 +342,7 @@ impl PostProcessing {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: &self.images,
-                    array_element: frame * 2,
+                    array_element: 0,
                     sampler: SCREEN_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,
@@ -357,7 +357,7 @@ impl PostProcessing {
             array_element: 0,
             value: DescriptorValue::Texture {
                 texture: image,
-                array_element: frame,
+                array_element: 0,
                 sampler: SCREEN_SAMPLER,
                 base_mip: 0,
                 mip_count: 1,
@@ -375,8 +375,6 @@ impl PostProcessing {
         settings: &PostProcessingSettings,
         commands: &'b mut CommandBuffer<'a>,
     ) {
-        let offset = frame * 2;
-
         let constants = [PostProcessingPushConstants {
             screen_size: canvas_size,
             exposure: settings.exposure,
@@ -393,7 +391,7 @@ impl PostProcessing {
                     source: ColorAttachmentSource::Texture {
                         texture: &self.images,
                         // Ping
-                        array_element: offset,
+                        array_element: 0,
                         mip_level: 0,
                     },
                     load_op: LoadOp::DontCare,

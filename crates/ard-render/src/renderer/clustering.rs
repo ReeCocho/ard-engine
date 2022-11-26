@@ -79,7 +79,7 @@ impl LightClustering {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<LightTable>() as u64,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("light_table")),
@@ -91,7 +91,7 @@ impl LightClustering {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<CameraFroxels>() as u64,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("camera_froxels")),
@@ -125,7 +125,7 @@ impl LightClustering {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &light_table,
-                        array_element: frame,
+                        array_element: 0,
                     },
                 },
                 DescriptorSetUpdate {
@@ -133,7 +133,7 @@ impl LightClustering {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &camera_froxels,
-                        array_element: frame,
+                        array_element: 0,
                     },
                 },
             ]);
@@ -167,7 +167,7 @@ impl LightClustering {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &camera_froxels,
-                        array_element: frame,
+                        array_element: 0,
                     },
                 },
             ]);

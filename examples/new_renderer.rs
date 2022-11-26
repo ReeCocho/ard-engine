@@ -220,6 +220,7 @@ impl View for Settings {
         res: &Res<Everything>,
     ) {
         let mut settings = res.get_mut::<RendererSettings>().unwrap();
+
         egui::Window::new("Settings").show(ctx, |ui| {
             ui.add(
                 egui::Slider::new(&mut settings.post_processing.exposure, 0.0..=1.0)

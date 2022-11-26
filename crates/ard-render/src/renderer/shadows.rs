@@ -109,7 +109,7 @@ impl Shadows {
                     width: dim,
                     height: dim,
                     depth: 1,
-                    array_elements: FRAMES_IN_FLIGHT,
+                    array_elements: 1,
                     mip_levels: 1,
                     texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                     memory_usage: MemoryUsage::GpuOnly,
@@ -321,7 +321,7 @@ impl Shadows {
                     color_attachments: Vec::default(),
                     depth_stencil_attachment: Some(DepthStencilAttachment {
                         texture: &cascade.map,
-                        array_element: frame,
+                        array_element: 0,
                         mip_level: 0,
                         load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
                         store_op: StoreOp::Store,

@@ -154,7 +154,7 @@ impl AmbientOcclusion {
                 width: 1,
                 height: 1,
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 mip_levels: 1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -192,22 +192,21 @@ impl AmbientOcclusion {
                 texture_array_element: 0,
             },
         );
-        for frame in 0..FRAMES_IN_FLIGHT {
-            commands.copy_buffer_to_texture(
-                &default_ao,
-                &ao_staging,
-                BufferTextureCopy {
-                    buffer_offset: 0,
-                    buffer_row_length: 0,
-                    buffer_image_height: 0,
-                    buffer_array_element: 0,
-                    texture_offset: (0, 0, 0),
-                    texture_extent: (1, 1, 1),
-                    texture_mip_level: 0,
-                    texture_array_element: frame,
-                },
-            );
-        }
+        commands.copy_buffer_to_texture(
+            &default_ao,
+            &ao_staging,
+            BufferTextureCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                buffer_array_element: 0,
+                texture_offset: (0, 0, 0),
+                texture_extent: (1, 1, 1),
+                texture_mip_level: 0,
+                texture_array_element: 0,
+            },
+        );
+
         ctx.transfer().submit(Some("ssao_noise_upload"), commands);
 
         let layout = DescriptorSetLayout::new(
@@ -323,7 +322,7 @@ impl AoImage {
                 width: 128,
                 height: 128,
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 mip_levels: 1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -340,7 +339,7 @@ impl AoImage {
                 width: 128,
                 height: 128,
                 depth: 1,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 mip_levels: 1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -400,7 +399,7 @@ impl AoImage {
                     width,
                     height,
                     depth: 1,
-                    array_elements: FRAMES_IN_FLIGHT,
+                    array_elements: 1,
                     mip_levels: 1,
                     texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                     memory_usage: MemoryUsage::GpuOnly,
@@ -417,7 +416,7 @@ impl AoImage {
                     width,
                     height,
                     depth: 1,
-                    array_elements: FRAMES_IN_FLIGHT,
+                    array_elements: 1,
                     mip_levels: 1,
                     texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                     memory_usage: MemoryUsage::GpuOnly,
@@ -450,7 +449,7 @@ impl AoImage {
                 array_element: 0,
                 value: DescriptorValue::StorageImage {
                     texture: &self.image,
-                    array_element: frame,
+                    array_element: 0,
                     mip: 0,
                 },
             },
@@ -459,7 +458,7 @@ impl AoImage {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: depth_src,
-                    array_element: frame,
+                    array_element: 0,
                     sampler: AO_DEPTH_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,
@@ -492,7 +491,7 @@ impl AoImage {
                 array_element: 0,
                 value: DescriptorValue::StorageImage {
                     texture: &self.blurred,
-                    array_element: frame,
+                    array_element: 0,
                     mip: 0,
                 },
             },
@@ -501,7 +500,7 @@ impl AoImage {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: &self.image,
-                    array_element: frame,
+                    array_element: 0,
                     sampler: AO_BLUR_SAMPLER,
                     base_mip: 0,
                     mip_count: 1,

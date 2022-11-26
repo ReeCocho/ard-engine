@@ -53,7 +53,7 @@ impl AdaptiveLuminance {
             ctx.clone(),
             BufferCreateInfo {
                 size: (LUMINANCE_HISTOGRAM_SIZE * std::mem::size_of::<u32>()) as u64,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("luminance_histogram")),
@@ -65,7 +65,7 @@ impl AdaptiveLuminance {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<u32>() as u64,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("luminance")),
@@ -178,7 +178,7 @@ impl AdaptiveLuminance {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &luminance_histogram,
-                        array_element: frame,
+                        array_element: 0,
                     },
                 }]);
 
@@ -204,7 +204,7 @@ impl AdaptiveLuminance {
                         array_element: 0,
                         value: DescriptorValue::StorageBuffer {
                             buffer: &luminance,
-                            array_element: frame,
+                            array_element: 0,
                         },
                     },
                     DescriptorSetUpdate {
@@ -212,7 +212,7 @@ impl AdaptiveLuminance {
                         array_element: 0,
                         value: DescriptorValue::StorageBuffer {
                             buffer: &luminance_histogram,
-                            array_element: frame,
+                            array_element: 0,
                         },
                     },
                 ]);
@@ -248,7 +248,7 @@ impl AdaptiveLuminance {
             array_element: 0,
             value: DescriptorValue::Texture {
                 texture: src,
-                array_element: frame,
+                array_element: 0,
                 sampler: HISTOGRAM_SRC_SAMPLER,
                 base_mip: 0,
                 mip_count: 1,

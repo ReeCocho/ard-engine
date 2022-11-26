@@ -949,7 +949,7 @@ impl RenderData {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<OutputObjectId>() as u64 * DEFAULT_OUTPUT_ID_CAP,
-                array_elements: FRAMES_IN_FLIGHT,
+                array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("output_ids")),
@@ -1002,7 +1002,7 @@ impl RenderData {
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
                         buffer: &clustering.light_table,
-                        array_element: frame,
+                        array_element: 0,
                     },
                 }]);
             }
@@ -1154,7 +1154,7 @@ impl RenderData {
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: &self.output_ids,
-                    array_element: frame,
+                    array_element: 0,
                 },
             },
         ]);
@@ -1166,7 +1166,7 @@ impl RenderData {
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: hzb_tex,
-                    array_element: frame,
+                    array_element: 0,
                     sampler: Sampler {
                         min_filter: Filter::Nearest,
                         mag_filter: Filter::Nearest,
@@ -1228,7 +1228,7 @@ impl RenderData {
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: &self.output_ids,
-                    array_element: frame,
+                    array_element: 0,
                 },
             },
             DescriptorSetUpdate {
@@ -1317,7 +1317,7 @@ impl RenderData {
             array_element: 0,
             value: DescriptorValue::Texture {
                 texture: ao_tex,
-                array_element: frame,
+                array_element: 0,
                 sampler: AO_SAMPLER,
                 base_mip: 0,
                 mip_count: 1,
@@ -1351,7 +1351,7 @@ impl RenderData {
                         array_element: i,
                         value: DescriptorValue::Texture {
                             texture: &cascade.map,
-                            array_element: frame,
+                            array_element: 0,
                             sampler: SHADOW_SAMPLER,
                             base_mip: 0,
                             mip_count: 1,
