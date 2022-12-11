@@ -1,4 +1,0 @@
-(
-    pbr_pipeline: "fallback/pbr.pip",
-    model: "sfsdf/test_scene.glb",
-)

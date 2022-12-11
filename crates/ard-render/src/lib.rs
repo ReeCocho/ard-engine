@@ -17,6 +17,25 @@ use ard_window::window::WindowId;
 use ard_winit::windows::WinitWindows;
 use renderer::{Renderer, RendererSettings};
 
+pub mod prelude {
+    pub use crate::{
+        RenderPlugin,
+        asset::{
+            cube_map::CubeMapAsset,
+            material::MaterialAsset,
+            model::ModelAsset,
+            RenderAssetsPlugin
+        },
+        camera::{CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
+        factory::{Factory, ShaderCreateInfo},
+        lighting::PointLight,
+        material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
+        mesh::{MeshBounds, MeshCreateInfo, Vertices},
+        renderer::{Renderer, RendererSettings, gui::Gui, Model, RenderLayer, Renderable},
+        static_geometry::StaticGeometry,
+    };
+}
+
 #[derive(Clone)]
 pub struct RenderPlugin {
     pub window: WindowId,

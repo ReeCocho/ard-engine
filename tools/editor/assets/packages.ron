@@ -1,6 +1,0 @@
-PackageList(
-    packages: [
-		"editor",
-		"game"
-	]
-)

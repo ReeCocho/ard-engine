@@ -56,6 +56,14 @@ fn main() {
         Path::new("./examples/shaders/cascade_vis.frag"),
         Path::new("./examples/assets/new_render/"),
     );
+    compile(
+        Path::new("./examples/shaders/cube.vert"),
+        Path::new("./examples/assets/new_render/"),
+    );
+    compile(
+        Path::new("./examples/shaders/cube.frag"),
+        Path::new("./examples/assets/new_render/"),
+    );
 }
 
 fn compile(in_path: &Path, out_path: &Path) {

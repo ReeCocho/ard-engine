@@ -1,4 +1,0 @@
-(
-    pbr_pipeline: "fallback/pbr.pip",
-    model: "sfsdf/da_cube.glb",
-)

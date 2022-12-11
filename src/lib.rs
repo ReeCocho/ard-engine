@@ -23,22 +23,6 @@ pub mod assets {
     pub use ard_assets::*;
 }
 
-#[cfg(feature = "graphics_assets")]
-pub mod graphics_assets {
-    pub use ard_graphics_assets::*;
-}
-
-#[cfg(feature = "graphics_vk")]
-pub mod graphics {
-    pub mod prelude {
-        pub use ard_graphics_api::prelude::*;
-        pub use ard_graphics_vk::prelude::*;
-    }
-
-    pub use ard_graphics_api::*;
-    pub use ard_graphics_vk::*;
-}
-
 #[cfg(feature = "input")]
 pub mod input {
     pub use ard_input::*;
@@ -53,4 +37,15 @@ pub mod window {
 
     pub use ard_window::*;
     pub use ard_winit::*;
+}
+
+#[cfg(feature = "render")]
+pub mod render {
+    pub mod prelude {
+        pub use ard_render::prelude::*;
+        pub use ard_pal::prelude::*;
+    }
+
+    pub use ard_render::*;
+    pub use ard_pal::*;
 }

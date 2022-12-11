@@ -1,29 +1,10 @@
 [package]
-name = "ard-editor"
+name = "editor"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
-futures = "0.3"
-imgui = { version = "0.8.1-alpha.0", features = ["docking"], git = "https://github.com/imgui-rs/imgui-rs" }
-async-trait = "0.1"
-serde = { version = "1", features = ["derive"] }
-ron = "0.7"
-crossbeam-channel = "0.5"
-thiserror = "1.0"
-fs_extra = "1"
-smallvec = { version = "1", features = ["serde"] }
-rfd = "0.9"
-ard-engine = { path = "../../", version = "0.1", features = [ "input", "assets", "window" ] }
-paste = "1"
-
-[profile.dev]
-opt-level = 0
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
-debug = false
+tokio = { version = "1", features = [ "rt-multi-thread" ] }
+ard-engine = { path = "../../", version = "0.1" }

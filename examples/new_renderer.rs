@@ -2,29 +2,26 @@ use ard_assets::prelude::*;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_formats::mesh::VertexLayout;
-use ard_input::{InputState, Key};
-use ard_math::{EulerRot, Mat4, Vec3, Vec4, Vec4Swizzles};
+use ard_math::{Mat4, Vec3};
 use ard_pal::prelude::{CullMode, FrontFace, PresentMode};
 use ard_render::{
     asset::{
         cube_map::CubeMapAsset, material::MaterialAsset, model::ModelAsset, RenderAssetsPlugin,
     },
-    camera::{Camera, CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
+    camera::{CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
     factory::{Factory, ShaderCreateInfo},
     lighting::PointLight,
-    material::{Material, MaterialCreateInfo, MaterialInstanceCreateInfo},
+    material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
     mesh::{MeshBounds, MeshCreateInfo, Vertices},
-    renderer::{
-        gui::{Gui, View},
-        Model, PreRender, RenderLayer, Renderable, RendererSettings,
-    },
-    static_geometry::{StaticGeometry, StaticRenderableHandle},
+    renderer::{gui::Gui, Model, RenderLayer, Renderable, RendererSettings},
+    static_geometry::StaticGeometry,
     *,
 };
 use ard_window::prelude::*;
 use ard_winit::prelude::*;
 use rand::Rng;
-use std::time::Instant;
+
+use crate::util::{CameraMover, FrameRate, MainCamera, Settings, StaticHandles, Visualization};
 
 #[path = "./util.rs"]
 mod util;
@@ -45,7 +42,7 @@ fn main() {
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
             settings: RendererSettings {
-                present_mode: PresentMode::Immediate,
+                present_mode: PresentMode::Mailbox,
                 ..Default::default()
             },
             debug: false,
@@ -58,209 +55,6 @@ fn main() {
         .run();
 }
 
-#[derive(Component)]
-struct MainCamera(Camera);
-
-#[derive(Resource)]
-struct StaticHandles(Vec<StaticRenderableHandle>);
-
-#[derive(SystemState)]
-struct CameraMover {
-    pub cursor_locked: bool,
-    pub look_speed: f32,
-    pub move_speed: f32,
-    pub entity: Entity,
-    pub position: Vec3,
-    pub rotation: Vec3,
-    pub descriptor: CameraDescriptor,
-}
-
-impl CameraMover {
-    fn on_tick(
-        &mut self,
-        evt: Tick,
-        _: Commands,
-        queries: Queries<(Write<MainCamera>,)>,
-        res: Res<(Read<Factory>, Read<InputState>, Write<Windows>)>,
-    ) {
-        let factory = res.get::<Factory>().unwrap();
-        let input = res.get::<InputState>().unwrap();
-        let mut windows = res.get_mut::<Windows>().unwrap();
-        let main_camera = queries.get::<Write<MainCamera>>(self.entity).unwrap();
-
-        // Rotate the camera
-        let delta = evt.0.as_secs_f32();
-        if self.cursor_locked {
-            let (mx, my) = input.mouse_delta();
-            self.rotation.x += (my as f32) * self.look_speed;
-            self.rotation.y += (mx as f32) * self.look_speed;
-            self.rotation.x = self.rotation.x.clamp(-85.0, 85.0);
-        }
-
-        // Direction from rotation
-        let rot = Mat4::from_euler(
-            EulerRot::YXZ,
-            self.rotation.y.to_radians(),
-            self.rotation.x.to_radians(),
-            0.0,
-        );
-
-        // Move the camera
-        let right = rot.col(0);
-        let up = rot.col(1);
-        let forward = rot.col(2);
-
-        if self.cursor_locked {
-            if input.key(Key::W) {
-                self.position += forward.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::S) {
-                self.position -= forward.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::A) {
-                self.position -= right.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::D) {
-                self.position += right.xyz() * delta * self.move_speed;
-            }
-        }
-
-        // Lock cursor
-        if input.key_up(Key::M) {
-            self.cursor_locked = !self.cursor_locked;
-
-            let window = windows.get_mut(WindowId::primary()).unwrap();
-
-            window.set_cursor_lock_mode(self.cursor_locked);
-            window.set_cursor_visibility(!self.cursor_locked);
-        }
-
-        // Toggle AO
-        if input.key_up(Key::O) {
-            self.descriptor.ao = !self.descriptor.ao;
-        }
-
-        // Update the camera
-        self.descriptor.position = self.position;
-        self.descriptor.target = self.position + forward.xyz();
-        self.descriptor.up = up.xyz();
-        self.descriptor.near = 0.1;
-        self.descriptor.far = 150.0;
-        factory.update_camera(&main_camera.0, self.descriptor.clone());
-    }
-}
-
-impl From<CameraMover> for System {
-    fn from(mover: CameraMover) -> Self {
-        SystemBuilder::new(mover)
-            .with_handler(CameraMover::on_tick)
-            .build()
-    }
-}
-
-#[derive(SystemState)]
-pub struct FrameRate {
-    frame_ctr: usize,
-    last_sec: Instant,
-}
-
-impl Default for FrameRate {
-    fn default() -> Self {
-        FrameRate {
-            frame_ctr: 0,
-            last_sec: Instant::now(),
-        }
-    }
-}
-
-impl FrameRate {
-    fn pre_render(&mut self, _: PreRender, _: Commands, _: Queries<()>, _: Res<()>) {
-        let now = Instant::now();
-        self.frame_ctr += 1;
-        if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {
-            println!("Frame Rate: {}", self.frame_ctr);
-            self.last_sec = now;
-            self.frame_ctr = 0;
-        }
-    }
-}
-
-impl Into<System> for FrameRate {
-    fn into(self) -> System {
-        SystemBuilder::new(self)
-            .with_handler(FrameRate::pre_render)
-            .build()
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Visualization {
-    None,
-    ClusterSlices,
-    ShadowCascades,
-    ClusterHeatMap,
-}
-
-struct Settings {
-    slice_view_mat: Material,
-    cluster_heatmap_mat: Material,
-    cascade_view_mat: Material,
-    visualization: Visualization,
-}
-
-impl View for Settings {
-    fn show(
-        &mut self,
-        ctx: &egui::Context,
-        _: &Commands,
-        _: &Queries<Everything>,
-        res: &Res<Everything>,
-    ) {
-        let mut settings = res.get_mut::<RendererSettings>().unwrap();
-
-        egui::Window::new("Settings").show(ctx, |ui| {
-            ui.add(
-                egui::Slider::new(&mut settings.post_processing.exposure, 0.0..=1.0)
-                    .step_by(0.01)
-                    .text("Exposure"),
-            );
-            ui.toggle_value(&mut settings.post_processing.fxaa, "FXAA");
-            ui.toggle_value(&mut settings.lock_occlusion, "Lock Occlusion");
-
-            egui::ComboBox::from_label("Visualization")
-                .selected_text(format!("{:?}", self.visualization))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.visualization, Visualization::None, "None");
-                    ui.selectable_value(
-                        &mut self.visualization,
-                        Visualization::ClusterSlices,
-                        "Cluster Slices",
-                    );
-                    ui.selectable_value(
-                        &mut self.visualization,
-                        Visualization::ClusterHeatMap,
-                        "Cluster Heat Map",
-                    );
-                    ui.selectable_value(
-                        &mut self.visualization,
-                        Visualization::ShadowCascades,
-                        "Shadow Cascades",
-                    );
-                });
-        });
-
-        settings.material_override = match &self.visualization {
-            Visualization::None => None,
-            Visualization::ClusterSlices => Some(self.slice_view_mat.clone()),
-            Visualization::ClusterHeatMap => Some(self.cluster_heatmap_mat.clone()),
-            Visualization::ShadowCascades => Some(self.cascade_view_mat.clone()),
-        };
-    }
-}
-
 fn setup(app: &mut App) {
     let factory = app.resources.get::<Factory>().unwrap();
     let assets = app.resources.get::<Assets>().unwrap();
@@ -269,7 +63,7 @@ fn setup(app: &mut App) {
 
     // Disable frame rate limit
     let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
-    settings.render_time = None;
+    // settings.render_time = None;
     settings.render_scale = 1.0;
 
     // Add in GUI views

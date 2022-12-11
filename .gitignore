@@ -21,7 +21,8 @@ Cargo.lock
 # SPIRV Assembly
 *.spv
 
-# Engine files
+# Engine files and folders
+build/
 log.txt
 *.ini
 *.meta

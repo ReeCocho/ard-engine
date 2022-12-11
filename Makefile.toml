@@ -1,0 +1,42 @@
+[tasks.ignore-members]
+workspace = false
+
+[config]
+default_to_workspace = false
+
+[tasks.build-gltf-oven]
+command = "cargo"
+args = [ "build", "--package", "gltf-oven" ]
+
+[tasks.build-ibl-oven]
+command = "cargo"
+args = [ "build", "--package", "ibl-oven" ]
+
+[tasks.build-editor]
+command = "cargo"
+args = [ "build", "--package", "editor" ]
+
+[tasks.move-files]
+script_runner = "@shell"
+dependencies = [
+    "build-gltf-oven",
+    "build-ibl-oven",
+    "build-editor"
+]
+script = '''
+mkdir ./build/debug/tools/
+cp ./target/debug/gltf-oven.exe ./build/debug/tools/gltf-oven.exe
+cp ./target/debug/ibl-oven.exe ./build/debug/tools/ibl-oven.exe
+cp ./target/debug/editor.exe ./build/debug/ard-editor.exe
+cp ./target/debug/editor.pdb ./build/debug/ard-editor.pdb
+cp -r ./data/ ./build/debug/
+'''
+
+[tasks.build]
+clear = true
+dependencies = [
+    "build-gltf-oven",
+    "build-ibl-oven",
+    "build-editor",
+    "move-files"
+]
