@@ -123,7 +123,21 @@ impl GlobalResourceUsage {
     ) -> vk::ImageLayout {
         self.image_layouts
             .insert((image, array_elem, mip_level), layout)
-            .unwrap_or_default()
+            .unwrap_or(vk::ImageLayout::UNDEFINED)
+    }
+
+    #[inline(always)]
+    pub fn set_layout(
+        &mut self,
+        image: vk::Image,
+        array_elem: u32,
+        mip_level: u32,
+        layout: vk::ImageLayout,
+    ) {
+        *self
+            .image_layouts
+            .entry((image, array_elem, mip_level))
+            .or_default() = layout;
     }
 }
 
@@ -161,7 +175,7 @@ impl<'a> PipelineTracker<'a> {
             FxHashMap::<(vk::Buffer, u32), vk::BufferMemoryBarrier>::default();
 
         // Analyze each usage
-        for (resource, usage) in scope.usages {
+        for (resource, mut usage) in scope.usages {
             // Check the global tracker to see if we need to wait on certain queues or if we need
             // a layout transition.
             let resc_usage = QueueUsage {
@@ -198,80 +212,32 @@ impl<'a> PipelineTracker<'a> {
                 ),
             };
 
+            // If we have mismatching layouts, a couple things happen:
+            // 1. A barrier is needed
+            // 2. We need the transfer stage
+            let mut needs_barrier = false;
+            if old_layout != usage.layout {
+                needs_barrier = true;
+                usage.access |= vk::AccessFlags::TRANSFER_WRITE | vk::AccessFlags::TRANSFER_READ;
+                usage.stage |= vk::PipelineStageFlags::TRANSFER;
+            }
+
             // Check if this resource was last used by a queue other than us
             if let Some(old_queue_usage) = old_queue_usage {
                 if old_queue_usage.queue != self.queue_ty {
-                    // The new usage might be a combo of a bunch of other usages, so we have to
-                    // select them in order. This is OMEGA ugly. Look into changing this
-                    let new_stage = if usage.stage.contains(vk::PipelineStageFlags::BOTTOM_OF_PIPE)
-                    {
-                        vk::PipelineStageFlags::BOTTOM_OF_PIPE
-                    } else if usage.stage.contains(vk::PipelineStageFlags::COMPUTE_SHADER) {
-                        vk::PipelineStageFlags::COMPUTE_SHADER
-                    } else if usage.stage.contains(vk::PipelineStageFlags::TRANSFER) {
-                        vk::PipelineStageFlags::TRANSFER
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                    {
-                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::LATE_FRAGMENT_TESTS)
-                    {
-                        vk::PipelineStageFlags::LATE_FRAGMENT_TESTS
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
-                    {
-                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::FRAGMENT_SHADER)
-                    {
-                        vk::PipelineStageFlags::FRAGMENT_SHADER
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::GEOMETRY_SHADER)
-                    {
-                        vk::PipelineStageFlags::GEOMETRY_SHADER
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::TESSELLATION_EVALUATION_SHADER)
-                    {
-                        vk::PipelineStageFlags::TESSELLATION_EVALUATION_SHADER
-                    } else if usage
-                        .stage
-                        .contains(vk::PipelineStageFlags::TESSELLATION_CONTROL_SHADER)
-                    {
-                        vk::PipelineStageFlags::TESSELLATION_CONTROL_SHADER
-                    } else if usage.stage.contains(vk::PipelineStageFlags::VERTEX_SHADER) {
-                        vk::PipelineStageFlags::VERTEX_SHADER
-                    } else if usage.stage.contains(vk::PipelineStageFlags::VERTEX_INPUT) {
-                        vk::PipelineStageFlags::VERTEX_INPUT
-                    } else if usage.stage.contains(vk::PipelineStageFlags::DRAW_INDIRECT) {
-                        vk::PipelineStageFlags::DRAW_INDIRECT
-                    } else {
-                        vk::PipelineStageFlags::TOP_OF_PIPE
-                    };
                     let entry = self
                         .queues
                         .entry(old_queue_usage.queue)
-                        .or_insert(vk::PipelineStageFlags::BOTTOM_OF_PIPE);
-                    if crate::util::rank_pipeline_stage(new_stage)
-                        < crate::util::rank_pipeline_stage(*entry)
-                    {
-                        *entry = new_stage;
-                    }
+                        .or_insert(vk::PipelineStageFlags::TOP_OF_PIPE);
+                    *entry |= usage.stage;
                 }
             }
 
-            // Barrier is required if we have mismatching image layouts
-            let mut needs_barrier = old_layout != usage.layout;
             let (src_access, src_stage) = match self.usages.get_mut(&resource) {
                 Some(old) => {
                     // Anything other than read-after-read requires a barrier
-                    if !(read_accesses.contains(old.access) && read_accesses.contains(usage.access))
+                    if !((read_accesses | old.access == read_accesses)
+                        && (read_accesses | usage.access == read_accesses))
                     {
                         needs_barrier = true;
                     }
@@ -315,7 +281,7 @@ impl<'a> PipelineTracker<'a> {
                                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                                 .image(texture)
                                 .subresource_range(vk::ImageSubresourceRange {
-                                    aspect_mask: aspect_mask,
+                                    aspect_mask,
                                     base_mip_level: mip_level,
                                     level_count: 1,
                                     base_array_layer: array_elem,
@@ -341,7 +307,7 @@ impl<'a> PipelineTracker<'a> {
                                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                                 .image(cube_map)
                                 .subresource_range(vk::ImageSubresourceRange {
-                                    aspect_mask: aspect_mask,
+                                    aspect_mask,
                                     base_mip_level: mip_level,
                                     level_count: 1,
                                     base_array_layer: array_elem * 6,

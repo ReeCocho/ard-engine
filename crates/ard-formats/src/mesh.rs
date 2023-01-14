@@ -61,36 +61,12 @@ impl VertexLayout {
                 format: VertexFormat::XyzwF32,
                 offset: 0,
             });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyzwF32,
-                offset: 0,
-            });
         }
 
         if self.contains(VertexLayout::TANGENT) {
             state.bindings.push(VertexInputBinding {
                 binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec4>() as u32,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyzwF32,
-                offset: 0,
-            });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
@@ -113,36 +89,12 @@ impl VertexLayout {
                 format: VertexFormat::XyzwF32,
                 offset: 0,
             });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyzwF32,
-                offset: 0,
-            });
         }
 
         if self.contains(VertexLayout::UV0) {
             state.bindings.push(VertexInputBinding {
                 binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyF32,
-                offset: 0,
-            });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {
@@ -165,18 +117,6 @@ impl VertexLayout {
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyF32,
-                offset: 0,
-            });
         }
 
         if self.contains(VertexLayout::UV2) {
@@ -191,36 +131,12 @@ impl VertexLayout {
                 format: VertexFormat::XyF32,
                 offset: 0,
             });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyF32,
-                offset: 0,
-            });
         }
 
         if self.contains(VertexLayout::UV3) {
             state.bindings.push(VertexInputBinding {
                 binding: state.bindings.len() as u32,
                 stride: std::mem::size_of::<Vec2>() as u32,
-                input_rate: VertexInputRate::Vertex,
-            });
-            state.attributes.push(VertexInputAttribute {
-                binding: state.attributes.len() as u32,
-                location: state.attributes.len() as u32,
-                format: VertexFormat::XyF32,
-                offset: 0,
-            });
-        } else {
-            state.bindings.push(VertexInputBinding {
-                binding: state.bindings.len() as u32,
-                stride: 0,
                 input_rate: VertexInputRate::Vertex,
             });
             state.attributes.push(VertexInputAttribute {

@@ -13,7 +13,7 @@ layout(location = 1) out vec2 OUT_UV0;
 VsOut entry() {
     VsOut vs_out;
     OUT_UV0 = UV0;
-    vs_out.frag_pos = (get_model_matrix() * vec4(POSITION.xyz, 1.0)).xyz;
+    vs_out.frag_pos = (MODEL_MATRIX * vec4(POSITION.xyz, 1.0)).xyz;
     gl_Position = camera.vp * vec4(vs_out.frag_pos, 1.0);
     return vs_out;
 }

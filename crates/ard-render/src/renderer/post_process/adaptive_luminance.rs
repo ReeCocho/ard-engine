@@ -23,7 +23,7 @@ const HISTOGRAM_SRC_SAMPLER: Sampler = Sampler {
     anisotropy: None,
     compare: None,
     min_lod: unsafe { NotNan::new_unchecked(0.0) },
-    max_lod: None,
+    max_lod: Some(unsafe { NotNan::new_unchecked(0.0) }),
     border_color: None,
     unnormalize_coords: true,
 };

@@ -94,17 +94,23 @@ impl Staging {
     ) {
         // TODO: When drain filter gets put into stable, this can all be done in one function chain
         let mut to_remove = Vec::default();
-        for (i, upload) in self.uploads.iter_mut().enumerate() {
-            if let Some(main_job) = &upload.main_job {
-                if main_job.poll_status() == JobStatus::Running {
-                    continue;
+        loop {
+            for (i, upload) in self.uploads.iter_mut().enumerate() {
+                if let Some(main_job) = &upload.main_job {
+                    if main_job.poll_status() == JobStatus::Running {
+                        continue;
+                    }
+                }
+                if upload.transfer_job.poll_status() == JobStatus::Complete {
+                    to_remove.push(i);
+                    for resource in &upload.resources {
+                        on_complete(*resource);
+                    }
                 }
             }
-            if upload.transfer_job.poll_status() == JobStatus::Complete {
-                to_remove.push(i);
-                for resource in &upload.resources {
-                    on_complete(*resource);
-                }
+
+            if !(blocking && to_remove.len() != self.uploads.len()) {
+                break;
             }
         }
 
@@ -244,8 +250,8 @@ impl Staging {
                         // Blit each image in the LOD chain
                         let (mut mip_width, mut mip_height, _) = dst.texture.dims();
                         for i in 1..(dst.mip_levels as usize) {
-                            commands.blit_texture(
-                                &dst.texture,
+                            commands.blit(
+                                BlitSource::Texture(&dst.texture),
                                 BlitDestination::Texture(&dst.texture),
                                 Blit {
                                     src_min: (0, 0, 0),

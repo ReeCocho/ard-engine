@@ -10,7 +10,7 @@ use ard_window::window::Window;
 use bytemuck::{Pod, Zeroable};
 use ordered_float::NotNan;
 
-use crate::shader_constants::FRAMES_IN_FLIGHT;
+use crate::{factory::textures::TextureSets, shader_constants::FRAMES_IN_FLIGHT};
 
 const DEFAULT_VB_SIZE: u64 = 256;
 const DEFAULT_IB_SIZE: u64 = 256;
@@ -37,8 +37,9 @@ pub struct Gui {
     egui: egui::Context,
     input: egui::RawInput,
     layout: DescriptorSetLayout,
-    set: DescriptorSet,
-    pipeline: GraphicsPipeline,
+    sets: Vec<DescriptorSet>,
+    font_pipeline: GraphicsPipeline,
+    tex_pipeline: GraphicsPipeline,
     font_texture: Texture,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -59,6 +60,7 @@ pub trait View {
 #[derive(Copy, Clone)]
 struct GuiPushConstants {
     screen_size: Vec2,
+    texture_id: u32,
 }
 
 struct DrawCall {
@@ -66,6 +68,7 @@ struct DrawCall {
     index_offset: usize,
     index_count: usize,
     scissor: Scissor,
+    texture_id: u32,
 }
 
 struct TextureDelta {
@@ -89,16 +92,26 @@ impl Gui {
 
 // Internal
 impl Gui {
-    pub(crate) fn new(ctx: Context) -> Self {
+    pub(crate) fn new(ctx: Context, textures_layout: &DescriptorSetLayout) -> Self {
         let layout = DescriptorSetLayout::new(
             ctx.clone(),
             DescriptorSetLayoutCreateInfo {
-                bindings: vec![DescriptorBinding {
-                    binding: 0,
-                    ty: DescriptorType::Texture,
-                    count: 1,
-                    stage: ShaderStage::Fragment,
-                }],
+                bindings: vec![
+                    // Font texture
+                    DescriptorBinding {
+                        binding: 0,
+                        ty: DescriptorType::Texture,
+                        count: 1,
+                        stage: ShaderStage::Fragment,
+                    },
+                    // Scene texture
+                    DescriptorBinding {
+                        binding: 1,
+                        ty: DescriptorType::Texture,
+                        count: 1,
+                        stage: ShaderStage::Fragment,
+                    },
+                ],
             },
         )
         .unwrap();
@@ -121,14 +134,14 @@ impl Gui {
         )
         .unwrap();
 
-        let pipeline = GraphicsPipeline::new(
+        let font_pipeline = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
                 stages: ShaderStages {
-                    vertex,
-                    fragment: Some(fragment),
+                    vertex: vertex.clone(),
+                    fragment: Some(fragment.clone()),
                 },
-                layouts: vec![layout.clone()],
+                layouts: vec![layout.clone(), textures_layout.clone()],
                 vertex_input: VertexInputState {
                     attributes: vec![
                         // Position
@@ -182,7 +195,73 @@ impl Gui {
                     }],
                 }),
                 push_constants_size: Some(std::mem::size_of::<GuiPushConstants>() as u32),
-                debug_name: Some(String::from("egui_pipeline")),
+                debug_name: Some(String::from("egui_font_pipeline")),
+            },
+        )
+        .unwrap();
+
+        let tex_pipeline = GraphicsPipeline::new(
+            ctx.clone(),
+            GraphicsPipelineCreateInfo {
+                stages: ShaderStages {
+                    vertex,
+                    fragment: Some(fragment),
+                },
+                layouts: vec![layout.clone(), textures_layout.clone()],
+                vertex_input: VertexInputState {
+                    attributes: vec![
+                        // Position
+                        VertexInputAttribute {
+                            binding: 0,
+                            location: 0,
+                            format: VertexFormat::XyF32,
+                            offset: 0,
+                        },
+                        // UV
+                        VertexInputAttribute {
+                            binding: 0,
+                            location: 1,
+                            format: VertexFormat::XyF32,
+                            offset: 2 * std::mem::size_of::<f32>() as u32,
+                        },
+                        // Color
+                        VertexInputAttribute {
+                            binding: 0,
+                            location: 2,
+                            format: VertexFormat::XyzwU8,
+                            offset: 4 * std::mem::size_of::<f32>() as u32,
+                        },
+                    ],
+                    bindings: vec![VertexInputBinding {
+                        binding: 0,
+                        stride: std::mem::size_of::<egui::epaint::Vertex>() as u32,
+                        input_rate: VertexInputRate::Vertex,
+                    }],
+                    topology: PrimitiveTopology::TriangleList,
+                },
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::None,
+                    front_face: FrontFace::Clockwise,
+                },
+                depth_stencil: None,
+                color_blend: Some(ColorBlendState {
+                    attachments: vec![ColorBlendAttachment {
+                        write_mask: ColorComponents::R
+                            | ColorComponents::G
+                            | ColorComponents::B
+                            | ColorComponents::A,
+                        blend: true,
+                        color_blend_op: BlendOp::Add,
+                        src_color_blend_factor: BlendFactor::SrcAlpha,
+                        dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
+                        alpha_blend_op: BlendOp::Add,
+                        src_alpha_blend_factor: BlendFactor::One,
+                        dst_alpha_blend_factor: BlendFactor::Zero,
+                    }],
+                }),
+                push_constants_size: Some(std::mem::size_of::<GuiPushConstants>() as u32),
+                debug_name: Some(String::from("egui_tex_pipeline")),
             },
         )
         .unwrap();
@@ -204,26 +283,31 @@ impl Gui {
         )
         .unwrap();
 
-        let mut set = DescriptorSet::new(
-            ctx.clone(),
-            DescriptorSetCreateInfo {
-                layout: layout.clone(),
-                debug_name: Some(String::from("egui_font_set")),
-            },
-        )
-        .unwrap();
+        let mut sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for frame in 0..FRAMES_IN_FLIGHT {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layout.clone(),
+                    debug_name: Some(format!("egui_font_set_{frame}")),
+                },
+            )
+            .unwrap();
 
-        set.update(&[DescriptorSetUpdate {
-            binding: 0,
-            array_element: 0,
-            value: DescriptorValue::Texture {
-                texture: &font_texture,
+            set.update(&[DescriptorSetUpdate {
+                binding: 0,
                 array_element: 0,
-                sampler: FONT_SAMPLER,
-                base_mip: 0,
-                mip_count: 1,
-            },
-        }]);
+                value: DescriptorValue::Texture {
+                    texture: &font_texture,
+                    array_element: 0,
+                    sampler: FONT_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            }]);
+
+            sets.push(set);
+        }
 
         let vertex_buffer = Buffer::new(
             ctx.clone(),
@@ -255,8 +339,9 @@ impl Gui {
             egui: egui::Context::default(),
             input: egui::RawInput::default(),
             layout,
-            set,
-            pipeline,
+            sets,
+            font_pipeline,
+            tex_pipeline,
             font_texture,
             vertex_buffer,
             index_buffer,
@@ -380,6 +465,7 @@ impl Gui {
     pub(crate) fn prepare_draw(
         &mut self,
         frame: usize,
+        scene_tex: (&Texture, usize),
         canvas_size: IVec2,
         dt: f32,
         commands: &ard_ecs::prelude::Commands,
@@ -391,6 +477,19 @@ impl Gui {
             min: egui::Pos2::ZERO,
             max: egui::Pos2::new(canvas_size.x as f32, canvas_size.y as f32),
         });
+
+        // Bind scene texture
+        self.sets[frame].update(&[DescriptorSetUpdate {
+            binding: 1,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: scene_tex.0,
+                array_element: scene_tex.1,
+                sampler: FONT_SAMPLER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }]);
 
         // Draw all views
         let raw_input = std::mem::take(&mut self.input);
@@ -471,6 +570,10 @@ impl Gui {
                     width: clip_max_x - clip_min_x,
                     height: clip_max_y - clip_min_y,
                 },
+                texture_id: match mesh.texture_id {
+                    egui::TextureId::Managed(_) => u32::MAX,
+                    egui::TextureId::User(id) => id as u32,
+                },
             });
 
             vb_offset += mesh.vertices.len();
@@ -501,14 +604,14 @@ impl Gui {
                     continue;
                 }
                 egui::ImageData::Font(img) => img
-                    .srgba_pixels(1.0)
+                    .srgba_pixels(None)
                     .map(|color| color.to_array())
                     .collect::<Vec<_>>(),
             };
 
             // If the texture size mismatches, we recreate and rebind the texture
             let (width, height, _) = self.font_texture.dims();
-            if width != size.x || height != size.y {
+            if width < size.x || height < size.y {
                 self.font_texture = Texture::new(
                     self.ctx.clone(),
                     TextureCreateInfo {
@@ -526,17 +629,19 @@ impl Gui {
                 )
                 .unwrap();
 
-                self.set.update(&[DescriptorSetUpdate {
-                    binding: 0,
-                    array_element: 0,
-                    value: DescriptorValue::Texture {
-                        texture: &self.font_texture,
+                for frame in 0..FRAMES_IN_FLIGHT {
+                    self.sets[frame].update(&[DescriptorSetUpdate {
+                        binding: 0,
                         array_element: 0,
-                        sampler: FONT_SAMPLER,
-                        base_mip: 0,
-                        mip_count: 1,
-                    },
-                }]);
+                        value: DescriptorValue::Texture {
+                            texture: &self.font_texture,
+                            array_element: 0,
+                            sampler: FONT_SAMPLER,
+                            base_mip: 0,
+                            mip_count: 1,
+                        },
+                    }]);
+                }
             }
 
             self.texture_deltas.push(TextureDelta {
@@ -575,10 +680,11 @@ impl Gui {
         &'a self,
         frame: usize,
         screen_size: Vec2,
+        textures_sets: &'a TextureSets,
         pass: &'b mut RenderPass<'a>,
     ) {
-        pass.bind_pipeline(self.pipeline.clone());
-        pass.bind_sets(0, vec![&self.set]);
+        pass.bind_pipeline(self.font_pipeline.clone());
+        pass.bind_sets(0, vec![&self.sets[frame], textures_sets.set(frame)]);
         pass.bind_vertex_buffers(
             0,
             vec![VertexBind {
@@ -589,10 +695,33 @@ impl Gui {
         );
         pass.bind_index_buffer(&self.index_buffer, frame, 0, IndexType::U32);
 
-        let constants = [GuiPushConstants { screen_size }];
+        let mut last_texture_id = u32::MAX;
+        let constants = [GuiPushConstants {
+            screen_size,
+            texture_id: last_texture_id,
+        }];
         pass.push_constants(&bytemuck::cast_slice(&constants));
 
         for draw in &self.draw_calls {
+            if draw.texture_id != last_texture_id {
+                if draw.texture_id == u32::MAX {
+                    pass.bind_pipeline(self.font_pipeline.clone());
+                } else {
+                    pass.bind_pipeline(self.tex_pipeline.clone());
+                }
+
+                let constants = [GuiPushConstants {
+                    screen_size,
+                    texture_id: draw.texture_id,
+                }];
+                pass.push_constants(&bytemuck::cast_slice(&constants));
+                last_texture_id = draw.texture_id;
+            }
+
+            if draw.scissor.width == 0 || draw.scissor.height == 0 {
+                continue;
+            }
+
             pass.set_scissor(0, draw.scissor);
             pass.draw_indexed(
                 draw.index_count,

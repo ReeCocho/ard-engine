@@ -198,7 +198,7 @@ fn main() {
     )
     .unwrap();
 
-    let mut uniform_buffer = Buffer::new(
+    let uniform_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
             size: std::mem::size_of::<Mat4>() as u64,

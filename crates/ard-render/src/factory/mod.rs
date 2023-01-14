@@ -128,6 +128,9 @@ impl Factory {
         let mut cameras = self.0.cameras.lock().unwrap();
         let mut active_cameras = self.0.active_cameras.lock().unwrap();
 
+        // Check for any new upload requests
+        staging.upload(&mut mesh_buffers, &mut textures, &mut cube_maps);
+
         // Check if any uploads are complete, and if they are handle them appropriately
         staging.flush_complete_uploads(false, |resc| match resc {
             StagingResource::Mesh(id) => {
@@ -156,9 +159,6 @@ impl Factory {
             }
             StagingResource::CubeMap(_) => {}
         });
-
-        // Check for any new upload requests
-        staging.upload(&mut mesh_buffers, &mut textures, &mut cube_maps);
 
         // Flush material UBOs
         material_buffers.flush(&material_instances, frame);

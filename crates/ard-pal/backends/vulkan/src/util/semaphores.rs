@@ -26,7 +26,9 @@ impl SemaphoreTracker {
             value: None,
             stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
         });
-        info.value = new_info.value;
+        if info.value.unwrap_or_default() < new_info.value.unwrap_or_default() {
+            info.value = new_info.value;
+        }
         if crate::util::rank_pipeline_stage(new_info.stage)
             < crate::util::rank_pipeline_stage(info.stage)
         {
@@ -36,7 +38,10 @@ impl SemaphoreTracker {
 
     #[inline(always)]
     pub fn register_signal(&mut self, semaphore: vk::Semaphore, value: Option<u64>) {
-        self.signal_semaphores.insert(semaphore, value);
+        let old_value = self.signal_semaphores.entry(semaphore).or_insert(value);
+        if old_value.unwrap_or_default() < value.unwrap_or_default() {
+            *old_value = value;
+        }
     }
 
     #[inline(always)]

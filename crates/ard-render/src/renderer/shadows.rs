@@ -312,6 +312,7 @@ impl Shadows {
     pub fn render<'a>(
         &'a self,
         frame: usize,
+        use_alternate: bool,
         args: ShadowRenderArgs<'a>,
         commands: &mut CommandBuffer<'a>,
     ) {
@@ -332,7 +333,7 @@ impl Shadows {
                         cascade.render_data.dynamic_draws + cascade.render_data.static_draws;
                     cascade.render_data.render(
                         frame,
-                        false,
+                        use_alternate,
                         RenderArgs {
                             pass,
                             texture_sets: args.texture_sets,

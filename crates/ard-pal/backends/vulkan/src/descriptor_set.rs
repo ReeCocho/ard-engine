@@ -193,7 +193,11 @@ impl DescriptorSet {
                     ShaderStage::Vertex => vk::PipelineStageFlags::VERTEX_SHADER,
                     ShaderStage::Fragment => vk::PipelineStageFlags::FRAGMENT_SHADER,
                     ShaderStage::Compute => vk::PipelineStageFlags::COMPUTE_SHADER,
-                    ShaderStage::AllGraphics => vk::PipelineStageFlags::ALL_GRAPHICS,
+                    ShaderStage::AllGraphics => {
+                        vk::PipelineStageFlags::VERTEX_SHADER
+                            | vk::PipelineStageFlags::FRAGMENT_SHADER
+                            | vk::PipelineStageFlags::COMPUTE_SHADER
+                    }
                 };
 
                 match &update.value {
@@ -238,7 +242,7 @@ impl DescriptorSet {
                         buffers.push(
                             vk::DescriptorBufferInfo::builder()
                                 .buffer(buffer.buffer)
-                                .offset(buffer.aligned_size * (*array_element) as u64)
+                                .offset(buffer.offset(*array_element))
                                 .range(buffer.aligned_size)
                                 .build(),
                         );

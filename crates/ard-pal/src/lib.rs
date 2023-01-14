@@ -35,7 +35,7 @@ pub mod prelude {
 
     // Command buffer
     pub use api::command_buffer::{
-        BlitDestination, BufferCubeMapCopy, BufferTextureCopy, CopyBufferToBuffer,
+        BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, CopyBufferToBuffer,
     };
     pub type CommandBuffer<'a> = api::command_buffer::CommandBuffer<'a, crate::Backend>;
 

@@ -6,6 +6,7 @@ use ard_formats::{
     model::ModelHeader,
 };
 use ard_log::warn;
+use tokio_stream::StreamExt;
 
 use crate::{
     asset::model::{Light, MeshGroup, MeshInstance, ModelPostLoad, Node, NodeData},
@@ -15,7 +16,7 @@ use crate::{
     pbr::{
         PbrMaterial, PBR_DIFFUSE_MAP_SLOT, PBR_METALLIC_ROUGHNESS_MAP_SLOT, PBR_NORMAL_MAP_SLOT,
     },
-    texture::{MipType, Sampler, Texture, TextureCreateInfo},
+    texture::{MipType, Sampler, TextureCreateInfo},
 };
 
 use super::{ModelAsset, ModelLoader};
@@ -25,8 +26,6 @@ pub async fn to_asset(
     package: &Package,
     loader: &ModelLoader,
 ) -> Result<ModelAsset, AssetLoadError> {
-    use rayon::prelude::*;
-
     // NOTE: Mixing Rayon and Tokio has caused me to lose brain cells. A lot of this code is jank
     // purely so I could get it working. Fix this, because I hate it.
 
@@ -47,6 +46,7 @@ pub async fn to_asset(
         materials: Vec::default(),
         mesh_groups: Vec::with_capacity(header.mesh_groups.len()),
         roots: Vec::with_capacity(header.roots.len()),
+        node_count: 0,
         post_load: Some(ModelPostLoad::Ard {
             texture_path: {
                 let mut path = PathBuf::from(path);
@@ -68,10 +68,10 @@ pub async fn to_asset(
         }),
     };
 
-    model.lights = header
-        .lights
-        .par_iter()
-        .map(|light| match light {
+    model.lights = Vec::with_capacity(header.lights.len());
+    let mut lights_iter = tokio_stream::iter(header.lights.iter());
+    while let Some(light) = lights_iter.next().await {
+        model.lights.push(match light {
             ard_formats::model::Light::Point {
                 color,
                 intensity,
@@ -89,8 +89,8 @@ pub async fn to_asset(
                 warn!("attempt to load directional light but unsupported");
                 Light::Directional
             }
-        })
-        .collect();
+        });
+    }
 
     // Read texutres in parallel
     let mut textures_path = PathBuf::from(path);
@@ -119,34 +119,32 @@ pub async fn to_asset(
     }
 
     // Create textures using lowest level mip
-    let texture_results: Vec<Result<Texture, AssetLoadError>> = header
-        .textures
-        .par_iter()
-        .enumerate()
-        .map(|(i, texture)| {
-            let create_info = TextureCreateInfo {
-                width: texture.width,
-                height: texture.height,
-                format: texture.format,
-                data: &texture_data[i],
-                mip_type: MipType::Upload,
-                mip_count: texture.mip_count as usize,
-                sampler: Sampler {
-                    min_filter: texture.sampler.min_filter,
-                    mag_filter: texture.sampler.mag_filter,
-                    mipmap_filter: texture.sampler.mipmap_filter,
-                    address_u: texture.sampler.address_u,
-                    address_v: texture.sampler.address_v,
-                    anisotropy: true,
-                },
-            };
+    model.textures = Vec::with_capacity(header.textures.len());
+    let mut textures_iter = tokio_stream::iter(header.textures.iter());
+    let mut i = 0;
 
-            Ok(loader.factory.create_texture(create_info))
-        })
-        .collect();
+    while let Some(texture) = textures_iter.next().await {
+        let create_info = TextureCreateInfo {
+            width: texture.width,
+            height: texture.height,
+            format: texture.format,
+            data: &texture_data[i],
+            mip_type: MipType::Upload,
+            mip_count: texture.mip_count as usize,
+            sampler: Sampler {
+                min_filter: texture.sampler.min_filter,
+                mag_filter: texture.sampler.mag_filter,
+                mipmap_filter: texture.sampler.mipmap_filter,
+                address_u: texture.sampler.address_u,
+                address_v: texture.sampler.address_v,
+                anisotropy: true,
+            },
+        };
 
-    for result in texture_results {
-        model.textures.push(result?);
+        model
+            .textures
+            .push(loader.factory.create_texture(create_info));
+        i += 1;
     }
 
     // Load in mesh group data in parallel
@@ -203,121 +201,101 @@ pub async fn to_asset(
     }
 
     // Create materials and mesh groups in parallel
-    let (mesh_group_results, materials) = rayon::join(
-        || {
-            header
-                .mesh_groups
-                .par_iter()
-                .enumerate()
-                .map(|(mesh_group_id, mesh_group)| {
-                    let instance_results = mesh_group
-                        .0
-                        .par_iter()
-                        .enumerate()
-                        .map(|(instance_id, instance)| {
-                            let create_info = MeshCreateInfo {
-                                bounds: MeshBounds::Generate,
-                                indices: bytemuck::cast_slice(
-                                    &mg_data[mesh_group_id][instance_id].1,
-                                ),
-                                vertices: Vertices::Combined {
-                                    data: &mg_data[mesh_group_id][instance_id].0,
-                                    count: instance.mesh.vertex_count as usize,
-                                    layout: instance.mesh.vertex_layout,
-                                },
-                            };
-                            let mesh = loader.factory.create_mesh(create_info);
+    model.mesh_groups = Vec::with_capacity(header.mesh_groups.len());
+    let mut mesh_groups_iter = tokio_stream::iter(header.mesh_groups.iter());
+    let mut mesh_group_id = 0;
 
-                            Ok(MeshInstance {
-                                mesh,
-                                material: instance.material as usize,
-                            })
-                        })
-                        .collect::<Vec<Result<MeshInstance, AssetLoadError>>>();
+    while let Some(mesh_group) = mesh_groups_iter.next().await {
+        let mut instances = Vec::with_capacity(mg_data[mesh_group_id].len());
 
-                    let mut instances = Vec::with_capacity(instance_results.len());
-                    for result in instance_results {
-                        instances.push(result?);
-                    }
-
-                    Ok(MeshGroup(instances))
-                })
-                .collect::<Vec<Result<MeshGroup, AssetLoadError>>>()
-        },
-        || {
-            header
-                .materials
-                .par_iter()
-                .map(|material| {
-                    if material.blend_ty == BlendType::Blend {
-                        warn!("material requires blending but not supported");
-                    }
-
-                    match &material.ty {
-                        MaterialType::Pbr {
-                            base_color,
-                            metallic,
-                            roughness,
-                            alpha_cutoff,
-                            diffuse_map,
-                            normal_map,
-                            metallic_roughness_map,
-                        } => {
-                            let create_info = MaterialInstanceCreateInfo {
-                                material: loader.pbr_material.clone(),
-                            };
-                            let material_instance =
-                                loader.factory.create_material_instance(create_info);
-
-                            loader.factory.update_material_data(
-                                &material_instance,
-                                &PbrMaterial {
-                                    base_color: *base_color,
-                                    metallic: *metallic,
-                                    roughness: *roughness,
-                                    alpha_cutoff: *alpha_cutoff,
-                                },
-                            );
-
-                            if let Some(diffuse_map) = diffuse_map {
-                                loader.factory.update_material_texture(
-                                    &material_instance,
-                                    Some(&model.textures[*diffuse_map as usize]),
-                                    PBR_DIFFUSE_MAP_SLOT,
-                                );
-                            }
-
-                            if let Some(normal_map) = normal_map {
-                                loader.factory.update_material_texture(
-                                    &material_instance,
-                                    Some(&model.textures[*normal_map as usize]),
-                                    PBR_NORMAL_MAP_SLOT,
-                                );
-                            }
-
-                            if let Some(mr_map) = metallic_roughness_map {
-                                loader.factory.update_material_texture(
-                                    &material_instance,
-                                    Some(&model.textures[*mr_map as usize]),
-                                    PBR_METALLIC_ROUGHNESS_MAP_SLOT,
-                                );
-                            }
-
-                            material_instance
-                        }
-                    }
-                })
-                .collect()
-        },
-    );
-
-    for result in mesh_group_results {
-        model.mesh_groups.push(result?);
+        let mut instance_iter = tokio_stream::iter(mg_data[mesh_group_id].iter());
+        let mut instance_id = 0;
+        while let Some(instance) = instance_iter.next().await {
+            let create_info = MeshCreateInfo {
+                bounds: MeshBounds::Generate,
+                indices: bytemuck::cast_slice(&instance.1),
+                vertices: Vertices::Combined {
+                    data: &instance.0,
+                    count: mesh_group.0[instance_id].mesh.vertex_count as usize,
+                    layout: mesh_group.0[instance_id].mesh.vertex_layout,
+                },
+            };
+            let mesh = loader.factory.create_mesh(create_info);
+            instances.push(MeshInstance {
+                mesh,
+                material: mesh_group.0[instance_id].material as usize,
+            });
+            instance_id += 1;
+        }
+        model.mesh_groups.push(MeshGroup(instances));
+        mesh_group_id += 1;
     }
 
-    model.materials = materials;
+    model.materials = Vec::with_capacity(header.materials.len());
+    let mut materials_iter = tokio_stream::iter(header.materials.iter());
 
-    fn parse_node(node: ard_formats::model::Node) -> Node {
+    while let Some(material) = materials_iter.next().await {
+        if material.blend_ty == BlendType::Blend {
+            warn!("material requires blending but not supported");
+        }
+
+        match &material.ty {
+            MaterialType::Pbr {
+                base_color,
+                metallic,
+                roughness,
+                alpha_cutoff,
+                diffuse_map,
+                normal_map,
+                metallic_roughness_map,
+            } => {
+                let create_info = MaterialInstanceCreateInfo {
+                    material: loader.pbr_material.clone(),
+                };
+                let material_instance = loader.factory.create_material_instance(create_info);
+
+                loader.factory.update_material_data(
+                    &material_instance,
+                    &PbrMaterial {
+                        base_color: *base_color,
+                        metallic: *metallic,
+                        roughness: *roughness,
+                        alpha_cutoff: *alpha_cutoff,
+                    },
+                );
+
+                if let Some(diffuse_map) = diffuse_map {
+                    loader.factory.update_material_texture(
+                        &material_instance,
+                        Some(&model.textures[*diffuse_map as usize]),
+                        PBR_DIFFUSE_MAP_SLOT,
+                    );
+                }
+
+                if let Some(normal_map) = normal_map {
+                    loader.factory.update_material_texture(
+                        &material_instance,
+                        Some(&model.textures[*normal_map as usize]),
+                        PBR_NORMAL_MAP_SLOT,
+                    );
+                }
+
+                if let Some(mr_map) = metallic_roughness_map {
+                    loader.factory.update_material_texture(
+                        &material_instance,
+                        Some(&model.textures[*mr_map as usize]),
+                        PBR_METALLIC_ROUGHNESS_MAP_SLOT,
+                    );
+                }
+
+                model.materials.push(material_instance);
+            }
+        }
+    }
+
+    fn parse_node(node: ard_formats::model::Node) -> (Node, usize) {
+        let mut node_count = 1;
+
         let mut out_node = Node {
             name: node.name,
             model: node.model,
@@ -330,14 +308,18 @@ pub async fn to_asset(
         };
 
         for child in node.children {
-            out_node.children.push(parse_node(child));
+            let (node, child_count) = parse_node(child);
+            node_count += child_count;
+            out_node.children.push(node);
         }
 
-        out_node
+        (out_node, node_count)
     }
 
     for root in header.roots {
-        model.roots.push(parse_node(root));
+        let (node, node_count) = parse_node(root);
+        model.node_count += node_count;
+        model.roots.push(node);
     }
 
     Ok(model)

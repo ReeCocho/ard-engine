@@ -42,10 +42,10 @@ pub mod window {
 #[cfg(feature = "render")]
 pub mod render {
     pub mod prelude {
-        pub use ard_render::prelude::*;
         pub use ard_pal::prelude::*;
+        pub use ard_render::prelude::*;
     }
 
-    pub use ard_render::*;
     pub use ard_pal::*;
+    pub use ard_render::*;
 }

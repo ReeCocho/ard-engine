@@ -1,6 +1,6 @@
 use std::{ffi::CString, mem::ManuallyDrop, sync::Arc};
 
-use crate::util::garbage_collector::Garbage;
+use crate::{util::garbage_collector::Garbage, QueueFamilyIndices};
 use api::{
     texture::{TextureCreateError, TextureCreateInfo},
     types::*,
@@ -15,9 +15,9 @@ pub struct Texture {
     /// A0M0 -> A0M1 -> A0M2 ... A1M0 -> A1M1 -> A1M2 -> ...
     pub(crate) views: Vec<vk::ImageView>,
     pub(crate) block: ManuallyDrop<Allocation>,
-    pub(crate) image_usage: TextureUsage,
-    pub(crate) memory_usage: MemoryUsage,
-    pub(crate) array_elements: usize,
+    pub(crate) _image_usage: TextureUsage,
+    pub(crate) _memory_usage: MemoryUsage,
+    pub(crate) _array_elements: usize,
     pub(crate) size: u64,
     pub(crate) ref_counter: TextureRefCounter,
     pub(crate) format: vk::Format,
@@ -32,6 +32,7 @@ pub(crate) struct TextureRefCounter(Arc<()>);
 impl Texture {
     pub(crate) unsafe fn new(
         device: &ash::Device,
+        qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -52,7 +53,8 @@ impl Texture {
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(crate::util::to_vk_image_usage(create_info.texture_usage))
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .sharing_mode(vk::SharingMode::CONCURRENT)
+            .queue_family_indices(&[qfi.compute, qfi.main, qfi.transfer])
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::empty())
             .build();
@@ -138,7 +140,7 @@ impl Texture {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(device.handle(), &name_info)
+                    .set_debug_utils_object_name(device.handle(), &name_info)
                     .unwrap();
 
                 for (i, view) in views.iter().enumerate() {
@@ -150,7 +152,7 @@ impl Texture {
                         .build();
 
                     debug
-                        .debug_utils_set_object_name(device.handle(), &name_info)
+                        .set_debug_utils_object_name(device.handle(), &name_info)
                         .unwrap();
                 }
             }
@@ -160,9 +162,9 @@ impl Texture {
             image,
             views,
             block: ManuallyDrop::new(block),
-            image_usage: create_info.texture_usage,
-            memory_usage: create_info.memory_usage,
-            array_elements: create_info.array_elements,
+            _image_usage: create_info.texture_usage,
+            _memory_usage: create_info.memory_usage,
+            _array_elements: create_info.array_elements,
             size: mem_reqs.size / create_info.array_elements as u64,
             on_drop,
             ref_counter: TextureRefCounter::default(),

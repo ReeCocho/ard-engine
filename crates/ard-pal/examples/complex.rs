@@ -44,7 +44,7 @@ fn main() {
     .unwrap();
 
     // Create buffers
-    let mut color_buffer = Buffer::new(
+    let color_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
             /// Three vertices, each of four components.

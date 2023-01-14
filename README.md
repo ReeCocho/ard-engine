@@ -24,6 +24,13 @@ A game engine designed for open world 3D games.
 - Hierarchical Z-buffer occlusion culling.
 - PBR rendering with image based lighting.
 
+## Directory Structure
+
+- **crates**: Contains all the crates that make up the engine.
+- **data**: Contains assets and configuration defaults for the editor.
+- **src**: Contains the high-level crate for he entire engine which reexports other crates.
+- **tools**: Binaries used by the editor.
+
 ## Building
 
 ⚠️**WARNING**: The build files included are designed for a Windows environment. They will fail if

@@ -19,20 +19,17 @@ use renderer::{Renderer, RendererSettings};
 
 pub mod prelude {
     pub use crate::{
-        RenderPlugin,
         asset::{
-            cube_map::CubeMapAsset,
-            material::MaterialAsset,
-            model::ModelAsset,
-            RenderAssetsPlugin
+            cube_map::CubeMapAsset, material::MaterialAsset, model::ModelAsset, RenderAssetsPlugin,
         },
         camera::{CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
         factory::{Factory, ShaderCreateInfo},
         lighting::PointLight,
         material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
         mesh::{MeshBounds, MeshCreateInfo, Vertices},
-        renderer::{Renderer, RendererSettings, gui::Gui, Model, RenderLayer, Renderable},
+        renderer::{gui::Gui, Model, RenderLayer, Renderable, Renderer, RendererSettings},
         static_geometry::StaticGeometry,
+        RenderPlugin,
     };
 }
 

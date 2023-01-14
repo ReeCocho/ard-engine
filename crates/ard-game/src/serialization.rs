@@ -3,8 +3,8 @@ use ard_assets::{
     prelude::{Asset, AssetNameBuf, Handle},
 };
 use ard_ecs::prelude::Entity;
-use ard_graphics_api::renderer::Model;
 use ard_math::{Mat4, Quat, Vec2, Vec3, Vec3A, Vec4};
+use ard_render::renderer::Model;
 use smallvec::SmallVec;
 
 use crate::scene::{EntityMap, MappedEntity};

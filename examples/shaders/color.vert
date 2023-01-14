@@ -14,7 +14,7 @@ layout(location = 7) in vec2 UV3;
 
 VsOut entry() {
     VsOut vs_out;
-    mat4 model = get_model_matrix();
+    mat4 model = MODEL_MATRIX;
     vec4 frag_pos = model * POSITION;
     gl_Position = camera.vp * frag_pos;
     vs_out.frag_pos = frag_pos.xyz;

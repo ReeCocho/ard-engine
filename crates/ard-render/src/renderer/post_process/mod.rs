@@ -104,7 +104,9 @@ impl PostProcessing {
                 depth: 1,
                 array_elements: 2,
                 mip_levels: 1,
-                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT
+                    | TextureUsage::SAMPLED
+                    | TextureUsage::TRANSFER_SRC,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("post_proc_images")),
             },
@@ -305,6 +307,11 @@ impl PostProcessing {
         }
     }
 
+    #[inline(always)]
+    pub fn final_image(&self) -> (&Texture, usize) {
+        (&self.images, 1)
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.images = Texture::new(
             self.ctx.clone(),
@@ -316,7 +323,9 @@ impl PostProcessing {
                 depth: 1,
                 array_elements: 2,
                 mip_levels: 1,
-                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT
+                    | TextureUsage::SAMPLED
+                    | TextureUsage::TRANSFER_SRC,
                 memory_usage: MemoryUsage::GpuOnly,
                 debug_name: Some(String::from("post_proc_images")),
             },
@@ -370,7 +379,6 @@ impl PostProcessing {
     pub fn draw<'a, 'b>(
         &'a self,
         frame: usize,
-        src: &'a SurfaceImage,
         canvas_size: Vec2,
         settings: &PostProcessingSettings,
         commands: &'b mut CommandBuffer<'a>,
@@ -411,7 +419,12 @@ impl PostProcessing {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::SurfaceImage(src),
+                    source: ColorAttachmentSource::Texture {
+                        texture: &self.images,
+                        // Pong
+                        array_element: 1,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                 }],
@@ -430,7 +443,7 @@ impl PostProcessing {
 impl Default for PostProcessingSettings {
     fn default() -> Self {
         PostProcessingSettings {
-            exposure: 0.1,
+            exposure: 0.3,
             fxaa: true,
         }
     }

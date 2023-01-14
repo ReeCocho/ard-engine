@@ -9,14 +9,14 @@ use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 
-use crate::{job::Job, util::garbage_collector::Garbage, VulkanBackend};
+use crate::{job::Job, util::garbage_collector::Garbage, QueueFamilyIndices, VulkanBackend};
 
 pub struct Buffer {
     pub(crate) buffer: vk::Buffer,
     pub(crate) block: ManuallyDrop<Allocation>,
-    pub(crate) buffer_usage: BufferUsage,
-    pub(crate) memory_usage: MemoryUsage,
-    pub(crate) array_elements: usize,
+    pub(crate) _buffer_usage: BufferUsage,
+    pub(crate) _memory_usage: MemoryUsage,
+    pub(crate) _array_elements: usize,
     /// This was the user requested size of each array element.
     pub(crate) size: u64,
     /// This is the per element size after alignment.
@@ -31,6 +31,7 @@ pub(crate) struct BufferRefCounter(Arc<()>);
 impl Buffer {
     pub(crate) unsafe fn new(
         device: &ash::Device,
+        qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -68,7 +69,8 @@ impl Buffer {
         let buffer_create_info = vk::BufferCreateInfo::builder()
             .size(aligned_size * create_info.array_elements as u64)
             .usage(crate::util::to_vk_buffer_usage(create_info.buffer_usage))
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .sharing_mode(vk::SharingMode::CONCURRENT)
+            .queue_family_indices(&[qfi.compute, qfi.main, qfi.transfer])
             .build();
         let buffer = match device.create_buffer(&buffer_create_info, None) {
             Ok(buffer) => buffer,
@@ -80,7 +82,7 @@ impl Buffer {
         let request = AllocationCreateDesc {
             name: match &create_info.debug_name {
                 Some(name) => &name,
-                None => "buffer",
+                None => "unnamed_buffer",
             },
             requirements: mem_reqs,
             location: crate::util::to_gpu_allocator_memory_location(create_info.memory_usage),
@@ -112,7 +114,7 @@ impl Buffer {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(device.handle(), &name_info)
+                    .set_debug_utils_object_name(device.handle(), &name_info)
                     .unwrap();
             }
         }
@@ -122,9 +124,9 @@ impl Buffer {
             block: ManuallyDrop::new(block),
             size: create_info.size,
             aligned_size,
-            array_elements: create_info.array_elements,
-            buffer_usage: create_info.buffer_usage,
-            memory_usage: create_info.memory_usage,
+            _array_elements: create_info.array_elements,
+            _buffer_usage: create_info.buffer_usage,
+            _memory_usage: create_info.memory_usage,
             on_drop,
             ref_counter: BufferRefCounter::default(),
         })

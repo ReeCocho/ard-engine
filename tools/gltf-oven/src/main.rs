@@ -16,6 +16,9 @@ struct Args {
     /// Path to the model to bake.
     #[arg(short, long)]
     path: PathBuf,
+    /// Output path for the model.
+    #[arg(short, long)]
+    out: Option<PathBuf>,
     /// Compute tangents based on UVs.
     #[arg(long, default_value_t = false)]
     compute_tangents: bool,
@@ -32,11 +35,18 @@ fn main() {
     let bin = fs::read(&args.path).unwrap();
 
     // Output folder path
-    let mut out_path = PathBuf::from(args.path.parent().unwrap());
-    out_path.push(format!(
-        "{}.ard_mdl",
-        args.path.file_stem().unwrap().to_str().unwrap()
-    ));
+    let out_path = match &args.out {
+        Some(path) => path.clone(),
+        None => {
+            let mut out_path = PathBuf::from(args.path.parent().unwrap());
+            out_path.push(format!(
+                "{}.ard_mdl",
+                args.path.file_stem().unwrap().to_str().unwrap()
+            ));
+            out_path
+        }
+    };
+
     std::fs::create_dir_all(&out_path).unwrap();
 
     // Parse the model

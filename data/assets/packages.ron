@@ -1,3 +1,8 @@
 PackageList(
-    packages: []
+    packages: [
+		"editor",
+		"standard",
+		"game",
+		"baked"
+	]
 )

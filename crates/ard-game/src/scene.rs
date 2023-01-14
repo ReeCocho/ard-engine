@@ -4,12 +4,6 @@ use std::collections::HashMap;
 use ard_assets::prelude::AssetNameBuf;
 use ard_ecs::entity::Entity;
 
-pub struct SceneDescriptor {
-    pub textures: Vec<AssetNameBuf>,
-}
-
-pub struct Scene {}
-
 #[derive(Default)]
 pub struct EntityMap {
     entity_to_map: HashMap<Entity, MappedEntity>,

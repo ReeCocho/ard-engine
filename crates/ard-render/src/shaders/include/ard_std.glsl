@@ -142,14 +142,22 @@ void main() { \
 /////////////////
 
 /// Gets the model matrix for object.
-mat4 get_model_matrix() {
-    return ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].model;
-}
+#ifdef ARD_VERTEX_SHADER
+#define MODEL_MATRIX ARD_OBJECT_DATA[ARD_OBJECT_INDICES[gl_InstanceIndex]].model
+#endif
+
+#ifdef ARD_FRAGMENT_SHADER
+#define MODEL_MATRIX ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].model
+#endif
 
 /// Gets the normal model matrix for object.
-mat4 get_normal_matrix() {
-    return ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].normal;
-}
+#ifdef ARD_VERTEX_SHADER
+#define NORMAL_MATRIX ARD_OBJECT_DATA[ARD_OBJECT_INDICES[gl_InstanceIndex]].normal
+#endif
+
+#ifdef ARD_FRAGMENT_SHADER
+#define NORMAL_MATRIX ARD_OBJECT_DATA[ARD_OBJECT_INDICES[ARD_INSTANCE_IDX]].normal
+#endif
 
 #ifdef ARD_TEXTURE_COUNT
 /// Samples a texture at a given slot. If the texture is unbound, the provided default will

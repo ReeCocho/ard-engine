@@ -105,7 +105,7 @@ impl ComputePipeline {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(device.handle(), &name_info)
+                    .set_debug_utils_object_name(device.handle(), &name_info)
                     .unwrap();
             }
         }

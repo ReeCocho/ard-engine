@@ -1,11 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use ard_formats::mesh::VertexLayout;
-use ard_log::*;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
-
-use crate::mesh::AttributeType;
+use fxhash::{FxHashMap, FxHashSet};
 
 const DEFAULT_VB_LEN: usize = 65536;
 const DEFAULT_IB_LEN: usize = 65536;
@@ -14,10 +12,7 @@ const BASE_INDEX_BLOCK_LEN: usize = 256;
 
 pub(crate) struct MeshBuffers {
     ctx: Context,
-    dummy_vector: Buffer,
-    dummy_color: Buffer,
-    dummy_uv: Buffer,
-    vertex_buffers: HashMap<VertexLayout, VertexBuffers>,
+    vertex_buffers: FxHashMap<VertexLayout, VertexBuffers>,
     index_buffer: BufferArrayAllocator,
 }
 
@@ -40,7 +35,7 @@ enum VertexBuffer {
 
 pub(crate) struct BufferArrayAllocator {
     buffer: Buffer,
-    free_blocks: Vec<HashSet<MeshBlock>>,
+    free_blocks: Vec<FxHashSet<MeshBlock>>,
     /// Number of Ts that can fit in the smallest block size.
     base_block_len: usize,
     /// Total number of base blocks. Must be a power of 2.
@@ -49,7 +44,7 @@ pub(crate) struct BufferArrayAllocator {
     object_size: usize,
 }
 
-#[derive(Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MeshBlock {
     base: u32,
     len: u32,
@@ -57,88 +52,8 @@ pub(crate) struct MeshBlock {
 
 impl MeshBuffers {
     pub fn new(ctx: Context) -> Self {
-        // Create dummy buffers
-        let dummy_vector = Buffer::new(
-            ctx.clone(),
-            BufferCreateInfo {
-                size: std::mem::size_of::<Vec4>() as u64,
-                array_elements: 1,
-                buffer_usage: BufferUsage::TRANSFER_DST | BufferUsage::VERTEX_BUFFER,
-                memory_usage: MemoryUsage::GpuOnly,
-                debug_name: Some(String::from("dummy_vectors")),
-            },
-        )
-        .unwrap();
-
-        let dummy_color = Buffer::new(
-            ctx.clone(),
-            BufferCreateInfo {
-                size: std::mem::size_of::<Vec4>() as u64,
-                array_elements: 1,
-                buffer_usage: BufferUsage::TRANSFER_DST | BufferUsage::VERTEX_BUFFER,
-                memory_usage: MemoryUsage::GpuOnly,
-                debug_name: Some(String::from("dummy_colors")),
-            },
-        )
-        .unwrap();
-
-        let dummy_uv = Buffer::new(
-            ctx.clone(),
-            BufferCreateInfo {
-                size: std::mem::size_of::<Vec2>() as u64,
-                array_elements: 1,
-                buffer_usage: BufferUsage::TRANSFER_DST | BufferUsage::VERTEX_BUFFER,
-                memory_usage: MemoryUsage::GpuOnly,
-                debug_name: Some(String::from("dummy_positions")),
-            },
-        )
-        .unwrap();
-
-        // Fill dummy buffers with values
-        let dummy_vector_staging =
-            Buffer::new_staging(ctx.clone(), None, bytemuck::cast_slice(&[Vec4::ZERO])).unwrap();
-
-        let dummy_color_staging =
-            Buffer::new_staging(ctx.clone(), None, bytemuck::cast_slice(&[Vec4::ONE])).unwrap();
-
-        let dummy_uv_staging =
-            Buffer::new_staging(ctx.clone(), None, bytemuck::cast_slice(&[Vec2::ZERO])).unwrap();
-
-        let mut cb = ctx.transfer().command_buffer();
-        cb.copy_buffer_to_buffer(CopyBufferToBuffer {
-            src: &dummy_vector_staging,
-            src_array_element: 0,
-            src_offset: 0,
-            dst: &dummy_vector,
-            dst_array_element: 0,
-            dst_offset: 0,
-            len: dummy_vector.size(),
-        });
-        cb.copy_buffer_to_buffer(CopyBufferToBuffer {
-            src: &dummy_color_staging,
-            src_array_element: 0,
-            src_offset: 0,
-            dst: &dummy_color,
-            dst_array_element: 0,
-            dst_offset: 0,
-            len: dummy_color.size(),
-        });
-        cb.copy_buffer_to_buffer(CopyBufferToBuffer {
-            src: &dummy_uv_staging,
-            src_array_element: 0,
-            src_offset: 0,
-            dst: &dummy_uv,
-            dst_array_element: 0,
-            dst_offset: 0,
-            len: dummy_uv.size(),
-        });
-        ctx.transfer().submit(None, cb);
-
         Self {
             ctx: ctx.clone(),
-            dummy_color,
-            dummy_uv,
-            dummy_vector,
             vertex_buffers: HashMap::default(),
             index_buffer: BufferArrayAllocator::new(
                 ctx.clone(),
@@ -175,17 +90,6 @@ impl MeshBuffers {
 
 impl VertexBuffers {
     fn new(ctx: &Context, layout: VertexLayout, block_count: usize) -> Self {
-        let mut buffers = vec![(
-            BufferArrayAllocator::new(
-                ctx.clone(),
-                BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
-                BASE_VERTEX_BLOCK_LEN,
-                block_count,
-                std::mem::size_of::<Vec4>(),
-            ),
-            AttributeType::Position,
-        )];
-
         let positions = BufferArrayAllocator::new(
             ctx.clone(),
             BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
@@ -308,102 +212,88 @@ impl VertexBuffers {
         });
 
         // Normals
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::NORMAL) {
-                match &self.normals {
-                    VertexBuffer::Dummy => &mbs.dummy_vector,
+        if target_layout.contains(VertexLayout::NORMAL) {
+            binds.push(VertexBind {
+                buffer: match &self.normals {
+                    VertexBuffer::Dummy => panic!("missing attribute"), // &mbs.dummy_vector,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_vector
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // Tangents
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::TANGENT) {
-                match &self.tangents {
-                    VertexBuffer::Dummy => &mbs.dummy_vector,
+        if target_layout.contains(VertexLayout::TANGENT) {
+            binds.push(VertexBind {
+                buffer: match &self.tangents {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_vector,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_vector
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // Colors
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::COLOR) {
-                match &self.colors {
-                    VertexBuffer::Dummy => &mbs.dummy_color,
+        if target_layout.contains(VertexLayout::COLOR) {
+            binds.push(VertexBind {
+                buffer: match &self.colors {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_color,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_color
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // UV0
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::UV0) {
-                match &self.uv0 {
-                    VertexBuffer::Dummy => &mbs.dummy_uv,
+        if target_layout.contains(VertexLayout::UV0) {
+            binds.push(VertexBind {
+                buffer: match &self.uv0 {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_uv
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // UV1
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::UV1) {
-                match &self.uv1 {
-                    VertexBuffer::Dummy => &mbs.dummy_uv,
+        if target_layout.contains(VertexLayout::UV1) {
+            binds.push(VertexBind {
+                buffer: match &self.uv1 {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_uv
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // UV2
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::UV2) {
-                match &self.uv2 {
-                    VertexBuffer::Dummy => &mbs.dummy_uv,
+        if target_layout.contains(VertexLayout::UV2) {
+            binds.push(VertexBind {
+                buffer: match &self.uv2 {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_uv
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         // UV3
-        binds.push(VertexBind {
-            buffer: if target_layout.contains(VertexLayout::UV3) {
-                match &self.uv3 {
-                    VertexBuffer::Dummy => &mbs.dummy_uv,
+        if target_layout.contains(VertexLayout::UV3) {
+            binds.push(VertexBind {
+                buffer: match &self.uv3 {
+                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
-                }
-            } else {
-                &mbs.dummy_uv
-            },
-            array_element: 0,
-            offset: 0,
-        });
+                },
+                array_element: 0,
+                offset: 0,
+            });
+        }
 
         render_pass.bind_vertex_buffers(0, binds);
     }
@@ -777,19 +667,5 @@ impl MeshBlock {
     #[inline]
     pub fn len(&self) -> u32 {
         self.len
-    }
-}
-
-impl PartialEq for MeshBlock {
-    /// No two blocks can have the same base, so this is sufficient.
-    fn eq(&self, other: &Self) -> bool {
-        self.base == other.base
-    }
-}
-
-impl std::hash::Hash for MeshBlock {
-    /// No two blocks can have the same base, so this is sufficient.
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u32(self.base);
     }
 }

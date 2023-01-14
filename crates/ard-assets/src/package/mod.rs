@@ -1,7 +1,7 @@
 pub mod folder;
 pub mod manifest;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use crossbeam_utils::sync::{ShardedLockReadGuard, ShardedLockWriteGuard};
@@ -11,6 +11,9 @@ use thiserror::Error;
 use crate::prelude::AssetName;
 
 use self::{folder::FolderPackage, manifest::Manifest};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PackageId(usize);
 
 /// A package contains a list of assets for the asset manager to load.
 #[enum_dispatch]
@@ -31,8 +34,8 @@ pub enum PackageOpenError {
 
 #[derive(Debug, Error)]
 pub enum PackageReadError {
-    #[error("the asset at the given path within the package does not exist")]
-    DoesNotExist,
+    #[error("the asset ({0}) at the given path within the package does not exist")]
+    DoesNotExist(PathBuf),
     #[error("an unknown error occured")]
     Unknown,
 }
@@ -63,9 +66,20 @@ pub trait PackageInterface: Clone + Send {
 
 impl From<std::io::Error> for PackageReadError {
     fn from(err: std::io::Error) -> Self {
-        match err.kind() {
-            std::io::ErrorKind::NotFound => PackageReadError::DoesNotExist,
-            _ => PackageReadError::Unknown,
-        }
+        PackageReadError::Unknown
+    }
+}
+
+impl From<usize> for PackageId {
+    #[inline(always)]
+    fn from(id: usize) -> Self {
+        PackageId(id)
+    }
+}
+
+impl From<PackageId> for usize {
+    #[inline(always)]
+    fn from(id: PackageId) -> Self {
+        id.0
     }
 }

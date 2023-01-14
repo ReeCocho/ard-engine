@@ -1,4 +1,3 @@
-/*
 pub mod components;
 pub mod destroy;
 pub mod lighting;
@@ -34,4 +33,3 @@ impl Plugin for GamePlugin {
         app.add_system(ApplyRenderableData);
     }
 }
-*/

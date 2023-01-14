@@ -218,7 +218,7 @@ pub(crate) fn to_vk_filter(f: Filter) -> vk::Filter {
 }
 
 #[inline(always)]
-pub(crate) fn to_vk_reduction_mode(rm: ReductionMode) -> vk::SamplerReductionMode {
+pub(crate) fn _to_vk_reduction_mode(rm: ReductionMode) -> vk::SamplerReductionMode {
     match rm {
         ReductionMode::Min => vk::SamplerReductionMode::MIN,
         ReductionMode::Max => vk::SamplerReductionMode::MAX,

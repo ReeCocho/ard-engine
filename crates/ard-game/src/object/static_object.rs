@@ -1,4 +1,4 @@
-use ard_graphics_api::prelude::Model;
+use ard_render::renderer::Model;
 use serde::{Deserialize, Serialize};
 
 use crate::components::{

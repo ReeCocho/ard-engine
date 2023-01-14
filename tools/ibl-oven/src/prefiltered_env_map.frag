@@ -9,6 +9,7 @@ layout(location = 0) in vec3 SAMPLE_DIR;
 layout(push_constant) uniform constants {
     mat4 unused;
     float roughness;
+    uint resolution;
 };
 
 const float PI = 3.14159265359;
@@ -49,23 +50,44 @@ vec3 importance_sample_ggx(vec2 xi, vec3 N, float r) {
     return normalize(sample_vec);
 }  
 
+float distribution_GGX(float NdotH, float R) {
+    float a = R * R;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+
+    float nom = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+
 void main() {
     const vec3 N = normalize(SAMPLE_DIR);
     const vec3 R = N;
     const vec3 V = R;
 
-    const uint sample_count = 4096;
+    const uint sample_count = 4096 * 4;
     float total_weight = 0.0;
     vec3 prefiltered_color = vec3(0.0);
 
     for (uint i = 0; i < sample_count; ++i) {
         vec2 xi = hammersley(i, sample_count);
         vec3 H = importance_sample_ggx(xi, N, roughness);
-        vec3 L = normalize(2.0 * dot(V, H) * H - V);
+        const float HdotV = max(dot(H, V), 0.0);
+        vec3 L = normalize(2.0 * HdotV * H - V);
 
         float ndotl = max(dot(N, L), 0.0);
         if (ndotl > 0.0) {
-            prefiltered_color += texture(environment_map, L).rgb * ndotl;
+            const float NdotH = max(dot(N, H), 0.0);
+            float D = distribution_GGX(NdotH, roughness);
+            float pdf = (D * NdotH / (4.0 * HdotV)) + 0.0001;
+
+            float sa_texel = 4.0 * PI / (6.0 * float(resolution) * float(resolution));
+            float sa_sample = 1.0 / (float(sample_count) * pdf + 0.0001);
+            float mip_level = roughness == 0.0 ? 0.0 : 0.5 * log2(sa_sample / sa_texel);
+
+            prefiltered_color += textureLod(environment_map, L, mip_level).rgb * ndotl;
             total_weight += ndotl;
         }
     }

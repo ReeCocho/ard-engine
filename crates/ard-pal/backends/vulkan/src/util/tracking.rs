@@ -1,7 +1,8 @@
 use api::{
     buffer::Buffer,
     command_buffer::{
-        BlitDestination, BufferCubeMapCopy, BufferTextureCopy, Command, CopyBufferToBuffer,
+        BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
+        CopyBufferToBuffer,
     },
     cube_map::CubeMap,
     descriptor_set::DescriptorSet,
@@ -58,7 +59,7 @@ pub(crate) unsafe fn track_resources(mut state: TrackState) {
             buffer,
             copy,
         } => track_cube_map_to_buffer_copy(&mut state, cube_map, buffer, copy),
-        Command::BlitTexture { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
+        Command::Blit { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
         // All other commands do not need state tracking
         _ => {}
     }
@@ -490,16 +491,46 @@ unsafe fn track_cube_map_to_buffer_copy(
 
 unsafe fn track_blit(
     state: &mut TrackState,
-    src: &Texture<crate::VulkanBackend>,
+    src: &BlitSource<crate::VulkanBackend>,
     dst: &BlitDestination<crate::VulkanBackend>,
     blit: &Blit,
 ) {
     // Barrier check
-    let src = src.internal();
-    let (dst_img, dst_aspect_flags) = match dst {
+    let (src_img, src_array_elem, src_aspect_flags) = match src {
+        BlitSource::Texture(tex) => {
+            let internal = tex.internal();
+            (
+                internal.image,
+                blit.src_array_element,
+                internal.aspect_flags,
+            )
+        }
+        BlitSource::CubeMap { cube_map, face } => {
+            let internal = cube_map.internal();
+            (
+                internal.image,
+                crate::cube_map::CubeMap::to_array_elem(blit.src_array_element, *face),
+                internal.aspect_flags,
+            )
+        }
+    };
+
+    let (dst_img, dst_array_elem, dst_aspect_flags) = match dst {
         BlitDestination::Texture(tex) => {
             let internal = tex.internal();
-            (internal.image, internal.aspect_flags)
+            (
+                internal.image,
+                blit.dst_array_element,
+                internal.aspect_flags,
+            )
+        }
+        BlitDestination::CubeMap { cube_map, face } => {
+            let internal = cube_map.internal();
+            (
+                internal.image,
+                crate::cube_map::CubeMap::to_array_elem(blit.dst_array_element, *face),
+                internal.aspect_flags,
+            )
         }
         BlitDestination::SurfaceImage(si) => {
             let internal = si.internal();
@@ -517,16 +548,16 @@ unsafe fn track_blit(
                 },
             );
 
-            (internal.image(), vk::ImageAspectFlags::COLOR)
+            (internal.image(), 0, vk::ImageAspectFlags::COLOR)
         }
     };
 
     let mut scope = UsageScope::default();
     scope.use_resource(
         SubResource::Texture {
-            texture: src.image,
-            aspect_mask: src.aspect_flags,
-            array_elem: blit.src_array_element as u32,
+            texture: src_img,
+            aspect_mask: src_aspect_flags,
+            array_elem: src_array_elem as u32,
             mip_level: blit.src_mip as u32,
         },
         SubResourceUsage {
@@ -539,7 +570,7 @@ unsafe fn track_blit(
         SubResource::Texture {
             texture: dst_img,
             aspect_mask: dst_aspect_flags,
-            array_elem: blit.dst_array_element as u32,
+            array_elem: dst_array_elem as u32,
             mip_level: blit.dst_mip as u32,
         },
         SubResourceUsage {

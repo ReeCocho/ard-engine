@@ -8,12 +8,24 @@ use crate::{
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
     surface::SurfaceImage,
     texture::{Blit, Texture},
-    types::{Filter, IndexType, QueueType, Scissor, ShaderStage},
+    types::{CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage},
     Backend,
 };
 
+pub enum BlitSource<'a, B: Backend> {
+    Texture(&'a Texture<B>),
+    CubeMap {
+        cube_map: &'a CubeMap<B>,
+        face: CubeFace,
+    },
+}
+
 pub enum BlitDestination<'a, B: Backend> {
     Texture(&'a Texture<B>),
+    CubeMap {
+        cube_map: &'a CubeMap<B>,
+        face: CubeFace,
+    },
     SurfaceImage(&'a SurfaceImage<B>),
 }
 
@@ -140,8 +152,8 @@ pub enum Command<'a, B: Backend> {
         buffer: &'a Buffer<B>,
         copy: BufferCubeMapCopy,
     },
-    BlitTexture {
-        src: &'a Texture<B>,
+    Blit {
+        src: BlitSource<'a, B>,
         dst: BlitDestination<'a, B>,
         blit: Blit,
         filter: Filter,
@@ -226,7 +238,16 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             "queue `{:?}` does not support transfer commands",
             self.queue_ty
         );
-
+        assert!(copy.dst_offset < copy.dst.size(), "out of bound");
+        assert!(copy.src_offset < copy.src.size(), "out of bound");
+        assert!(
+            copy.len <= copy.dst.size() - copy.dst_offset,
+            "attempt to copy too many bytes"
+        );
+        assert!(
+            copy.len <= copy.src.size() - copy.src_offset,
+            "attempt to copy too many bytes"
+        );
         self.commands.push(Command::CopyBufferToBuffer(copy));
     }
 
@@ -362,9 +383,9 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
     /// - If the queue type this command buffer was created with does not support graphics
     /// commands.
     #[inline(always)]
-    pub fn blit_texture(
+    pub fn blit(
         &mut self,
-        src: &'a Texture<B>,
+        src: BlitSource<'a, B>,
         dst: BlitDestination<'a, B>,
         blit: Blit,
         filter: Filter,
@@ -376,7 +397,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             self.queue_ty
         );
 
-        self.commands.push(Command::BlitTexture {
+        self.commands.push(Command::Blit {
             src,
             dst,
             blit,

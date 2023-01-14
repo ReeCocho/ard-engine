@@ -2,8 +2,8 @@ use ard_assets::{
     manager::Assets,
     prelude::{AssetNameBuf, Handle},
 };
-use ard_graphics_assets::prelude::CubeMapAsset;
 use ard_math::Vec3;
+use ard_render::prelude::CubeMapAsset;
 use serde::{Deserialize, Serialize};
 
 pub struct LightingSettings {

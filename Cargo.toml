@@ -36,7 +36,7 @@ ard-pal = { path = "./crates/ard-pal", version = "0.1", optional = true }
 bytemuck = "1.7"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 rand = "0.8"
-egui = { version = "0.19", features = ["bytemuck"] }
+egui = { version = "0.20", features = ["bytemuck"] }
 
 [profile.release]
 debug = 1

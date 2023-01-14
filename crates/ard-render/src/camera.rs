@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use ard_ecs::prelude::Component;
 use ard_math::{Mat4, Vec2, Vec3, Vec4};
 use ard_pal::prelude::Context;
 use bytemuck::{Pod, Zeroable};
@@ -82,7 +83,7 @@ pub struct Frustum {
     pub planes: [Vec4; 6],
 }
 
-#[derive(Clone)]
+#[derive(Clone, Component)]
 pub struct Camera {
     pub(crate) id: ResourceId,
     pub(crate) escaper: EscapeHandle,

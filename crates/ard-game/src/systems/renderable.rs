@@ -1,7 +1,6 @@
 use ard_assets::manager::Assets;
 use ard_ecs::prelude::*;
-use ard_graphics_api::prelude::*;
-use ard_graphics_vk::VkBackend;
+use ard_render::renderer::{PreRender, RenderLayer, Renderable};
 
 use crate::components::renderable::{RenderableData, RenderableSource};
 
@@ -21,7 +20,7 @@ impl ApplyRenderableData {
         // Find every entity that has renderable data but no active renderer
         for (entity, data) in queries
             .filter()
-            .without::<Renderable<VkBackend>>()
+            .without::<Renderable>()
             .make::<(Entity, Read<RenderableData>)>()
         {
             // Check to see if the renderable data is loaded
@@ -48,17 +47,18 @@ impl ApplyRenderableData {
                         None => continue,
                     };
 
-                    let (mesh, material) = match mg.meshes.get(*mesh_idx) {
+                    let mesh_instance = match mg.0.get(*mesh_idx) {
                         Some(mesh) => mesh,
                         None => continue,
                     };
 
+                    commands.entities.remove_component::<RenderableData>(entity);
                     commands.entities.add_component(
                         entity,
-                        Renderable::<VkBackend> {
-                            mesh: mesh.clone(),
-                            material: model.materials[*material].clone(),
-                            layers: RenderLayer::Opaque | RenderLayer::ShadowCaster,
+                        Renderable {
+                            mesh: mesh_instance.mesh.clone(),
+                            material: model.materials[mesh_instance.material].clone(),
+                            layers: RenderLayer::OPAQUE | RenderLayer::SHADOW_CASTER,
                         },
                     );
                 }

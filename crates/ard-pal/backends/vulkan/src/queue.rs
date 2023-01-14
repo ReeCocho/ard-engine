@@ -3,7 +3,10 @@ use std::{collections::VecDeque, ffi::CString};
 use api::types::QueueType;
 use ash::vk::{self, Handle};
 
-use crate::util::semaphores::{SemaphoreTracker, WaitInfo};
+use crate::util::{
+    garbage_collector::TimelineValues,
+    semaphores::{SemaphoreTracker, WaitInfo},
+};
 
 pub(crate) struct VkQueue {
     pub queue: vk::Queue,
@@ -96,13 +99,13 @@ impl VkQueue {
                 .build();
 
             debug
-                .debug_utils_set_object_name(device.handle(), &queue_name_info)
+                .set_debug_utils_object_name(device.handle(), &queue_name_info)
                 .unwrap();
             debug
-                .debug_utils_set_object_name(device.handle(), &semaphore_name_info)
+                .set_debug_utils_object_name(device.handle(), &semaphore_name_info)
                 .unwrap();
             debug
-                .debug_utils_set_object_name(device.handle(), &pool_name_info)
+                .set_debug_utils_object_name(device.handle(), &pool_name_info)
                 .unwrap();
         }
 
@@ -190,7 +193,7 @@ impl VkQueue {
                         .object_name(&name)
                         .build();
                     debug
-                        .debug_utils_set_object_name(device.handle(), &name_info)
+                        .set_debug_utils_object_name(device.handle(), &name_info)
                         .unwrap();
                 }
 
@@ -211,7 +214,7 @@ impl VkQueue {
             self.semaphore,
             WaitInfo {
                 value: Some(self.target_value),
-                stage: vk::PipelineStageFlags::TOP_OF_PIPE,
+                stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
             },
         );
         semaphore_tracker.register_signal(self.semaphore, Some(self.target_value + 1));
@@ -247,8 +250,7 @@ impl VkQueue {
         let command_buffer = [command_buffer];
         let mut timeline_info = vk::TimelineSemaphoreSubmitInfo::builder()
             .signal_semaphore_values(&signal_values)
-            .wait_semaphore_values(&wait_values)
-            .build();
+            .wait_semaphore_values(&wait_values);
         let submit_info = [vk::SubmitInfo::builder()
             .command_buffers(&command_buffer)
             .signal_semaphores(&signals)

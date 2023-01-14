@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 api = { path = "../../api", version = "0.1" }
-ash = "0.37.0+1.3.209"
+ash = "0.37.1+1.3.235"
 ash-window = "0.11"
 raw-window-handle = "0.4"
-gpu-allocator = "0.18"
+gpu-allocator = "0.21"
 crossbeam-utils = "0.8"
 crossbeam-channel = "0.5"
 thiserror = "1"

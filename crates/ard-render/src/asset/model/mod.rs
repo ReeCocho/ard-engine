@@ -24,6 +24,7 @@ pub struct ModelAsset {
     pub textures: Vec<Texture>,
     pub materials: Vec<MaterialInstance>,
     pub mesh_groups: Vec<MeshGroup>,
+    pub node_count: usize,
     pub roots: Vec<Node>,
     pub(self) post_load: Option<ModelPostLoad>,
 }

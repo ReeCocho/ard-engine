@@ -19,6 +19,7 @@ use ard_pal::prelude::*;
 use ard_window::{window::WindowId, windows::Windows};
 use bitflags::bitflags;
 use raw_window_handle::HasRawWindowHandle;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     camera::{CameraClearColor, CameraUbo},
@@ -92,7 +93,7 @@ pub struct Renderable {
 }
 
 /// Model matrix of a renderable object.
-#[derive(Component, Copy, Clone)]
+#[derive(Component, Default, Serialize, Deserialize, Copy, Clone)]
 pub struct Model(pub Mat4);
 
 bitflags! {
@@ -234,7 +235,7 @@ impl Renderer {
         let lighting = Lighting::new(&ctx);
 
         // Create GUI data
-        let gui = Gui::new(ctx.clone());
+        let gui = Gui::new(ctx.clone(), &factory.0.layouts.textures);
 
         // Create post processing data
         let post_processing = PostProcessing::new(&ctx, width, height);
@@ -267,6 +268,11 @@ impl Renderer {
             lighting,
             gui,
         )
+    }
+
+    #[inline(always)]
+    pub fn egui_texture_id() -> egui::TextureId {
+        egui::TextureId::User((u32::MAX - 1) as u64)
     }
 
     fn tick(
@@ -416,6 +422,7 @@ impl Renderer {
         std::mem::drop(static_geometry);
         gui.prepare_draw(
             self.frame,
+            self.post_processing.final_image(),
             IVec2::new(screen_width as i32, screen_height as i32),
             evt.0.as_secs_f32(),
             &ecs_commands,
@@ -663,6 +670,7 @@ impl Renderer {
             // Render shadow maps
             camera.shadows.render(
                 self.frame,
+                use_alternate,
                 ShadowRenderArgs {
                     texture_sets: &texture_sets,
                     material_buffers: &material_buffers,
@@ -788,11 +796,31 @@ impl Renderer {
         // Post processing
         self.post_processing.draw(
             self.frame,
-            &surface_image,
             Vec2::new(canvas_width as f32, canvas_height as f32),
             &settings.post_processing,
             &mut commands,
         );
+
+        // If required, blit the scene image to the surface
+        if settings.render_scene {
+            let (src, array_element) = self.post_processing.final_image();
+            let (width, height) = self.surface.dimensions();
+            commands.blit(
+                BlitSource::Texture(src),
+                BlitDestination::SurfaceImage(&surface_image),
+                Blit {
+                    src_min: (0, 0, 0),
+                    src_max: src.dims(),
+                    src_mip: 0,
+                    src_array_element: array_element,
+                    dst_min: (0, 0, 0),
+                    dst_max: (width, height, 1),
+                    dst_mip: 0,
+                    dst_array_element: 0,
+                },
+                Filter::Linear,
+            );
+        }
 
         // Render the GUI
         commands.render_pass(
@@ -808,6 +836,7 @@ impl Renderer {
                 gui.draw(
                     self.frame,
                     Vec2::new(screen_width as f32, screen_height as f32),
+                    &texture_sets,
                     pass,
                 );
             },

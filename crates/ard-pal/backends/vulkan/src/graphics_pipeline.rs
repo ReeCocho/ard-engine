@@ -197,14 +197,14 @@ impl GraphicsPipeline {
                             .dst_color_blend_factor(crate::util::to_vk_blend_factor(
                                 attachment.dst_color_blend_factor,
                             ))
-                            .color_blend_op(vk::BlendOp::ADD)
+                            .color_blend_op(crate::util::to_vk_blend_op(attachment.color_blend_op))
                             .src_alpha_blend_factor(crate::util::to_vk_blend_factor(
                                 attachment.src_alpha_blend_factor,
                             ))
                             .dst_alpha_blend_factor(crate::util::to_vk_blend_factor(
                                 attachment.dst_alpha_blend_factor,
                             ))
-                            .alpha_blend_op(vk::BlendOp::ADD)
+                            .alpha_blend_op(crate::util::to_vk_blend_op(attachment.alpha_blend_op))
                             .build(),
                     );
                 }
@@ -258,7 +258,7 @@ impl GraphicsPipeline {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(device.handle(), &name_info)
+                    .set_debug_utils_object_name(device.handle(), &name_info)
                     .unwrap();
             }
         }

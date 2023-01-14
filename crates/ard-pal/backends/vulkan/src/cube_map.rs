@@ -11,6 +11,7 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 use crate::{
     texture::TextureRefCounter,
     util::{cube_face_to_idx, garbage_collector::Garbage},
+    QueueFamilyIndices,
 };
 
 pub struct CubeMap {
@@ -33,6 +34,7 @@ pub struct CubeMap {
 impl CubeMap {
     pub(crate) unsafe fn new(
         device: &ash::Device,
+        qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -53,7 +55,8 @@ impl CubeMap {
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(crate::util::to_vk_image_usage(create_info.texture_usage))
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .sharing_mode(vk::SharingMode::CONCURRENT)
+            .queue_family_indices(&[qfi.compute, qfi.main, qfi.transfer])
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
             .build();
@@ -265,7 +268,7 @@ impl CubeMap {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(device.handle(), &name_info)
+                    .set_debug_utils_object_name(device.handle(), &name_info)
                     .unwrap();
 
                 for (i, view) in views.iter().enumerate() {
@@ -277,7 +280,7 @@ impl CubeMap {
                         .build();
 
                     debug
-                        .debug_utils_set_object_name(device.handle(), &name_info)
+                        .set_debug_utils_object_name(device.handle(), &name_info)
                         .unwrap();
                 }
             }
@@ -295,6 +298,11 @@ impl CubeMap {
             size: mem_reqs.size / create_info.array_elements as u64,
             aspect_flags,
         })
+    }
+
+    #[inline(always)]
+    pub(crate) fn to_array_elem(array_elem: usize, face: CubeFace) -> usize {
+        (array_elem * 6) + cube_face_to_idx(face)
     }
 
     #[inline(always)]

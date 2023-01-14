@@ -1,7 +1,7 @@
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_graphics_api::prelude::*;
 use ard_math::*;
+use ard_render::renderer::Model;
 
 use crate::{
     components::transform::{Children, Parent, PrevParent, Transform},
@@ -74,11 +74,11 @@ impl TransformUpdate {
         for (entity, (parent, transform, global)) in current {
             if parent.0.is_none() {
                 self.hierarchy.push(entity);
-                global.0 = Mat4::from_scale_rotation_translation(
-                    transform.scale(),
-                    transform.rotation(),
-                    transform.position(),
-                );
+                // global.0 = Mat4::from_scale_rotation_translation(
+                //     transform.scale(),
+                //     transform.rotation(),
+                //     transform.position(),
+                // );
             }
         }
 
@@ -110,12 +110,12 @@ impl TransformUpdate {
                 self.hierarchy.push(*child);
 
                 if let Some(mut query) = queries.get::<(Read<Transform>, Write<Model>)>(*child) {
-                    query.1 .0 = parent_global
-                        * Mat4::from_scale_rotation_translation(
-                            query.0.scale(),
-                            query.0.rotation(),
-                            query.0.position(),
-                        );
+                    // query.1 .0 = parent_global
+                    //     * Mat4::from_scale_rotation_translation(
+                    //         query.0.scale(),
+                    //         query.0.rotation(),
+                    //         query.0.position(),
+                    //     );
                 }
             }
 

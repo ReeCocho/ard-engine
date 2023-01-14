@@ -118,6 +118,7 @@ fn main() {
 struct PushConstants {
     vp: Mat4,
     roughness: f32,
+    resolution: u32,
 }
 
 unsafe impl Pod for PushConstants {}
@@ -194,16 +195,18 @@ fn load_image(pal: &Context, args: &Args) -> Texture {
 fn to_cube_map(pal: &Context, args: &Args, hdr_texture: &Texture) -> CubeMap {
     println!("Generating cube map...");
 
+    let mip_levels = ((args.resolution as f32).log2().ceil() as usize).max(1);
     let cubemap = CubeMap::new(
         pal.clone(),
         CubeMapCreateInfo {
             format: TextureFormat::Rgba16SFloat,
             size: args.resolution,
             array_elements: 1,
-            mip_levels: 1,
+            mip_levels,
             texture_usage: TextureUsage::COLOR_ATTACHMENT
                 | TextureUsage::SAMPLED
-                | TextureUsage::TRANSFER_SRC,
+                | TextureUsage::TRANSFER_SRC
+                | TextureUsage::TRANSFER_DST,
             memory_usage: MemoryUsage::GpuOnly,
             debug_name: Some(String::from("cubemap")),
         },
@@ -308,7 +311,100 @@ fn to_cube_map(pal: &Context, args: &Args, hdr_texture: &Texture) -> CubeMap {
     .unwrap();
 
     let mut commands = pal.main().command_buffer();
+
+    // Generate the base mip level of the cube map
     draw_cube_faces(&mut commands, &pipeline, &descriptor_set, &cubemap, 0, 0.0);
+
+    // Generate mip levels for the cube map
+    for mip_level in 1..mip_levels {
+        let src_dim = args.resolution.shr(mip_level - 1).max(1);
+        let dst_dim = args.resolution.shr(mip_level).max(1);
+
+        let blit = Blit {
+            src_min: (0, 0, 0),
+            src_max: (src_dim, src_dim, 1),
+            src_mip: mip_level - 1,
+            src_array_element: 0,
+            dst_min: (0, 0, 0),
+            dst_max: (dst_dim, dst_dim, 1),
+            dst_mip: mip_level,
+            dst_array_element: 0,
+        };
+
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::North,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::North,
+            },
+            blit,
+            Filter::Linear,
+        );
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::East,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::East,
+            },
+            blit,
+            Filter::Linear,
+        );
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::South,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::South,
+            },
+            blit,
+            Filter::Linear,
+        );
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::West,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::West,
+            },
+            blit,
+            Filter::Linear,
+        );
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::Top,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::Top,
+            },
+            blit,
+            Filter::Linear,
+        );
+        commands.blit(
+            BlitSource::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::Bottom,
+            },
+            BlitDestination::CubeMap {
+                cube_map: &cubemap,
+                face: CubeFace::Bottom,
+            },
+            blit,
+            Filter::Linear,
+        );
+    }
+
     pal.main().submit(Some("cube_map_gen"), commands);
 
     cubemap
@@ -510,7 +606,7 @@ fn create_prefiltered_env_map(pal: &Context, cube_map: &CubeMap) -> CubeMap {
                 unnormalize_coords: false,
             },
             base_mip: 0,
-            mip_count: 1,
+            mip_count: cube_map.mip_count(),
         },
     }]);
 
@@ -835,7 +931,7 @@ fn draw_cube_faces<'a, 'b>(
     mip: usize,
     roughness: f32,
 ) {
-    let push_constants = generate_vps(roughness);
+    let push_constants = generate_vps(roughness, cube_map.dim());
 
     commands.render_pass(
         RenderPassDescriptor {
@@ -970,38 +1066,44 @@ fn draw_cube_faces<'a, 'b>(
     );
 }
 
-fn generate_vps(roughness: f32) -> [PushConstants; 6] {
+fn generate_vps(roughness: f32, resolution: u32) -> [PushConstants; 6] {
     let perspective = Mat4::perspective_lh(std::f32::consts::FRAC_PI_2, 1.0, 0.1, 10.0);
     [
         // East
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, Vec3::X, Vec3::Y),
             roughness,
+            resolution,
         },
         // West
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, -Vec3::X, Vec3::Y),
             roughness,
+            resolution,
         },
         // Top
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, Vec3::Y, -Vec3::Z),
             roughness,
+            resolution,
         },
         // Bottom
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, -Vec3::Y, Vec3::Z),
             roughness,
+            resolution,
         },
         // North
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, Vec3::Z, Vec3::Y),
             roughness,
+            resolution,
         },
         // South
         PushConstants {
             vp: perspective * Mat4::look_at_lh(Vec3::ZERO, -Vec3::Z, Vec3::Y),
             roughness,
+            resolution,
         },
     ]
 }

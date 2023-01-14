@@ -4,7 +4,8 @@ layout(location = 0) out vec3 OUT_POSITION;
 
 layout(push_constant) uniform constants {
     mat4 vp;
-    float unused;
+    float unused1;
+    uint unused2;
 };
 
 const vec3 POINTS[] = vec3[36](

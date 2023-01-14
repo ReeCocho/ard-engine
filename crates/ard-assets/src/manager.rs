@@ -13,7 +13,7 @@ use std::{
 
 use crate::prelude::{
     AnyAssetLoader, Asset, AssetLoadResult, AssetLoader, AssetName, AssetNameBuf,
-    AssetPostLoadResult, FolderPackage, Package, PackageInterface,
+    AssetPostLoadResult, FolderPackage, Package, PackageId, PackageInterface,
 };
 use crate::{handle::Handle, prelude::RawHandle};
 use ard_ecs::{id_map::FastIntHasher, prelude::*};
@@ -67,7 +67,7 @@ pub struct AssetData {
     /// Asset name.
     pub(crate) name: AssetNameBuf,
     /// Index of the package the asset was loaded from.
-    pub(crate) package: usize,
+    pub(crate) package: PackageId,
     /// Flag indicating that this asset is being loaded.
     pub(crate) loading: AtomicBool,
     /// Number of outstanding handles to this asset. Each time a handle is created via a load, this
@@ -148,7 +148,7 @@ impl Assets {
                 AssetData {
                     asset: ShardedLock::new(None),
                     name: asset,
-                    package,
+                    package: PackageId::from(package),
                     loading: AtomicBool::new(false),
                     outstanding_handles: AtomicU32::new(0),
                 },
@@ -218,6 +218,17 @@ impl Assets {
         &self,
     ) -> dashmap::iter::Iter<'_, u32, AssetData, BuildHasherDefault<FastIntHasher>> {
         self.0.assets.iter()
+    }
+
+    #[inline]
+    pub fn get_package_by_name(&self, name: &Path) -> Option<PackageId> {
+        for (i, package) in self.0.packages.iter().enumerate() {
+            if package.path() == name {
+                return Some(PackageId::from(i));
+            }
+        }
+
+        None
     }
 
     /// Get an asset via it's handle.
@@ -480,7 +491,7 @@ impl Assets {
                     AssetData {
                         asset: ShardedLock::new(None),
                         name: AssetNameBuf::from(name),
-                        package: i,
+                        package: PackageId::from(i),
                         loading: AtomicBool::new(false),
                         outstanding_handles: AtomicU32::new(0),
                     },
@@ -585,9 +596,14 @@ impl Assets {
 }
 
 impl AssetData {
-    #[inline]
+    #[inline(always)]
     pub fn name(&self) -> &AssetName {
         &self.name
+    }
+
+    #[inline(always)]
+    pub fn package(&self) -> PackageId {
+        self.package
     }
 
     /// Increments the outstand handles counter on the asset data object if the asset is not
@@ -668,7 +684,7 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
     let loader = loader.as_any().downcast_ref::<A::Loader>().unwrap();
 
     // Find the package to load it from
-    let package = req.assets.0.packages[asset_data.package].clone();
+    let package = req.assets.0.packages[usize::from(asset_data.package)].clone();
 
     // Use the loader to load the asset
     let (asset, mut post_load, persistent) = match loader

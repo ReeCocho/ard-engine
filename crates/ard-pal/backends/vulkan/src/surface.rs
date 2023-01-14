@@ -81,7 +81,7 @@ impl Surface {
                     .build();
 
                 debug
-                    .debug_utils_set_object_name(ctx.device.handle(), &name_info)
+                    .set_debug_utils_object_name(ctx.device.handle(), &name_info)
                     .unwrap();
             }
         }
@@ -333,7 +333,7 @@ impl Surface {
                     .object_name(&swapchain_name)
                     .build();
                 debug
-                    .debug_utils_set_object_name(ctx.device.handle(), &swapchain_name_info)
+                    .set_debug_utils_object_name(ctx.device.handle(), &swapchain_name_info)
                     .unwrap();
 
                 for (i, (image, view)) in self.images.iter().enumerate() {
@@ -350,10 +350,10 @@ impl Surface {
                         .object_name(&view_name)
                         .build();
                     debug
-                        .debug_utils_set_object_name(ctx.device.handle(), &image_name_info)
+                        .set_debug_utils_object_name(ctx.device.handle(), &image_name_info)
                         .unwrap();
                     debug
-                        .debug_utils_set_object_name(ctx.device.handle(), &view_name_info)
+                        .set_debug_utils_object_name(ctx.device.handle(), &view_name_info)
                         .unwrap();
                 }
 
@@ -373,10 +373,10 @@ impl Surface {
                         .object_name(&presentable_name)
                         .build();
                     debug
-                        .debug_utils_set_object_name(ctx.device.handle(), &available_name_info)
+                        .set_debug_utils_object_name(ctx.device.handle(), &available_name_info)
                         .unwrap();
                     debug
-                        .debug_utils_set_object_name(ctx.device.handle(), &presentable_name_info)
+                        .set_debug_utils_object_name(ctx.device.handle(), &presentable_name_info)
                         .unwrap();
                 }
             }
@@ -405,6 +405,15 @@ impl Surface {
             Ok((idx, _)) => idx as usize,
             Err(err) => return Err(SurfaceImageAcquireError::Other(err.to_string())),
         };
+
+        // Layout is undefined after presenting, so if the
+        // image is reaquired we must update its layout
+        ctx.resource_state.write().unwrap().set_layout(
+            self.images[image_idx].0,
+            0,
+            0,
+            vk::ImageLayout::UNDEFINED,
+        );
 
         Ok(SurfaceImage {
             surface: self.surface,

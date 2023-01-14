@@ -13,6 +13,7 @@ layout(location = 1) out vec2 OUT_UV;
 
 layout(push_constant) uniform constants {
     vec2 screen_size;
+    uint texture_id;
 };
 
 void main() {

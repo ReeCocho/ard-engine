@@ -10,6 +10,7 @@ ard-math = { version = "0.1", path = "../ard-math" }
 ard-ecs = { version = "0.1", path = "../ard-ecs" }
 ard-core = { version = "0.1", path = "../ard-core" }
 ard-assets = { version = "0.1", path = "../ard-assets" }
+ard-render = { version = "0.1", path = "../ard-render" }
 crossbeam-channel = "0.5"
 smallvec = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

@@ -27,9 +27,9 @@ log.txt
 *.ini
 *.meta
 *.ard_mdl
-*.ard_cube
 
 # Very big files
+examples/assets/new_render/
 sponza.glb
 sponza2.glb
 sponza3.glb

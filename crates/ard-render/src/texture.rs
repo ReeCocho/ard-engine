@@ -49,6 +49,13 @@ pub(crate) struct TextureInner {
     pub loaded_mips: u32,
 }
 
+impl Texture {
+    #[inline(always)]
+    pub fn egui_texture_id(&self) -> egui::TextureId {
+        egui::TextureId::User(self.id.0 as u64)
+    }
+}
+
 impl TextureInner {
     /// Creates the texture and a staging buffer with the image data.
     pub fn new(ctx: &Context, create_info: TextureCreateInfo) -> (Self, Buffer) {

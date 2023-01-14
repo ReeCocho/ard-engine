@@ -128,7 +128,7 @@ fn main() {
     std::mem::drop(index_staging);
 
     // Create uniform buffer
-    let mut uniform_buffer = Buffer::new(
+    let uniform_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
             size: std::mem::size_of::<UniformData>() as u64,

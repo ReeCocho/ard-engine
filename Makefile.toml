@@ -16,8 +16,8 @@ args = [ "build", "--package", "ibl-oven" ]
 command = "cargo"
 args = [ "build", "--package", "editor" ]
 
-[tasks.move-files]
-script_runner = "@shell"
+[tasks.copy-executables]
+script_runner = "@duckscript"
 dependencies = [
     "build-gltf-oven",
     "build-ibl-oven",
@@ -25,11 +25,33 @@ dependencies = [
 ]
 script = '''
 mkdir ./build/debug/tools/
+mkdir ./build/debug/temp/
 cp ./target/debug/gltf-oven.exe ./build/debug/tools/gltf-oven.exe
 cp ./target/debug/ibl-oven.exe ./build/debug/tools/ibl-oven.exe
 cp ./target/debug/editor.exe ./build/debug/ard-editor.exe
 cp ./target/debug/editor.pdb ./build/debug/ard-editor.pdb
-cp -r ./data/ ./build/debug/
+'''
+
+[tasks.copy-assets]
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! fs_extra = "1"
+//! ```
+fn main() {
+    let options = fs_extra::dir::CopyOptions {
+        overwrite: true,
+        skip_exist: false,
+        ..Default::default()
+    };
+
+    fs_extra::dir::copy("./data/assets/editor/", "./build/debug/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/game/", "./build/debug/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/standard/", "./build/debug/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/baked/", "./build/debug/assets/", &options).unwrap();
+    std::fs::copy("./data/assets/packages.ron", "./build/debug/assets/packages.ron").unwrap();
+}
 '''
 
 [tasks.build]
@@ -38,5 +60,6 @@ dependencies = [
     "build-gltf-oven",
     "build-ibl-oven",
     "build-editor",
-    "move-files"
+    "copy-executables",
+    "copy-assets"
 ]

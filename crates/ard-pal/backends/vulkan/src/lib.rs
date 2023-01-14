@@ -1,6 +1,6 @@
 use api::{
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
-    command_buffer::{BlitDestination, Command},
+    command_buffer::{BlitDestination, BlitSource, Command},
     compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo},
     cube_map::{CubeMapCreateError, CubeMapCreateInfo},
     descriptor_set::{
@@ -92,7 +92,7 @@ pub struct VulkanBackend {
     pub(crate) physical_device: vk::PhysicalDevice,
     pub(crate) queue_family_indices: QueueFamilyIndices,
     pub(crate) properties: vk::PhysicalDeviceProperties,
-    pub(crate) features: vk::PhysicalDeviceFeatures,
+    pub(crate) _features: vk::PhysicalDeviceFeatures,
     pub(crate) device: ash::Device,
     pub(crate) surface_loader: ash::extensions::khr::Surface,
     pub(crate) swapchain_loader: ash::extensions::khr::Swapchain,
@@ -223,17 +223,7 @@ impl Backend for VulkanBackend {
         let mut compute = self.compute.write().unwrap();
         let mut present = self.present.write().unwrap();
 
-        // Perform garbage collection
-        let current_values = TimelineValues {
-            main: main.current_timeline_value(&self.device),
-            transfer: transfer.current_timeline_value(&self.device),
-            compute: compute.current_timeline_value(&self.device),
-        };
-        let target_values = TimelineValues {
-            main: main.target_timeline_value(),
-            transfer: transfer.target_timeline_value(),
-            compute: compute.target_timeline_value(),
-        };
+        // State
         let next_target_value = match queue {
             QueueType::Main => &main,
             QueueType::Transfer => &transfer,
@@ -242,17 +232,7 @@ impl Backend for VulkanBackend {
         }
         .target_timeline_value()
             + 1;
-        self.garbage.cleanup(
-            &self.device,
-            &mut allocator,
-            &mut pools,
-            &mut pipelines,
-            current_values,
-            target_values,
-            false,
-        );
 
-        // State
         let mut semaphore_tracker = SemaphoreTracker::default();
         let mut active_render_pass = vk::RenderPass::null();
         let mut active_layout = vk::PipelineLayout::null();
@@ -551,6 +531,14 @@ impl Backend for VulkanBackend {
                     draw_count,
                     stride,
                 } => {
+                    // if let Some((utils, _)) = &self.debug {
+                    //     let name = CString::new("draw_indirect_here").unwrap();
+                    //     let label = vk::DebugUtilsLabelEXT::builder()
+                    //         .color([1.0, 0.0, 0.0, 1.0])
+                    //         .label_name(&name)
+                    //         .build();
+                    //     utils.cmd_insert_debug_utils_label(cb, &label);
+                    // }
                     self.device.cmd_draw_indexed_indirect(
                         cb,
                         buffer.internal().buffer,
@@ -708,21 +696,53 @@ impl Backend for VulkanBackend {
                         &copy,
                     );
                 }
-                Command::BlitTexture {
+                Command::Blit {
                     src,
                     dst,
                     blit,
                     filter,
                 } => {
-                    let src = src.internal();
-                    let (dst_img, dst_aspect_flags, is_si) = match dst {
+                    let (src_img, src_array_elem, src_aspect_flags) = match src {
+                        BlitSource::Texture(tex) => {
+                            let internal = tex.internal();
+                            (
+                                internal.image,
+                                blit.src_array_element,
+                                internal.aspect_flags,
+                            )
+                        }
+                        BlitSource::CubeMap { cube_map, face } => {
+                            let internal = cube_map.internal();
+                            (
+                                internal.image,
+                                CubeMap::to_array_elem(blit.src_array_element, *face),
+                                internal.aspect_flags,
+                            )
+                        }
+                    };
+
+                    let (dst_img, dst_array_elem, dst_aspect_flags, is_si) = match dst {
                         BlitDestination::Texture(tex) => {
                             let internal = tex.internal();
-                            (internal.image, internal.aspect_flags, false)
+                            (
+                                internal.image,
+                                blit.dst_array_element,
+                                internal.aspect_flags,
+                                false,
+                            )
+                        }
+                        BlitDestination::CubeMap { cube_map, face } => {
+                            let internal = cube_map.internal();
+                            (
+                                internal.image,
+                                CubeMap::to_array_elem(blit.dst_array_element, *face),
+                                internal.aspect_flags,
+                                false,
+                            )
                         }
                         BlitDestination::SurfaceImage(si) => {
                             let internal = si.internal();
-                            (internal.image(), vk::ImageAspectFlags::COLOR, true)
+                            (internal.image(), 0, vk::ImageAspectFlags::COLOR, true)
                         }
                     };
 
@@ -741,9 +761,9 @@ impl Backend for VulkanBackend {
                         ])
                         .src_subresource(
                             vk::ImageSubresourceLayers::builder()
-                                .aspect_mask(src.aspect_flags)
+                                .aspect_mask(src_aspect_flags)
                                 .mip_level(blit.src_mip as u32)
-                                .base_array_layer(blit.src_array_element as u32)
+                                .base_array_layer(src_array_elem as u32)
                                 .layer_count(1)
                                 .build(),
                         )
@@ -763,7 +783,7 @@ impl Backend for VulkanBackend {
                             vk::ImageSubresourceLayers::builder()
                                 .aspect_mask(dst_aspect_flags)
                                 .mip_level(blit.dst_mip as u32)
-                                .base_array_layer(blit.dst_array_element as u32)
+                                .base_array_layer(dst_array_elem as u32)
                                 .layer_count(1)
                                 .build(),
                         )
@@ -771,7 +791,7 @@ impl Backend for VulkanBackend {
 
                     self.device.cmd_blit_image(
                         cb,
-                        src.image,
+                        src_img,
                         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                         dst_img,
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -823,9 +843,9 @@ impl Backend for VulkanBackend {
         // Grab detected semaphores
         for (queue, stage) in pipeline_tracker.wait_queues() {
             let (semaphore, value) = match *queue {
-                QueueType::Main => (main.semaphore(), target_values.main),
-                QueueType::Transfer => (transfer.semaphore(), target_values.transfer),
-                QueueType::Compute => (compute.semaphore(), target_values.compute),
+                QueueType::Main => (main.semaphore(), main.target_timeline_value()),
+                QueueType::Transfer => (transfer.semaphore(), transfer.target_timeline_value()),
+                QueueType::Compute => (compute.semaphore(), compute.target_timeline_value()),
                 QueueType::Present => unreachable!(),
             };
             semaphore_tracker.register_wait(
@@ -846,13 +866,34 @@ impl Backend for VulkanBackend {
 
         self.device.end_command_buffer(cb).unwrap();
         match queue {
-            QueueType::Main => main,
-            QueueType::Transfer => transfer,
-            QueueType::Compute => compute,
-            QueueType::Present => present,
+            QueueType::Main => &mut main,
+            QueueType::Transfer => &mut transfer,
+            QueueType::Compute => &mut compute,
+            QueueType::Present => &mut present,
         }
         .submit(&self.device, cb, semaphore_tracker)
         .unwrap();
+
+        // Perform garbage collection
+        let current_values = TimelineValues {
+            main: main.current_timeline_value(&self.device),
+            transfer: transfer.current_timeline_value(&self.device),
+            compute: compute.current_timeline_value(&self.device),
+        };
+        let target_values = TimelineValues {
+            main: main.target_timeline_value(),
+            transfer: transfer.target_timeline_value(),
+            compute: compute.target_timeline_value(),
+        };
+        self.garbage.cleanup(
+            &self.device,
+            &mut allocator,
+            &mut pools,
+            &mut pipelines,
+            current_values,
+            target_values,
+            false,
+        );
 
         Job {
             ty: queue,
@@ -861,45 +902,28 @@ impl Backend for VulkanBackend {
     }
 
     unsafe fn wait_on(&self, job: &Self::Job, timeout: Option<std::time::Duration>) -> JobStatus {
-        let queue = match job.ty {
+        let semaphore = [match job.ty {
             QueueType::Main => self.main.read().unwrap(),
             QueueType::Transfer => self.transfer.read().unwrap(),
             QueueType::Compute => self.compute.read().unwrap(),
             QueueType::Present => self.present.read().unwrap(),
-        };
-
-        // If the queue is up to speed with the job, we can just wait using the API wait
-        if queue.target_timeline_value() == job.target_value {
-            let semaphore = [queue.semaphore()];
-            let value = [job.target_value];
-            let wait = vk::SemaphoreWaitInfo::builder()
-                .semaphores(&semaphore)
-                .values(&value)
-                .build();
-            match self.device.wait_semaphores(
-                &wait,
-                match timeout {
-                    Some(timeout) => timeout.as_millis() as u64,
-                    None => u64::MAX,
-                },
-            ) {
-                Ok(_) => JobStatus::Complete,
-                Err(_) => JobStatus::Running,
-            }
         }
-        // Otherwise, we have to spin since the timeline value might overshoot the value we
-        // actually want to wait on.
-        else {
-            let start = std::time::Instant::now();
-            let semaphore = queue.semaphore();
-            let timeout = timeout.unwrap_or(std::time::Duration::from_millis(u64::MAX));
-            while self.device.get_semaphore_counter_value(semaphore).unwrap() < job.target_value {
-                if std::time::Instant::now().duration_since(start) > timeout {
-                    return JobStatus::Running;
-                }
-                std::hint::spin_loop();
-            }
-            JobStatus::Complete
+        .semaphore()];
+        let value = [job.target_value];
+        let wait = vk::SemaphoreWaitInfo::builder()
+            .semaphores(&semaphore)
+            .values(&value)
+            .build();
+
+        match self.device.wait_semaphores(
+            &wait,
+            match timeout {
+                Some(timeout) => timeout.as_millis() as u64,
+                None => u64::MAX,
+            },
+        ) {
+            Ok(_) => JobStatus::Complete,
+            Err(_) => JobStatus::Running,
         }
     }
 
@@ -925,6 +949,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::Buffer, BufferCreateError> {
         Buffer::new(
             &self.device,
+            &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
             &mut self.allocator.lock().unwrap(),
@@ -940,6 +965,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::Texture, TextureCreateError> {
         Texture::new(
             &self.device,
+            &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
             &mut self.allocator.lock().unwrap(),
@@ -954,6 +980,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::CubeMap, CubeMapCreateError> {
         CubeMap::new(
             &self.device,
+            &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
             &mut self.allocator.lock().unwrap(),
@@ -1078,10 +1105,28 @@ impl Backend for VulkanBackend {
 
     unsafe fn flush_range(&self, _id: &Self::Buffer, _idx: usize) {
         // Not needed because `HOST_COHERENT`
+
+        // let range = [
+        //     vk::MappedMemoryRange::builder()
+        //         .memory(_id.block.memory())
+        //         .offset(_id.block.offset() + _id.offset(_idx))
+        //         .size(_id.aligned_size)
+        //         .build()
+        // ];
+        // self.device.flush_mapped_memory_ranges(&range).unwrap();
     }
 
     unsafe fn invalidate_range(&self, _id: &Self::Buffer, _idx: usize) {
         // Not needed because `HOST_COHERENT`
+
+        // let range = [
+        //     vk::MappedMemoryRange::builder()
+        //         .memory(_id.block.memory())
+        //         .offset(_id.block.offset() + _id.offset(_idx))
+        //         .size(_id.aligned_size)
+        //         .build()
+        // ];
+        // self.device.invalidate_mapped_memory_ranges(&range).unwrap();
     }
 
     #[inline(always)]
@@ -1134,13 +1179,11 @@ impl VulkanBackend {
 
         // Get required device extensions
         let device_extensions = {
-            let mut extensions = vec![
-                ash::extensions::khr::Swapchain::name(),
-                ash::extensions::khr::TimelineSemaphore::name(),
-            ];
+            let mut extensions = vec![ash::extensions::khr::Swapchain::name()];
             if create_info.debug {
                 extensions
-                    .push(CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap())
+                    .push(CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap());
+                extensions.push(CStr::from_bytes_with_nul(b"VK_EXT_robustness2\0").unwrap());
             }
             extensions
                 .into_iter()
@@ -1249,6 +1292,12 @@ impl VulkanBackend {
             .draw_indirect_first_instance(true)
             .multi_draw_indirect(true)
             .depth_clamp(true)
+            .robust_buffer_access(create_info.debug)
+            .build();
+
+        let mut robustness = vk::PhysicalDeviceRobustness2FeaturesEXT::builder()
+            .robust_buffer_access2(true)
+            .robust_image_access2(true)
             .build();
 
         let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
@@ -1257,12 +1306,17 @@ impl VulkanBackend {
             .runtime_descriptor_array(true)
             .build();
 
-        let create_info = vk::DeviceCreateInfo::builder()
+        let mut create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_infos)
             .enabled_extension_names(&device_extensions)
             .push_next(&mut features12)
-            .enabled_features(&features)
-            .build();
+            .enabled_features(&features);
+
+        if debug.is_some() {
+            create_info = create_info.push_next(&mut robustness);
+        }
+
+        let create_info = create_info.build();
 
         // Create the device
         let device = unsafe { instance.create_device(pd_query.device, &create_info, None)? };
@@ -1347,7 +1401,7 @@ impl VulkanBackend {
             physical_device: pd_query.device,
             queue_family_indices: pd_query.queue_family_indices,
             properties: pd_query.properties,
-            features: pd_query.features,
+            _features: pd_query.features,
             device,
             surface_loader,
             swapchain_loader,
@@ -1658,6 +1712,11 @@ unsafe extern "system" fn vulkan_debug_callback(
 ) -> vk::Bool32 {
     let callback_data = *p_callback_data;
     let message_id_number: i32 = callback_data.message_id_number as i32;
+
+    // Ignore `OutputNotConsumed` warnings
+    if message_id_number == 101294395 {
+        return vk::FALSE;
+    }
 
     let message_id_name = if callback_data.p_message_id_name.is_null() {
         Cow::from("")

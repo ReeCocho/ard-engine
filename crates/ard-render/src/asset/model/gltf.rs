@@ -22,6 +22,7 @@ pub fn to_asset(gltf: GltfModel, loader: &ModelLoader) -> ModelAsset {
         textures: Vec::default(),
         materials: Vec::default(),
         mesh_groups: Vec::default(),
+        node_count: 0,
         roots: Vec::with_capacity(gltf.roots.len()),
         post_load: Some(ModelPostLoad::Gltf),
     };
@@ -212,7 +213,9 @@ pub fn to_asset(gltf: GltfModel, loader: &ModelLoader) -> ModelAsset {
     model.materials = materials;
     model.mesh_groups = mesh_groups;
 
-    fn load_node(node: &GltfNode) -> Node {
+    fn load_node(node: &GltfNode) -> (Node, usize) {
+        let mut node_count = 1;
+
         let mut out_node = Node {
             name: node.name.clone(),
             model: node.model,
@@ -225,14 +228,18 @@ pub fn to_asset(gltf: GltfModel, loader: &ModelLoader) -> ModelAsset {
         };
 
         for child in &node.children {
-            out_node.children.push(load_node(child));
+            let (node, child_count) = load_node(child);
+            node_count += child_count;
+            out_node.children.push(node);
         }
 
-        out_node
+        (out_node, node_count)
     }
 
     for root in &gltf.roots {
-        model.roots.push(load_node(root));
+        let (node, node_count) = load_node(root);
+        model.node_count += node_count;
+        model.roots.push(node);
     }
 
     model

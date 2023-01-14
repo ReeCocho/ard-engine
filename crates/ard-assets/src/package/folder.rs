@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crossbeam_utils::sync::{ShardedLock, ShardedLockReadGuard, ShardedLockWriteGuard};
+use path_slash::{PathBufExt, PathExt};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -41,6 +42,7 @@ impl PackageInterface for FolderPackage {
     fn register_asset(&self, name: &AssetName) -> bool {
         let mut path = self.0.path.clone();
         path.push(name);
+        path = path.to_slash().unwrap().to_string().into();
 
         if path.exists() {
             let meta = match path.metadata() {
@@ -61,15 +63,19 @@ impl PackageInterface for FolderPackage {
     }
 
     async fn read(&self, file: &Path) -> Result<Vec<u8>, PackageReadError> {
+        // I would prefer not to have to heap allocate. Look into replacing
+        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+
         let (mut contents, path) = {
             let manifest = self.0.manifest.read().unwrap();
-            let meta = match manifest.assets.get(file) {
+            let meta = match manifest.assets.get(&file) {
                 Some(meta) => meta,
-                None => return Err(PackageReadError::DoesNotExist),
+                None => return Err(PackageReadError::DoesNotExist(file.to_owned())),
             };
 
             let mut path = self.0.path.clone();
-            path.extend(file);
+            path.extend(&file);
+            path = path.to_slash().unwrap().to_string().into();
 
             (Vec::with_capacity(meta.uncompressed_size), path)
         };
@@ -81,15 +87,19 @@ impl PackageInterface for FolderPackage {
     }
 
     async fn read_str(&self, file: &Path) -> Result<String, PackageReadError> {
+        // I would prefer not to have to heap allocate. Look into replacing
+        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+
         let (mut contents, path) = {
             let manifest = self.0.manifest.read().unwrap();
-            let meta = match manifest.assets.get(file) {
+            let meta = match manifest.assets.get(&file) {
                 Some(meta) => meta,
-                None => return Err(PackageReadError::DoesNotExist),
+                None => return Err(PackageReadError::DoesNotExist(file.to_owned())),
             };
 
             let mut path = self.0.path.clone();
-            path.extend(file);
+            path.extend(&file);
+            path = path.to_slash().unwrap().to_string().into();
 
             (String::with_capacity(meta.uncompressed_size), path)
         };

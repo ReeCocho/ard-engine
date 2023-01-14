@@ -1,7 +1,7 @@
 use ard_assets::prelude::Handle;
 use ard_ecs::prelude::*;
 use ard_game_derive::SaveLoad;
-use ard_graphics_assets::prelude::ModelAsset;
+use ard_render::prelude::ModelAsset;
 use serde::{Deserialize, Serialize};
 
 use crate::serialization::SaveLoad;

@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use path_slash::PathExt;
+
 /// A list of all the files within a package.
 pub struct Manifest {
     pub assets: HashMap<PathBuf, FileMetaData>,
@@ -51,7 +53,14 @@ impl Manifest {
             } else if metadata.is_dir() {
                 Manifest::from_folder_recurse(root, &entry.path(), manifest);
             } else if metadata.is_file() {
-                let file_name: PathBuf = entry.path().strip_prefix(root).unwrap().into();
+                let file_name: PathBuf = entry
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_slash()
+                    .unwrap()
+                    .to_string()
+                    .into();
                 manifest.assets.insert(
                     file_name,
                     FileMetaData {

@@ -13,6 +13,7 @@ use self::{
     cube_map::{CubeMapAsset, CubeMapLoader},
     material::{MaterialAsset, MaterialLoader},
     model::{ModelAsset, ModelLoader},
+    texture::{TextureAsset, TextureLoader},
 };
 
 #[derive(Resource, Clone)]
@@ -35,6 +36,7 @@ fn post_init(app: &mut App) {
     // Register loaders
     assets.register::<MaterialAsset>(MaterialLoader::new(factory.clone()));
     assets.register::<CubeMapAsset>(CubeMapLoader::new(factory.clone()));
+    assets.register::<TextureAsset>(TextureLoader::new(factory.clone()));
 
     // Load in required materials
     let handle = assets.load::<MaterialAsset>(&plugin.pbr_material);
