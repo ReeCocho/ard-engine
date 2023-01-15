@@ -3,10 +3,7 @@ use std::{collections::VecDeque, ffi::CString};
 use api::types::QueueType;
 use ash::vk::{self, Handle};
 
-use crate::util::{
-    garbage_collector::TimelineValues,
-    semaphores::{SemaphoreTracker, WaitInfo},
-};
+use crate::util::semaphores::{SemaphoreTracker, WaitInfo};
 
 pub(crate) struct VkQueue {
     pub queue: vk::Queue,

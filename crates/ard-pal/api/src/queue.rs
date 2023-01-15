@@ -64,7 +64,7 @@ impl<B: Backend> Queue<B> {
     /// - `debug_name` - The backend *should* use the provided debug name for easy identification.
     /// - `commands` - The command buffers to submit.
     #[inline(always)]
-    pub fn submit<'a>(&self, debug_name: Option<&str>, commands: CommandBuffer<B>) -> Job<B> {
+    pub fn submit(&self, debug_name: Option<&str>, commands: CommandBuffer<B>) -> Job<B> {
         let id = unsafe {
             self.ctx
                 .0

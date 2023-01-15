@@ -35,7 +35,7 @@ fn main() {
                 present_mode: PresentMode::Mailbox,
                 ..Default::default()
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("materials/pbr.mat"),

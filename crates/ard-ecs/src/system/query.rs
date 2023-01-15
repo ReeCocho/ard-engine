@@ -317,7 +317,7 @@ impl<Components: ComponentFilter> Query<Components, ()> for EntityComponentQuery
     }
 }
 
-impl<'a, Components: ComponentFilter> Iterator for EntityComponentQuery<Components> {
+impl<Components: ComponentFilter> Iterator for EntityComponentQuery<Components> {
     type Item = (
         Entity,
         <Components::StorageSet as ArchetypeStorageSet>::Filter,
@@ -405,7 +405,7 @@ impl<Components: ComponentFilter> Query<Components, ()> for ComponentQuery<Compo
     }
 }
 
-impl<'a, Components: ComponentFilter> Iterator for ComponentQuery<Components> {
+impl<Components: ComponentFilter> Iterator for ComponentQuery<Components> {
     type Item = <Components::StorageSet as ArchetypeStorageSet>::Filter;
 
     #[inline]
@@ -536,7 +536,7 @@ impl<C: ComponentFilter, T: TagFilter> Query<C, T> for EntityComponentTagQuery<C
     }
 }
 
-impl<'a, C: ComponentFilter, T: TagFilter> Iterator for EntityComponentTagQuery<C, T> {
+impl<C: ComponentFilter, T: TagFilter> Iterator for EntityComponentTagQuery<C, T> {
     type Item = (
         Entity,
         <C::StorageSet as ArchetypeStorageSet>::Filter,

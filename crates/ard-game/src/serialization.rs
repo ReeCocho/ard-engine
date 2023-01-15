@@ -89,7 +89,7 @@ impl SaveLoad for Model {
     type Descriptor = Model;
 
     fn save(&self, _entities: &EntityMap, _assets: &Assets) -> Self::Descriptor {
-        self.clone()
+        *self
     }
 
     fn load(descriptor: Self::Descriptor, _entities: &EntityMap, _assets: &Assets) -> Self {
@@ -101,17 +101,11 @@ impl<T: SaveLoad> SaveLoad for Option<T> {
     type Descriptor = Option<T::Descriptor>;
 
     fn save(&self, entities: &EntityMap, assets: &Assets) -> Self::Descriptor {
-        match self {
-            Some(inner) => Some(inner.save(entities, assets)),
-            None => None,
-        }
+        self.as_ref().map(|inner| inner.save(entities, assets))
     }
 
     fn load(descriptor: Self::Descriptor, entities: &EntityMap, assets: &Assets) -> Self {
-        match descriptor {
-            Some(inner) => Some(T::load(inner, entities, assets)),
-            None => None,
-        }
+        descriptor.map(|inner| T::load(inner, entities, assets))
     }
 }
 

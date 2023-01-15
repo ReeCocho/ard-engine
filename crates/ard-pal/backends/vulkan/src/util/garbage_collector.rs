@@ -56,6 +56,16 @@ pub(crate) struct TimelineValues {
     pub compute: u64,
 }
 
+pub(crate) struct GarbageCleanupArgs<'a> {
+    pub device: &'a ash::Device,
+    pub allocator: &'a mut Allocator,
+    pub pools: &'a mut DescriptorPools,
+    pub pipelines: &'a mut PipelineCache,
+    pub current: TimelineValues,
+    pub target: TimelineValues,
+    pub override_ref_counter: bool,
+}
+
 struct ToDestroy {
     garbage: Garbage,
     values: TimelineValues,
@@ -82,16 +92,7 @@ impl GarbageCollector {
         self.sender.clone()
     }
 
-    pub unsafe fn cleanup(
-        &self,
-        device: &ash::Device,
-        allocator: &mut Allocator,
-        pools: &mut DescriptorPools,
-        pipelines: &mut PipelineCache,
-        current: TimelineValues,
-        target: TimelineValues,
-        override_ref_counter: bool,
-    ) {
+    pub unsafe fn cleanup(&self, args: GarbageCleanupArgs) {
         // Receive all incoming garbage
         let mut to_destroy = self.to_destroy.lock().unwrap();
         while let Ok(garbage) = self.receiver.try_recv() {
@@ -100,7 +101,7 @@ impl GarbageCollector {
                 id,
                 ToDestroy {
                     garbage,
-                    values: target,
+                    values: args.target,
                 },
             );
         }
@@ -109,7 +110,7 @@ impl GarbageCollector {
         let mut marked = self.marked.lock().unwrap();
         marked.clear();
         for (id, garbage) in to_destroy.iter() {
-            if !override_ref_counter {
+            if !args.override_ref_counter {
                 match &garbage.garbage {
                     Garbage::Buffer { ref_counter, .. } => {
                         if !ref_counter.is_last() {
@@ -125,9 +126,9 @@ impl GarbageCollector {
                 }
             }
 
-            if garbage.values.main <= current.main
-                && garbage.values.transfer <= current.transfer
-                && garbage.values.compute <= current.compute
+            if garbage.values.main <= args.current.main
+                && garbage.values.transfer <= args.current.transfer
+                && garbage.values.compute <= args.current.compute
             {
                 marked.push(*id);
             }
@@ -138,17 +139,17 @@ impl GarbageCollector {
             match to_destroy.remove(id).unwrap().garbage {
                 Garbage::PipelineLayout(layout) => {
                     // Also destroy associated pipelines
-                    pipelines.release(device, layout);
-                    device.destroy_pipeline_layout(layout, None);
+                    args.pipelines.release(args.device, layout);
+                    args.device.destroy_pipeline_layout(layout, None);
                 }
                 Garbage::Pipeline(pipeline) => {
-                    device.destroy_pipeline(pipeline, None);
+                    args.device.destroy_pipeline(pipeline, None);
                 }
                 Garbage::Buffer {
                     buffer, allocation, ..
                 } => {
-                    device.destroy_buffer(buffer, None);
-                    allocator.free(allocation).unwrap();
+                    args.device.destroy_buffer(buffer, None);
+                    args.allocator.free(allocation).unwrap();
                 }
                 Garbage::Texture {
                     image,
@@ -156,34 +157,30 @@ impl GarbageCollector {
                     allocation,
                     ..
                 } => {
-                    device.destroy_image(image, None);
+                    args.device.destroy_image(image, None);
                     for view in views {
-                        device.destroy_image_view(view, None);
+                        args.device.destroy_image_view(view, None);
                     }
-                    allocator.free(allocation).unwrap();
+                    args.allocator.free(allocation).unwrap();
                 }
                 Garbage::DescriptorSet {
                     set,
                     layout,
                     bindings,
                 } => {
-                    pools.get_by_layout(layout).unwrap().free(set);
-                    for binding in bindings {
-                        for element in binding {
-                            if let Some(element) = element {
-                                match element.value {
-                                    BoundValue::Texture { view, .. } => {
-                                        device.destroy_image_view(view, None);
-                                    }
-                                    BoundValue::CubeMap { view, .. } => {
-                                        device.destroy_image_view(view, None);
-                                    }
-                                    BoundValue::StorageImage { view, .. } => {
-                                        device.destroy_image_view(view, None);
-                                    }
-                                    _ => {}
-                                }
+                    args.pools.get_by_layout(layout).unwrap().free(set);
+                    for element in bindings.into_iter().flatten().flatten() {
+                        match element.value {
+                            BoundValue::Texture { view, .. } => {
+                                args.device.destroy_image_view(view, None);
                             }
+                            BoundValue::CubeMap { view, .. } => {
+                                args.device.destroy_image_view(view, None);
+                            }
+                            BoundValue::StorageImage { view, .. } => {
+                                args.device.destroy_image_view(view, None);
+                            }
+                            _ => {}
                         }
                     }
                 }

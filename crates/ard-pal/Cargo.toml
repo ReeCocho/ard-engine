@@ -23,9 +23,6 @@ glam = { version = "0.21", features = [ "bytemuck" ] }
 wgpu = { version = "0.13", features = [ "spirv" ] }
 futures = "0.3"
 
-[profile.release]
-debug = true
-
 [[example]]
 name = "blank_window"
 

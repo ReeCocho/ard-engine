@@ -235,7 +235,7 @@ impl Factory {
 
         Material {
             id: escaper.id(),
-            escaper,
+            _escaper: escaper,
             data_size,
             texture_count,
         }
@@ -254,8 +254,7 @@ impl Factory {
 
         let instance = MaterialInstance {
             id: escaper.id(),
-            escaper,
-            factory: self.clone(),
+            _escaper: escaper,
             material,
         };
 
@@ -291,7 +290,7 @@ impl Factory {
 
         Mesh {
             id: escaper.id(),
-            escaper,
+            _escaper: escaper,
             layout,
         }
     }
@@ -306,7 +305,7 @@ impl Factory {
 
         let handle = Texture {
             id: escaper.id(),
-            escaper,
+            _escaper: escaper,
         };
 
         staging.add(StagingRequest::Texture {
@@ -329,7 +328,7 @@ impl Factory {
 
         let handle = CubeMap {
             id: escaper.id(),
-            escaper,
+            _escaper: escaper,
             mip_count,
         };
 
@@ -359,7 +358,7 @@ impl Factory {
 
         Camera {
             id: escaper.id(),
-            escaper,
+            _escaper: escaper,
         }
     }
 
@@ -407,7 +406,7 @@ impl Factory {
         material_buffers.mark_dirty(material.clone());
 
         // Copy in texture
-        material_inner.textures[slot] = texture.map(|tex| tex.clone());
+        material_inner.textures[slot] = texture.cloned();
     }
 
     pub fn load_texture_mip(&self, texture: &Texture, level: usize, data: &[u8]) {
@@ -429,7 +428,7 @@ impl Factory {
 
         staging.add(StagingRequest::TextureMip {
             id: texture.id,
-            dst: texture.clone(),
+            _dst: texture.clone(),
             mip_level: level,
             staging_buffer,
         });
@@ -454,7 +453,7 @@ impl Factory {
 
         staging.add(StagingRequest::CubeMapMip {
             id: cube_map.id,
-            dst: cube_map.clone(),
+            _dst: cube_map.clone(),
             mip_level: level,
             staging_buffer,
         });

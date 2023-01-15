@@ -276,8 +276,8 @@ impl Framebuffers {
 }
 
 impl VkRenderPassDescriptor {
-    pub fn from_descriptor<'a>(
-        descriptor: &RenderPassDescriptor<'a, crate::VulkanBackend>,
+    pub fn from_descriptor(
+        descriptor: &RenderPassDescriptor<crate::VulkanBackend>,
     ) -> VkRenderPassDescriptor {
         let mut out = VkRenderPassDescriptor::default();
         for attachment in &descriptor.color_attachments {

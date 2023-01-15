@@ -20,7 +20,7 @@ pub(crate) struct LightClustering {
     /// Camera froxel generation descriptor sets.
     pub froxel_gen_sets: Vec<DescriptorSet>,
     /// Storage buffer for camera froxels.
-    pub camera_froxels: Buffer,
+    pub _camera_froxels: Buffer,
     /// Storage buffer for lights.
     pub light_table: Buffer,
 }
@@ -116,7 +116,7 @@ impl LightClustering {
                     binding: LIGHT_CLUSTERING_CAMERA_BINDING,
                     array_element: 0,
                     value: DescriptorValue::UniformBuffer {
-                        buffer: &camera_ubo,
+                        buffer: camera_ubo,
                         array_element: frame,
                     },
                 },
@@ -158,7 +158,7 @@ impl LightClustering {
                     binding: FROXEL_GEN_CAMERA_BINDING,
                     array_element: 0,
                     value: DescriptorValue::UniformBuffer {
-                        buffer: &camera_ubo,
+                        buffer: camera_ubo,
                         array_element: frame,
                     },
                 },
@@ -178,7 +178,7 @@ impl LightClustering {
         Self {
             light_cluster_sets,
             froxel_gen_sets,
-            camera_froxels,
+            _camera_froxels: camera_froxels,
             light_table,
         }
     }

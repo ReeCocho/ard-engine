@@ -186,7 +186,6 @@ impl Archetypes {
             );
             return None;
         }
-        let _src_archetype = ();
 
         let dst_archetype_id = if let Some(id) = self.to_archetype.get(&key) {
             *id
@@ -282,7 +281,6 @@ impl Archetypes {
         if !key.remove_by_id(component) {
             return None;
         }
-        let _src_archetype = ();
 
         let dst_archetype_id = if let Some(id) = self.to_archetype.get(&key) {
             *id

@@ -228,12 +228,9 @@ impl ModelAsset {
                 }
                 NodeData::Light(index) => {
                     let light = &asset.lights[*index];
-                    match light {
-                        Light::Point(light) => {
-                            lights.0.push(Model(parent_model * node.model));
-                            lights.1.push(*light);
-                        }
-                        _ => {}
+                    if let Light::Point(light) = light {
+                        lights.0.push(Model(parent_model * node.model));
+                        lights.1.push(*light);
                     }
                 }
             }
@@ -297,12 +294,9 @@ impl ModelAsset {
                 }
                 NodeData::Light(index) => {
                     let light = &asset.lights[*index];
-                    match light {
-                        Light::Point(light) => {
-                            lights.0.push(Model(parent_model * node.model));
-                            lights.1.push(*light);
-                        }
-                        _ => {}
+                    if let Light::Point(light) = light {
+                        lights.0.push(Model(parent_model * node.model));
+                        lights.1.push(*light);
                     }
                 }
             }

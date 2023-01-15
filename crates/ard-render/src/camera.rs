@@ -86,7 +86,7 @@ pub struct Frustum {
 #[derive(Clone, Component)]
 pub struct Camera {
     pub(crate) id: ResourceId,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
 }
 
 pub(crate) struct CameraInner {
@@ -133,7 +133,7 @@ impl CameraInner {
             descriptor,
             shadows,
             ao: AoImage::new(ctx, &layouts.ao),
-            render_data: RenderData::new(ctx, "camera", &layouts, true),
+            render_data: RenderData::new(ctx, "camera", layouts, true),
             regen_froxels: Default::default(),
         }
     }

@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     camera::{CameraClearColor, CameraUbo},
     factory::Factory,
-    lighting::{Lighting, PointLight},
+    lighting::Lighting,
     material::{Material, MaterialInstance, PipelineType},
     mesh::Mesh,
     shader_constants::FRAMES_IN_FLIGHT,
@@ -34,11 +34,11 @@ use crate::{
 
 use self::{
     ao::AmbientOcclusion,
-    gui::Gui,
+    gui::{Gui, GuiPrepareDraw},
     occlusion::HzbImage,
     post_process::{PostProcessing, PostProcessingSettings},
     render_data::{GlobalRenderData, RenderArgs},
-    shadows::ShadowRenderArgs,
+    shadows::{ShadowPrepareArgs, ShadowRenderArgs},
 };
 
 #[derive(Resource, Clone)]
@@ -118,18 +118,11 @@ struct Render(Duration);
 #[derive(Debug, Event, Copy, Clone)]
 pub struct PostRender(pub Duration);
 
-pub(crate) type RenderQuery = (
-    Entity,
-    (Read<Renderable>, Read<Model>, Read<PointLight>),
-    (Read<Disabled>,),
-);
-
-type RenderResources = (
+type RendererResources = (
     Read<RendererSettings>,
+    Read<InputState>,
     Read<Windows>,
-    Write<Factory>,
-    Write<StaticGeometry>,
-    Write<Lighting>,
+    Write<Gui>,
 );
 
 impl Renderer {
@@ -275,18 +268,7 @@ impl Renderer {
         egui::TextureId::User((u32::MAX - 1) as u64)
     }
 
-    fn tick(
-        &mut self,
-        _: Tick,
-        commands: Commands,
-        _: Queries<()>,
-        res: Res<(
-            Read<RendererSettings>,
-            Read<InputState>,
-            Read<Windows>,
-            Write<Gui>,
-        )>,
-    ) {
+    fn tick(&mut self, _: Tick, commands: Commands, _: Queries<()>, res: Res<RendererResources>) {
         let settings = res.get::<RendererSettings>().unwrap();
         let input = res.get::<InputState>().unwrap();
         let windows = res.get::<Windows>().unwrap();
@@ -415,20 +397,19 @@ impl Renderer {
         // might want access to them.
         let (screen_width, screen_height) = self.surface.dimensions();
         std::mem::drop(settings);
-        std::mem::drop(window);
         std::mem::drop(windows);
         std::mem::drop(factory);
         std::mem::drop(static_geo);
         std::mem::drop(static_geometry);
-        gui.prepare_draw(
-            self.frame,
-            self.post_processing.final_image(),
-            IVec2::new(screen_width as i32, screen_height as i32),
-            evt.0.as_secs_f32(),
-            &ecs_commands,
-            &queries,
-            &res,
-        );
+        gui.prepare_draw(GuiPrepareDraw {
+            frame: self.frame,
+            scene_tex: self.post_processing.final_image(),
+            canvas_size: IVec2::new(screen_width as i32, screen_height as i32),
+            dt: evt.0.as_secs_f32(),
+            commands: &ecs_commands,
+            queries: &queries,
+            res: &res,
+        });
         let settings = res.get::<RendererSettings>().unwrap();
         let windows = res.get::<Windows>().unwrap();
         let window = windows
@@ -498,17 +479,17 @@ impl Renderer {
             }
 
             // Prepare shadows
-            camera.shadows.prepare(
-                self.frame,
-                lighting.deref_mut(),
-                &queries,
-                &static_geometry,
-                &factory,
-                &camera.descriptor,
+            camera.shadows.prepare(ShadowPrepareArgs {
+                frame: self.frame,
+                lighting: lighting.deref_mut(),
+                queries: &queries,
+                static_geometry: &static_geometry,
+                factory: &factory,
+                camera: &camera.descriptor,
                 use_alternate,
-                settings.lock_occlusion,
-                (canvas_width as f32, canvas_height as f32),
-            );
+                lock_occlusion: settings.lock_occlusion,
+                camera_dims: (canvas_width as f32, canvas_height as f32),
+            });
 
             // Update sets
             camera.render_data.update_draw_gen_set(

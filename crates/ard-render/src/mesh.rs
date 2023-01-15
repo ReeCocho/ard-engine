@@ -12,7 +12,7 @@ use crate::factory::{
 pub struct Mesh {
     pub(crate) id: ResourceId,
     pub(crate) layout: VertexLayout,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
 }
 
 pub(crate) struct MeshInner {
@@ -153,7 +153,7 @@ impl MeshInner {
             }
             Vertices::Combined { count, data, .. } => {
                 let vb_staging =
-                    Buffer::new_staging(ctx.clone(), Some(String::from("vertex_staging")), &data)
+                    Buffer::new_staging(ctx.clone(), Some(String::from("vertex_staging")), data)
                         .unwrap();
                 (*count, vb_staging)
             }
@@ -215,11 +215,9 @@ impl<'a> MeshCreateInfo<'a> {
         } else {
             let positions = match &self.vertices {
                 Vertices::Attributes { positions, .. } => *positions,
-                Vertices::Combined {
-                    layout,
-                    count,
-                    data,
-                } => bytemuck::cast_slice(&data[0..(count * std::mem::size_of::<Vec4>())]),
+                Vertices::Combined { count, data, .. } => {
+                    bytemuck::cast_slice(&data[0..(count * std::mem::size_of::<Vec4>())])
+                }
             };
 
             if positions.is_empty() {
@@ -283,7 +281,6 @@ impl<'a> MeshCreateInfo<'a> {
     pub fn vertex_layout(&self) -> VertexLayout {
         match &self.vertices {
             Vertices::Attributes {
-                positions,
                 normals,
                 tangents,
                 colors,
@@ -291,6 +288,7 @@ impl<'a> MeshCreateInfo<'a> {
                 uv1,
                 uv2,
                 uv3,
+                ..
             } => {
                 let mut layout = VertexLayout::empty();
                 if normals.is_some() {
@@ -316,11 +314,7 @@ impl<'a> MeshCreateInfo<'a> {
                 }
                 layout
             }
-            Vertices::Combined {
-                layout,
-                count,
-                data,
-            } => *layout,
+            Vertices::Combined { layout, .. } => *layout,
         }
     }
 }

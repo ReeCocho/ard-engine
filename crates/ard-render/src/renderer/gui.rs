@@ -36,7 +36,7 @@ pub struct Gui {
     views: Vec<Box<dyn View + 'static>>,
     egui: egui::Context,
     input: egui::RawInput,
-    layout: DescriptorSetLayout,
+    _layout: DescriptorSetLayout,
     sets: Vec<DescriptorSet>,
     font_pipeline: GraphicsPipeline,
     tex_pipeline: GraphicsPipeline,
@@ -57,6 +57,17 @@ pub trait View {
     );
 }
 
+pub(crate) struct GuiPrepareDraw<'a> {
+    pub frame: usize,
+    pub scene_tex: (&'a Texture, usize),
+    pub canvas_size: IVec2,
+    pub dt: f32,
+    pub commands: &'a ard_ecs::prelude::Commands,
+    pub queries: &'a Queries<Everything>,
+    pub res: &'a Res<Everything>,
+}
+
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 struct GuiPushConstants {
     screen_size: Vec2,
@@ -338,7 +349,7 @@ impl Gui {
             views: Vec::default(),
             egui: egui::Context::default(),
             input: egui::RawInput::default(),
-            layout,
+            _layout: layout,
             sets,
             font_pipeline,
             tex_pipeline,
@@ -364,9 +375,9 @@ impl Gui {
             for chr in input.input_string().chars() {
                 // Gonna be real, I grabbed this from the egui-winit integration. Idk how it works
                 let is_printable_char = {
-                    let is_in_private_use_area = '\u{e000}' <= chr && chr <= '\u{f8ff}'
-                        || '\u{f0000}' <= chr && chr <= '\u{ffffd}'
-                        || '\u{100000}' <= chr && chr <= '\u{10fffd}';
+                    let is_in_private_use_area = ('\u{e000}'..='\u{f8ff}').contains(&chr)
+                        || ('\u{f0000}'..='\u{ffffd}').contains(&chr)
+                        || ('\u{100000}'..='\u{10fffd}').contains(&chr);
 
                     !is_in_private_use_area && !chr.is_ascii_control()
                 };
@@ -462,29 +473,20 @@ impl Gui {
         }
     }
 
-    pub(crate) fn prepare_draw(
-        &mut self,
-        frame: usize,
-        scene_tex: (&Texture, usize),
-        canvas_size: IVec2,
-        dt: f32,
-        commands: &ard_ecs::prelude::Commands,
-        queries: &Queries<Everything>,
-        res: &Res<Everything>,
-    ) {
-        self.input.predicted_dt = dt;
+    pub(crate) fn prepare_draw(&mut self, args: GuiPrepareDraw) {
+        self.input.predicted_dt = args.dt;
         self.input.screen_rect = Some(egui::Rect {
             min: egui::Pos2::ZERO,
-            max: egui::Pos2::new(canvas_size.x as f32, canvas_size.y as f32),
+            max: egui::Pos2::new(args.canvas_size.x as f32, args.canvas_size.y as f32),
         });
 
         // Bind scene texture
-        self.sets[frame].update(&[DescriptorSetUpdate {
+        self.sets[args.frame].update(&[DescriptorSetUpdate {
             binding: 1,
             array_element: 0,
             value: DescriptorValue::Texture {
-                texture: scene_tex.0,
-                array_element: scene_tex.1,
+                texture: args.scene_tex.0,
+                array_element: args.scene_tex.1,
                 sampler: FONT_SAMPLER,
                 base_mip: 0,
                 mip_count: 1,
@@ -495,7 +497,7 @@ impl Gui {
         let raw_input = std::mem::take(&mut self.input);
         let full_output = self.egui.run(raw_input, |ctx| {
             for view in &mut self.views {
-                view.show(ctx, commands, queries, res)
+                view.show(ctx, args.commands, args.queries, args.res)
             }
         });
 
@@ -531,9 +533,9 @@ impl Gui {
 
         self.draw_calls.clear();
 
-        let mut vb_view = self.vertex_buffer.write(frame).unwrap();
+        let mut vb_view = self.vertex_buffer.write(args.frame).unwrap();
         let vb_slice = bytemuck::cast_slice_mut::<_, egui::epaint::Vertex>(vb_view.as_mut());
-        let mut ib_view = self.index_buffer.write(frame).unwrap();
+        let mut ib_view = self.index_buffer.write(args.frame).unwrap();
         let ib_slice = bytemuck::cast_slice_mut::<_, u32>(ib_view.as_mut());
 
         for primitive in &primitives {
@@ -550,10 +552,10 @@ impl Gui {
             let clip_max_x = ppp * primitive.clip_rect.max.x;
             let clip_max_y = ppp * primitive.clip_rect.max.y;
 
-            let clip_min_x = clip_min_x.clamp(0.0, canvas_size.x as f32);
-            let clip_min_y = clip_min_y.clamp(0.0, canvas_size.y as f32);
-            let clip_max_x = clip_max_x.clamp(clip_min_x, canvas_size.x as f32);
-            let clip_max_y = clip_max_y.clamp(clip_min_y, canvas_size.y as f32);
+            let clip_min_x = clip_min_x.clamp(0.0, args.canvas_size.x as f32);
+            let clip_min_y = clip_min_y.clamp(0.0, args.canvas_size.y as f32);
+            let clip_max_x = clip_max_x.clamp(clip_min_x, args.canvas_size.x as f32);
+            let clip_max_y = clip_max_y.clamp(clip_min_y, args.canvas_size.y as f32);
 
             let clip_min_x = clip_min_x.round() as u32;
             let clip_min_y = clip_min_y.round() as u32;
@@ -700,7 +702,7 @@ impl Gui {
             screen_size,
             texture_id: last_texture_id,
         }];
-        pass.push_constants(&bytemuck::cast_slice(&constants));
+        pass.push_constants(bytemuck::cast_slice(&constants));
 
         for draw in &self.draw_calls {
             if draw.texture_id != last_texture_id {
@@ -714,7 +716,7 @@ impl Gui {
                     screen_size,
                     texture_id: draw.texture_id,
                 }];
-                pass.push_constants(&bytemuck::cast_slice(&constants));
+                pass.push_constants(bytemuck::cast_slice(&constants));
                 last_texture_id = draw.texture_id;
             }
 

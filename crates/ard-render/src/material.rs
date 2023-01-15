@@ -5,7 +5,7 @@ use crate::{
     factory::{
         allocator::{EscapeHandle, ResourceId},
         materials::{MaterialBlock, MaterialBuffers},
-        Factory, Layouts,
+        Layouts,
     },
     shader_constants::FRAMES_IN_FLIGHT,
 };
@@ -30,15 +30,14 @@ pub struct Material {
     pub(crate) id: ResourceId,
     pub(crate) data_size: u64,
     pub(crate) texture_count: usize,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
 }
 
 #[derive(Clone)]
 pub struct MaterialInstance {
     pub(crate) id: ResourceId,
     pub(crate) material: Material,
-    pub(crate) factory: Factory,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
 }
 
 pub(crate) struct MaterialInner {
@@ -153,7 +152,7 @@ impl MaterialInner {
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
-                vertex_input: vertex_input.clone(),
+                vertex_input,
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: create_info.cull_mode,

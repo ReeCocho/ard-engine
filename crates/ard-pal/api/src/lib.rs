@@ -44,6 +44,7 @@ use types::{JobStatus, QueueType};
 /// - Describe [normative terminology](https://www.ietf.org/rfc/rfc2119.txt).
 /// - Explain backend requirements.
 /// - Explain user requirements.
+#[allow(clippy::missing_safety_doc)]
 pub trait Backend: Sized + 'static {
     type Buffer;
     type Texture;
@@ -58,9 +59,9 @@ pub trait Backend: Sized + 'static {
     type Job;
     type DrawIndexedIndirect: Copy + Clone;
 
-    unsafe fn create_surface<'a, W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasRawWindowHandle>(
         &self,
-        create_info: SurfaceCreateInfo<'a, W>,
+        create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError>;
     unsafe fn destroy_surface(&self, id: &mut Self::Surface);
     unsafe fn update_surface(

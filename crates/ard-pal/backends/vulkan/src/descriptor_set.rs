@@ -89,12 +89,10 @@ impl DescriptorSetLayout {
 
     #[inline]
     pub(crate) fn get_binding(&self, binding_value: u32) -> Option<&DescriptorBinding> {
-        for binding in &self.descriptor.bindings {
-            if binding.binding == binding_value {
-                return Some(binding);
-            }
-        }
-        None
+        self.descriptor
+            .bindings
+            .iter()
+            .find(|&binding| binding.binding == binding_value)
     }
 }
 

@@ -171,7 +171,7 @@ fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {
         .arg("--target-env=vulkan1.2")
         .arg("--target-spv=spv1.4")
         .arg("-o")
-        .arg(&out_path)
+        .arg(out_path)
         .output()
         .expect(&err)
         .stderr;

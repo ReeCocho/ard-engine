@@ -282,7 +282,7 @@ impl Dispatcher {
                         };
 
                         // Get rid of the running systems
-                        result = result & running_set.not();
+                        result &= running_set.not();
                         let mut to_cache = Vec::with_capacity(result.count_ones());
                         for i in result.iter_ones() {
                             to_cache.push(i);

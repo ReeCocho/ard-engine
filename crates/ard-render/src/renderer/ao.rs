@@ -73,7 +73,6 @@ const AO_NOISE_SAMPLER: Sampler = Sampler {
 };
 
 pub(crate) struct AmbientOcclusion {
-    ctx: Context,
     layout: DescriptorSetLayout,
     gen_pipeline: ComputePipeline,
     blur_pipeline: ComputePipeline,
@@ -291,7 +290,6 @@ impl AmbientOcclusion {
         .unwrap();
 
         Self {
-            ctx: ctx.clone(),
             layout,
             gen_pipeline,
             blur_pipeline,

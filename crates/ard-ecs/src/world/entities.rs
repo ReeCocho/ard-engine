@@ -160,11 +160,8 @@ impl Entities {
                     let (archetype, begin) = components.move_into(&entities, archetypes);
 
                     // Move tags into their storages if needed
-                    let collection = if let Some(mut tag_pack) = tag_pack {
-                        Some(tag_pack.move_into(&entities, tags))
-                    } else {
-                        None
-                    };
+                    let collection =
+                        tag_pack.map(|mut tag_pack| tag_pack.move_into(&entities, tags));
 
                     // Update the created entities archetypes
                     for (i, entity) in entities.iter().enumerate() {

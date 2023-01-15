@@ -124,7 +124,7 @@ impl<B: Backend> Buffer<B> {
         };
         let buffer = Buffer::new(ctx, create_info)?;
         let mut view = buffer.write(0).unwrap();
-        view.copy_from_slice(&data);
+        view.copy_from_slice(data);
         std::mem::drop(view);
         Ok(buffer)
     }
@@ -268,8 +268,8 @@ impl<B: Backend> Drop for Buffer<B> {
 
 impl<'a, B: Backend> BufferReadView<'a, B> {
     #[inline]
-    pub unsafe fn into_raw(self) -> (NonNull<u8>, usize) {
-        let ptr = NonNull::new_unchecked(self.slice.as_ptr() as *mut u8);
+    pub fn into_raw(self) -> (NonNull<u8>, usize) {
+        let ptr = unsafe { NonNull::new_unchecked(self.slice.as_ptr() as *mut u8) };
         let len = self.slice.len();
         (ptr, len)
     }
@@ -286,8 +286,8 @@ impl<'a, B: Backend> Deref for BufferReadView<'a, B> {
 
 impl<'a, B: Backend> BufferWriteView<'a, B> {
     #[inline]
-    pub unsafe fn into_raw(self) -> (NonNull<u8>, usize) {
-        let ptr = NonNull::new_unchecked(self.slice.as_mut_ptr());
+    pub fn into_raw(self) -> (NonNull<u8>, usize) {
+        let ptr = unsafe { NonNull::new_unchecked(self.slice.as_mut_ptr()) };
         let len = self.slice.len();
         (ptr, len)
     }

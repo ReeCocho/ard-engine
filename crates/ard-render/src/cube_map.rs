@@ -17,13 +17,13 @@ pub struct CubeMapCreateInfo<'a> {
 #[derive(Clone)]
 pub struct CubeMap {
     pub(crate) id: ResourceId,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
     pub(crate) mip_count: u32,
 }
 
 pub(crate) struct CubeMapInner {
     pub cube_map: ard_pal::prelude::CubeMap,
-    pub sampler: Sampler,
+    pub _sampler: Sampler,
     /// Bit mask that indicates which mip levels of the texture are loaded into memory. The least
     /// significant bit represents LOD0 (the highest detail image).
     pub mip_levels: u32,
@@ -64,13 +64,13 @@ impl CubeMapInner {
             // All mips will be available when the texture is ready
             MipType::Generate => (1 << create_info.mip_count) - 1,
             // Only the lowest detail mip is loaded.
-            MipType::Upload => (1 << (create_info.mip_count - 1)),
+            MipType::Upload => 1 << (create_info.mip_count - 1),
         };
 
         (
             Self {
                 cube_map,
-                sampler: create_info.sampler,
+                _sampler: create_info.sampler,
                 mip_levels: create_info.mip_count as u32,
                 loaded_mips,
             },

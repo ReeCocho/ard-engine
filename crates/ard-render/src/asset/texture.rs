@@ -49,7 +49,7 @@ impl AssetLoader for TextureLoader {
         };
 
         let (bytes, width, height, format) = match desc.path.extension() {
-            Some(ext) => {
+            Some(_) => {
                 let image_data = package.read(&desc.path).await?;
                 let image = match image::load_from_memory(&image_data) {
                     Ok(image) => image,

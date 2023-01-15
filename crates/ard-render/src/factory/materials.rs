@@ -1,9 +1,10 @@
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap};
 
 use ard_pal::prelude::*;
+use fxhash::FxHashMap;
 
 use crate::{
-    material::{Material, MaterialInstance, MaterialInstanceInner},
+    material::{MaterialInstance, MaterialInstanceInner},
     shader_constants::{FRAMES_IN_FLIGHT, MAX_TEXTURES_PER_MATERIAL, NO_TEXTURE},
 };
 
@@ -17,11 +18,11 @@ const MATERIAL_BINDING: u32 = 1;
 pub(crate) struct MaterialBuffers {
     ctx: Context,
     layout: DescriptorSetLayout,
-    buffers: HashMap<u64, MaterialBuffer>,
+    buffers: FxHashMap<u64, MaterialBuffer>,
     /// UBO for material textures. Max number of textures is allocated per material, regardless
     /// of how many are actually used.
     texture_arrays: MaterialBuffer,
-    sets: HashMap<u64, Vec<MaterialSet>>,
+    sets: FxHashMap<u64, Vec<MaterialSet>>,
 }
 
 pub(crate) struct MaterialBuffer {
@@ -163,7 +164,7 @@ impl MaterialBuffers {
                 .buffers
                 .entry(data_size)
                 .or_insert_with(|| MaterialBuffer::new(&self.ctx, data_size, false));
-            set[frame].check_rebind_buffer(frame, &buffer);
+            set[frame].check_rebind_buffer(frame, buffer);
         }
 
         // Rebind textures

@@ -33,8 +33,8 @@ pub struct PostProcessingSettings {
 pub(crate) struct PostProcessing {
     ctx: Context,
     adaptive_lum: AdaptiveLuminance,
-    layout: DescriptorSetLayout,
-    lum_layout: DescriptorSetLayout,
+    _layout: DescriptorSetLayout,
+    _lum_layout: DescriptorSetLayout,
     sets: Vec<PostProcessingSets>,
     tonemapping_pipeline: GraphicsPipeline,
     fxaa_pipeline: GraphicsPipeline,
@@ -298,8 +298,8 @@ impl PostProcessing {
         Self {
             ctx: ctx.clone(),
             adaptive_lum,
-            layout,
-            lum_layout,
+            _layout: layout,
+            _lum_layout: lum_layout,
             sets,
             tonemapping_pipeline,
             fxaa_pipeline,
@@ -318,8 +318,8 @@ impl PostProcessing {
             TextureCreateInfo {
                 format: TextureFormat::Bgra8Unorm,
                 ty: TextureType::Type2D,
-                width: width,
-                height: height,
+                width,
+                height,
                 depth: 1,
                 array_elements: 2,
                 mip_levels: 1,

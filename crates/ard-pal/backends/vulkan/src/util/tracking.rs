@@ -589,7 +589,7 @@ unsafe fn track_descriptor_sets(
     sets: &[&DescriptorSet<crate::VulkanBackend>],
     scope: &mut UsageScope,
 ) {
-    for set in sets.into_iter() {
+    for set in sets {
         track_descriptor_set(set, scope);
     }
 }
@@ -598,108 +598,106 @@ unsafe fn track_descriptor_set(set: &DescriptorSet<crate::VulkanBackend>, scope:
     // Check every binding of every set
     for binding in &set.internal().bound {
         // Check every element of every binding
-        for elem in binding {
+        for elem in binding.iter().flatten() {
             // Only care about elements if they are filled
-            if let Some(elem) = elem {
-                match &elem.value {
-                    BoundValue::UniformBuffer {
-                        buffer,
-                        array_element,
-                        ..
-                    } => scope.use_resource(
-                        SubResource::Buffer {
-                            buffer: *buffer,
-                            array_elem: *array_element as u32,
-                        },
-                        SubResourceUsage {
-                            access: elem.access,
-                            stage: elem.stage,
-                            layout: vk::ImageLayout::UNDEFINED,
-                        },
-                    ),
-                    BoundValue::StorageBuffer {
-                        buffer,
-                        array_element,
-                        ..
-                    } => scope.use_resource(
-                        SubResource::Buffer {
-                            buffer: *buffer,
-                            array_elem: *array_element as u32,
-                        },
-                        SubResourceUsage {
-                            access: elem.access,
-                            stage: elem.stage,
-                            layout: vk::ImageLayout::UNDEFINED,
-                        },
-                    ),
-                    // Textures require that you register each mip individually
-                    BoundValue::Texture {
-                        _ref_counter,
-                        image,
-                        array_element,
-                        aspect_mask,
-                        mip_count,
-                        ..
-                    } => {
-                        for i in 0..*mip_count {
-                            scope.use_resource(
-                                SubResource::Texture {
-                                    texture: *image,
-                                    aspect_mask: *aspect_mask,
-                                    array_elem: *array_element as u32,
-                                    mip_level: i,
-                                },
-                                SubResourceUsage {
-                                    access: elem.access,
-                                    stage: elem.stage,
-                                    layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                                },
-                            )
-                        }
+            match &elem.value {
+                BoundValue::UniformBuffer {
+                    buffer,
+                    array_element,
+                    ..
+                } => scope.use_resource(
+                    SubResource::Buffer {
+                        buffer: *buffer,
+                        array_elem: *array_element as u32,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::UNDEFINED,
+                    },
+                ),
+                BoundValue::StorageBuffer {
+                    buffer,
+                    array_element,
+                    ..
+                } => scope.use_resource(
+                    SubResource::Buffer {
+                        buffer: *buffer,
+                        array_elem: *array_element as u32,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::UNDEFINED,
+                    },
+                ),
+                // Textures require that you register each mip individually
+                BoundValue::Texture {
+                    _ref_counter,
+                    image,
+                    array_element,
+                    aspect_mask,
+                    mip_count,
+                    ..
+                } => {
+                    for i in 0..*mip_count {
+                        scope.use_resource(
+                            SubResource::Texture {
+                                texture: *image,
+                                aspect_mask: *aspect_mask,
+                                array_elem: *array_element as u32,
+                                mip_level: i,
+                            },
+                            SubResourceUsage {
+                                access: elem.access,
+                                stage: elem.stage,
+                                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            },
+                        )
                     }
-                    BoundValue::StorageImage {
-                        _ref_counter,
-                        image,
-                        aspect_mask,
-                        mip,
-                        array_element,
-                        ..
-                    } => scope.use_resource(
-                        SubResource::Texture {
-                            texture: *image,
-                            aspect_mask: *aspect_mask,
-                            array_elem: *array_element as u32,
-                            mip_level: *mip,
-                        },
-                        SubResourceUsage {
-                            access: elem.access,
-                            stage: elem.stage,
-                            layout: vk::ImageLayout::GENERAL,
-                        },
-                    ),
-                    // Cube maps require that you register each mip individually
-                    BoundValue::CubeMap {
-                        image,
-                        aspect_mask,
-                        mip_count,
-                        array_element,
-                        ..
-                    } => {
-                        for i in 0..*mip_count {
-                            scope.use_resource(
-                                SubResource::CubeMap {
-                                    cube_map: *image,
-                                    aspect_mask: *aspect_mask,
-                                    array_elem: *array_element as u32,
-                                    mip_level: i,
-                                },
-                                SubResourceUsage {
-                                    access: elem.access,
-                                    stage: elem.stage,
-                                    layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                                },
-                            )
-                        }
+                }
+                BoundValue::StorageImage {
+                    _ref_counter,
+                    image,
+                    aspect_mask,
+                    mip,
+                    array_element,
+                    ..
+                } => scope.use_resource(
+                    SubResource::Texture {
+                        texture: *image,
+                        aspect_mask: *aspect_mask,
+                        array_elem: *array_element as u32,
+                        mip_level: *mip,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::GENERAL,
+                    },
+                ),
+                // Cube maps require that you register each mip individually
+                BoundValue::CubeMap {
+                    image,
+                    aspect_mask,
+                    mip_count,
+                    array_element,
+                    ..
+                } => {
+                    for i in 0..*mip_count {
+                        scope.use_resource(
+                            SubResource::CubeMap {
+                                cube_map: *image,
+                                aspect_mask: *aspect_mask,
+                                array_elem: *array_element as u32,
+                                mip_level: i,
+                            },
+                            SubResourceUsage {
+                                access: elem.access,
+                                stage: elem.stage,
+                                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            },
+                        )
                     }
                 }
             }

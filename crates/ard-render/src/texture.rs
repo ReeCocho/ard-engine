@@ -37,7 +37,7 @@ pub enum MipType {
 #[derive(Clone)]
 pub struct Texture {
     pub(crate) id: ResourceId,
-    pub(crate) escaper: EscapeHandle,
+    pub(crate) _escaper: EscapeHandle,
 }
 
 pub(crate) struct TextureInner {
@@ -97,7 +97,7 @@ impl TextureInner {
             // All mips will be available when the texture is ready
             MipType::Generate => (1 << create_info.mip_count) - 1,
             // Only the lowest detail mip is loaded.
-            MipType::Upload => (1 << (create_info.mip_count - 1)),
+            MipType::Upload => 1 << (create_info.mip_count - 1),
         };
 
         (

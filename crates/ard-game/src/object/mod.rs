@@ -37,7 +37,7 @@ pub trait GameObject: Sized {
 #[macro_export]
 macro_rules! count {
     () => (0usize);
-    ( $x:tt $($xs:tt)* ) => (1usize + crate::count!($($xs)*));
+    ( $x:tt $($xs:tt)* ) => (1usize + $crate::count!($($xs)*));
 }
 
 #[macro_export]
@@ -55,14 +55,14 @@ macro_rules! game_object_def {
             #[derive(Default, Serialize, Deserialize)]
             #[allow(non_snake_case)]
             pub struct [<$name Pack>] {
-                pub entities: Vec<crate::scene::MappedEntity>,
+                pub entities: Vec<$crate::scene::MappedEntity>,
                 $(
-                    pub [<field_ $field>]: Vec<<$field as crate::serialization::SaveLoad>::Descriptor>,
+                    pub [<field_ $field>]: Vec<<$field as $crate::serialization::SaveLoad>::Descriptor>,
                 )*
             }
         }
 
-        impl crate::object::GameObject for $name {
+        impl $crate::object::GameObject for $name {
             type Pack = paste::paste! { [<$name Pack>] };
 
             fn create_default(commands: &ard_ecs::prelude::EntityCommands) -> ard_ecs::prelude::Entity {
@@ -92,10 +92,10 @@ macro_rules! game_object_def {
             fn save_to_pack(
                 entities: &[ard_ecs::prelude::Entity],
                 queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
-                mapping: &crate::scene::EntityMap,
+                mapping: &$crate::scene::EntityMap,
                 assets: &ard_assets::manager::Assets,
             ) -> Self::Pack {
-                use crate::serialization::{SaveLoad};
+                use $crate::serialization::{SaveLoad};
 
                 let mut descriptor = Self::Pack::default();
                 descriptor.entities = Vec::with_capacity(entities.len());
@@ -123,7 +123,7 @@ macro_rules! game_object_def {
 
             fn load_from_pack(
                 mut descriptor: Self::Pack,
-                entities: &crate::scene::EntityMap,
+                entities: &$crate::scene::EntityMap,
                 assets: &ard_assets::manager::Assets,
             ) -> Self {
                 let mut components = Self::default();
@@ -134,7 +134,7 @@ macro_rules! game_object_def {
                     components.[<field_ $field>].reserve_exact(mem.len());
                     for elem in mem {
                         components.[<field_ $field>].push(
-                            <$field as crate::serialization::SaveLoad>::load(
+                            <$field as $crate::serialization::SaveLoad>::load(
                                 elem,
                                 entities,
                                 assets

@@ -34,13 +34,13 @@ pub(crate) enum StagingRequest {
     },
     TextureMip {
         id: ResourceId,
-        dst: crate::texture::Texture,
+        _dst: crate::texture::Texture,
         mip_level: usize,
         staging_buffer: Buffer,
     },
     CubeMapMip {
         id: ResourceId,
-        dst: crate::cube_map::CubeMap,
+        _dst: crate::cube_map::CubeMap,
         mip_level: usize,
         staging_buffer: Buffer,
     },

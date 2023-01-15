@@ -101,11 +101,11 @@ impl<T: Asset> PartialEq for Handle<T> {
 
 impl<T: Asset> Eq for Handle<T> {}
 
-impl<T: Asset> Into<AnyHandle> for Handle<T> {
-    fn into(self) -> AnyHandle {
+impl<T: Asset> From<Handle<T>> for AnyHandle {
+    fn from(value: Handle<T>) -> Self {
         AnyHandle {
-            raw: self.raw,
-            escaper: self.escaper,
+            raw: value.raw,
+            escaper: value.escaper,
         }
     }
 }

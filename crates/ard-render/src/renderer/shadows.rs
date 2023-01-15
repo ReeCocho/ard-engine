@@ -1,4 +1,4 @@
-use std::ops::{DerefMut, Shr};
+use std::ops::DerefMut;
 
 use ard_ecs::prelude::*;
 use ard_math::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
@@ -60,6 +60,18 @@ pub(crate) struct ShadowRenderArgs<'a> {
     pub materials: &'a ResourceAllocator<MaterialInner>,
     pub meshes: &'a ResourceAllocator<MeshInner>,
     pub global: &'a GlobalRenderData,
+}
+
+pub(crate) struct ShadowPrepareArgs<'a> {
+    pub frame: usize,
+    pub lighting: &'a Lighting,
+    pub queries: &'a Queries<Everything>,
+    pub static_geometry: &'a StaticGeometryInner,
+    pub factory: &'a Factory,
+    pub camera: &'a CameraDescriptor,
+    pub use_alternate: bool,
+    pub lock_occlusion: bool,
+    pub camera_dims: (f32, f32),
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -147,41 +159,32 @@ impl Shadows {
     /// Prepares the shadow map for rendering.
     ///
     /// Requires a camera to render the shadows for.
-    pub fn prepare(
-        &mut self,
-        frame: usize,
-        lighting: &Lighting,
-        queries: &Queries<Everything>,
-        static_geometry: &StaticGeometryInner,
-        factory: &Factory,
-        camera: &CameraDescriptor,
-        use_alternate: bool,
-        lock_occlusion: bool,
-        camera_dims: (f32, f32),
-    ) {
-        let aspect_ratio = camera_dims.0 / camera_dims.1;
-        let fmn = camera.far - camera.near;
+    pub fn prepare(&mut self, args: ShadowPrepareArgs) {
+        let aspect_ratio = args.camera_dims.0 / args.camera_dims.1;
+        let fmn = args.camera.far - args.camera.near;
 
-        let mut info = ShadowInfo::default();
-        info.cascade_count = self.cascades.len() as u32;
+        let mut info = ShadowInfo {
+            cascade_count: self.cascades.len() as u32,
+            ..Default::default()
+        };
 
         // Prepare each cascade for rendering
         let cascade_count = self.cascades.len() as f32;
         for (i, cascade) in self.cascades.iter_mut().enumerate() {
             // Compute view and projection matrices for the camera at this slice of the frustum
             let view = Mat4::look_at_lh(
-                camera.position,
-                camera.target,
-                camera.up.try_normalize().unwrap_or(Vec3::Y),
+                args.camera.position,
+                args.camera.target,
+                args.camera.up.try_normalize().unwrap_or(Vec3::Y),
             );
 
             let lin_n = (i as f32 / cascade_count).powf(2.0);
             let lin_f = ((i + 1) as f32 / cascade_count).powf(2.0);
-            let far_plane = camera.near + (fmn * lin_f);
+            let far_plane = args.camera.near + (fmn * lin_f);
             let proj = Mat4::perspective_lh(
-                camera.fov,
+                args.camera.fov,
                 aspect_ratio,
-                camera.near + (fmn * lin_n),
+                args.camera.near + (fmn * lin_n),
                 far_plane,
             );
 
@@ -207,8 +210,11 @@ impl Shadows {
             center /= 8.0;
 
             // Compute the view matrix for the light
-            let view =
-                Mat4::look_at_lh(center, center + lighting.data.sun_direction.xyz(), Vec3::Y);
+            let view = Mat4::look_at_lh(
+                center,
+                center + args.lighting.data.sun_direction.xyz(),
+                Vec3::Y,
+            );
 
             // We need to compute the left/right/top/bottom/near/far values for the ortho-projection
             // for the sun. To do this, we convert the corners of the view frustum in world space to
@@ -231,7 +237,8 @@ impl Shadows {
             cascade.info.view = view;
             cascade.info.proj = proj;
             cascade.info.vp = proj * view;
-            cascade.info.uv_size = lighting.data.sun_size / Vec2::new(max.x - min.x, max.y - min.y);
+            cascade.info.uv_size =
+                args.lighting.data.sun_size / Vec2::new(max.x - min.x, max.y - min.y);
             cascade.info.far_plane = far_plane;
             cascade.info.depth_range = max.z - min.z;
             info.cascades[i] = cascade.info;
@@ -242,20 +249,22 @@ impl Shadows {
             frustum.planes[4] = Vec4::ZERO;
 
             // Update render data
-            if !lock_occlusion {
+            if !args.lock_occlusion {
                 cascade.render_data.prepare_input_ids(
-                    frame,
+                    args.frame,
                     RenderLayer::SHADOW_CASTER,
-                    queries,
-                    static_geometry,
+                    args.queries,
+                    args.static_geometry,
                 );
-                cascade
-                    .render_data
-                    .prepare_draw_calls(frame, use_alternate, factory);
+                cascade.render_data.prepare_draw_calls(
+                    args.frame,
+                    args.use_alternate,
+                    args.factory,
+                );
             }
 
             cascade.render_data.update_camera_ubo(
-                frame,
+                args.frame,
                 CameraUbo {
                     view,
                     projection: proj,
@@ -265,7 +274,7 @@ impl Shadows {
                     vp_inv: cascade.info.vp.inverse(),
                     frustum,
                     position: Vec4::from((
-                        center - (min.z * lighting.data.sun_direction.xyz()),
+                        center - (min.z * args.lighting.data.sun_direction.xyz()),
                         1.0,
                     )),
                     cluster_scale_bias: Vec2::ZERO,
@@ -278,7 +287,7 @@ impl Shadows {
         }
 
         // Update the shadow info UBO
-        let mut view = self.ubo.write(frame).unwrap();
+        let mut view = self.ubo.write(args.frame).unwrap();
         bytemuck::cast_slice_mut::<_, ShadowInfo>(view.deref_mut())[0] = info;
     }
 

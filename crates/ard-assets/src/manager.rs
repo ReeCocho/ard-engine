@@ -523,10 +523,7 @@ impl Assets {
             None => return None,
         };
 
-        match self.0.extensions.get(ext) {
-            Some(id) => Some(*id),
-            None => None,
-        }
+        self.0.extensions.get(ext).map(|id| *id)
     }
 
     /// Gets the name associated with the asset handle.

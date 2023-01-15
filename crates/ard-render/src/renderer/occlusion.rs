@@ -40,6 +40,7 @@ pub(crate) struct HzbImage {
     sets: [Vec<DescriptorSet>; FRAMES_IN_FLIGHT],
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 struct HzbPushConstants {
     input_size: IVec2,
@@ -120,7 +121,7 @@ impl HzbGlobal {
         .unwrap();
 
         let mut sets: [Vec<DescriptorSet>; FRAMES_IN_FLIGHT] = Default::default();
-        for frame in 0..FRAMES_IN_FLIGHT {
+        for set in &mut sets {
             let mut mip_sets = Vec::with_capacity(mip_levels);
             for i in 0..mip_levels {
                 let mut mip_set = DescriptorSet::new(
@@ -170,7 +171,8 @@ impl HzbGlobal {
 
                 mip_sets.push(mip_set);
             }
-            sets[frame] = mip_sets;
+
+            *set = mip_sets;
         }
 
         HzbImage {
@@ -198,7 +200,7 @@ impl HzbGlobal {
             binding: HZB_INPUT_IMAGE_BINDING,
             array_element: 0,
             value: DescriptorValue::Texture {
-                texture: &src,
+                texture: src,
                 array_element: 0,
                 sampler: HZB_INPUT_SAMPLER,
                 base_mip: 0,

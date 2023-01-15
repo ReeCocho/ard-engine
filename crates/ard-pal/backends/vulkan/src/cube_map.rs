@@ -34,7 +34,7 @@ pub struct CubeMap {
 impl CubeMap {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        qfi: &QueueFamilyIndices,
+        _qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -55,8 +55,7 @@ impl CubeMap {
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(crate::util::to_vk_image_usage(create_info.texture_usage))
-            .sharing_mode(vk::SharingMode::CONCURRENT)
-            .queue_family_indices(&[qfi.compute, qfi.main, qfi.transfer])
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
             .build();
@@ -72,7 +71,7 @@ impl CubeMap {
         // Allocate memory
         let request = AllocationCreateDesc {
             name: match &create_info.debug_name {
-                Some(name) => &name,
+                Some(name) => name,
                 None => "image",
             },
             requirements: mem_reqs,

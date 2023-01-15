@@ -40,7 +40,7 @@ pub(crate) struct AdaptiveLuminance {
     _lum_layout: DescriptorSetLayout,
     lum_sets: Vec<DescriptorSet>,
     /// Buffer to hold the luminance histogram.
-    luminance_histogram: Buffer,
+    _luminance_histogram: Buffer,
     /// Buffer to hold the computed luminance value.
     luminance: Buffer,
     /// Size of the image to compute luminance for.
@@ -228,7 +228,7 @@ impl AdaptiveLuminance {
             histogram_sets,
             _lum_layout: lum_layout,
             lum_sets,
-            luminance_histogram,
+            _luminance_histogram: luminance_histogram,
             luminance,
             src_size: (0, 0),
         }

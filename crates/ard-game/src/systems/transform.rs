@@ -14,19 +14,21 @@ pub struct TransformUpdate {
     hierarchy: Vec<Entity>,
 }
 
+type TransformUpdateQuery = (
+    Read<Transform>,
+    Read<Parent>,
+    Read<Destroy>,
+    Write<Children>,
+    Write<Model>,
+    Write<PrevParent>,
+);
+
 impl TransformUpdate {
     pub fn on_tick(
         &mut self,
         _: Tick,
         commands: Commands,
-        queries: Queries<(
-            Read<Transform>,
-            Read<Parent>,
-            Read<Destroy>,
-            Write<Children>,
-            Write<Model>,
-            Write<PrevParent>,
-        )>,
+        queries: Queries<TransformUpdateQuery>,
         _: Res<()>,
     ) {
         // Need to remove destroyed entities from child lists
@@ -74,11 +76,11 @@ impl TransformUpdate {
         for (entity, (parent, transform, global)) in current {
             if parent.0.is_none() {
                 self.hierarchy.push(entity);
-                // global.0 = Mat4::from_scale_rotation_translation(
-                //     transform.scale(),
-                //     transform.rotation(),
-                //     transform.position(),
-                // );
+                global.0 = Mat4::from_scale_rotation_translation(
+                    transform.scale(),
+                    transform.rotation(),
+                    transform.position(),
+                );
             }
         }
 
@@ -110,12 +112,12 @@ impl TransformUpdate {
                 self.hierarchy.push(*child);
 
                 if let Some(mut query) = queries.get::<(Read<Transform>, Write<Model>)>(*child) {
-                    // query.1 .0 = parent_global
-                    //     * Mat4::from_scale_rotation_translation(
-                    //         query.0.scale(),
-                    //         query.0.rotation(),
-                    //         query.0.position(),
-                    //     );
+                    query.1 .0 = parent_global
+                        * Mat4::from_scale_rotation_translation(
+                            query.0.scale(),
+                            query.0.rotation(),
+                            query.0.position(),
+                        );
                 }
             }
 

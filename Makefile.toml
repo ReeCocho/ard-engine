@@ -4,24 +4,28 @@ workspace = false
 [config]
 default_to_workspace = false
 
-[tasks.build-gltf-oven]
+[tasks.build-release]
 command = "cargo"
-args = [ "build", "--package", "gltf-oven" ]
+args = [ 
+    "build", "--release",
+    "--package", "gltf-oven", 
+    "--package", "ibl-oven", 
+    "--package", "editor" 
+]
 
-[tasks.build-ibl-oven]
+[tasks.build-debug]
 command = "cargo"
-args = [ "build", "--package", "ibl-oven" ]
+args = [ 
+    "build", 
+    "--package", "gltf-oven", 
+    "--package", "ibl-oven", 
+    "--package", "editor" 
+]
 
-[tasks.build-editor]
-command = "cargo"
-args = [ "build", "--package", "editor" ]
-
-[tasks.copy-executables]
+[tasks.copy-executables-debug]
 script_runner = "@duckscript"
 dependencies = [
-    "build-gltf-oven",
-    "build-ibl-oven",
-    "build-editor"
+    "build-debug"
 ]
 script = '''
 mkdir ./build/debug/tools/
@@ -32,7 +36,20 @@ cp ./target/debug/editor.exe ./build/debug/ard-editor.exe
 cp ./target/debug/editor.pdb ./build/debug/ard-editor.pdb
 '''
 
-[tasks.copy-assets]
+[tasks.copy-executables-release]
+script_runner = "@duckscript"
+dependencies = [
+    "build-release"
+]
+script = '''
+mkdir ./build/release/tools/
+mkdir ./build/release/temp/
+cp ./target/release/gltf-oven.exe ./build/release/tools/gltf-oven.exe
+cp ./target/release/ibl-oven.exe ./build/release/tools/ibl-oven.exe
+cp ./target/release/editor.exe ./build/release/ard-editor.exe
+'''
+
+[tasks.copy-assets-debug]
 script_runner = "@rust"
 script = '''
 //! ```cargo
@@ -46,6 +63,8 @@ fn main() {
         ..Default::default()
     };
 
+    std::fs::create_dir_all("./build/debug/assets/").unwrap();
+
     fs_extra::dir::copy("./data/assets/editor/", "./build/debug/assets/", &options).unwrap();
     fs_extra::dir::copy("./data/assets/game/", "./build/debug/assets/", &options).unwrap();
     fs_extra::dir::copy("./data/assets/standard/", "./build/debug/assets/", &options).unwrap();
@@ -54,12 +73,43 @@ fn main() {
 }
 '''
 
-[tasks.build]
+[tasks.copy-assets-release]
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! fs_extra = "1"
+//! ```
+fn main() {
+    let options = fs_extra::dir::CopyOptions {
+        overwrite: true,
+        skip_exist: false,
+        ..Default::default()
+    };
+
+
+    std::fs::create_dir_all("./build/release/assets/").unwrap();
+
+    fs_extra::dir::copy("./data/assets/editor/", "./build/release/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/game/", "./build/release/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/standard/", "./build/release/assets/", &options).unwrap();
+    fs_extra::dir::copy("./data/assets/baked/", "./build/release/assets/", &options).unwrap();
+    std::fs::copy("./data/assets/packages.ron", "./build/release/assets/packages.ron").unwrap();
+}
+'''
+
+[tasks.build_dbg]
 clear = true
 dependencies = [
-    "build-gltf-oven",
-    "build-ibl-oven",
-    "build-editor",
-    "copy-executables",
-    "copy-assets"
+    "build-debug",
+    "copy-executables-debug",
+    "copy-assets-debug"
+]
+
+[tasks.build_rel]
+clear = true
+dependencies = [
+    "build-release",
+    "copy-executables-release",
+    "copy-assets-release"
 ]

@@ -82,9 +82,9 @@ pub enum SurfacePresentSuccess {
 }
 
 impl<B: Backend> Surface<B> {
-    pub fn new<'a, W: HasRawWindowHandle>(
+    pub fn new<W: HasRawWindowHandle>(
         ctx: Context<B>,
-        create_info: SurfaceCreateInfo<'a, W>,
+        create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self, SurfaceCreateError> {
         let dims = (create_info.config.width, create_info.config.height);
         let id = unsafe { ctx.0.create_surface(create_info)? };
@@ -110,9 +110,11 @@ impl<B: Backend> Surface<B> {
         config: SurfaceConfiguration,
     ) -> Result<(), SurfaceUpdateError> {
         let new_dims = (config.width, config.height);
-        let res = unsafe { self.ctx.0.update_surface(&mut self.id, config)? };
+        unsafe {
+            self.ctx.0.update_surface(&mut self.id, config)?;
+        };
         self.dims = new_dims;
-        Ok(res)
+        Ok(())
     }
 
     /// Acquire a new image from the surface to present.

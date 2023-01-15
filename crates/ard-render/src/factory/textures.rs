@@ -16,7 +16,6 @@ use super::{
 };
 
 pub(crate) struct TextureSets {
-    ctx: Context,
     error_texture: ard_pal::prelude::Texture,
     anisotropy: Option<AnisotropyLevel>,
     layout: DescriptorSetLayout,
@@ -138,7 +137,6 @@ impl TextureSets {
         }
 
         Self {
-            ctx,
             error_texture,
             anisotropy,
             layout,
@@ -154,6 +152,7 @@ impl TextureSets {
         &self.layout
     }
 
+    #[allow(dead_code)]
     #[inline(always)]
     pub fn anisotropy(&self) -> Option<AnisotropyLevel> {
         self.anisotropy
@@ -164,6 +163,7 @@ impl TextureSets {
         &self.sets[frame]
     }
 
+    #[allow(dead_code)]
     pub fn set_anisotropy(
         &mut self,
         anisotropy: Option<AnisotropyLevel>,

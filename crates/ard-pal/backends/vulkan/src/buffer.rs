@@ -31,7 +31,7 @@ pub(crate) struct BufferRefCounter(Arc<()>);
 impl Buffer {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        qfi: &QueueFamilyIndices,
+        _qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -69,8 +69,7 @@ impl Buffer {
         let buffer_create_info = vk::BufferCreateInfo::builder()
             .size(aligned_size * create_info.array_elements as u64)
             .usage(crate::util::to_vk_buffer_usage(create_info.buffer_usage))
-            .sharing_mode(vk::SharingMode::CONCURRENT)
-            .queue_family_indices(&[qfi.compute, qfi.main, qfi.transfer])
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .build();
         let buffer = match device.create_buffer(&buffer_create_info, None) {
             Ok(buffer) => buffer,
@@ -81,7 +80,7 @@ impl Buffer {
         let mem_reqs = device.get_buffer_memory_requirements(buffer);
         let request = AllocationCreateDesc {
             name: match &create_info.debug_name {
-                Some(name) => &name,
+                Some(name) => name,
                 None => "unnamed_buffer",
             },
             requirements: mem_reqs,

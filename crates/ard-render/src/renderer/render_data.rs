@@ -818,7 +818,7 @@ impl GlobalRenderData {
         // Expand object data buffer if required
         let obj_count = query.len() + static_geometry.len;
         let expanded = match Buffer::expand(
-            &mut self.object_data,
+            &self.object_data,
             (obj_count * std::mem::size_of::<ObjectData>()) as u64,
             false,
         ) {
@@ -888,7 +888,7 @@ impl GlobalRenderData {
 
         // Expand light buffer if needed
         let expanded = match Buffer::expand(
-            &mut self.lights,
+            &self.lights,
             (query.len() * std::mem::size_of::<RawLight>()) as u64,
             false,
         ) {
@@ -1095,7 +1095,7 @@ impl RenderData {
             sky_box_sets.push(set);
         }
 
-        let out = Self {
+        Self {
             global_sets,
             draw_gen_sets,
             camera_sets,
@@ -1113,9 +1113,7 @@ impl RenderData {
             last_static_draws: 0,
             static_draws: 0,
             dynamic_draws: 0,
-        };
-
-        out
+        }
     }
 
     /// Rebinds all draw generation descriptor set values.
@@ -1544,7 +1542,7 @@ impl RenderData {
         // Expand the output buffer if needed
         if self.output_ids.size() as usize / std::mem::size_of::<OutputObjectId>() < object_count {
             self.output_ids = Buffer::expand(
-                &mut self.output_ids,
+                &self.output_ids,
                 (std::mem::size_of::<OutputObjectId>() * object_count) as u64,
                 false,
             )
@@ -1568,7 +1566,7 @@ impl RenderData {
         // Expand the draw calls buffer if needed
         // NOTE: Preserve is required for static draw calls.
         let expanded = match Buffer::expand(
-            &mut self.draw_calls,
+            &self.draw_calls,
             (self.keys[frame].len() * std::mem::size_of::<DrawCall>()) as u64,
             true,
         ) {
@@ -1789,7 +1787,7 @@ impl RenderData {
                 last_mesh_vl = Some(vertex_layout);
                 last_mat_vl = Some(mat_vertex_layout);
                 let vbuffer = args.mesh_buffers.get_vertex_buffer(vertex_layout).unwrap();
-                vbuffer.bind(args.pass, args.mesh_buffers, mat_vertex_layout);
+                vbuffer.bind(args.pass, mat_vertex_layout);
             }
 
             draw_count += 1;
@@ -1827,7 +1825,7 @@ pub(crate) fn make_draw_key(instance: &MaterialInstance, mesh: &Mesh) -> DrawKey
 pub(crate) fn from_draw_key(key: DrawKey) -> (ResourceId, VertexLayout, ResourceId, ResourceId) {
     (
         ResourceId((key >> 40) as usize & ((1 << 24) - 1)),
-        unsafe { VertexLayout::from_bits_unchecked(((key >> 32) as u64 & ((1 << 8) - 1)) as u8) },
+        unsafe { VertexLayout::from_bits_unchecked(((key >> 32) & ((1 << 8) - 1)) as u8) },
         ResourceId((key >> 16) as usize & ((1 << 16) - 1)),
         ResourceId(key as usize & ((1 << 16) - 1)),
     )

@@ -326,8 +326,8 @@ impl<'a> PipelineTracker<'a> {
 
         // We only need a barrier if we have registered buffer/image barriers
         if !image_barriers.is_empty() || !buffer_barriers.is_empty() {
-            barrier.image_barriers = image_barriers.into_iter().map(|(_, v)| v).collect();
-            barrier.buffer_barriers = buffer_barriers.into_iter().map(|(_, v)| v).collect();
+            barrier.image_barriers = image_barriers.into_values().collect();
+            barrier.buffer_barriers = buffer_barriers.into_values().collect();
             Some(barrier)
         } else {
             None

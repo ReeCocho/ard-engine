@@ -152,13 +152,13 @@ impl GltfModel {
         // Load as GLB
         let glb = Glb::from_slice(data)?;
         let bin = glb.bin.unwrap().into_owned();
-        let gltf = Gltf::from_slice(&glb.json.into_owned())?;
+        let gltf = Gltf::from_slice(&glb.json)?;
 
         // Mappings from GLTF item indices to our own internal ones
         let mut inv_mapping = DataMapping::default();
 
         // Determine what resources are actually used and also construct the scene graph
-        let gltf_doc = gltf.document.clone().into_json();
+        let gltf_doc = gltf.document.into_json();
         let mut roots = Vec::default();
         for scene in &gltf_doc.scenes {
             for node in &scene.nodes {
@@ -266,12 +266,7 @@ fn parse_node(node_idx: usize, gltf: &gltf::json::Root, mapping: &mut DataMappin
 
     // Create the node
     let mut out_node = GltfNode {
-        name: node
-            .name
-            .as_ref()
-            .map(|n| n.as_str())
-            .unwrap_or("")
-            .to_string(),
+        name: node.name.as_deref().unwrap_or("").to_string(),
         model,
         data: if let Some(mesh) = node.mesh {
             // Check if this mesh group has been inspected before
@@ -401,7 +396,7 @@ fn load_gltf_lights(gltf: &gltf::json::Root, mapping: &DataMapping) -> Vec<GltfL
         None => return Vec::default(),
     };
 
-    let lights = (0..mapping.lights.len())
+    (0..mapping.lights.len())
         .into_par_iter()
         .map(|i| {
             let gltf_idx = *mapping.lights.get(&i).unwrap();
@@ -428,9 +423,7 @@ fn load_gltf_lights(gltf: &gltf::json::Root, mapping: &DataMapping) -> Vec<GltfL
                 }
             }
         })
-        .collect();
-
-    lights
+        .collect()
 }
 
 fn load_gltf_materials(
@@ -441,7 +434,7 @@ fn load_gltf_materials(
     use rayon::prelude::*;
 
     let gltf_materials = &gltf.materials;
-    let materials = (0..mapping.materials.len())
+    (0..mapping.materials.len())
         .into_par_iter()
         .map(|i| {
             let gltf_idx = *mapping.materials.get(&i).unwrap();
@@ -479,9 +472,7 @@ fn load_gltf_materials(
                 },
             }
         })
-        .collect();
-
-    materials
+        .collect()
 }
 
 fn load_gltf_textures(
@@ -492,7 +483,7 @@ fn load_gltf_textures(
     use rayon::prelude::*;
 
     let gltf_textures = &gltf.textures;
-    let textures = (0..mapping.textures.len())
+    (0..mapping.textures.len())
         .into_par_iter()
         .map(|i| {
             let (gltf_idx, usage) = *mapping.textures.get(&i).unwrap();
@@ -595,9 +586,7 @@ fn load_gltf_textures(
                 mips,
             }
         })
-        .collect();
-
-    textures
+        .collect()
 }
 
 fn load_gltf_mesh_groups(
@@ -609,7 +598,7 @@ fn load_gltf_mesh_groups(
     use rayon::prelude::*;
 
     let gltf_meshes = &gltf.meshes;
-    let mesh_groups = (0..mapping.mesh_groups.len())
+    (0..mapping.mesh_groups.len())
         .into_par_iter()
         .map(|i| {
             let gltf_idx = *mapping.mesh_groups.get(&i).unwrap();
@@ -634,9 +623,7 @@ fn load_gltf_mesh_groups(
 
             mesh_group
         })
-        .collect();
-
-    mesh_groups
+        .collect()
 }
 
 fn load_gltf_primitive(
@@ -644,7 +631,6 @@ fn load_gltf_primitive(
     primitive: &gltf::json::mesh::Primitive,
     bin: &[u8],
 ) -> GltfMesh {
-    let indices;
     let mut positions = Vec::default();
     let mut normals = Vec::default();
     let mut tangents = Vec::default();
@@ -662,7 +648,7 @@ fn load_gltf_primitive(
                 positions = match accessor_to_vec::<Vec4>(
                     gltf,
                     gltf_accessor,
-                    &bin,
+                    bin,
                     gltf::accessor::DataType::F32,
                 ) {
                     Some(res) => res,
@@ -676,7 +662,7 @@ fn load_gltf_primitive(
                 normals = match accessor_to_vec::<Vec4>(
                     gltf,
                     gltf_accessor,
-                    &bin,
+                    bin,
                     gltf::accessor::DataType::F32,
                 ) {
                     Some(res) => res,
@@ -690,7 +676,7 @@ fn load_gltf_primitive(
                 tangents = match accessor_to_vec::<Vec4>(
                     gltf,
                     gltf_accessor,
-                    &bin,
+                    bin,
                     gltf::accessor::DataType::F32,
                 ) {
                     Some(res) => res,
@@ -705,7 +691,7 @@ fn load_gltf_primitive(
                     colors = match accessor_to_vec::<Vec4>(
                         gltf,
                         gltf_accessor,
-                        &bin,
+                        bin,
                         gltf::accessor::DataType::F32,
                     ) {
                         Some(res) => res,
@@ -721,7 +707,7 @@ fn load_gltf_primitive(
                     uv0 = match accessor_to_vec::<Vec2>(
                         gltf,
                         gltf_accessor,
-                        &bin,
+                        bin,
                         gltf::accessor::DataType::F32,
                     ) {
                         Some(res) => res,
@@ -735,7 +721,7 @@ fn load_gltf_primitive(
                     uv1 = match accessor_to_vec::<Vec2>(
                         gltf,
                         gltf_accessor,
-                        &bin,
+                        bin,
                         gltf::accessor::DataType::F32,
                     ) {
                         Some(res) => res,
@@ -749,7 +735,7 @@ fn load_gltf_primitive(
                     uv2 = match accessor_to_vec::<Vec2>(
                         gltf,
                         gltf_accessor,
-                        &bin,
+                        bin,
                         gltf::accessor::DataType::F32,
                     ) {
                         Some(res) => res,
@@ -763,7 +749,7 @@ fn load_gltf_primitive(
                     uv3 = match accessor_to_vec::<Vec2>(
                         gltf,
                         gltf_accessor,
-                        &bin,
+                        bin,
                         gltf::accessor::DataType::F32,
                     ) {
                         Some(res) => res,
@@ -791,12 +777,12 @@ fn load_gltf_primitive(
         }
     };
 
-    match indices_accessor.component_type.unwrap().0 {
+    let indices = match indices_accessor.component_type.unwrap().0 {
         gltf::accessor::DataType::U16 => {
             let u16_indices = match accessor_to_vec::<u16>(
                 gltf,
                 indices_accessor,
-                &bin,
+                bin,
                 gltf::accessor::DataType::U16,
             ) {
                 Some(res) => res,
@@ -810,27 +796,23 @@ fn load_gltf_primitive(
                 as_u32.push(i as u32);
             }
 
-            indices = as_u32;
+            as_u32
         }
         gltf::accessor::DataType::U32 => {
-            indices = match accessor_to_vec::<u32>(
-                gltf,
-                indices_accessor,
-                &bin,
-                gltf::accessor::DataType::U32,
-            ) {
+            match accessor_to_vec::<u32>(gltf, indices_accessor, bin, gltf::accessor::DataType::U32)
+            {
                 Some(res) => res,
                 None => {
                     println!("WARNING: Unable to load primitive.");
                     return GltfMesh::default();
                 }
-            };
+            }
         }
         _ => {
             println!("WARNING: Unsupported index data type.");
             return GltfMesh::default();
         }
-    }
+    };
 
     GltfMesh {
         indices,

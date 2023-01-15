@@ -17,9 +17,9 @@ impl Backend for EmptyBackend {
     type Job = ();
     type DrawIndexedIndirect = ();
 
-    unsafe fn create_surface<'a, W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasRawWindowHandle>(
         &self,
-        _create_info: api::surface::SurfaceCreateInfo<'a, W>,
+        _create_info: api::surface::SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, api::surface::SurfaceCreateError> {
         Ok(())
     }
@@ -49,7 +49,6 @@ impl Backend for EmptyBackend {
         _debug_name: Option<&str>,
         _commands: Vec<api::command_buffer::Command<'a, Self>>,
     ) -> Self::Job {
-        ()
     }
 
     unsafe fn present_image(

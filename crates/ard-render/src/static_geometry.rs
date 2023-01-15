@@ -93,7 +93,7 @@ impl StaticGeometry {
         inner.len += renderables.len();
 
         // Register
-        for (i, renderable) in renderables.iter().enumerate() {
+        for renderable in renderables {
             // Generate an ID for the renderable
             let key = make_draw_key(&renderable.renderable.material, &renderable.renderable.mesh);
             let id = inner.id_counter;

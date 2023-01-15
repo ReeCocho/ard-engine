@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use ard_assets::prelude::AssetNameBuf;
 use ard_ecs::entity::Entity;
 
 #[derive(Default)]
@@ -62,6 +61,7 @@ impl EntityMap {
 macro_rules! scene_definition {
     ( $name:ident, $( $field:ty )+ ) => {
         paste::paste! {
+            #[allow(dead_code, non_snake_case)]
             #[derive(Default)]
             pub struct $name {
                 $(
@@ -76,6 +76,7 @@ macro_rules! scene_definition {
                 )*
             }
 
+            #[allow(dead_code, non_snake_case)]
             #[derive(Default)]
             pub struct [<$name Entities>] {
                 $(
@@ -83,10 +84,11 @@ macro_rules! scene_definition {
                 )*
             }
 
+            #[allow(dead_code, non_snake_case)]
             #[serde_with::serde_as]
             #[derive(Default, Serialize, Deserialize)]
             pub struct [<$name Descriptor>] {
-                pub lighting_settings: crate::lighting::LightingSettingsDescriptor,
+                pub lighting_settings: $crate::lighting::LightingSettingsDescriptor,
                 $(
                     // #[serde_as(deserialize_as = "serde_with::DefaultOnError")]
                     // #[serde(default)]
@@ -97,14 +99,14 @@ macro_rules! scene_definition {
             impl [<$name Descriptor>] {
                 pub fn new(
                     entities: [<$name Entities>],
-                    lighting: &crate::lighting::LightingSettings,
+                    lighting: &$crate::lighting::LightingSettings,
                     queries: &ard_ecs::prelude::Queries<ard_ecs::prelude::Everything>,
                     assets: &ard_assets::manager::Assets,
-                ) -> (Self, crate::scene::EntityMap) {
-                    use crate::object::GameObject;
+                ) -> (Self, $crate::scene::EntityMap) {
+                    use $crate::object::GameObject;
 
                     // Create the entity map
-                    let mut mapping = crate::scene::EntityMap::default();
+                    let mut mapping = $crate::scene::EntityMap::default();
 
                     $(
                         for entity in &entities.[<$field _entities>] {
@@ -115,7 +117,7 @@ macro_rules! scene_definition {
                     // Save game objects
                     let mut descriptor = Self::default();
                     descriptor.lighting_settings =
-                        crate::lighting::LightingSettingsDescriptor::from_settings(
+                        $crate::lighting::LightingSettingsDescriptor::from_settings(
                             lighting,
                             assets
                         );
@@ -147,12 +149,12 @@ macro_rules! scene_definition {
                     mut self,
                     commands: &ard_ecs::prelude::EntityCommands,
                     assets: &ard_assets::manager::Assets
-                ) -> crate::scene::EntityMap {
-                    use crate::object::GameObject;
+                ) -> $crate::scene::EntityMap {
+                    use $crate::object::GameObject;
 
                     // Create entity mapping
                     let mut entities = [<$name Entities>]::default();
-                    let mut mapping = crate::scene::EntityMap::default();
+                    let mut mapping = $crate::scene::EntityMap::default();
                     $(
                         // Create empty entities
                         entities.[<$field _entities>] =

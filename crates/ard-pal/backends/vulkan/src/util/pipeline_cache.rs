@@ -19,7 +19,7 @@ impl PipelineCache {
     #[inline(always)]
     pub fn get(&self, layout: vk::PipelineLayout, pass: vk::RenderPass) -> Option<vk::Pipeline> {
         match self.pipelines.get(&layout) {
-            Some(passes) => passes.get(&pass).map(|p| *p),
+            Some(passes) => passes.get(&pass).copied(),
             None => None,
         }
     }

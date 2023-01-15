@@ -1,15 +1,10 @@
 use std::path::PathBuf;
 
 use ard_assets::prelude::*;
-use ard_pal::prelude::{Filter, SamplerAddressMode, TextureFormat};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    cube_map::{CubeMap, CubeMapCreateInfo},
-    factory::Factory,
-    texture::{MipType, Sampler},
-};
+use crate::{cube_map::CubeMap, factory::Factory};
 
 pub mod ard;
 
@@ -20,7 +15,6 @@ pub struct CubeMapAsset {
 
 /// Information required for post load operations on a cube map.
 pub(self) enum CubeMapPostLoad {
-    Faces,
     Ard {
         /// Path to the folder which holds each cube map mip.
         path: PathBuf,
@@ -84,11 +78,7 @@ impl AssetLoader for CubeMapLoader {
         };
 
         let asset = match meta {
-            CubeMapDescriptor::Faces {
-                generate_mips,
-                size,
-                mips,
-            } => todo!(),
+            CubeMapDescriptor::Faces { .. } => todo!(),
             CubeMapDescriptor::Ard { path } => ard::to_asset(&path, &package, self).await?,
         };
 
@@ -211,7 +201,6 @@ impl AssetLoader for CubeMapLoader {
         let post_load_info = assets.get_mut(&handle).unwrap().post_load.take().unwrap();
 
         match post_load_info {
-            CubeMapPostLoad::Faces => {}
             CubeMapPostLoad::Ard { path, mut next_mip } => {
                 while next_mip.is_some() {
                     let mip = next_mip.unwrap();
@@ -224,7 +213,7 @@ impl AssetLoader for CubeMapLoader {
                     // Update mip
                     self.factory.load_cube_map_mip(
                         &assets.get(&handle).unwrap().cube_map,
-                        mip as usize,
+                        mip,
                         &data,
                     );
 
@@ -270,6 +259,7 @@ impl AssetLoader for CubeMapLoader {
     }
 }
 
+/*
 async fn load_cube_image(
     image_data: &mut Vec<u8>,
     package: &Package,
@@ -320,3 +310,4 @@ async fn load_cube_image(
 
     Ok(())
 }
+*/

@@ -48,11 +48,6 @@ impl<T> ResourceAllocator<T> {
         &self.resources
     }
 
-    #[inline(always)]
-    pub fn all_mut(&mut self) -> &mut [Option<T>] {
-        &mut self.resources
-    }
-
     pub fn drop_pending(
         &mut self,
         frame: usize,

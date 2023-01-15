@@ -45,7 +45,7 @@ use texture::Texture;
 use thiserror::Error;
 use util::{
     descriptor_pool::DescriptorPools,
-    garbage_collector::{GarbageCollector, TimelineValues},
+    garbage_collector::{GarbageCleanupArgs, GarbageCollector, TimelineValues},
     pipeline_cache::PipelineCache,
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
@@ -147,9 +147,9 @@ impl Backend for VulkanBackend {
     type DrawIndexedIndirect = DrawIndexedIndirect;
 
     #[inline(always)]
-    unsafe fn create_surface<'a, W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasRawWindowHandle>(
         &self,
-        create_info: SurfaceCreateInfo<'a, W>,
+        create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError> {
         Surface::new(self, create_info)
     }
@@ -276,7 +276,7 @@ impl Backend for VulkanBackend {
             match command {
                 Command::BeginRenderPass(descriptor) => {
                     // Get the render pass described
-                    active_render_pass = self.render_passes.get(&self.device, &descriptor);
+                    active_render_pass = self.render_passes.get(&self.device, descriptor);
 
                     // Find the render pass
                     let mut dims = (0, 0);
@@ -531,14 +531,6 @@ impl Backend for VulkanBackend {
                     draw_count,
                     stride,
                 } => {
-                    // if let Some((utils, _)) = &self.debug {
-                    //     let name = CString::new("draw_indirect_here").unwrap();
-                    //     let label = vk::DebugUtilsLabelEXT::builder()
-                    //         .color([1.0, 0.0, 0.0, 1.0])
-                    //         .label_name(&name)
-                    //         .build();
-                    //     utils.cmd_insert_debug_utils_label(cb, &label);
-                    // }
                     self.device.cmd_draw_indexed_indirect(
                         cb,
                         buffer.internal().buffer,
@@ -835,7 +827,7 @@ impl Backend for VulkanBackend {
                     active_layout,
                     crate::util::to_vk_shader_stage(*stage),
                     0,
-                    &data,
+                    data,
                 ),
             }
         }
@@ -885,15 +877,15 @@ impl Backend for VulkanBackend {
             transfer: transfer.target_timeline_value(),
             compute: compute.target_timeline_value(),
         };
-        self.garbage.cleanup(
-            &self.device,
-            &mut allocator,
-            &mut pools,
-            &mut pipelines,
-            current_values,
-            target_values,
-            false,
-        );
+        self.garbage.cleanup(GarbageCleanupArgs {
+            device: &self.device,
+            allocator: &mut allocator,
+            pools: &mut pools,
+            pipelines: &mut pipelines,
+            current: current_values,
+            target: target_values,
+            override_ref_counter: false,
+        });
 
         Job {
             ty: queue,
@@ -1141,8 +1133,8 @@ impl Backend for VulkanBackend {
 }
 
 impl VulkanBackend {
-    pub fn new<'a, W: HasRawWindowHandle>(
-        create_info: VulkanBackendCreateInfo<'a, W>,
+    pub fn new<W: HasRawWindowHandle>(
+        create_info: VulkanBackendCreateInfo<W>,
     ) -> Result<Self, VulkanBackendCreateError> {
         let app_name = CString::new(create_info.app_name).unwrap();
         let vk_version = vk::API_VERSION_1_2;
@@ -1449,15 +1441,15 @@ impl Drop for VulkanBackend {
                     compute: compute.target_timeline_value(),
                 };
 
-                self.garbage.cleanup(
-                    &self.device,
-                    &mut allocator,
-                    &mut pools,
-                    &mut pipelines,
+                self.garbage.cleanup(GarbageCleanupArgs {
+                    device: &self.device,
+                    allocator: &mut allocator,
+                    pools: &mut pools,
+                    pipelines: &mut pipelines,
                     current,
                     target,
-                    true,
-                );
+                    override_ref_counter: true,
+                });
                 if self.garbage.is_empty() {
                     break;
                 }
@@ -1711,7 +1703,7 @@ unsafe extern "system" fn vulkan_debug_callback(
     _user_data: *mut std::os::raw::c_void,
 ) -> vk::Bool32 {
     let callback_data = *p_callback_data;
-    let message_id_number: i32 = callback_data.message_id_number as i32;
+    let message_id_number = callback_data.message_id_number;
 
     // Ignore `OutputNotConsumed` warnings
     if message_id_number == 101294395 {

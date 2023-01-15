@@ -173,25 +173,13 @@ pub fn to_asset(gltf: GltfModel, loader: &ModelLoader) -> ModelAsset {
                                     indices: &instance.mesh.indices,
                                     vertices: Vertices::Attributes {
                                         positions: &instance.mesh.positions,
-                                        normals: instance
-                                            .mesh
-                                            .normals
-                                            .as_ref()
-                                            .map(|arr| arr.as_slice()),
-                                        tangents: instance
-                                            .mesh
-                                            .tangents
-                                            .as_ref()
-                                            .map(|arr| arr.as_slice()),
-                                        colors: instance
-                                            .mesh
-                                            .colors
-                                            .as_ref()
-                                            .map(|arr| arr.as_slice()),
-                                        uv0: instance.mesh.uv0.as_ref().map(|arr| arr.as_slice()),
-                                        uv1: instance.mesh.uv1.as_ref().map(|arr| arr.as_slice()),
-                                        uv2: instance.mesh.uv2.as_ref().map(|arr| arr.as_slice()),
-                                        uv3: instance.mesh.uv3.as_ref().map(|arr| arr.as_slice()),
+                                        normals: instance.mesh.normals.as_deref(),
+                                        tangents: instance.mesh.tangents.as_deref(),
+                                        colors: instance.mesh.colors.as_deref(),
+                                        uv0: instance.mesh.uv0.as_deref(),
+                                        uv1: instance.mesh.uv1.as_deref(),
+                                        uv2: instance.mesh.uv2.as_deref(),
+                                        uv3: instance.mesh.uv3.as_deref(),
                                     },
                                 };
                                 let mesh = loader.factory.create_mesh(create_info);

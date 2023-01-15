@@ -65,7 +65,7 @@ pub trait PackageInterface: Clone + Send {
 }
 
 impl From<std::io::Error> for PackageReadError {
-    fn from(err: std::io::Error) -> Self {
+    fn from(_: std::io::Error) -> Self {
         PackageReadError::Unknown
     }
 }

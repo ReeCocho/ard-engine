@@ -56,7 +56,7 @@ impl MeshBuffers {
             ctx: ctx.clone(),
             vertex_buffers: HashMap::default(),
             index_buffer: BufferArrayAllocator::new(
-                ctx.clone(),
+                ctx,
                 BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
                 BASE_INDEX_BLOCK_LEN,
                 DEFAULT_IB_LEN,
@@ -196,12 +196,12 @@ impl VertexBuffers {
     }
 
     /// Binds the internal buffers for the target layout, assuming it is a subset of our attributes.
-    pub fn bind<'a>(
-        &'a self,
-        render_pass: &mut RenderPass<'a>,
-        mbs: &'a MeshBuffers,
-        target_layout: VertexLayout,
-    ) {
+    pub fn bind<'a>(&'a self, render_pass: &mut RenderPass<'a>, target_layout: VertexLayout) {
+        assert!(
+            target_layout.subset_of(&self.layout),
+            "pipeline must take a subset of the vertex attributes of the bound mesh"
+        );
+
         let mut binds = Vec::with_capacity(8);
 
         // Positions
@@ -215,7 +215,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::NORMAL) {
             binds.push(VertexBind {
                 buffer: match &self.normals {
-                    VertexBuffer::Dummy => panic!("missing attribute"), // &mbs.dummy_vector,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -227,7 +227,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::TANGENT) {
             binds.push(VertexBind {
                 buffer: match &self.tangents {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_vector,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -239,7 +239,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::COLOR) {
             binds.push(VertexBind {
                 buffer: match &self.colors {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_color,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -251,7 +251,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::UV0) {
             binds.push(VertexBind {
                 buffer: match &self.uv0 {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -263,7 +263,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::UV1) {
             binds.push(VertexBind {
                 buffer: match &self.uv1 {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -275,7 +275,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::UV2) {
             binds.push(VertexBind {
                 buffer: match &self.uv2 {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -287,7 +287,7 @@ impl VertexBuffers {
         if target_layout.contains(VertexLayout::UV3) {
             binds.push(VertexBind {
                 buffer: match &self.uv3 {
-                    VertexBuffer::Dummy => panic!("missing attribute"), //&mbs.dummy_uv,
+                    VertexBuffer::Dummy => panic!("missing attribute"),
                     VertexBuffer::Allocator(alloc) => alloc.buffer(),
                 },
                 array_element: 0,
@@ -302,7 +302,7 @@ impl VertexBuffers {
     pub fn buffer(&self, element: VertexLayout) -> Option<&Buffer> {
         const EMPTY: VertexLayout = VertexLayout::empty();
         match element {
-            EMPTY => Some(&self.positions.buffer()),
+            EMPTY => Some(self.positions.buffer()),
             VertexLayout::NORMAL => match &self.normals {
                 VertexBuffer::Allocator(alloc) => Some(alloc.buffer()),
                 VertexBuffer::Dummy => None,
@@ -471,12 +471,8 @@ impl BufferArrayAllocator {
 
     pub fn allocate(&mut self, count: usize) -> Option<MeshBlock> {
         // Determine what level the allocation must be placed it
-        let block_count = (count / self.base_block_len)
-            + if count % self.base_block_len != 0 {
-                1
-            } else {
-                0
-            };
+        let block_count =
+            (count / self.base_block_len) + usize::from(count % self.base_block_len != 0);
         let level = (block_count as f32).log2().ceil() as usize;
 
         // Too big
@@ -664,6 +660,7 @@ impl MeshBlock {
     }
 
     /// Number of T's that can fit in this block.
+    #[allow(dead_code)]
     #[inline]
     pub fn len(&self) -> u32 {
         self.len

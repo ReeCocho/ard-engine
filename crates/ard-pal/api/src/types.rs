@@ -302,20 +302,20 @@ impl TextureFormat {
 
     #[inline(always)]
     pub fn is_depth(&self) -> bool {
-        match *self {
+        matches!(
+            *self,
             TextureFormat::D16Unorm
-            | TextureFormat::D24UnormS8Uint
-            | TextureFormat::D32Sfloat
-            | TextureFormat::D32SfloatS8Uint => true,
-            _ => false,
-        }
+                | TextureFormat::D24UnormS8Uint
+                | TextureFormat::D32Sfloat
+                | TextureFormat::D32SfloatS8Uint
+        )
     }
 
     #[inline(always)]
     pub fn is_stencil(&self) -> bool {
-        match *self {
-            TextureFormat::D24UnormS8Uint | TextureFormat::D32SfloatS8Uint => true,
-            _ => false,
-        }
+        matches!(
+            *self,
+            TextureFormat::D24UnormS8Uint | TextureFormat::D32SfloatS8Uint
+        )
     }
 }
