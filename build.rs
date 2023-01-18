@@ -101,7 +101,6 @@ fn compile(in_path: &Path, out_path: &Path) {
     let err = format!("unable to compile {:?}", out_name);
     let stderr = Command::new("glslc")
         .arg(in_path)
-        .arg("-O0")
         .arg("-g")
         .arg("-I./crates/ard-render/src/shaders/include")
         .arg("--target-env=vulkan1.2")

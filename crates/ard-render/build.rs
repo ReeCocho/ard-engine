@@ -164,8 +164,6 @@ fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {
     let err = format!("unable to compile {:?}", out_path);
     let stderr = Command::new("glslc")
         .arg(in_path)
-        .arg("-O")
-        .arg("-g")
         .arg("-I./src/shaders/include/")
         .args(&flag_args)
         .arg("--target-env=vulkan1.2")

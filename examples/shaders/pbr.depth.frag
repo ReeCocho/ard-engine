@@ -1,8 +1,5 @@
 #version 450 core
 
-void main() {}
-
-/*
 struct PbrMaterial {
     vec4 base_color;
     float metallic;
@@ -29,4 +26,3 @@ void entry() {
     }
 }
 ARD_ENTRY(entry)
-*/
