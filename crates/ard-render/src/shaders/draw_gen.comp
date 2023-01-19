@@ -51,14 +51,15 @@ BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
     half_extents.z = max(half_extents.z + 0.1, 0.1);
 
     // Compute all eight corners
-    bb.corners[0] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
-    bb.corners[1] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, +half_extents.z), 1.0);
-    bb.corners[2] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, +half_extents.z), 1.0);
-    bb.corners[3] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, -half_extents.z), 1.0);
-    bb.corners[4] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, -half_extents.z), 1.0);
-    bb.corners[5] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, +half_extents.z), 1.0);
-    bb.corners[6] = camera.view * model * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, -half_extents.z), 1.0);
-    bb.corners[7] = camera.view * model * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+    mat4 vm = camera.view * model;
+    bb.corners[0] = vm * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[1] = vm * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, +half_extents.z), 1.0);
+    bb.corners[2] = vm * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[3] = vm * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[4] = vm * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, -half_extents.z), 1.0);
+    bb.corners[5] = vm * vec4(center.xyz + vec3(+half_extents.x, -half_extents.y, +half_extents.z), 1.0);
+    bb.corners[6] = vm * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, -half_extents.z), 1.0);
+    bb.corners[7] = vm * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, -half_extents.z), 1.0);
 
     // Then find the min and max points in screen space
     bb.min_pt = vec2(uintBitsToFloat(0x7F800000));
@@ -126,7 +127,7 @@ void main() {
         bb.max_pt.x - bb.min_pt.x,
         bb.max_pt.y - bb.min_pt.y
     ) * render_area;
-    float level = ceil(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
+    float level = floor(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
     
     // Clip space to UV
     bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);

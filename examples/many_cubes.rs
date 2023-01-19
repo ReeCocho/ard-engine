@@ -1,3 +1,7 @@
+/// When the application loads, press the M key. You should see your mouse cursor disappear. This 
+/// means the free cam is turned on. You can turn it off by pressing M again. With the free cam on, 
+/// you should be able to look around with the mouse and move around the scene with WASD.
+
 #[path = "./util.rs"]
 mod util;
 
@@ -106,7 +110,7 @@ fn setup(app: &mut App) {
         look_speed: 0.1,
         move_speed: 32.0,
         entity: camera_entity[0],
-        position: Vec3::new(60.0, 60.0, 60.0),
+        position: Vec3::new(0.0, 0.0, -(DEPTH as f32)),
         rotation: Vec3::ZERO,
         descriptor: camera_descriptor,
     });
