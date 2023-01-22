@@ -198,7 +198,7 @@ impl Renderer {
         let depth_buffer = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::D32Sfloat,
+                format: TextureFormat::D24UnormS8Uint,
                 ty: TextureType::Type2D,
                 width,
                 height,
@@ -355,7 +355,7 @@ impl Renderer {
             self.depth_buffer = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::D32Sfloat,
+                    format: TextureFormat::D24UnormS8Uint,
                     ty: TextureType::Type2D,
                     width: canvas_width,
                     height: canvas_height,

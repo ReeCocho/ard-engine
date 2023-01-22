@@ -127,6 +127,8 @@ impl DescriptorSet {
         layout: &DescriptorSetLayout,
         updates: &[DescriptorSetUpdate<crate::VulkanBackend>],
     ) {
+        let sampleable_aspects = vk::ImageAspectFlags::COLOR | vk::ImageAspectFlags::DEPTH;
+
         // Wait until the last queue that the buffer was used in has finished it's work
         let mut resc_state = ctx.resource_state.write().unwrap();
         let mut sampler_cache = ctx.samplers.lock().unwrap();
@@ -279,7 +281,7 @@ impl DescriptorSet {
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: texture.aspect_flags,
+                                aspect_mask: texture.aspect_flags & sampleable_aspects,
                                 base_mip_level: *base_mip as u32,
                                 level_count: *mip_count as u32,
                                 base_array_layer: *array_element as u32,
@@ -339,7 +341,7 @@ impl DescriptorSet {
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: texture.aspect_flags,
+                                aspect_mask: texture.aspect_flags & sampleable_aspects,
                                 base_mip_level: *mip as u32,
                                 level_count: 1,
                                 base_array_layer: *array_element as u32,
@@ -400,7 +402,7 @@ impl DescriptorSet {
                             .format(cube_map.format)
                             .view_type(vk::ImageViewType::CUBE)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: cube_map.aspect_flags,
+                                aspect_mask: cube_map.aspect_flags & sampleable_aspects,
                                 base_mip_level: *base_mip as u32,
                                 level_count: *mip_count as u32,
                                 base_array_layer: 6 * *array_element as u32,
