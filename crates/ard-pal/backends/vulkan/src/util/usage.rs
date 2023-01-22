@@ -48,6 +48,9 @@ pub(crate) struct SubResourceUsage {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum SubResource {
+    Set {
+        set: vk::DescriptorSet,
+    },
     Buffer {
         buffer: vk::Buffer,
         array_elem: u32,
@@ -183,6 +186,10 @@ impl<'a> PipelineTracker<'a> {
                 timeline_value: self.next_value,
             };
             let (old_queue_usage, old_layout) = match &resource {
+                SubResource::Set { set } => (
+                    self.global.register_set(*set, Some(resc_usage)),
+                    vk::ImageLayout::UNDEFINED,
+                ),
                 SubResource::Buffer { buffer, array_elem } => (
                     self.global
                         .register_buffer(*buffer, *array_elem, Some(resc_usage)),
@@ -228,7 +235,7 @@ impl<'a> PipelineTracker<'a> {
                     let entry = self
                         .queues
                         .entry(old_queue_usage.queue)
-                        .or_insert(vk::PipelineStageFlags::TOP_OF_PIPE);
+                        .or_insert(vk::PipelineStageFlags::empty());
                     *entry |= usage.stage;
                 }
             }
@@ -316,6 +323,7 @@ impl<'a> PipelineTracker<'a> {
                                 .build(),
                         );
                     }
+                    _ => {}
                 }
 
                 // Update barrier with stages

@@ -193,7 +193,11 @@ unsafe fn track_render_pass(
                 );
             }
             Command::BindDescriptorSets { sets, .. } => {
-                track_descriptor_sets(sets, &mut scope);
+                track_descriptor_sets(
+                    sets,
+                    vk::PipelineStageFlags::VERTEX_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    &mut scope,
+                );
             }
             Command::DrawIndexedIndirect {
                 buffer,
@@ -281,7 +285,7 @@ unsafe fn track_dispatch(state: &mut TrackState) {
             }
 
             // Track
-            track_descriptor_set(sets[i], &mut scope);
+            track_descriptor_set(sets[i], vk::PipelineStageFlags::COMPUTE_SHADER, &mut scope);
             bound[set_slot] = true;
             total_bound += 1;
         }
@@ -587,14 +591,30 @@ unsafe fn track_blit(
 
 unsafe fn track_descriptor_sets(
     sets: &[&DescriptorSet<crate::VulkanBackend>],
+    set_stage: vk::PipelineStageFlags,
     scope: &mut UsageScope,
 ) {
     for set in sets {
-        track_descriptor_set(set, scope);
+        track_descriptor_set(set, set_stage, scope);
     }
 }
 
-unsafe fn track_descriptor_set(set: &DescriptorSet<crate::VulkanBackend>, scope: &mut UsageScope) {
+unsafe fn track_descriptor_set(
+    set: &DescriptorSet<crate::VulkanBackend>,
+    set_stage: vk::PipelineStageFlags,
+    scope: &mut UsageScope,
+) {
+    scope.use_resource(
+        SubResource::Set {
+            set: set.internal().set,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::empty(),
+            stage: set_stage,
+            layout: vk::ImageLayout::UNDEFINED,
+        },
+    );
+
     // Check every binding of every set
     for binding in &set.internal().bound {
         // Check every element of every binding
