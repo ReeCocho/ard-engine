@@ -86,7 +86,7 @@ impl Tags {
         else {
             let id = StorageId::from(self.storages.len());
             self.storages
-                .push(Box::new(PrwLock::new(T::Storage::default(), "")));
+                .push(Box::new(PrwLock::new(T::Storage::default())));
             self.to_storage.insert(TypeId::of::<T>(), id);
             id
         };
@@ -276,7 +276,7 @@ impl<T: Tag + 'static> TagExt for T {
 
     #[inline]
     fn make_storage(&self) -> Box<dyn AnyTagStorage> {
-        Box::new(PrwLock::new(T::Storage::default(), ""))
+        Box::new(PrwLock::new(T::Storage::default()))
     }
 }
 

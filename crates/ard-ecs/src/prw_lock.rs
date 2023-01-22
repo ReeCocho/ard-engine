@@ -18,9 +18,6 @@ pub struct PrwLock<T>(Arc<PrwLockInner<T>>);
 #[derive(Debug)]
 pub struct PrwLockInner<T> {
     data: T,
-    /// Used for debugging purposes.
-    #[allow(unused)]
-    name: String,
     access_state: AtomicU32,
 }
 
@@ -32,10 +29,9 @@ pub struct PrwWriteLock<T>(Arc<PrwLockInner<T>>);
 
 impl<T> PrwLock<T> {
     #[inline]
-    pub fn new(data: T, name: &str) -> Self {
+    pub fn new(data: T) -> Self {
         Self(Arc::new(PrwLockInner {
             data,
-            name: String::from(name),
             access_state: AtomicU32::new(0),
         }))
     }

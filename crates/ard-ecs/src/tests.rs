@@ -53,7 +53,7 @@ fn handler<S: SystemState, E: Event>(_: &mut S, _: E, _: Commands, _: Queries<()
 
 #[test]
 fn prw_lock_test() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
 
     let handle1 = lock.read();
     assert_eq!(*handle1, 42);
@@ -76,7 +76,7 @@ fn prw_lock_test() {
 #[test]
 #[should_panic]
 fn prw_lock_multiple_writers() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
     let mut _handle1 = lock.write();
     let mut _handle2 = lock.write();
 }
@@ -85,7 +85,7 @@ fn prw_lock_multiple_writers() {
 #[test]
 #[should_panic]
 fn prw_lock_readers_and_writers() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
     let mut _handle1 = lock.read();
     let mut _handle2 = lock.write();
 }
@@ -93,7 +93,7 @@ fn prw_lock_readers_and_writers() {
 /// PrwLock should not panic if there are multiple readers.
 #[test]
 fn prw_lock_readers() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
     let mut _handle1 = lock.read();
     let mut _handle2 = lock.read();
 }
@@ -101,7 +101,7 @@ fn prw_lock_readers() {
 /// PrwLock should not panic if there is a reader then a writer.
 #[test]
 fn prw_lock_reader_then_writer() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
     let handle1 = lock.read();
     std::mem::drop(handle1);
     let mut _handle2 = lock.write();
@@ -110,7 +110,7 @@ fn prw_lock_reader_then_writer() {
 /// PrwLock should not panic if there is a writer then a reader.
 #[test]
 fn prw_lock_writer_then_reader() {
-    let lock = PrwLock::new(42, "");
+    let lock = PrwLock::new(42);
     let handle1 = lock.write();
     std::mem::drop(handle1);
     let mut _handle2 = lock.read();
