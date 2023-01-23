@@ -42,11 +42,11 @@ Before following the build instructions, install the following dependencies.
 
 | Dependency | Tested Version |
 | - | - |
-| [Rust](https://rustup.rs/) | 1.65.0 |
-| [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.36.3 |
-| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.211.0 |
+| [Rust](https://rustup.rs/) | 1.66.0 |
+| [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.36.4 |
+| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.236.0 |
 
 ### Instructions
 
-1. Run `cargo make build` to compile the editor.
+1. Run `cargo make build_dbg` to compile the editor.
 2. Run `/build/debug/ard-editor.exe` to use the editor.
