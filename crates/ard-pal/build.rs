@@ -53,7 +53,7 @@ fn compile(in_path: &Path, out_path: &Path) {
     out_name.set_extension(&extension);
 
     // Compile the shader
-    let err = format!("unable to compile {:?}", out_name);
+    let err = format!("unable to compile {out_name:?}");
     let stderr = Command::new("glslc")
         .arg(in_path)
         .arg("--target-env=vulkan1.2")
@@ -65,6 +65,6 @@ fn compile(in_path: &Path, out_path: &Path) {
 
     if !stderr.is_empty() {
         let err = String::from_utf8(stderr).unwrap();
-        panic!("unable to compile {:?}:\n{}", in_path, err);
+        panic!("unable to compile {in_path:?}:\n{err}");
     }
 }

@@ -2,6 +2,13 @@
 
 A game engine designed for open world 3D games.
 
+## Goals
+
+- **Moddable**: Users of games made with the engine will be able to easily modify, add, or remove content.
+- **Streaming**: Streaming of assets will be handled automatically by the engine.
+- **Big worlds**: The engine will support large open worlds.
+- **Collaborative**: The editor will have integration with version control software, making collaboration easy.
+
 ## Features
 
 ### General
@@ -28,7 +35,7 @@ A game engine designed for open world 3D games.
 
 - **crates**: Contains all the crates that make up the engine.
 - **data**: Contains assets and configuration defaults for the editor.
-- **src**: Contains the high-level crate for he entire engine which reexports other crates.
+- **src**: Contains the high-level crate for the entire engine which re-exports other crates.
 - **tools**: Binaries used by the editor.
 
 ## Building
@@ -42,7 +49,7 @@ Before following the build instructions, install the following dependencies.
 
 | Dependency | Tested Version |
 | - | - |
-| [Rust](https://rustup.rs/) | 1.66.0 |
+| [Rust](https://rustup.rs/) | 1.67.0 |
 | [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.36.4 |
 | [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.236.0 |
 

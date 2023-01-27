@@ -507,11 +507,11 @@ impl AoImage {
         ]);
     }
 
-    pub fn generate<'a, 'b>(
+    pub fn generate<'a>(
         &'a self,
         frame: usize,
         ao: &AmbientOcclusion,
-        commands: &'b mut CommandBuffer<'a>,
+        commands: &mut CommandBuffer<'a>,
     ) {
         commands.compute_pass(|pass| {
             let (width, height, _) = self.image.dims();

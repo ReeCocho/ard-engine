@@ -256,7 +256,7 @@ impl AdaptiveLuminance {
         }]);
     }
 
-    pub fn compute<'a, 'b>(&'a self, frame: usize, commands: &'b mut CommandBuffer<'a>) {
+    pub fn compute<'a>(&'a self, frame: usize, commands: &mut CommandBuffer<'a>) {
         const MIN_LOG_LUM: f32 = -5.0;
         const MAX_LOG_LUM: f32 = 4.0;
 

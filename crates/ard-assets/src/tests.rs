@@ -139,8 +139,8 @@ impl AssetLoader for PersistentAssetLoader {
 }
 
 /// Basic test to check that assets get loaded in.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn asset_loading() {
+#[test]
+fn asset_loading() {
     let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
@@ -157,8 +157,8 @@ async fn asset_loading() {
 
 /// Tests that asset shadowing works. That is, between two packages with the same asset, the
 /// package furthest in the load order will have it's asset loaded.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn shadowing() {
+#[test]
+fn shadowing() {
     let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
@@ -173,8 +173,8 @@ async fn shadowing() {
 }
 
 /// Tests that assets are dropped when they have no more references.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn ref_counting() {
+#[test]
+fn ref_counting() {
     let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
@@ -194,8 +194,8 @@ async fn ref_counting() {
 }
 
 /// Tests that default asset works and drop as expected.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn default_assets() {
+#[test]
+fn default_assets() {
     let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
@@ -229,8 +229,8 @@ async fn default_assets() {
 
 /// Tests that when many threads attempt to load the same asset, they should all get the same
 /// handle.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn many_requests() {
+#[test]
+fn many_requests() {
     // This test is non-determenistic, so we need to test multiple times.
     const THREAD_COUNT: usize = 10;
     const ITER_COUNT: usize = 1_000;
@@ -246,16 +246,13 @@ async fn many_requests() {
         for _ in 0..THREAD_COUNT {
             let c = Arc::clone(&barrier);
             let assets_clone = assets.clone();
-            let handle = tokio::runtime::Handle::current();
 
             handles.push(std::thread::spawn(move || {
                 c.wait();
-                handle.block_on(async {
-                    (
-                        assets_clone.load::<TestAsset>(AssetName::new("test_file.dat")),
-                        assets_clone.load::<DropSignalAsset>(AssetName::new("dummy.drp")),
-                    )
-                })
+                let h1 = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
+                let h2 = assets_clone.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
+                assets_clone.wait_for_load(&h1);
+                assets_clone.wait_for_load(&h2);
             }));
         }
 
@@ -271,8 +268,8 @@ async fn many_requests() {
 }
 
 /// Test for when an asset is loaded and then dropped in one thread but also loaded in another.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn load_drop() {
+#[test]
+fn load_drop() {
     // This test is non-determenistic, so we need to test multiple times.
     const ITER_COUNT: usize = 1_000;
 
@@ -285,35 +282,29 @@ async fn load_drop() {
 
         let c = Arc::clone(&barrier);
         let assets_clone = assets.clone();
-        let tokio_handle = tokio::runtime::Handle::current();
         handles.push(std::thread::spawn(move || {
-            tokio_handle.block_on(async {
-                // Load the asset in one thread
-                let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
+            // Load the asset in one thread
+            let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
 
-                // Wait for the asset loader to finish
-                assets_clone.wait_for_load(&handle);
+            // Wait for the asset loader to finish
+            assets_clone.wait_for_load(&handle);
 
-                // Wait for the second thread to start up
-                c.wait();
+            // Wait for the second thread to start up
+            c.wait();
 
-                // Drop the asset
-                std::mem::drop(handle);
-            });
+            // Drop the asset
+            std::mem::drop(handle);
         }));
 
         let c = Arc::clone(&barrier);
         let assets_clone = assets.clone();
-        let tokio_handle = tokio::runtime::Handle::current();
         handles.push(std::thread::spawn(move || {
-            tokio_handle.block_on(async {
-                // Wait for the first thread to be ready
-                c.wait();
+            // Wait for the first thread to be ready
+            c.wait();
 
-                // Load the asset
-                let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
-                assets_clone.wait_for_load(&handle);
-            });
+            // Load the asset
+            let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
+            assets_clone.wait_for_load(&handle);
         }));
 
         for handle in handles {
@@ -323,8 +314,8 @@ async fn load_drop() {
 }
 
 /// Test to check persistent assets.
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn persistent_assets() {
+#[test]
+fn persistent_assets() {
     let assets = Assets::new();
     assets.register::<PersistentAsset>(PersistentAssetLoader);
 

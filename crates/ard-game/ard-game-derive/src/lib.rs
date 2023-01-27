@@ -277,7 +277,7 @@ fn gen_load_fields(
             }
             None => {
                 is_struct = false;
-                let ident = Ident::new(&format!("field_{}", i), Span::call_site());
+                let ident = Ident::new(&format!("field_{i}"), Span::call_site());
 
                 field_names.extend(quote! { #ident, });
 
@@ -354,7 +354,7 @@ fn gen_save_fields(
             None => {
                 is_struct = false;
                 let ident = Literal::usize_unsuffixed(i);
-                let desc_ident = Ident::new(&format!("field_{}", i), Span::call_site());
+                let desc_ident = Ident::new(&format!("field_{i}"), Span::call_site());
 
                 field_names.extend(quote! {
                     #desc_ident,

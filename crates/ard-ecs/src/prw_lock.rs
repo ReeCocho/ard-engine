@@ -1,9 +1,6 @@
 use std::{
     ops::{Deref, DerefMut},
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 
 use unsafe_unwrap::UnsafeUnwrap;
@@ -18,7 +15,8 @@ pub struct PrwLock<T>(Arc<PrwLockInner<T>>);
 #[derive(Debug)]
 pub struct PrwLockInner<T> {
     data: T,
-    access_state: AtomicU32,
+    #[cfg(debug_assertions)]
+    access_state: std::sync::atomic::AtomicU32,
 }
 
 #[derive(Debug)]
@@ -32,7 +30,8 @@ impl<T> PrwLock<T> {
     pub fn new(data: T) -> Self {
         Self(Arc::new(PrwLockInner {
             data,
-            access_state: AtomicU32::new(0),
+            #[cfg(debug_assertions)]
+            access_state: std::sync::atomic::AtomicU32::new(0),
         }))
     }
 
@@ -41,7 +40,10 @@ impl<T> PrwLock<T> {
         #[cfg(debug_assertions)]
         {
             // See who is accessing the PrwLock
-            let access_state = self.0.access_state.fetch_add(1, Ordering::SeqCst);
+            let access_state = self
+                .0
+                .access_state
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
             // Panic if there is a writer
             debug_assert_ne!(access_state, u32::MAX);
@@ -55,7 +57,10 @@ impl<T> PrwLock<T> {
         #[cfg(debug_assertions)]
         {
             // See who is accessing the PrwLock
-            let access_state = self.0.access_state.fetch_add(u32::MAX, Ordering::SeqCst);
+            let access_state = self
+                .0
+                .access_state
+                .fetch_add(u32::MAX, std::sync::atomic::Ordering::SeqCst);
 
             // Panic if there are readers or writers
             debug_assert_eq!(access_state, 0);
@@ -70,7 +75,9 @@ impl<T> Drop for PrwLockInner<T> {
     fn drop(&mut self) {
         // Panic if there are any outstanding access handles
         #[cfg(debug_assertions)]
-        if !std::thread::panicking() && self.access_state.load(Ordering::SeqCst) > 0 {
+        if !std::thread::panicking()
+            && self.access_state.load(std::sync::atomic::Ordering::SeqCst) > 0
+        {
             panic!("outstanding access handle in archetype storage on drop");
         }
     }
@@ -84,7 +91,9 @@ impl<T> Drop for PrwReadLock<T> {
     #[inline]
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
-        self.0.access_state.fetch_sub(1, Ordering::SeqCst);
+        self.0
+            .access_state
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -105,7 +114,9 @@ impl<T> Drop for PrwWriteLock<T> {
     #[inline]
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
-        self.0.access_state.fetch_sub(u32::MAX, Ordering::SeqCst);
+        self.0
+            .access_state
+            .fetch_sub(u32::MAX, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

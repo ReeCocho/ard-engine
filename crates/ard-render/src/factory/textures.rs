@@ -112,7 +112,7 @@ impl TextureSets {
                 ctx.clone(),
                 DescriptorSetCreateInfo {
                     layout: layout.clone(),
-                    debug_name: Some(format!("texture_set_{}", i)),
+                    debug_name: Some(format!("texture_set_{i}")),
                 },
             )
             .unwrap();

@@ -157,11 +157,11 @@ fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {
     // Construct flag arguments.
     let mut flag_args = Vec::with_capacity(flags.len());
     for flag in flags {
-        flag_args.push(format!("-D{}", flag));
+        flag_args.push(format!("-D{flag}"));
     }
 
     // Compile the shader
-    let err = format!("unable to compile {:?}", out_path);
+    let err = format!("unable to compile {out_path:?}");
     let stderr = Command::new("glslc")
         .arg(in_path)
         .arg("-I./src/shaders/include/")
@@ -176,6 +176,6 @@ fn compile(in_path: &Path, out_path: &Path, flags: &[&str]) {
 
     if !stderr.is_empty() {
         let err = String::from_utf8(stderr).unwrap();
-        panic!("unable to compile {:?}:\n{}", in_path, err);
+        panic!("unable to compile {in_path:?}:\n{err}");
     }
 }

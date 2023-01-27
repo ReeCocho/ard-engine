@@ -326,7 +326,7 @@ impl Surface {
         // Name everything
         if let Some(name) = &self.debug_name {
             if let Some((debug, _)) = &ctx.debug {
-                let swapchain_name = CString::new(format!("{}_swapchain", name)).unwrap();
+                let swapchain_name = CString::new(format!("{name}_swapchain")).unwrap();
                 let swapchain_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                     .object_type(vk::ObjectType::SWAPCHAIN_KHR)
                     .object_handle(self.swapchain.as_raw())
@@ -337,8 +337,8 @@ impl Surface {
                     .unwrap();
 
                 for (i, (image, view)) in self.images.iter().enumerate() {
-                    let image_name = CString::new(format!("{}_image_{}", name, i)).unwrap();
-                    let view_name = CString::new(format!("{}_view_{}", name, i)).unwrap();
+                    let image_name = CString::new(format!("{name}_image_{i}")).unwrap();
+                    let view_name = CString::new(format!("{name}_view_{i}")).unwrap();
                     let image_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                         .object_type(vk::ObjectType::IMAGE)
                         .object_handle(image.as_raw())
@@ -359,9 +359,9 @@ impl Surface {
 
                 for (i, semaphores) in self.semaphores.iter().enumerate() {
                     let available_name =
-                        CString::new(format!("{}_available_semaphore_{}", name, i)).unwrap();
+                        CString::new(format!("{name}_available_semaphore_{i}")).unwrap();
                     let presentable_name =
-                        CString::new(format!("{}_presentable_semaphore_{}", name, i)).unwrap();
+                        CString::new(format!("{name}_presentable_semaphore_{i}")).unwrap();
                     let available_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                         .object_type(vk::ObjectType::SEMAPHORE)
                         .object_handle(semaphores.available.as_raw())

@@ -207,11 +207,11 @@ impl Backend for VulkanBackend {
         }
     }
 
-    unsafe fn submit_commands<'a>(
+    unsafe fn submit_commands(
         &self,
         queue: QueueType,
         debug_name: Option<&str>,
-        commands: Vec<Command<'a, Self>>,
+        commands: Vec<Command<'_, Self>>,
     ) -> Job {
         // Lock down all neccesary objects
         let mut resc_state = self.resource_state.write().unwrap();

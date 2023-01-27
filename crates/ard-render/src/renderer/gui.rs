@@ -659,7 +659,7 @@ impl Gui {
         }
     }
 
-    pub(crate) fn update_textures<'a, 'b>(&'a self, commands: &'b mut CommandBuffer<'a>) {
+    pub(crate) fn update_textures<'a>(&'a self, commands: &mut CommandBuffer<'a>) {
         for delta in &self.texture_deltas {
             commands.copy_buffer_to_texture(
                 &self.font_texture,
@@ -678,12 +678,12 @@ impl Gui {
         }
     }
 
-    pub(crate) fn draw<'a, 'b>(
+    pub(crate) fn draw<'a>(
         &'a self,
         frame: usize,
         screen_size: Vec2,
         textures_sets: &'a TextureSets,
-        pass: &'b mut RenderPass<'a>,
+        pass: &mut RenderPass<'a>,
     ) {
         pass.bind_pipeline(self.font_pipeline.clone());
         pass.bind_sets(0, vec![&self.sets[frame], textures_sets.set(frame)]);

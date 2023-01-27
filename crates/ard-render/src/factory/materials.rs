@@ -145,7 +145,7 @@ impl MaterialBuffers {
                         self.ctx.clone(),
                         DescriptorSetCreateInfo {
                             layout: self.layout.clone(),
-                            debug_name: Some(format!("material_set_{}_frame_{}", data_size, i)),
+                            debug_name: Some(format!("material_set_{data_size}_frame_{i}")),
                         },
                     )
                     .unwrap(),
@@ -207,7 +207,7 @@ impl MaterialBuffer {
                 array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
-                debug_name: Some(format!("material_buffer_{}", data_size)),
+                debug_name: Some(format!("material_buffer_{data_size}")),
             },
         )
         .unwrap();

@@ -43,11 +43,11 @@ impl Backend for EmptyBackend {
 
     unsafe fn destroy_surface_image(&self, _id: &mut Self::SurfaceImage) {}
 
-    unsafe fn submit_commands<'a>(
+    unsafe fn submit_commands(
         &self,
         _queue: api::types::QueueType,
         _debug_name: Option<&str>,
-        _commands: Vec<api::command_buffer::Command<'a, Self>>,
+        _commands: Vec<api::command_buffer::Command<'_, Self>>,
     ) -> Self::Job {
     }
 

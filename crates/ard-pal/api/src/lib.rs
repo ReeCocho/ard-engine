@@ -75,11 +75,11 @@ pub trait Backend: Sized + 'static {
     ) -> Result<Self::SurfaceImage, SurfaceImageAcquireError>;
     unsafe fn destroy_surface_image(&self, id: &mut Self::SurfaceImage);
 
-    unsafe fn submit_commands<'a>(
+    unsafe fn submit_commands(
         &self,
         queue: QueueType,
         debug_name: Option<&str>,
-        commands: Vec<Command<'a, Self>>,
+        commands: Vec<Command<'_, Self>>,
     ) -> Self::Job;
     unsafe fn present_image(
         &self,

@@ -376,12 +376,12 @@ impl PostProcessing {
         self.adaptive_lum.update_set(frame, image);
     }
 
-    pub fn draw<'a, 'b>(
+    pub fn draw<'a>(
         &'a self,
         frame: usize,
         canvas_size: Vec2,
         settings: &PostProcessingSettings,
-        commands: &'b mut CommandBuffer<'a>,
+        commands: &mut CommandBuffer<'a>,
     ) {
         let constants = [PostProcessingPushConstants {
             screen_size: canvas_size,

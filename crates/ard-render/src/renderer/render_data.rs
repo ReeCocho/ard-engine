@@ -1641,7 +1641,7 @@ impl RenderData {
     }
 
     /// Performs actual rendering
-    pub fn render<'a, 'b>(&'a self, frame: usize, use_alternate: bool, args: RenderArgs<'a, 'b>) {
+    pub fn render<'a>(&'a self, frame: usize, use_alternate: bool, args: RenderArgs<'a, '_>) {
         let alternate_frame = (frame * 2) + use_alternate as usize;
 
         // Draw in the skybox if requested
