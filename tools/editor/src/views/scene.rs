@@ -1,40 +1,24 @@
-use crate::{
-    drag_drog::{DragDrop, DragDropData},
-    models::{
-        scene::{SceneViewMessage, SceneViewModel},
-        ViewModelInstance,
-    },
-};
+use crate::editor::EditorPanel;
+use ard_engine::{ecs::prelude::{Commands, Everything, Queries, Res}, math::UVec2, render::renderer::Renderer};
 
-use super::View;
-use ard_engine::{
-    math::*,
-    render::{prelude::ModelAsset, renderer::Renderer},
-};
-
-pub struct SceneView;
-
-impl SceneView {
-    pub fn new() -> Self {
-        Self {}
-    }
+pub struct SceneView {
+    pub viewport_size: UVec2,
 }
 
-impl View for SceneView {
-    type ViewModel = SceneViewModel;
+impl EditorPanel for SceneView {
+    fn title(&self) -> egui::WidgetText {
+        "Scene View".into()
+    }
 
     fn show(
         &mut self,
         ui: &mut egui::Ui,
-        drag_drop: &mut DragDrop,
-        view_model: &mut ViewModelInstance<Self::ViewModel>,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
     ) {
-        egui::menu::bar(ui, |ui| {
-            ui.menu_button("Create", |ui| if ui.button("Cube").clicked() {});
-        });
-
         let available_size = ui.available_size();
-        view_model.vm.view_size = (
+        self.viewport_size = UVec2::new(
             (available_size.x as u32).max(1),
             (available_size.y as u32).max(1),
         );
@@ -43,26 +27,13 @@ impl View for SceneView {
             egui::widgets::Image::new(Renderer::egui_texture_id(), available_size)
                 .sense(egui::Sense::drag()),
         );
-        view_model.vm.looking = response.dragged();
-
-        if response.hovered() {
-            if let Some(data) = drag_drop.recv() {
-                match data {
-                    DragDropData::Asset(name) => {
-                        // std::thread::sleep(std::time::Duration::from_secs(3));
-                        view_model
-                            .messages
-                            .send(SceneViewMessage::InstantiateModel {
-                                model: view_model.vm.assets.load::<ModelAsset>(&name),
-                                root: None,
-                            })
-                    }
-                }
-            }
-        }
     }
+}
 
-    fn title(&self) -> egui::WidgetText {
-        "Scene".into()
+impl Default for SceneView {
+    fn default() -> Self {
+        Self {
+            viewport_size: UVec2::new(100, 100),
+        }
     }
 }

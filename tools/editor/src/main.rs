@@ -1,8 +1,8 @@
-pub mod asset_import;
+// pub mod asset_import;
 pub mod drag_drog;
 pub mod editor;
+pub mod inspection;
 pub mod meta;
-pub mod models;
 pub mod util;
 pub mod views;
 
@@ -10,9 +10,9 @@ use ard_engine::{
     assets::prelude::*, core::prelude::*, game::GamePlugin, log::*, render::prelude::*,
     window::prelude::*,
 };
-use asset_import::AssetImportPlugin;
-use editor::{EditorDockTree, EditorGuiView, EditorViewModels, EditorViews};
-use models::scene::SceneViewSystem;
+// use asset_import::AssetImportPlugin;
+use editor::EditorGuiView;
+use views::{scene::SceneView, EditorDockTree, EditorPanels};
 
 fn main() {
     AppBuilder::new(LevelFilter::Warn)
@@ -41,8 +41,7 @@ fn main() {
             pbr_material: AssetNameBuf::from("materials/pbr.mat"),
         })
         .add_plugin(GamePlugin)
-        .add_plugin(AssetImportPlugin)
-        .add_system(SceneViewSystem)
+        // .add_plugin(AssetImportPlugin)
         .add_startup_function(setup)
         .run();
 }
@@ -54,13 +53,8 @@ fn setup(app: &mut App) {
 
     // Construct editor
     app.resources.add(EditorDockTree::default());
-    app.resources
-        .add(EditorViews::new(&app.resources.get::<Assets>().unwrap()));
-    app.resources.add(EditorViewModels::new(
-        &app.resources.get::<Assets>().unwrap(),
-        &app.resources.get::<Factory>().unwrap(),
-        app.world.entities().commands(),
-    ));
-
+    app.resources.add(EditorPanels {
+        panel_SceneView: SceneView::default(),
+    });
     gui.add_view(EditorGuiView);
 }

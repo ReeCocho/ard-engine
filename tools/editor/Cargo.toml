@@ -16,3 +16,4 @@ fs_extra = "1"
 rand = "0.8"
 ron = "0.8"
 smallvec = { version = "1", features = ["serde"] }
+paste = "1"
