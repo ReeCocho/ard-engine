@@ -3,10 +3,12 @@ name = "ard-engine"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [workspace]
 members = [ "crates/*", "tools/editor", "tools/gltf-oven", "tools/ibl-oven" ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
 
 [features]
 default = [ "input", "assets", "render", "window", ]
@@ -17,26 +19,57 @@ window = [ "ard-window", "ard-winit" ]
 
 [dependencies]
 # Required
-ard-core = { path = "./crates/ard-core", version = "0.1" }
-ard-ecs = { path = "./crates/ard-ecs", version = "0.1" }
-ard-log = { path = "./crates/ard-log", version = "0.1" }
-ard-math = { path = "./crates/ard-math", version = "0.1" }
-ard-formats = { path = "./crates/ard-formats", version = "0.1" }
-ard-game = { path = "./crates/ard-game", version = "0.1" }
+ard-core = { path = "./crates/ard-core" }
+ard-ecs = { path = "./crates/ard-ecs" }
+ard-log = { path = "./crates/ard-log" }
+ard-math = { path = "./crates/ard-math" }
+ard-formats = { path = "./crates/ard-formats" }
+ard-game = { path = "./crates/ard-game" }
 
 # Optional
-ard-input = { path = "./crates/ard-input", version = "0.1", optional = true }
-ard-assets = { path = "./crates/ard-assets", version = "0.1", optional = true }
-ard-window = { path = "./crates/ard-window", version = "0.1", optional = true }
-ard-winit = { path = "./crates/ard-winit", version = "0.1", optional = true }
-ard-render = { path = "./crates/ard-render", version = "0.1", optional = true }
-ard-pal = { path = "./crates/ard-pal", version = "0.1", optional = true }
+ard-input = { path = "./crates/ard-input", optional = true }
+ard-assets = { path = "./crates/ard-assets", optional = true }
+ard-window = { path = "./crates/ard-window", optional = true }
+ard-winit = { path = "./crates/ard-winit", optional = true }
+ard-render = { path = "./crates/ard-render", optional = true }
+ard-pal = { path = "./crates/ard-pal", optional = true }
+
+[workspace.dependencies]
+anymap = { version = "0.12" }
+async-trait = { version = "0.1" }
+bincode = { version = "1" }
+bitflags = { version = "2", features = [ "serde" ] }
+bitvec = { version = "1" }
+bytemuck = { version = "1" }
+crossbeam-channel = { version = "0.5" }
+crossbeam-utils = { version = "0.8" }
+dashmap = { version = "5" }
+egui = { version = "0.22", features = ["bytemuck"] }
+enum_dispatch = { version = "0.3" }
+futures = { version = "0.3" }
+fxhash = { version = "0.2" }
+gltf = { version = "1", features = ["KHR_lights_punctual"] }
+image = { version = "0.24" }
+num_cpus = { version = "1" }
+paste = { version = "1" }
+ordered-float = { version = "3" }
+raw-window-handle = { version = "0.5" }
+rayon = { version = "1" }
+ron = { version = "0.8" }
+serde = { version = "1", features = [ "derive" ] }
+serde_with = { version = "3" }
+smallvec = { version = "1", features = ["serde"] }
+thiserror = { version = "1" }
+tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
+tokio-stream = { version = "0.1" }
+unsafe_unwrap = { version = "0.1" }
+winit = { version = "0.28" }
 
 [dev-dependencies]
 bytemuck = "1.7"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 rand = "0.8"
-egui = { version = "0.20", features = ["bytemuck"] }
+egui = { version = "0.22", features = ["bytemuck"] }
 
 [profile.release]
 debug = 1

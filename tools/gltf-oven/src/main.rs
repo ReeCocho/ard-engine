@@ -6,9 +6,11 @@ use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
 use ard_formats::mesh::{MeshHeader, VertexLayout};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
 use ard_formats::texture::{Sampler, TextureHeader};
-use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfTexture};
+use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfModel, GltfTexture};
+use ard_math::{Mat4, Vec4};
 use clap::Parser;
 use image::GenericImageView;
+use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -51,8 +53,11 @@ fn main() {
 
     // Parse the model
     println!("Parsing model...");
-    let model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
+    let mut model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
     std::mem::drop(bin);
+
+    // Fix GLTF handedness
+    fix_gltf(&mut model);
 
     // Construct the model header and save it
     println!("Constructing header...");
@@ -70,6 +75,39 @@ fn main() {
         || save_mesh_groups(&args, &out_path, &model.mesh_groups),
         || save_textures(&args, &out_path, &model.textures),
     );
+}
+
+fn fix_gltf(model: &mut GltfModel) {
+    model.mesh_groups.par_iter_mut().for_each(|mesh_group| {
+        mesh_group.0.par_iter_mut().for_each(|mesh_instance| {
+
+            /*
+            // Reverse Z direction
+            for position in &mut mesh_instance.mesh.positions {
+                position.z = -position.z;
+            }
+
+            if let Some(normals) = &mut mesh_instance.mesh.normals {
+                for normal in normals {
+                    normal.z = -normal.z;
+                }
+            }
+
+            if let Some(tangents) = &mut mesh_instance.mesh.tangents {
+                for tangent in tangents {
+                    tangent.z = -tangent.z;
+                }
+            }
+
+            // Reverse face of triangle to preserve front-face
+            mesh_instance.mesh.indices.chunks_exact_mut(3).for_each(|triangle| {
+                let p0 = triangle[0];
+                triangle[0] = triangle[1];
+                triangle[1] = p0;
+            });
+            */
+        })
+    });
 }
 
 fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
@@ -219,10 +257,14 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
         });
     }
 
-    fn parse_node(node: &ard_gltf::GltfNode) -> Node {
+    fn parse_node(node: &ard_gltf::GltfNode, root: bool) -> Node {
         let mut out_node = Node {
             name: node.name.clone(),
-            model: node.model,
+            model: if root {
+                node.model * Mat4::from_cols(-Vec4::X, Vec4::Y, Vec4::Z, Vec4::W)
+            } else {
+                node.model
+            },
             data: match &node.data {
                 ard_gltf::GltfNodeData::Empty => NodeData::Empty,
                 ard_gltf::GltfNodeData::MeshGroup(id) => NodeData::MeshGroup(*id as u32),
@@ -232,14 +274,14 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
         };
 
         for child in &node.children {
-            out_node.children.push(parse_node(child));
+            out_node.children.push(parse_node(child, false));
         }
 
         out_node
     }
 
     for root in &gltf.roots {
-        header.roots.push(parse_node(root));
+        header.roots.push(parse_node(root, true));
     }
 
     header

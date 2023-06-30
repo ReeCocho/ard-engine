@@ -97,7 +97,6 @@ pub async fn to_asset(
     textures_path.push("textures");
 
     let texture_paths = (0..header.textures.len())
-        .into_iter()
         .map(|i| {
             let mut path = textures_path.clone();
             path.push(format!("{i}"));
@@ -107,9 +106,7 @@ pub async fn to_asset(
         .collect::<Vec<_>>();
 
     let texture_results = futures::future::join_all(
-        (0..header.textures.len())
-            .into_iter()
-            .map(|i| package.read(&texture_paths[i])),
+        (0..header.textures.len()).map(|i| package.read(&texture_paths[i])),
     )
     .await;
 
@@ -152,10 +149,8 @@ pub async fn to_asset(
     mg_path.push("mesh_groups");
 
     let mg_paths = (0..header.mesh_groups.len())
-        .into_iter()
         .map(|i| {
             (0..header.mesh_groups[i].0.len())
-                .into_iter()
                 .map(|j| {
                     let mut path = mg_path.clone();
                     path.push(format!("{i}"));
@@ -173,21 +168,13 @@ pub async fn to_asset(
         })
         .collect::<Vec<_>>();
 
-    let mg_vetices_results = futures::future::join_all((0..mg_paths.len()).into_iter().map(|i| {
-        futures::future::join_all(
-            (0..mg_paths[i].len())
-                .into_iter()
-                .map(|j| package.read(&mg_paths[i][j].0)),
-        )
+    let mg_vetices_results = futures::future::join_all((0..mg_paths.len()).map(|i| {
+        futures::future::join_all((0..mg_paths[i].len()).map(|j| package.read(&mg_paths[i][j].0)))
     }))
     .await;
 
-    let mg_indices_results = futures::future::join_all((0..mg_paths.len()).into_iter().map(|i| {
-        futures::future::join_all(
-            (0..mg_paths[i].len())
-                .into_iter()
-                .map(|j| package.read(&mg_paths[i][j].1)),
-        )
+    let mg_indices_results = futures::future::join_all((0..mg_paths.len()).map(|i| {
+        futures::future::join_all((0..mg_paths[i].len()).map(|j| package.read(&mg_paths[i][j].1)))
     }))
     .await;
 

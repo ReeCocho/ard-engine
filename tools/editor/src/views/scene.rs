@@ -1,5 +1,9 @@
 use crate::editor::EditorPanel;
-use ard_engine::{ecs::prelude::{Commands, Everything, Queries, Res}, math::UVec2, render::renderer::Renderer};
+use ard_engine::{
+    ecs::prelude::{Commands, Everything, Queries, Res},
+    math::UVec2,
+    render::renderer::Renderer,
+};
 
 pub struct SceneView {
     pub viewport_size: UVec2,

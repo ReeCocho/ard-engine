@@ -6,11 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ard-gltf = { path = "../../crates/ard-gltf" }
+ard-formats = { path = "../../crates/ard-formats" }
+ard-math = { path = "../../crates/ard-math" }
+rayon.workspace = true
+image.workspace = true
+bytemuck.workspace = true
+bincode.workspace = true
 clap = { version = "4", features = [ "derive" ] }
-ard-gltf = { path = "../../crates/ard-gltf", version = "0.1" }
-ard-formats = { path = "../../crates/ard-formats", version = "0.1" }
 intel_tex_2 = "0.2"
-rayon = "1"
-image = "0.24"
-bytemuck = "1"
-bincode = "1"

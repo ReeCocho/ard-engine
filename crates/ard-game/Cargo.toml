@@ -1,20 +1,20 @@
 [package]
 name = "ard-game"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-math = { version = "0.1", path = "../ard-math" }
-ard-ecs = { version = "0.1", path = "../ard-ecs" }
-ard-core = { version = "0.1", path = "../ard-core" }
-ard-assets = { version = "0.1", path = "../ard-assets" }
-ard-render = { version = "0.1", path = "../ard-render" }
-crossbeam-channel = "0.5"
-smallvec = { version = "1", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
-serde_with = "1"
-enum_dispatch = "0.3"
-paste = "1"
+ard-math = { path = "../ard-math" }
+ard-ecs = { path = "../ard-ecs" }
+ard-core = { path = "../ard-core" }
+ard-assets = { path = "../ard-assets" }
+ard-render = { path = "../ard-render" }
 ard-game-derive = { path = "./ard-game-derive/" }
+crossbeam-channel.workspace = true
+smallvec.workspace = true
+serde.workspace = true
+enum_dispatch.workspace = true
+paste.workspace = true
+serde_with.workspace = true

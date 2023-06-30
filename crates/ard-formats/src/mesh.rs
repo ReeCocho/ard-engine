@@ -11,7 +11,7 @@ pub struct MeshHeader {
 }
 
 bitflags! {
-    #[derive(Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct VertexLayout: u8 {
         const NORMAL    = 0b0000_0001;
         const TANGENT   = 0b0000_0010;

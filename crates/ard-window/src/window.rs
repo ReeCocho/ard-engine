@@ -1,4 +1,4 @@
-use glam::{IVec2, Vec2};
+use ard_math::{IVec2, Vec2};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowId(usize);

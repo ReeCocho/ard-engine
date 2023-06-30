@@ -1432,7 +1432,7 @@ impl RenderData {
                 let batch = static_geometry.batches.get(key).unwrap();
 
                 // Skip this batch if we don't have compatible layers
-                if batch.renderable.layers & layers == RenderLayer::empty() {
+                if (batch.renderable.layers & layers).is_empty() {
                     data_offset += batch.ids.len();
                     continue;
                 }
@@ -1468,12 +1468,11 @@ impl RenderData {
         self.dynamic_input_ids.clear();
         for (data_idx, (_, (renderable, _), _)) in queries
             .make::<(Entity, (Read<Renderable>, Read<Model>), Read<Disabled>)>()
-            .into_iter()
             .enumerate()
             .filter(|(_, (_, (renderable, _), disabled))| {
                 // Filter out objects that don't share at least one layer with us or that are
                 // disabled
-                (renderable.layers & layers != RenderLayer::empty()) && disabled.is_none()
+                !(renderable.layers & layers).is_empty() && disabled.is_none()
             })
         {
             object_count += 1;
@@ -1825,7 +1824,7 @@ pub(crate) fn make_draw_key(instance: &MaterialInstance, mesh: &Mesh) -> DrawKey
 pub(crate) fn from_draw_key(key: DrawKey) -> (ResourceId, VertexLayout, ResourceId, ResourceId) {
     (
         ResourceId((key >> 40) as usize & ((1 << 24) - 1)),
-        unsafe { VertexLayout::from_bits_unchecked(((key >> 32) & ((1 << 8) - 1)) as u8) },
+        VertexLayout::from_bits_truncate(((key >> 32) & ((1 << 8) - 1)) as u8),
         ResourceId((key >> 16) as usize & ((1 << 16) - 1)),
         ResourceId(key as usize & ((1 << 16) - 1)),
     )

@@ -1,19 +1,19 @@
 [package]
 name = "vulkan"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-api = { path = "../../api", version = "0.1" }
+api = { path = "../../api" }
+crossbeam-channel.workspace = true
+thiserror.workspace = true
+bytemuck.workspace = true
+raw-window-handle.workspace = true
+crossbeam-utils.workspace = true
+dashmap.workspace = true
+fxhash.workspace = true
 ash = "0.37.1"
-ash-window = "0.11"
-raw-window-handle = "0.4"
-gpu-allocator = "0.21"
-crossbeam-utils = "0.8"
-crossbeam-channel = "0.5"
-thiserror = "1"
-dashmap = "5"
-bytemuck = "1"
-fxhash = "0.2"
+ash-window = "0.12"
+gpu-allocator = "0.22"

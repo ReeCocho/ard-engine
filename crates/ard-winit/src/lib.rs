@@ -1,8 +1,9 @@
 pub mod windows;
 
 pub mod prelude {
-    pub use crate::windows::*;
-    pub use crate::*;
+    pub use crate::windows::WinitWindows;
+    pub use crate::WinitPlugin;
+    pub use crate::WinitSystem;
 }
 
 use std::{cmp::Ordering, time::Instant};

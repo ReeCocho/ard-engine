@@ -1,10 +1,10 @@
 [package]
 name = "empty"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-api = { path = "../../api", version = "0.1" }
-raw-window-handle = "0.4"
+api = { path = "../../api" }
+raw-window-handle.workspace = true

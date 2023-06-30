@@ -1,23 +1,23 @@
 [package]
 name = "ard-assets"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-core = { version = "0.1", path = "../ard-core" }
-ard-log = { version = "0.1", path = "../ard-log" }
-ard-ecs = { version = "0.1", path = "../ard-ecs" }
-async-trait = "0.1"
-thiserror = "1"
-enum_dispatch = "0.3"
-tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
-serde = { version = "1", features = ["derive"] }
-ron = "0.7"
-anymap = "0.12"
-crossbeam-channel = "0.5"
-crossbeam-utils = "0.8"
-dashmap = "5"
-fxhash = "0.2"
+ard-core = { path = "../ard-core" }
+ard-log = { path = "../ard-log" }
+ard-ecs = { path = "../ard-ecs" }
+async-trait.workspace = true
+thiserror.workspace = true
+enum_dispatch.workspace = true
+tokio.workspace = true
+serde.workspace = true
+ron.workspace = true
+anymap.workspace = true
+crossbeam-channel.workspace = true
+crossbeam-utils.workspace = true
+dashmap.workspace = true
+fxhash.workspace = true
 path-slash = "0.2"

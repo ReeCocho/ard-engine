@@ -1,47 +1,47 @@
 [package]
 name = "ard-render"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-core = { version = "0.1", path = "../ard-core" }
-ard-window = { version = "0.1", path = "../ard-window" }
-ard-winit = { version = "0.1", path = "../ard-winit" }
-ard-ecs = { version = "0.1", path = "../ard-ecs" }
-ard-math = { version = "0.1", path = "../ard-math" }
-ard-pal = { version = "0.1", path = "../ard-pal" }
-ard-log = { version = "0.1", path = "../ard-log" }
-ard-assets = { version = "0.1", path = "../ard-assets" }
-ard-input = { version = "0.1", path = "../ard-input" }
-ard-gltf = { version = "0.1", path = "../ard-gltf" }
-ard-formats = { version = "0.1", path = "../ard-formats" }
-tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
-futures = "0.3"
-tokio-stream = "0.1"
-bitflags = "1"
-ordered-float = "3"
-raw-window-handle = "0.4.2"
-winit = "0.27"
-bytemuck = "1.7"
-crossbeam-channel = "0.5"
-crossbeam-utils = "0.8"
-async-trait = "0.1"
-serde = { version = "1", features = ["derive"] }
-ron = "0.8"
-gltf = { version = "1", features = ["KHR_lights_punctual"] }
-image = "0.24"
-rayon = "1"
-egui = { version = "0.20", features = ["bytemuck"] }
+ard-core = { path = "../ard-core" }
+ard-window = { path = "../ard-window" }
+ard-winit = { path = "../ard-winit" }
+ard-ecs = { path = "../ard-ecs" }
+ard-math = { path = "../ard-math" }
+ard-pal = { path = "../ard-pal" }
+ard-log = { path = "../ard-log" }
+ard-assets = { path = "../ard-assets" }
+ard-input = { path = "../ard-input" }
+ard-gltf = { path = "../ard-gltf" }
+ard-formats = { path = "../ard-formats" }
+tokio.workspace = true
+bitflags.workspace = true
+bytemuck.workspace = true
+crossbeam-channel.workspace = true
+crossbeam-utils.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+ron.workspace = true
+rayon.workspace = true
+bincode.workspace = true
+fxhash.workspace = true
+futures.workspace = true
+tokio-stream.workspace = true
+ordered-float.workspace = true
+raw-window-handle.workspace = true
+winit.workspace = true
+image.workspace = true
+gltf.workspace = true
+egui.workspace = true
 half = { version = "2.1.0", features = ["bytemuck"] }
-bincode = "1"
-fxhash = "0.2"
 
 [features]
 default = [ "vulkan" ]
 vulkan = [ "ard-pal/vulkan" ]
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
-ron = "0.7"
+serde.workspace = true
+ron.workspace = true

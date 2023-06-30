@@ -1,12 +1,12 @@
 [package]
 name = "ard-formats"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-pal = { version = "0.1", default-features = false, path = "../ard-pal" }
-ard-math = { version = "0.1", path = "../ard-math" }
-serde = { version = "1", features = ["derive"] }
-bitflags = "1"
+ard-pal = { default-features = false, path = "../ard-pal" }
+ard-math = { path = "../ard-math" }
+serde.workspace = true
+bitflags.workspace = true

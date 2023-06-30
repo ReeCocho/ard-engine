@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use thiserror::Error;
 
 use crate::{
@@ -82,7 +82,7 @@ pub enum SurfacePresentSuccess {
 }
 
 impl<B: Backend> Surface<B> {
-    pub fn new<W: HasRawWindowHandle>(
+    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         ctx: Context<B>,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self, SurfaceCreateError> {

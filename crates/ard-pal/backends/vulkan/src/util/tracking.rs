@@ -278,7 +278,7 @@ unsafe fn track_dispatch(state: &mut TrackState) {
         };
 
         // Track sets
-        for (i, set_slot) in (first..(first + sets.len())).into_iter().enumerate() {
+        for (i, set_slot) in (first..(first + sets.len())).enumerate() {
             // Skip if the set slot is already bound
             if bound[set_slot] {
                 continue;

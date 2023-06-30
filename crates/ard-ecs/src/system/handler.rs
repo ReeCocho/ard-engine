@@ -3,8 +3,8 @@ use crate::{
     component::filter::ComponentFilter,
     dispatcher::Events,
     key::TypeKey,
-    prelude::{Entities, EntityCommands, Event, EventExt, Queries, ResourceFilter, Resources},
-    resource::res::Res,
+    prelude::{Entities, EntityCommands, Event, EventExt, Queries, Resources},
+    resource::{filter::ResourceFilter, res::Res},
     tag::{filter::TagFilter, Tags},
 };
 

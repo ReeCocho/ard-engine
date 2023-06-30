@@ -1,13 +1,13 @@
 [package]
 name = "api"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-thiserror = "1"
-raw-window-handle = "0.4.2"
-bitflags = "1"
-ordered-float = "3"
-serde = { version = "1", features = ["derive"] }
+serde.workspace = true
+thiserror.workspace = true
+bitflags.workspace = true
+ordered-float.workspace = true
+raw-window-handle.workspace = true

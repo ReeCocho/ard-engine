@@ -420,6 +420,7 @@ impl Gui {
         ) {
             if ard_input.key_down_repeat(ard_key) {
                 egui_input.events.push(egui::Event::Key {
+                    repeat: true,
                     key: egui_key,
                     pressed: true,
                     modifiers: egui_input.modifiers,

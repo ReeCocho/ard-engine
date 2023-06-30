@@ -2,9 +2,17 @@ pub mod window;
 pub mod windows;
 
 pub mod prelude {
-    pub use crate::window::*;
-    pub use crate::windows::*;
-    pub use crate::*;
+    pub use crate::window::Window;
+    pub use crate::window::WindowCommand;
+    pub use crate::window::WindowDescriptor;
+    pub use crate::window::WindowId;
+    pub use crate::window::WindowMode;
+    pub use crate::window::WindowResizeConstraints;
+    pub use crate::windows::Windows;
+    pub use crate::WindowClosed;
+    pub use crate::WindowFileDropped;
+    pub use crate::WindowPlugin;
+    pub use crate::WindowResized;
 }
 
 use std::path::PathBuf;

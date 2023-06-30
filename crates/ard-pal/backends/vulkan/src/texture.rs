@@ -7,7 +7,7 @@ use api::{
 };
 use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
 pub struct Texture {
     pub(crate) image: vk::Image,
@@ -72,6 +72,7 @@ impl Texture {
                 Some(name) => name,
                 None => "image",
             },
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             requirements: mem_reqs,
             location: crate::util::to_gpu_allocator_memory_location(create_info.memory_usage),
             linear: false,

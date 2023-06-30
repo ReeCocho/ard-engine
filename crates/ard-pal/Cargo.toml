@@ -1,7 +1,7 @@
 [package]
 name = "ard-pal"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 autoexamples = false
 build = "build.rs"
 
@@ -10,18 +10,18 @@ default = [ "vulkan" ]
 vulkan = [ "dep:vulkan" ]
 
 [dependencies]
-api = { path = "./api/", version = "0.1" }
-vulkan = { path = "./backends/vulkan/", version = "0.1", optional = true }
-empty = { path = "./backends/empty/", version = "0.1" }
+api = { path = "./api/" }
+vulkan = { path = "./backends/vulkan/", optional = true }
+empty = { path = "./backends/empty/" }
 cfg-if = "1.0.0"
 
 [dev-dependencies]
-winit = "0.27"
-bytemuck = "1"
-ordered-float = "3"
+bytemuck.workspace = true
+ordered-float.workspace = true
+futures.workspace = true
+winit.workspace = true
 glam = { version = "0.21", features = [ "bytemuck" ] }
-wgpu = { version = "0.13", features = [ "spirv" ] }
-futures = "0.3"
+wgpu = { version = "0.16", features = [ "spirv" ] }
 
 [[example]]
 name = "blank_window"

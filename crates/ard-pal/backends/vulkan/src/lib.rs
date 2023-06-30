@@ -29,7 +29,7 @@ use gpu_allocator::vulkan::*;
 use graphics_pipeline::GraphicsPipeline;
 use job::Job;
 use queue::VkQueue;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use render_pass::{DrawIndexedIndirect, FramebufferCache, RenderPassCache};
 use shader::Shader;
 use std::{
@@ -66,7 +66,7 @@ pub mod surface;
 pub mod texture;
 pub mod util;
 
-pub struct VulkanBackendCreateInfo<'a, W: HasRawWindowHandle> {
+pub struct VulkanBackendCreateInfo<'a, W: HasRawWindowHandle + HasRawDisplayHandle> {
     pub app_name: String,
     pub engine_name: String,
     /// A window is required to find a queue that supports presentation.
@@ -147,7 +147,7 @@ impl Backend for VulkanBackend {
     type DrawIndexedIndirect = DrawIndexedIndirect;
 
     #[inline(always)]
-    unsafe fn create_surface<W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
         &self,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError> {
@@ -1133,7 +1133,7 @@ impl Backend for VulkanBackend {
 }
 
 impl VulkanBackend {
-    pub fn new<W: HasRawWindowHandle>(
+    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         create_info: VulkanBackendCreateInfo<W>,
     ) -> Result<Self, VulkanBackendCreateError> {
         let app_name = CString::new(create_info.app_name).unwrap();
@@ -1154,10 +1154,11 @@ impl VulkanBackend {
 
         // Get required instance extensions
         let instance_extensions = {
-            let mut extensions = ash_window::enumerate_required_extensions(create_info.window)?
-                .iter()
-                .map(|ext| unsafe { CStr::from_ptr(*ext) })
-                .collect::<Vec<_>>();
+            let mut extensions =
+                ash_window::enumerate_required_extensions(create_info.window.raw_display_handle())?
+                    .iter()
+                    .map(|ext| unsafe { CStr::from_ptr(*ext) })
+                    .collect::<Vec<_>>();
 
             if create_info.debug {
                 extensions.push(ash::extensions::ext::DebugUtils::name());
@@ -1224,8 +1225,15 @@ impl VulkanBackend {
         };
 
         // Create a surface to check for presentation compatibility
-        let surface =
-            unsafe { ash_window::create_surface(&entry, &instance, create_info.window, None)? };
+        let surface = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                create_info.window.raw_display_handle(),
+                create_info.window.raw_window_handle(),
+                None,
+            )?
+        };
         let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
         // Query for a physical device

@@ -31,7 +31,7 @@ use descriptor_set::{
 };
 use graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo};
 use queue::SurfacePresentFailure;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use shader::{ShaderCreateError, ShaderCreateInfo};
 use surface::{
     SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo, SurfaceImageAcquireError,
@@ -59,7 +59,7 @@ pub trait Backend: Sized + 'static {
     type Job;
     type DrawIndexedIndirect: Copy + Clone;
 
-    unsafe fn create_surface<W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
         &self,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError>;

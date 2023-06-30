@@ -1,13 +1,13 @@
 use crate::{
     archetype::storage::access::{ReadStorageBuffer, WriteStorageBuffer},
     component::access::ComponentAccess,
-    prelude::{
-        storage::access::{ReadTagStorage, TagStorageAccess, WriteTagStorage},
-        Component, Resource, Resources, Tag, Tags,
-    },
+    prelude::{Component, Resource, Resources, Tag, Tags},
     prw_lock::{PrwReadLock, PrwWriteLock},
     resource::access::ResourceAccess,
-    tag::access::TagAccess,
+    tag::{
+        access::TagAccess,
+        storage::access::{ReadTagStorage, TagStorageAccess, WriteTagStorage},
+    },
 };
 
 /// Requests read access for some resource.

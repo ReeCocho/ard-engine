@@ -160,8 +160,7 @@ impl MeshInner {
         };
 
         // Create index staging buffer
-        let mut ib_data =
-            Vec::<u8>::with_capacity(std::mem::size_of::<u32>() * create_info.indices.len());
+        let mut ib_data = Vec::<u8>::with_capacity(std::mem::size_of_val(create_info.indices));
         ib_data.extend_from_slice(bytemuck::cast_slice(create_info.indices));
         let ib_staging =
             Buffer::new_staging(ctx.clone(), Some(String::from("index_staging")), &ib_data)

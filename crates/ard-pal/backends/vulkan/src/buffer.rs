@@ -7,7 +7,7 @@ use api::{
 };
 use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
 use crate::{job::Job, util::garbage_collector::Garbage, QueueFamilyIndices, VulkanBackend};
 
@@ -83,6 +83,7 @@ impl Buffer {
                 Some(name) => name,
                 None => "unnamed_buffer",
             },
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             requirements: mem_reqs,
             location: crate::util::to_gpu_allocator_memory_location(create_info.memory_usage),
             linear: true,

@@ -31,10 +31,10 @@ fn main() {
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
             add_primary_window: Some(WindowDescriptor {
-                width: 1280.0,
-                height: 720.0,
+                width: 1920.0,
+                height: 1080.0,
                 title: String::from("Many Cubes"),
-                vsync: false,
+                vsync: true,
                 ..Default::default()
             }),
             exit_on_close: true,
@@ -64,7 +64,7 @@ fn setup(app: &mut App) {
 
     // Disable frame rate limit
     let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
-    settings.render_time = None;
+    // settings.render_time = None;
     settings.render_scale = 1.0;
 
     // Add in GUI views

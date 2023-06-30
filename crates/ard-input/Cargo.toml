@@ -1,9 +1,9 @@
 [package]
 name = "ard-input"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-ecs = { version = "0.1", path = "../ard-ecs" }
+ard-ecs = { path = "../ard-ecs" }

@@ -18,7 +18,7 @@ use ard_math::{IVec2, Mat4, Vec2};
 use ard_pal::prelude::*;
 use ard_window::{window::WindowId, windows::Windows};
 use bitflags::bitflags;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -98,6 +98,7 @@ pub struct Model(pub Mat4);
 
 bitflags! {
     /// Layer mask used for renderable objects.
+    #[derive(Debug, Copy, Clone, Hash)]
     pub struct RenderLayer: u8 {
         const OPAQUE        = 0b0000_0001;
         const SHADOW_CASTER = 0b0000_0010;
@@ -126,7 +127,7 @@ type RendererResources = (
 );
 
 impl Renderer {
-    pub fn new<W: HasRawWindowHandle>(
+    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         plugin: RenderPlugin,
         window: &W,
         window_id: WindowId,

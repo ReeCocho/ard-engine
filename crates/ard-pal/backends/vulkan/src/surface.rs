@@ -11,7 +11,7 @@ use api::{
     },
 };
 use ash::vk::{self, Handle};
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::VulkanBackend;
 
@@ -60,16 +60,21 @@ pub(crate) struct SurfaceImageSemaphores {
 }
 
 impl Surface {
-    pub(crate) unsafe fn new<W: HasRawWindowHandle>(
+    pub(crate) unsafe fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         ctx: &VulkanBackend,
         create_info: SurfaceCreateInfo<'_, W>,
     ) -> Result<Self, SurfaceCreateError> {
         // Create and name the surface
-        let surface =
-            match ash_window::create_surface(&ctx.entry, &ctx.instance, create_info.window, None) {
-                Ok(surface) => surface,
-                Err(err) => return Err(SurfaceCreateError::Other(err.to_string())),
-            };
+        let surface = match ash_window::create_surface(
+            &ctx.entry,
+            &ctx.instance,
+            create_info.window.raw_display_handle(),
+            create_info.window.raw_window_handle(),
+            None,
+        ) {
+            Ok(surface) => surface,
+            Err(err) => return Err(SurfaceCreateError::Other(err.to_string())),
+        };
 
         if let Some(name) = &create_info.debug_name {
             if let Some((debug, _)) = &ctx.debug {

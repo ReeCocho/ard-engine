@@ -1,12 +1,12 @@
 [package]
 name = "ard-core"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ard-ecs = { version = "0.1", path = "../ard-ecs" }
-ard-log = { version = "0.1", path = "../ard-log" }
-rayon = "1.5"
-num_cpus = "1.13"
+ard-ecs = { path = "../ard-ecs" }
+ard-log = { path = "../ard-log" }
+rayon.workspace = true
+num_cpus.workspace = true

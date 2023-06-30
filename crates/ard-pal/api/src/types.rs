@@ -85,6 +85,8 @@ pub enum CompareOp {
 }
 
 bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
     pub struct ColorComponents: u32 {
         const R = 0b0001;
         const G = 0b0010;
@@ -243,6 +245,8 @@ pub enum AnisotropyLevel {
 }
 
 bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
     pub struct BufferUsage: u32 {
         const TRANSFER_SRC    = 0b0000001;
         const TRANSFER_DST    = 0b0000010;
@@ -255,6 +259,8 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
     pub struct TextureUsage: u32 {
         const TRANSFER_SRC             = 0b0000001;
         const TRANSFER_DST             = 0b0000010;

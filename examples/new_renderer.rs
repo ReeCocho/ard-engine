@@ -30,12 +30,14 @@ use crate::util::{CameraMover, FrameRate, MainCamera, Settings, StaticHandles, V
 mod util;
 
 fn main() {
-    AppBuilder::new(ard_log::LevelFilter::Warn)
+    AppBuilder::new(ard_log::LevelFilter::Off)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
             add_primary_window: Some(WindowDescriptor {
-                title: String::from("Test Window"),
+                title: String::from("Renderer Showcase"),
                 resizable: true,
+                width: 1920.0,
+                height: 1080.0,
                 ..Default::default()
             }),
             exit_on_close: true,
@@ -48,12 +50,12 @@ fn main() {
                 present_mode: PresentMode::Mailbox,
                 ..Default::default()
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("pbr.mat"),
         })
-        .add_system(FrameRate::default())
+        // .add_system(FrameRate::default())
         .add_startup_function(setup)
         .run();
 }
@@ -78,16 +80,16 @@ fn setup(app: &mut App) {
     assets.wait_for_load(&cascade_view_handle);
     assets.wait_for_load(&cluster_heatmap_handle);
 
-    gui.add_view(Settings {
-        visualization: Visualization::None,
-        slice_view_mat: assets.get(&slice_view_handle).unwrap().material.clone(),
-        cascade_view_mat: assets.get(&cascade_view_handle).unwrap().material.clone(),
-        cluster_heatmap_mat: assets
-            .get(&cluster_heatmap_handle)
-            .unwrap()
-            .material
-            .clone(),
-    });
+    // gui.add_view(Settings {
+    //     visualization: Visualization::None,
+    //     slice_view_mat: assets.get(&slice_view_handle).unwrap().material.clone(),
+    //     cascade_view_mat: assets.get(&cascade_view_handle).unwrap().material.clone(),
+    //     cluster_heatmap_mat: assets
+    //         .get(&cluster_heatmap_handle)
+    //         .unwrap()
+    //         .material
+    //         .clone(),
+    // });
 
     //*
     // Load in the scene
@@ -142,7 +144,7 @@ fn setup(app: &mut App) {
         look_speed: 0.1,
         move_speed: 8.0,
         entity: camera_entity[0],
-        position: Vec3::ZERO,
+        position: Vec3::new(3.0, 3.0, 3.0),
         rotation: Vec3::ZERO,
         descriptor: camera_descriptor,
     });
@@ -197,7 +199,7 @@ fn setup(app: &mut App) {
     });
 
     // Create some random lights
-    const LIGHT_COUNT: usize = 4096 * 2;
+    const LIGHT_COUNT: usize = 0; // 4096 * 2;
     const LIGHT_SPACING: (f32, f32, f32) = (32.0, 16.0, 24.0);
     const LIGHT_OFFSET: (f32, f32, f32) = (0.0, 10.0, 0.0);
     const LIGHT_RANGE: (f32, f32) = (1.0, 2.0);

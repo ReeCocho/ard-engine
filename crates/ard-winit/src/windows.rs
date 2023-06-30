@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use ard_ecs::prelude::*;
+use ard_math::IVec2;
 use ard_window::prelude::{WindowDescriptor, WindowMode};
-use glam::IVec2;
 use winit::{dpi::LogicalSize, event_loop::EventLoopWindowTarget, window::CursorGrabMode};
 
-use crate::prelude::{Window, WindowId};
+use crate::{Window, WindowId};
 
 #[derive(Debug, Default, Resource)]
 pub struct WinitWindows {

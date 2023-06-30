@@ -162,7 +162,6 @@ impl AdaptiveLuminance {
         };
 
         let histogram_sets = (0..FRAMES_IN_FLIGHT)
-            .into_iter()
             .map(|frame| {
                 let mut set = DescriptorSet::new(
                     ctx.clone(),
@@ -187,7 +186,6 @@ impl AdaptiveLuminance {
             .collect();
 
         let lum_sets = (0..FRAMES_IN_FLIGHT)
-            .into_iter()
             .map(|frame| {
                 let mut set = DescriptorSet::new(
                     ctx.clone(),

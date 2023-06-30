@@ -34,9 +34,6 @@ pub mod window {
         pub use ard_window::prelude::*;
         pub use ard_winit::prelude::*;
     }
-
-    pub use ard_window::*;
-    pub use ard_winit::*;
 }
 
 #[cfg(feature = "render")]
