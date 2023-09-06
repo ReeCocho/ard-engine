@@ -323,6 +323,11 @@ impl<Components: ComponentFilter> Iterator for EntityComponentQuery<Components> 
         <Components::StorageSet as ArchetypeStorageSet>::Filter,
     );
 
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Check if we have a working set
@@ -344,6 +349,13 @@ impl<Components: ComponentFilter> Iterator for EntityComponentQuery<Components> 
         } else {
             None
         }
+    }
+}
+
+impl<Components: ComponentFilter> ExactSizeIterator for EntityComponentQuery<Components> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -408,6 +420,11 @@ impl<Components: ComponentFilter> Query<Components, ()> for ComponentQuery<Compo
 impl<Components: ComponentFilter> Iterator for ComponentQuery<Components> {
     type Item = <Components::StorageSet as ArchetypeStorageSet>::Filter;
 
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Check if we have a working set
@@ -428,6 +445,13 @@ impl<Components: ComponentFilter> Iterator for ComponentQuery<Components> {
         } else {
             None
         }
+    }
+}
+
+impl<Components: ComponentFilter> ExactSizeIterator for ComponentQuery<Components> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -543,6 +567,11 @@ impl<C: ComponentFilter, T: TagFilter> Iterator for EntityComponentTagQuery<C, T
         <T::StorageSet as TagStorageSet>::TagSet,
     );
 
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Check if we have a working set
@@ -564,6 +593,13 @@ impl<C: ComponentFilter, T: TagFilter> Iterator for EntityComponentTagQuery<C, T
         } else {
             None
         }
+    }
+}
+
+impl<C: ComponentFilter, T: TagFilter> ExactSizeIterator for EntityComponentTagQuery<C, T> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 

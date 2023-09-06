@@ -193,10 +193,14 @@ impl DescriptorSet {
                     ShaderStage::Vertex => vk::PipelineStageFlags::VERTEX_SHADER,
                     ShaderStage::Fragment => vk::PipelineStageFlags::FRAGMENT_SHADER,
                     ShaderStage::Compute => vk::PipelineStageFlags::COMPUTE_SHADER,
-                    ShaderStage::AllGraphics => {
+                    ShaderStage::AllStages => {
                         vk::PipelineStageFlags::VERTEX_SHADER
                             | vk::PipelineStageFlags::FRAGMENT_SHADER
                             | vk::PipelineStageFlags::COMPUTE_SHADER
+                    }
+                    ShaderStage::AllGraphics => {
+                        vk::PipelineStageFlags::VERTEX_SHADER
+                            | vk::PipelineStageFlags::FRAGMENT_SHADER
                     }
                 };
 

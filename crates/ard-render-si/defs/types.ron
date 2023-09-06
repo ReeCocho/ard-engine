@@ -1,0 +1,127 @@
+[
+    (
+        name: "Frustum",
+        no_mangle: false,
+        fields: [
+            /// Planes come in the following order:
+            /// - Left
+            /// - Right
+            /// - Top
+            /// - Bottom
+            /// - Near
+            /// - Far
+            /// With inward facing normals.
+            (name: "planes", ty: Array(ty: Vec4, len: "6")),
+        ]
+    ),
+    (
+        name: "Froxel",
+        no_mangle: false,
+        fields: [
+            (name: "planes", ty: Array(ty: Vec4, len: "4")),
+            (name: "min_max_z", ty: Vec4),
+        ]
+    ),
+    (
+        name: "Camera",
+        no_mangle: false,
+        fields: [
+            (name: "view", ty: Mat4),
+            (name: "projection", ty: Mat4),
+            (name: "vp", ty: Mat4),
+            (name: "view_inv", ty: Mat4),
+            (name: "projection_inv", ty: Mat4),
+            (name: "vp_inv", ty: Mat4),
+            (name: "frustum", ty: Struct("Frustum")),
+            (name: "position", ty: Vec4),
+            (name: "near_clip", ty: F32),
+            (name: "far_clip", ty: F32),
+        ]
+    ),
+    (
+        name: "Froxels",
+        no_mangle: false,
+        fields: [
+            (name: "froxels", ty: Array(ty: Array(ty: Array(ty: Struct("Froxel"), len: "CAMERA_FROXELS_DEPTH"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH")),
+        ]
+    ),
+    (
+        name: "ObjectBounds",
+        no_mangle: false,
+        fields: [
+            // The `w` component of `center` should be a bounding sphere radius.
+            (name: "center", ty: Vec4),
+            (name: "half_extents", ty: Vec4),
+        ]
+    ),
+    (
+        name: "ObjectId",
+        no_mangle: true,
+        fields: [
+            /// Index within the draw call buffer for the draw this object belongs to.
+            ///
+            /// # NOTE
+            /// This is an array of two elements because we use this space for object sorting
+            /// using draw keys which are u64s (two u32s).
+            (name: "draw_idx", ty: Array(ty: U32, len: "2")),
+            /// Index within the object data buffer for the object
+            (name: "data_idx", ty: U32),
+            (name: "_padding", ty: F32),
+        ]
+    ),
+    // Per instance object data.
+    (
+        name: "ObjectData",
+        no_mangle: false,
+        fields: [
+            (name: "model", ty: Mat4),       // Object instance model matrix
+            (name: "normal", ty: Mat4),      // inv(transpose(model))
+            (name: "material", ty: U32),     // Material ID for properties lookup
+            (name: "textures", ty: U32),     // Texture table ID
+            (name: "entity_id", ty: U32),    // ECS entity ID
+            (name: "entity_ver", ty: U32),   // ECS entity version
+        ]
+    ),
+    // Indirect indexed draw call.
+    (
+        name: "DrawCall",
+        no_mangle: true,
+        fields: [
+            (name: "index_count", ty: U32),
+            (name: "instance_count", ty: U32),
+            (name: "first_index", ty: U32),
+            (name: "vertex_offset", ty: I32),
+            (name: "first_instance", ty: U32),
+            (name: "bounds", ty: Struct("ObjectBounds")),
+        ]
+    ),
+    // PBR material info.
+    (
+        name: "PbrMaterial",
+        no_mangle: false,
+        fields: [
+            (name: "color", ty: Vec4),
+            (name: "metallic", ty: F32),
+            (name: "roughness", ty: F32),
+            (name: "alpha_cutoff", ty: F32),
+        ]
+    ),
+    // Push constants for HZB generation.
+    (
+        name: "HzbGenPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "input_size", ty: IVec2),
+            (name: "inv_output_size", ty: Vec2),
+        ]
+    ),
+    // Push constants for draw call generation.
+    (
+        name: "DrawGenPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "render_area", ty: Vec2),
+            (name: "object_count", ty: U32),
+        ]
+    )
+]

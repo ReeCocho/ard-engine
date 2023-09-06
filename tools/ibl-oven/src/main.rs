@@ -157,7 +157,7 @@ fn load_image(pal: &Context, args: &Args) -> Texture {
     let hdr_texture = Texture::new(
         pal.clone(),
         TextureCreateInfo {
-            format: TextureFormat::Rgba32SFloat,
+            format: Format::Rgba32SFloat,
             ty: TextureType::Type2D,
             width,
             height,
@@ -199,7 +199,7 @@ fn to_cube_map(pal: &Context, args: &Args, hdr_texture: &Texture) -> CubeMap {
     let cubemap = CubeMap::new(
         pal.clone(),
         CubeMapCreateInfo {
-            format: TextureFormat::Rgba16SFloat,
+            format: Format::Rgba16SFloat,
             size: args.resolution,
             array_elements: 1,
             mip_levels,
@@ -297,13 +297,13 @@ fn to_cube_map(pal: &Context, args: &Args, hdr_texture: &Texture) -> CubeMap {
                 front_face: FrontFace::Clockwise,
             },
             depth_stencil: None,
-            color_blend: Some(ColorBlendState {
+            color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     write_mask: ColorComponents::ALL,
                     blend: false,
                     ..Default::default()
                 }],
-            }),
+            },
             push_constants_size: Some(std::mem::size_of::<PushConstants>() as u32),
             debug_name: Some(String::from("eq_to_cube")),
         },
@@ -420,7 +420,7 @@ fn create_diffuse_irradiance(pal: &Context, cube_map: &CubeMap) -> CubeMap {
     let diffuse_irradiance = CubeMap::new(
         pal.clone(),
         CubeMapCreateInfo {
-            format: TextureFormat::Rgba16SFloat,
+            format: Format::Rgba16SFloat,
             size: DIFFUSE_IRRADIANCE_RESOLUTION,
             array_elements: 1,
             mip_levels: 1,
@@ -515,13 +515,13 @@ fn create_diffuse_irradiance(pal: &Context, cube_map: &CubeMap) -> CubeMap {
                 front_face: FrontFace::Clockwise,
             },
             depth_stencil: None,
-            color_blend: Some(ColorBlendState {
+            color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     write_mask: ColorComponents::ALL,
                     blend: false,
                     ..Default::default()
                 }],
-            }),
+            },
             push_constants_size: Some(std::mem::size_of::<PushConstants>() as u32),
             debug_name: Some(String::from("diffuse_irradiance_gen")),
         },
@@ -552,7 +552,7 @@ fn create_prefiltered_env_map(pal: &Context, cube_map: &CubeMap) -> CubeMap {
     let pf_env = CubeMap::new(
         pal.clone(),
         CubeMapCreateInfo {
-            format: TextureFormat::Rgba16SFloat,
+            format: Format::Rgba16SFloat,
             size: PF_ENV_MAP_RESOLUTION,
             array_elements: 1,
             mip_levels: PF_ENV_MIP_COUNT,
@@ -647,13 +647,13 @@ fn create_prefiltered_env_map(pal: &Context, cube_map: &CubeMap) -> CubeMap {
                 front_face: FrontFace::Clockwise,
             },
             depth_stencil: None,
-            color_blend: Some(ColorBlendState {
+            color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     write_mask: ColorComponents::ALL,
                     blend: false,
                     ..Default::default()
                 }],
-            }),
+            },
             push_constants_size: Some(std::mem::size_of::<PushConstants>() as u32),
             debug_name: Some(String::from("prefiltered_env_gen")),
         },
@@ -752,9 +752,9 @@ fn save_cube_map_buffer(
         size: cube_map.dim(),
         mip_count: cube_map.mip_count() as u32,
         format: if compress {
-            TextureFormat::BC6HUFloat
+            Format::BC6HUFloat
         } else {
-            TextureFormat::Rgba16SFloat
+            Format::Rgba16SFloat
         },
         sampler: ard_formats::texture::Sampler {
             min_filter: Filter::Linear,

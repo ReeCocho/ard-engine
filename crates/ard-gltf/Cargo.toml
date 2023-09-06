@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 ard-pal = { default-features = false, path = "../ard-pal" }
 ard-math = { path = "../ard-math" }
-serde.workspace = true
 thiserror.workspace = true
 rayon.workspace = true
 bytemuck.workspace = true

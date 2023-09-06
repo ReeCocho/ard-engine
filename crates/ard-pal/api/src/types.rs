@@ -2,34 +2,78 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum TextureFormat {
+pub enum Format {
+    // R8
     R8Unorm,
-    R32Sfloat,
+    R8Snorm,
+    R8UInt,
+    R8SInt,
+    R8Srgb,
+
+    // R16
+    R16Unorm,
+    R16Snorm,
+    R16UInt,
+    R16SInt,
+    R16SFloat,
+
+    // R32
+    R32UInt,
+    R32SInt,
+    R32SFloat,
+
+    // RG8
     Rg8Unorm,
+    Rg8Snorm,
+    Rg8UInt,
+    Rg8SInt,
+    Rg8Srgb,
+
+    // RG16
+    Rg16Unorm,
+    Rg16Snorm,
+    Rg16UInt,
+    Rg16SInt,
+    Rg16SFloat,
+
+    // RG32
+    Rg32UInt,
+    Rg32SInt,
+    Rg32SFloat,
+
+    // RGBA8
     Rgba8Unorm,
+    Rgba8Snorm,
+    Rgba8UInt,
+    Rgba8SInt,
     Rgba8Srgb,
+
+    // RGBA16
+    Rgba16Unorm,
+    Rgba16Snorm,
+    Rgba16UInt,
+    Rgba16SInt,
+    Rgba16SFloat,
+
+    // RGBA32
+    Rgba32UInt,
+    Rgba32SInt,
+    Rgba32SFloat,
+
+    // BGRA8
     Bgra8Unorm,
     Bgra8Srgb,
-    Rgba16SFloat,
-    Rgba16Unorm,
-    Rgba32SFloat,
-    Rg16SFloat,
-    R16SFloat,
+
+    // Compressed
     BC6HUFloat,
     BC7Srgb,
     BC7Unorm,
+
+    // Depth
     D16Unorm,
     D24UnormS8Uint,
     D32Sfloat,
     D32SfloatS8Uint,
-}
-
-#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum VertexFormat {
-    XF32,
-    XyF32,
-    XyzwF32,
-    XyzwU8,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -200,6 +244,7 @@ pub enum PresentMode {
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ShaderStage {
     AllGraphics,
+    AllStages,
     Vertex,
     Fragment,
     Compute,
@@ -300,7 +345,7 @@ pub struct Scissor {
     pub height: u32,
 }
 
-impl TextureFormat {
+impl Format {
     #[inline(always)]
     pub fn is_color(&self) -> bool {
         !(self.is_depth() || self.is_stencil())
@@ -310,18 +355,12 @@ impl TextureFormat {
     pub fn is_depth(&self) -> bool {
         matches!(
             *self,
-            TextureFormat::D16Unorm
-                | TextureFormat::D24UnormS8Uint
-                | TextureFormat::D32Sfloat
-                | TextureFormat::D32SfloatS8Uint
+            Format::D16Unorm | Format::D24UnormS8Uint | Format::D32Sfloat | Format::D32SfloatS8Uint
         )
     }
 
     #[inline(always)]
     pub fn is_stencil(&self) -> bool {
-        matches!(
-            *self,
-            TextureFormat::D24UnormS8Uint | TextureFormat::D32SfloatS8Uint
-        )
+        matches!(*self, Format::D24UnormS8Uint | Format::D32SfloatS8Uint)
     }
 }

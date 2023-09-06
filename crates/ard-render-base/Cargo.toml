@@ -1,0 +1,22 @@
+[package]
+name = "ard-render-base"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-core = { path = "../ard-core" }
+ard-window = { path = "../ard-window" }
+ard-winit = { path = "../ard-winit" }
+ard-ecs = { path = "../ard-ecs" }
+ard-math = { path = "../ard-math" }
+ard-pal = { path = "../ard-pal" }
+ard-log = { path = "../ard-log" }
+ard-assets = { path = "../ard-assets" }
+ard-input = { path = "../ard-input" }
+ard-gltf = { path = "../ard-gltf" }
+ard-formats = { path = "../ard-formats" }
+serde.workspace = true
+thiserror.workspace = true
+bytemuck.workspace = true
+crossbeam-channel.workspace = true
+fxhash.workspace = true

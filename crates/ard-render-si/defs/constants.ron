@@ -1,0 +1,7 @@
+[
+    (name: "MaxTexturesPerMaterial", value: UInt(8)),
+    (name: "MaxTextures", value: USize(2048)),
+    (name: "CAMERA_FROXELS_WIDTH", value: USize(32)),
+    (name: "CAMERA_FROXELS_HEIGHT", value: USize(18)),
+    (name: "CAMERA_FROXELS_DEPTH", value: USize(16)),
+]

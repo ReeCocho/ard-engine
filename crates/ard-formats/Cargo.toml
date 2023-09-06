@@ -10,3 +10,6 @@ ard-pal = { default-features = false, path = "../ard-pal" }
 ard-math = { path = "../ard-math" }
 serde.workspace = true
 bitflags.workspace = true
+bytemuck.workspace = true
+static_assertions.workspace = true
+thiserror.workspace = true

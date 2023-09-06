@@ -25,7 +25,7 @@ use super::{
     RenderLayer,
 };
 
-const SHADOW_MAP_FORMAT: TextureFormat = TextureFormat::D24UnormS8Uint;
+const SHADOW_MAP_FORMAT: Format = Format::D24UnormS8Uint;
 
 pub(crate) const SHADOW_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,

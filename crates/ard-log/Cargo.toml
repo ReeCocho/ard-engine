@@ -8,5 +8,4 @@ edition.workspace = true
 [dependencies]
 log = "0.4"
 log-panics = "2.1"
-log4rs = "1.1"
-chrono = "0.4"
+log4rs = "1.2"

@@ -32,8 +32,11 @@ fn main() {
     let pal = Context::new(pal_backend);
 
     println!("Initializing Wgpu...");
-    let wgpu = wgpu::Instance::new(wgpu::Backends::VULKAN);
-    let wgpu_surface = unsafe { wgpu.create_surface(&window) };
+    let wgpu = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        ..Default::default()
+    });
+    let wgpu_surface = unsafe { wgpu.create_surface(&window).unwrap() };
     let wgpu_adapter =
         futures::executor::block_on(wgpu.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,

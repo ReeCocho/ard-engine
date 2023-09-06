@@ -17,11 +17,9 @@ ard-assets = { path = "../ard-assets" }
 ard-input = { path = "../ard-input" }
 ard-gltf = { path = "../ard-gltf" }
 ard-formats = { path = "../ard-formats" }
-tokio.workspace = true
 bitflags.workspace = true
 bytemuck.workspace = true
 crossbeam-channel.workspace = true
-crossbeam-utils.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 ron.workspace = true
@@ -32,7 +30,6 @@ futures.workspace = true
 tokio-stream.workspace = true
 ordered-float.workspace = true
 raw-window-handle.workspace = true
-winit.workspace = true
 image.workspace = true
 gltf.workspace = true
 egui.workspace = true

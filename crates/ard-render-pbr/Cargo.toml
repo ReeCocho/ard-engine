@@ -1,0 +1,17 @@
+[package]
+name = "ard-render-pbr"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-math = { path = "../ard-math" }
+ard-pal = { path = "../ard-pal" }
+ard-formats = { path = "../ard-formats" }
+ard-render-renderers = { path = "../ard-render-renderers" }
+ard-render-material = { path = "../ard-render-material" }
+ard-render-si = { path = "../ard-render-si" }
+bytemuck.workspace = true
+
+[build-dependencies]
+ard-render-codegen = { path = "../ard-render-codegen" }
+ard-render-si = { path = "../ard-render-si" }

@@ -280,7 +280,7 @@ impl Gui {
         let font_texture = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Rgba8Unorm,
+                format: Format::Rgba8Unorm,
                 ty: TextureType::Type2D,
                 width: 1,
                 height: 1,
@@ -618,7 +618,7 @@ impl Gui {
                 self.font_texture = Texture::new(
                     self.ctx.clone(),
                     TextureCreateInfo {
-                        format: TextureFormat::Rgba8Unorm,
+                        format: Format::Rgba8Unorm,
                         ty: TextureType::Type2D,
                         width: size.x,
                         height: size.y,

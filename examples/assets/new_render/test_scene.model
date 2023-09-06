@@ -1,4 +1,4 @@
 (
-	model: "bistro_gold.ard_mdl",
+	model: "bistro.ard_mdl",
 	ty: Ard,
 )

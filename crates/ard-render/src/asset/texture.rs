@@ -1,5 +1,5 @@
 use ard_assets::prelude::*;
-use ard_pal::prelude::{Filter, SamplerAddressMode, TextureFormat};
+use ard_pal::prelude::{Filter, Format, SamplerAddressMode};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -69,7 +69,7 @@ impl AssetLoader for TextureLoader {
                     raw.to_vec(),
                     image.width(),
                     image.height(),
-                    TextureFormat::Rgba8Unorm,
+                    Format::Rgba8Unorm,
                 )
             }
             None => todo!(),

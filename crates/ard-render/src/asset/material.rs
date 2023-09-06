@@ -110,7 +110,7 @@ impl AssetLoader for MaterialLoader {
             texture_count: desc.texture_count,
             data_size: desc.material_data_size,
             cull_mode: CullMode::Back,
-            front_face: FrontFace::Clockwise, // CounterClockwise,
+            front_face: FrontFace::CounterClockwise,
         });
 
         Ok(AssetLoadResult::Loaded {

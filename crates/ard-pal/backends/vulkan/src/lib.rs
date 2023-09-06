@@ -12,8 +12,8 @@ use api::{
     render_pass::ColorAttachmentSource,
     shader::{ShaderCreateError, ShaderCreateInfo},
     surface::{
-        SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo, SurfaceImageAcquireError,
-        SurfacePresentSuccess, SurfaceUpdateError,
+        SurfaceCapabilities, SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo,
+        SurfaceImageAcquireError, SurfacePresentSuccess, SurfaceUpdateError,
     },
     texture::{TextureCreateError, TextureCreateInfo},
     types::*,
@@ -167,7 +167,7 @@ impl Backend for VulkanBackend {
         &self,
         surface: &mut Self::Surface,
         config: SurfaceConfiguration,
-    ) -> Result<(), SurfaceUpdateError> {
+    ) -> Result<(u32, u32), SurfaceUpdateError> {
         self.device.device_wait_idle().unwrap();
 
         // Signal that the views are about to be destroyed
@@ -177,6 +177,26 @@ impl Backend for VulkanBackend {
 
         // Then update the config
         surface.update_config(self, config)
+    }
+
+    #[inline(always)]
+    unsafe fn get_surface_capabilities(&self, id: &Self::Surface) -> SurfaceCapabilities {
+        let capabilities = self
+            .surface_loader
+            .get_physical_device_surface_capabilities(self.physical_device, id.surface)
+            .unwrap();
+
+        SurfaceCapabilities {
+            min_size: (
+                capabilities.min_image_extent.width,
+                capabilities.min_image_extent.height,
+            ),
+            max_size: (
+                capabilities.max_image_extent.width,
+                capabilities.max_image_extent.height,
+            ),
+            present_modes: Vec::default(), // TODO
+        }
     }
 
     #[inline(always)]

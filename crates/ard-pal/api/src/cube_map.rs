@@ -3,7 +3,7 @@ use crate::{context::Context, types::*, Backend};
 use thiserror::*;
 
 pub struct CubeMapCreateInfo {
-    pub format: TextureFormat,
+    pub format: Format,
     pub size: u32,
     pub array_elements: usize,
     pub mip_levels: usize,
@@ -76,7 +76,7 @@ impl Default for CubeMapCreateInfo {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            format: TextureFormat::Rgba8Unorm,
+            format: Format::Rgba8Unorm,
             size: 128,
             array_elements: 1,
             mip_levels: 1,

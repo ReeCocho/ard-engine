@@ -1,0 +1,199 @@
+[
+    // Globally accessible data for a frame in a scene renderer.
+    (
+        name: "Global",
+        bindings: [
+            // All objects.
+            (
+                name: "ObjectData",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            // Instance to object ID mapping.
+            (
+                name: "ObjectIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                )
+            ),
+        ]
+    ),
+    // Per material and texture slot bindings.
+    (
+        name: "Materials",
+        bindings: [
+            // Material data SSBO
+            (
+                name: "Data",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "material_data", ty: Struct("ArdMaterialData"))),
+                )
+            ),
+            // Texture slots SSBO
+            (
+                name: "TextureSlots",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "texture_slots", ty: Array(ty: U32, len: "MAX_TEXTURES_PER_MATERIAL"))),
+                )
+            )
+        ]  
+    ),
+    // Bindless textures layout.
+    (
+        name: "Textures",
+        bindings: [
+            (
+                name: "Textures",
+                stage: AllGraphics,
+                count: "MAX_TEXTURES",
+                data: Texture("textures"),
+            )
+        ]
+    ),
+    // Camera including froxels for clustering
+    (
+        name: "Camera",
+        bindings: [
+            (
+                name: "CameraUbo",
+                stage: AllStages,
+                count: "1",
+                data: Ubo((
+                    name: "camera",
+                    ty: Struct("Camera"),
+                ))
+            ),
+            (
+                name: "CameraFroxels",
+                stage: AllStages,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "froxels", ty: Struct("Froxels"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    // Camera froxel generation.
+    (
+        name: "FroxelGen",
+        bindings: [
+            (
+                name: "CameraUbo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "camera",
+                    ty: Struct("Camera"),
+                ))
+            ),
+            (
+                name: "CameraFroxels",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "froxels", ty: Struct("Froxels"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    // Hierarchical z-buffer generation.
+    (
+        name: "HzbGen",
+        bindings: [
+            (
+                name: "InputDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("input_depth_buffer"),
+            ),
+            (
+                name: "OutputDepth",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "output_depth_buffer",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            )
+        ]
+    ),
+    // Draw call generation.
+    (
+        name: "DrawGen",
+        bindings: [
+            (
+                name: "DrawCalls",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "draw_calls", ty: Struct("DrawCall"))),
+                )
+            ),
+            (
+                name: "Objects",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "objects", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "InputIds",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U32)),
+                )
+            ),
+        ]
+    ),
+]

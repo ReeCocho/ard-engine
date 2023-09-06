@@ -22,7 +22,7 @@ pub(crate) struct WaitInfo {
 impl SemaphoreTracker {
     #[inline(always)]
     pub fn register_wait(&mut self, semaphore: vk::Semaphore, new_info: WaitInfo) {
-        let mut info = self.wait_semaphores.entry(semaphore).or_insert(WaitInfo {
+        let info = self.wait_semaphores.entry(semaphore).or_insert(WaitInfo {
             value: None,
             stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
         });

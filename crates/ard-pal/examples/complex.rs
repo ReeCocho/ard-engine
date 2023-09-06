@@ -35,7 +35,7 @@ fn main() {
                 width: 1280,
                 height: 720,
                 present_mode: PresentMode::Fifo,
-                format: TextureFormat::Bgra8Unorm,
+                format: Format::Bgra8Unorm,
             },
             window: &window,
             debug_name: Some(String::from("surface")),
@@ -223,14 +223,14 @@ fn main() {
                     VertexInputAttribute {
                         location: 0,
                         binding: 0,
-                        format: VertexFormat::XyzwF32,
+                        format: Format::Rgba32SFloat,
                         offset: 0,
                     },
                     // This one describes the color
                     VertexInputAttribute {
                         location: 1,
                         binding: 0,
-                        format: VertexFormat::XyzwF32,
+                        format: Format::Rgba32SFloat,
                         offset: 16 * 3,
                     },
                 ],
@@ -246,12 +246,12 @@ fn main() {
             },
             rasterization: RasterizationState::default(),
             depth_stencil: None,
-            color_blend: Some(ColorBlendState {
+            color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                     ..Default::default()
                 }],
-            }),
+            },
             push_constants_size: None,
             debug_name: Some(String::from("graphics_pipeline")),
         },
@@ -395,7 +395,7 @@ fn main() {
                                 width: dims.width,
                                 height: dims.height,
                                 present_mode: PresentMode::Fifo,
-                                format: TextureFormat::Bgra8Unorm,
+                                format: Format::Bgra8Unorm,
                             })
                             .unwrap();
                     }

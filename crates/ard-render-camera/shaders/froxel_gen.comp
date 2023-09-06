@@ -1,0 +1,90 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+#define ARD_SET_FROXEL_GEN 0
+#include "ard_bindings.glsl"
+
+void main() {
+    // Corners are clockwise so we get correct normals when computing the plane
+    vec4 corners[4];
+    corners[0] = vec4(
+        ((float(gl_LocalInvocationID .x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
+        ((float(gl_LocalInvocationID .y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[1] = vec4(
+        ((float(gl_LocalInvocationID .x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
+        ((float(gl_LocalInvocationID .y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[2] = vec4(
+        ((float(gl_LocalInvocationID .x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
+        ((float(gl_LocalInvocationID .y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    corners[3] = vec4(
+        ((float(gl_LocalInvocationID .x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
+        ((float(gl_LocalInvocationID .y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
+        1.0,
+        1.0
+    );
+
+    const float f_over_n = camera.far_clip / camera.near_clip;
+
+    vec4 frustum[4];
+    frustum[0] = camera.projection_inv * corners[0];
+    frustum[0] /= frustum[0].w;
+    
+    frustum[1] = camera.projection_inv * corners[1];
+    frustum[1] /= frustum[1].w;
+    
+    frustum[2] = camera.projection_inv * corners[2];
+    frustum[2] /= frustum[2].w;
+    
+    frustum[3] = camera.projection_inv * corners[3];
+    frustum[3] /= frustum[3].w;
+
+    Froxel froxel;
+    froxel.planes[0] = vec4(-normalize(cross(frustum[0].xyz, frustum[1].xyz)), 0.0);
+    froxel.planes[1] = vec4(-normalize(cross(frustum[1].xyz, frustum[2].xyz)), 0.0);
+    froxel.planes[2] = vec4(-normalize(cross(frustum[2].xyz, frustum[3].xyz)), 0.0);
+    froxel.planes[3] = vec4(-normalize(cross(frustum[3].xyz, frustum[0].xyz)), 0.0);
+
+    // Computing min and max Z over the entire depth
+    for (int z = 0; z < CAMERA_FROXELS_DEPTH - 1; z++) {
+        froxel.min_max_z = vec4(
+            pow(f_over_n, float(z) / float(CAMERA_FROXELS_DEPTH)),
+            pow(f_over_n, float(z + 1) / float(CAMERA_FROXELS_DEPTH)),
+            0.0, 
+            0.0
+        );
+
+        froxels.froxels
+            [gl_LocalInvocationID .x]
+            [gl_LocalInvocationID .y]
+            [z] = froxel;
+    }
+
+    // Final depth froxel has a max Z of +inf
+    froxel.min_max_z = vec4(
+        pow(f_over_n, float(CAMERA_FROXELS_DEPTH - 1) / float(CAMERA_FROXELS_DEPTH)),
+        uintBitsToFloat(0x7F800000),
+        0.0, 
+        0.0
+    );
+
+    froxels.froxels
+        [gl_LocalInvocationID .x]
+        [gl_LocalInvocationID .y]
+        [CAMERA_FROXELS_DEPTH - 1] = froxel;
+}

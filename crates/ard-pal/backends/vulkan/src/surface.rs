@@ -151,7 +151,7 @@ impl Surface {
         &mut self,
         ctx: &VulkanBackend,
         config: SurfaceConfiguration,
-    ) -> Result<(), SurfaceUpdateError> {
+    ) -> Result<(u32, u32), SurfaceUpdateError> {
         assert!(config.width != 0, "width was 0");
         assert!(config.height != 0, "height was 0");
         if self.images_acquired != 0 {
@@ -194,8 +194,14 @@ impl Surface {
 
         // Choose swapchain size based on provided dimensions
         let surface_resolution = vk::Extent2D {
-            width: std::cmp::min(config.width, surface_capabilities.max_image_extent.width),
-            height: std::cmp::min(config.height, surface_capabilities.max_image_extent.height),
+            width: config.width.clamp(
+                surface_capabilities.min_image_extent.width,
+                surface_capabilities.max_image_extent.width,
+            ),
+            height: config.height.clamp(
+                surface_capabilities.min_image_extent.height,
+                surface_capabilities.max_image_extent.height,
+            ),
         };
 
         // No transformation preferred
@@ -387,7 +393,7 @@ impl Surface {
             }
         }
 
-        Ok(())
+        Ok((surface_resolution.width, surface_resolution.height))
     }
 
     pub(crate) unsafe fn acquire_image(

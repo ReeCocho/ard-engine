@@ -80,7 +80,7 @@ impl GraphicsPipeline {
             attributes.push(vk::VertexInputAttributeDescription {
                 location: attribute.location,
                 binding: attribute.binding,
-                format: crate::util::to_vk_vertex_format(attribute.format),
+                format: crate::util::to_vk_format(attribute.format),
                 offset: attribute.offset,
             });
         }
@@ -181,46 +181,45 @@ impl GraphicsPipeline {
             None => vk::PipelineDepthStencilStateCreateInfo::default(),
         };
 
-        let (color_blend, _attachments) = match &self.descriptor.color_blend {
-            Some(color_blend) => {
-                let mut attachments = Vec::with_capacity(color_blend.attachments.len());
-                for attachment in &color_blend.attachments {
-                    attachments.push(
-                        vk::PipelineColorBlendAttachmentState::builder()
-                            .color_write_mask(crate::util::to_vk_color_components(
-                                attachment.write_mask,
-                            ))
-                            .blend_enable(attachment.blend)
-                            .src_color_blend_factor(crate::util::to_vk_blend_factor(
-                                attachment.src_color_blend_factor,
-                            ))
-                            .dst_color_blend_factor(crate::util::to_vk_blend_factor(
-                                attachment.dst_color_blend_factor,
-                            ))
-                            .color_blend_op(crate::util::to_vk_blend_op(attachment.color_blend_op))
-                            .src_alpha_blend_factor(crate::util::to_vk_blend_factor(
-                                attachment.src_alpha_blend_factor,
-                            ))
-                            .dst_alpha_blend_factor(crate::util::to_vk_blend_factor(
-                                attachment.dst_alpha_blend_factor,
-                            ))
-                            .alpha_blend_op(crate::util::to_vk_blend_op(attachment.alpha_blend_op))
-                            .build(),
-                    );
-                }
-                let color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
-                    .attachments(&attachments)
-                    .logic_op(vk::LogicOp::COPY)
-                    .logic_op_enable(false)
-                    .blend_constants([0.0, 0.0, 0.0, 0.0])
-                    .build();
-
-                (color_blend, attachments)
-            }
-            None => (
+        let (color_blend, _attachments) = if self.descriptor.color_blend.attachments.is_empty() {
+            (
                 vk::PipelineColorBlendStateCreateInfo::default(),
                 Vec::default(),
-            ),
+            )
+        } else {
+            let mut attachments = Vec::with_capacity(self.descriptor.color_blend.attachments.len());
+            for attachment in &self.descriptor.color_blend.attachments {
+                attachments.push(
+                    vk::PipelineColorBlendAttachmentState::builder()
+                        .color_write_mask(crate::util::to_vk_color_components(
+                            attachment.write_mask,
+                        ))
+                        .blend_enable(attachment.blend)
+                        .src_color_blend_factor(crate::util::to_vk_blend_factor(
+                            attachment.src_color_blend_factor,
+                        ))
+                        .dst_color_blend_factor(crate::util::to_vk_blend_factor(
+                            attachment.dst_color_blend_factor,
+                        ))
+                        .color_blend_op(crate::util::to_vk_blend_op(attachment.color_blend_op))
+                        .src_alpha_blend_factor(crate::util::to_vk_blend_factor(
+                            attachment.src_alpha_blend_factor,
+                        ))
+                        .dst_alpha_blend_factor(crate::util::to_vk_blend_factor(
+                            attachment.dst_alpha_blend_factor,
+                        ))
+                        .alpha_blend_op(crate::util::to_vk_blend_op(attachment.alpha_blend_op))
+                        .build(),
+                );
+            }
+            let color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
+                .attachments(&attachments)
+                .logic_op(vk::LogicOp::COPY)
+                .logic_op_enable(false)
+                .blend_constants([0.0, 0.0, 0.0, 0.0])
+                .build();
+
+            (color_blend, attachments)
         };
 
         let create_info = [vk::GraphicsPipelineCreateInfo::builder()

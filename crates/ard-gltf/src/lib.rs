@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ard_math::{Mat4, Quat, Vec2, Vec3, Vec4};
-use ard_pal::prelude::{Filter, SamplerAddressMode, TextureFormat};
+use ard_pal::prelude::{Filter, Format, SamplerAddressMode};
 use bytemuck::{Pod, Zeroable};
 use gltf::{json::extensions::scene::khr_lights_punctual, Glb, Gltf};
 use thiserror::Error;
@@ -209,20 +209,20 @@ impl GltfModel {
 
 impl TextureUsage {
     #[inline]
-    pub fn into_format(self) -> TextureFormat {
+    pub fn into_format(self) -> Format {
         match self {
-            TextureUsage::Diffuse => TextureFormat::Rgba8Srgb,
-            TextureUsage::Normal => TextureFormat::Rgba8Unorm,
-            TextureUsage::MetallicRoughness => TextureFormat::Rg8Unorm,
+            TextureUsage::Diffuse => Format::Rgba8Srgb,
+            TextureUsage::Normal => Format::Rgba8Unorm,
+            TextureUsage::MetallicRoughness => Format::Rg8Unorm,
         }
     }
 
     #[inline]
-    pub fn into_compressed_format(self) -> TextureFormat {
+    pub fn into_compressed_format(self) -> Format {
         match self {
-            TextureUsage::Diffuse => TextureFormat::BC7Srgb,
-            TextureUsage::Normal => TextureFormat::BC7Unorm,
-            TextureUsage::MetallicRoughness => TextureFormat::BC7Unorm,
+            TextureUsage::Diffuse => Format::BC7Srgb,
+            TextureUsage::Normal => Format::BC7Unorm,
+            TextureUsage::MetallicRoughness => Format::BC7Unorm,
         }
     }
 }

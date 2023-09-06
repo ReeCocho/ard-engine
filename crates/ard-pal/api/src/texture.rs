@@ -1,8 +1,8 @@
 use crate::{
     context::Context,
     types::{
-        AnisotropyLevel, BorderColor, CompareOp, Filter, MemoryUsage, SamplerAddressMode,
-        TextureFormat, TextureType, TextureUsage,
+        AnisotropyLevel, BorderColor, CompareOp, Filter, Format, MemoryUsage, SamplerAddressMode,
+        TextureType, TextureUsage,
     },
     Backend,
 };
@@ -10,7 +10,7 @@ use ordered_float::NotNan;
 use thiserror::Error;
 
 pub struct TextureCreateInfo {
-    pub format: TextureFormat,
+    pub format: Format,
     pub ty: TextureType,
     pub width: u32,
     pub height: u32,
@@ -114,7 +114,7 @@ impl Default for TextureCreateInfo {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            format: TextureFormat::Rgba8Unorm,
+            format: Format::Rgba8Unorm,
             ty: TextureType::Type2D,
             width: 128,
             height: 128,

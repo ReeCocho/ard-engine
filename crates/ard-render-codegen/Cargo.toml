@@ -1,0 +1,12 @@
+[package]
+name = "ard-render-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-pal = { path = "../ard-pal" }
+ard-render-si = { path = "../ard-render-si" }
+serde.workspace = true
+thiserror.workspace = true
+ron.workspace = true
+convert_case = "0.6"

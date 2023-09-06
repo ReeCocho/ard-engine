@@ -106,7 +106,7 @@ impl HzbGlobal {
         let image = Texture::new(
             self.ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::R32Sfloat,
+                format: Format::R32Sfloat,
                 ty: TextureType::Type2D,
                 width: (width / 2).max(1),
                 height: (height / 2).max(1),

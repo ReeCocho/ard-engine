@@ -1,0 +1,18 @@
+[package]
+name = "ard-render-si"
+version.workspace = true
+edition.workspace = true
+build="build/main.rs"
+
+[dependencies]
+ard-pal = { path = "../ard-pal" }
+ard-math = { path = "../ard-math" }
+ard-ecs = { path = "../ard-ecs" }
+bytemuck.workspace = true
+
+[build-dependencies]
+ard-pal = { path = "../ard-pal" }
+serde.workspace = true
+thiserror.workspace = true
+ron.workspace = true
+convert_case = "0.6"

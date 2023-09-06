@@ -184,10 +184,6 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
         for instance in &mesh_group.0 {
             let mut vertex_layout = VertexLayout::empty();
 
-            if instance.mesh.normals.is_some() {
-                vertex_layout |= VertexLayout::NORMAL;
-            }
-
             if instance.mesh.tangents.is_some() {
                 vertex_layout |= VertexLayout::TANGENT;
             }

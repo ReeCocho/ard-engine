@@ -1,4 +1,4 @@
-use ard_pal::prelude::{Buffer, Context, MemoryUsage, TextureFormat, TextureUsage};
+use ard_pal::prelude::{Buffer, Context, Format, MemoryUsage, TextureUsage};
 
 use crate::{
     factory::allocator::{EscapeHandle, ResourceId},
@@ -7,7 +7,7 @@ use crate::{
 
 pub struct CubeMapCreateInfo<'a> {
     pub size: u32,
-    pub format: TextureFormat,
+    pub format: Format,
     pub data: &'a [u8],
     pub mip_type: MipType,
     pub mip_count: usize,

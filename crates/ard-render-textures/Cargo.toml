@@ -1,0 +1,18 @@
+[package]
+name = "ard-render-textures"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-formats = { path = "../ard-formats" }
+ard-render-base = { path = "../ard-render-base" }
+ard-render-si = { path = "../ard-render-si" }
+ard-math = { path = "../ard-math" }
+ard-pal = { path = "../ard-pal" }
+ard-log = { path = "../ard-log" }
+ard-ecs = { path = "../ard-ecs" }
+thiserror.workspace = true
+serde.workspace = true
+fxhash.workspace = true
+static_assertions.workspace = true
+ordered-float.workspace = true

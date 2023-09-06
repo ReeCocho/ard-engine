@@ -28,9 +28,9 @@ pub mod prelude {
     // Render pass
     pub type DrawIndexedIndirect = <crate::Backend as api::Backend>::DrawIndexedIndirect;
     pub type RenderPass<'a> = api::render_pass::RenderPass<'a, crate::Backend>;
+    pub type RenderPassDescriptor<'a> = api::render_pass::RenderPassDescriptor<'a, crate::Backend>;
     pub use api::render_pass::{
-        ColorAttachment, ColorAttachmentSource, DepthStencilAttachment, RenderPassDescriptor,
-        VertexBind,
+        ColorAttachment, ColorAttachmentSource, DepthStencilAttachment, VertexBind,
     };
 
     // Command buffer
@@ -58,6 +58,7 @@ pub mod prelude {
     // Compute pipeline
     pub type ComputePipeline = api::compute_pipeline::ComputePipeline<crate::Backend>;
     pub use api::compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
+    pub type ComputePass<'a> = api::compute_pass::ComputePass<'a, crate::Backend>;
 
     // Buffer
     pub type Buffer = api::buffer::Buffer<crate::Backend>;

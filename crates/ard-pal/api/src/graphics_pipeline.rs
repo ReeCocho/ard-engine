@@ -20,7 +20,7 @@ pub struct VertexInputAttribute {
     /// The location within the binding this attribute is bound to.
     pub location: u32,
     /// The data format of the attribute.
-    pub format: VertexFormat,
+    pub format: Format,
     /// The offset in bytes within the binding the attribute is located at.
     pub offset: u32,
 }
@@ -109,7 +109,7 @@ pub struct GraphicsPipelineCreateInfo<B: Backend> {
     pub vertex_input: VertexInputState,
     pub rasterization: RasterizationState,
     pub depth_stencil: Option<DepthStencilState>,
-    pub color_blend: Option<ColorBlendState>,
+    pub color_blend: ColorBlendState,
     pub push_constants_size: Option<u32>,
     /// The backend *should* use the provided debug name for easy identification.
     pub debug_name: Option<String>,

@@ -351,7 +351,7 @@ impl<'a> PipelineTracker<'a> {
 impl UsageScope {
     #[inline(always)]
     pub fn use_resource(&mut self, subresource: SubResource, usage: SubResourceUsage) {
-        let mut entry = self.usages.entry(subresource).or_default();
+        let entry = self.usages.entry(subresource).or_default();
         let need_general =
             entry.layout == vk::ImageLayout::GENERAL || usage.layout == vk::ImageLayout::GENERAL;
 

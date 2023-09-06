@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use ard_pal::prelude::{
     AnisotropyLevel, Buffer, BufferTextureCopy, Context, DescriptorBinding, DescriptorSet,
     DescriptorSetCreateInfo, DescriptorSetLayout, DescriptorSetLayoutCreateInfo,
-    DescriptorSetUpdate, DescriptorType, DescriptorValue, Filter, MemoryUsage, Sampler,
-    SamplerAddressMode, ShaderStage, TextureCreateInfo, TextureFormat, TextureType, TextureUsage,
+    DescriptorSetUpdate, DescriptorType, DescriptorValue, Filter, Format, MemoryUsage, Sampler,
+    SamplerAddressMode, ShaderStage, TextureCreateInfo, TextureType, TextureUsage,
 };
 use ordered_float::NotNan;
 
@@ -59,7 +59,7 @@ impl TextureSets {
         let error_texture = ard_pal::prelude::Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Rgba8Unorm,
+                format: Format::Rgba8Unorm,
                 ty: TextureType::Type2D,
                 width: 1,
                 height: 1,

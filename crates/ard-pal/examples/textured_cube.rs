@@ -48,7 +48,7 @@ fn main() {
                 width: 1280,
                 height: 720,
                 present_mode: PresentMode::Fifo,
-                format: TextureFormat::Bgra8Unorm,
+                format: Format::Bgra8Unorm,
             },
             window: &window,
             debug_name: Some(String::from("surface")),
@@ -148,13 +148,13 @@ fn main() {
                         VertexInputAttribute {
                             location: 0,
                             binding: 0,
-                            format: VertexFormat::XyzwF32,
+                            format: Format::Rgba32SFloat,
                             offset: 0,
                         },
                         VertexInputAttribute {
                             location: 1,
                             binding: 0,
-                            format: VertexFormat::XyzwF32,
+                            format: Format::Rgba32SFloat,
                             offset: 16,
                         },
                     ],
@@ -167,12 +167,12 @@ fn main() {
                 },
                 rasterization: RasterizationState::default(),
                 depth_stencil: None,
-                color_blend: Some(ColorBlendState {
+                color_blend: ColorBlendState {
                     attachments: vec![ColorBlendAttachment {
                         write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                         ..Default::default()
                     }],
-                }),
+                },
                 push_constants_size: None,
                 debug_name: Some(String::from("triangle_graphics_pipeline")),
             },
@@ -184,7 +184,7 @@ fn main() {
     let triangle_texture = Texture::new(
         context.clone(),
         TextureCreateInfo {
-            format: TextureFormat::Rgba8Unorm,
+            format: Format::Rgba8Unorm,
             ty: TextureType::Type2D,
             width: 512,
             height: 512,
@@ -310,13 +310,13 @@ fn main() {
                         VertexInputAttribute {
                             location: 0,
                             binding: 0,
-                            format: VertexFormat::XyzwF32,
+                            format: Format::Rgba32SFloat,
                             offset: 0,
                         },
                         VertexInputAttribute {
                             location: 1,
                             binding: 0,
-                            format: VertexFormat::XyF32,
+                            format: Format::Rg32SFloat,
                             offset: 16,
                         },
                     ],
@@ -339,12 +339,12 @@ fn main() {
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }),
-                color_blend: Some(ColorBlendState {
+                color_blend: ColorBlendState {
                     attachments: vec![ColorBlendAttachment {
                         write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                         ..Default::default()
                     }],
-                }),
+                },
                 push_constants_size: None,
                 debug_name: Some(String::from("cube_graphics_pipeline")),
             },
@@ -358,7 +358,7 @@ fn main() {
     let depth_buffer = Texture::new(
         context.clone(),
         TextureCreateInfo {
-            format: TextureFormat::D16Unorm,
+            format: Format::D16Unorm,
             ty: TextureType::Type2D,
             width: surface.dimensions().0,
             height: surface.dimensions().1,
@@ -494,7 +494,7 @@ fn main() {
                                 width: dims.width,
                                 height: dims.height,
                                 present_mode: PresentMode::Fifo,
-                                format: TextureFormat::Bgra8Unorm,
+                                format: Format::Bgra8Unorm,
                             })
                             .unwrap();
                     }

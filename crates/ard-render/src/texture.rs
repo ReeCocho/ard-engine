@@ -1,6 +1,5 @@
 use ard_pal::prelude::{
-    Buffer, Context, Filter, MemoryUsage, SamplerAddressMode, TextureFormat, TextureType,
-    TextureUsage,
+    Buffer, Context, Filter, Format, MemoryUsage, SamplerAddressMode, TextureType, TextureUsage,
 };
 
 use crate::factory::allocator::{EscapeHandle, ResourceId};
@@ -8,7 +7,7 @@ use crate::factory::allocator::{EscapeHandle, ResourceId};
 pub struct TextureCreateInfo<'a> {
     pub width: u32,
     pub height: u32,
-    pub format: TextureFormat,
+    pub format: Format,
     pub data: &'a [u8],
     pub mip_type: MipType,
     pub mip_count: usize,

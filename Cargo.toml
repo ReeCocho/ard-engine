@@ -14,7 +14,7 @@ edition = "2021"
 default = [ "input", "assets", "render", "window", ]
 input = [ "ard-input" ]
 assets = [ "ard-assets" ]
-render = [ "window", "ard-render", "ard-pal" ]
+render = [ "window", "ard-pal" ]
 window = [ "ard-window", "ard-winit" ]
 
 [dependencies]
@@ -24,14 +24,20 @@ ard-ecs = { path = "./crates/ard-ecs" }
 ard-log = { path = "./crates/ard-log" }
 ard-math = { path = "./crates/ard-math" }
 ard-formats = { path = "./crates/ard-formats" }
-ard-game = { path = "./crates/ard-game" }
+# ard-game = { path = "./crates/ard-game" }
 
 # Optional
 ard-input = { path = "./crates/ard-input", optional = true }
 ard-assets = { path = "./crates/ard-assets", optional = true }
 ard-window = { path = "./crates/ard-window", optional = true }
 ard-winit = { path = "./crates/ard-winit", optional = true }
-ard-render = { path = "./crates/ard-render", optional = true }
+# ard-render = { path = "./crates/ard-render", optional = true }
+ard-render-camera = { path = "./crates/ard-render-camera" }
+ard-render-material = { path = "./crates/ard-render-material" }
+ard-render-meshes = { path = "./crates/ard-render-meshes" }
+ard-render-pbr = { path = "./crates/ard-render-pbr" }
+ard-render-objects = { path = "./crates/ard-render-objects" }
+ard-render2 = { path = "./crates/ard-render2" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
 
 [workspace.dependencies]
@@ -40,7 +46,7 @@ async-trait = { version = "0.1" }
 bincode = { version = "1" }
 bitflags = { version = "2", features = [ "serde" ] }
 bitvec = { version = "1" }
-bytemuck = { version = "1" }
+bytemuck = { version = "1", features = [ "extern_crate_alloc" ] }
 crossbeam-channel = { version = "0.5" }
 crossbeam-utils = { version = "0.8" }
 dashmap = { version = "5" }
@@ -64,6 +70,7 @@ tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", 
 tokio-stream = { version = "0.1" }
 unsafe_unwrap = { version = "0.1" }
 winit = { version = "0.28" }
+static_assertions = { version = "1.1" }
 
 [dev-dependencies]
 bytemuck = "1.7"

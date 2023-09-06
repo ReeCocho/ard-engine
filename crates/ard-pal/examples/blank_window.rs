@@ -38,7 +38,7 @@ fn main() {
                 width: 1280,
                 height: 720,
                 present_mode: PresentMode::Fifo,
-                format: TextureFormat::Bgra8Unorm,
+                format: Format::Bgra8Unorm,
             },
             window: &window,
             debug_name: Some(String::from("surface")),
@@ -105,7 +105,7 @@ fn main() {
                                 width: dims.width,
                                 height: dims.height,
                                 present_mode: PresentMode::Fifo,
-                                format: TextureFormat::Bgra8Unorm,
+                                format: Format::Bgra8Unorm,
                             })
                             .unwrap();
                     }

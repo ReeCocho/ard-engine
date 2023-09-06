@@ -69,7 +69,7 @@ pub struct RendererSettings {
 pub struct Renderer {
     surface_window: WindowId,
     surface: Surface,
-    surface_format: TextureFormat,
+    surface_format: Format,
     present_mode: PresentMode,
     last_render_time: Instant,
     frame: usize,
@@ -163,7 +163,7 @@ impl Renderer {
                     width: window_size.0,
                     height: window_size.1,
                     present_mode: settings.present_mode,
-                    format: TextureFormat::Bgra8Unorm,
+                    format: Format::Bgra8Unorm,
                 },
                 window,
                 debug_name: Some(String::from("primary_surface")),
@@ -182,7 +182,7 @@ impl Renderer {
         let hdr_image = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Rgba16SFloat,
+                format: Format::Rgba16SFloat,
                 ty: TextureType::Type2D,
                 width,
                 height,
@@ -199,7 +199,7 @@ impl Renderer {
         let depth_buffer = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::D24UnormS8Uint,
+                format: Format::D24UnormS8Uint,
                 ty: TextureType::Type2D,
                 width,
                 height,
@@ -244,7 +244,7 @@ impl Renderer {
                 ctx,
                 surface_window: window_id,
                 surface,
-                surface_format: TextureFormat::Bgra8Unorm,
+                surface_format: Format::Bgra8Unorm,
                 present_mode: settings.present_mode,
                 last_render_time: Instant::now(),
                 frame: 0,
@@ -339,7 +339,7 @@ impl Renderer {
             self.hdr_image = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::Rgba16SFloat,
+                    format: Format::Rgba16SFloat,
                     ty: TextureType::Type2D,
                     width: canvas_width,
                     height: canvas_height,
@@ -356,7 +356,7 @@ impl Renderer {
             self.depth_buffer = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::D24UnormS8Uint,
+                    format: Format::D24UnormS8Uint,
                     ty: TextureType::Type2D,
                     width: canvas_width,
                     height: canvas_height,

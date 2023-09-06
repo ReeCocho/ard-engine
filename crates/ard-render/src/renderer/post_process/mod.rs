@@ -97,7 +97,7 @@ impl PostProcessing {
         let post_proc_images = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Bgra8Unorm,
+                format: Format::Bgra8Unorm,
                 ty: TextureType::Type2D,
                 width,
                 height,
@@ -316,7 +316,7 @@ impl PostProcessing {
         self.images = Texture::new(
             self.ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Bgra8Unorm,
+                format: Format::Bgra8Unorm,
                 ty: TextureType::Type2D,
                 width,
                 height,

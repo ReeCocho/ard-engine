@@ -130,7 +130,7 @@ impl AmbientOcclusion {
         let noise = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Rg16SFloat,
+                format: Format::Rg16SFloat,
                 ty: TextureType::Type2D,
                 width: 4,
                 height: 4,
@@ -148,7 +148,7 @@ impl AmbientOcclusion {
         let default_ao = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::R16SFloat,
+                format: Format::R16SFloat,
                 ty: TextureType::Type2D,
                 width: 1,
                 height: 1,
@@ -315,7 +315,7 @@ impl AoImage {
         let image = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::R16SFloat,
+                format: Format::R16SFloat,
                 ty: TextureType::Type2D,
                 width: 128,
                 height: 128,
@@ -332,7 +332,7 @@ impl AoImage {
         let blurred = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::R16SFloat,
+                format: Format::R16SFloat,
                 ty: TextureType::Type2D,
                 width: 128,
                 height: 128,
@@ -392,7 +392,7 @@ impl AoImage {
             self.image = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::R16SFloat,
+                    format: Format::R16SFloat,
                     ty: TextureType::Type2D,
                     width,
                     height,
@@ -409,7 +409,7 @@ impl AoImage {
             self.blurred = Texture::new(
                 self.ctx.clone(),
                 TextureCreateInfo {
-                    format: TextureFormat::R16SFloat,
+                    format: Format::R16SFloat,
                     ty: TextureType::Type2D,
                     width,
                     height,

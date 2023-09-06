@@ -55,7 +55,7 @@ fn main() {
         .add_plugin(RenderAssetsPlugin {
             pbr_material: AssetNameBuf::from("pbr.mat"),
         })
-        // .add_system(FrameRate::default())
+        .add_system(FrameRate::default())
         .add_startup_function(setup)
         .run();
 }
@@ -68,7 +68,7 @@ fn setup(app: &mut App) {
 
     // Disable frame rate limit
     let mut settings = app.resources.get_mut::<RendererSettings>().unwrap();
-    // settings.render_time = None;
+    settings.render_time = None;
     settings.render_scale = 1.0;
 
     // Add in GUI views
@@ -80,16 +80,16 @@ fn setup(app: &mut App) {
     assets.wait_for_load(&cascade_view_handle);
     assets.wait_for_load(&cluster_heatmap_handle);
 
-    // gui.add_view(Settings {
-    //     visualization: Visualization::None,
-    //     slice_view_mat: assets.get(&slice_view_handle).unwrap().material.clone(),
-    //     cascade_view_mat: assets.get(&cascade_view_handle).unwrap().material.clone(),
-    //     cluster_heatmap_mat: assets
-    //         .get(&cluster_heatmap_handle)
-    //         .unwrap()
-    //         .material
-    //         .clone(),
-    // });
+    gui.add_view(Settings {
+        visualization: Visualization::None,
+        slice_view_mat: assets.get(&slice_view_handle).unwrap().material.clone(),
+        cascade_view_mat: assets.get(&cascade_view_handle).unwrap().material.clone(),
+        cluster_heatmap_mat: assets
+            .get(&cluster_heatmap_handle)
+            .unwrap()
+            .material
+            .clone(),
+    });
 
     //*
     // Load in the scene
@@ -199,7 +199,7 @@ fn setup(app: &mut App) {
     });
 
     // Create some random lights
-    const LIGHT_COUNT: usize = 0; // 4096 * 2;
+    const LIGHT_COUNT: usize = 4096 * 2;
     const LIGHT_SPACING: (f32, f32, f32) = (32.0, 16.0, 24.0);
     const LIGHT_OFFSET: (f32, f32, f32) = (0.0, 10.0, 0.0);
     const LIGHT_RANGE: (f32, f32) = (1.0, 2.0);

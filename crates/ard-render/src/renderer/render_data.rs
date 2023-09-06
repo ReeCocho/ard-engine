@@ -676,7 +676,7 @@ impl GlobalRenderData {
         let brdf_lut = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::Rg16SFloat,
+                format: Format::Rg16SFloat,
                 ty: TextureType::Type2D,
                 width: 512,
                 height: 512,
@@ -693,7 +693,7 @@ impl GlobalRenderData {
         let empty_shadow = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: TextureFormat::D32Sfloat,
+                format: Format::D32Sfloat,
                 ty: TextureType::Type2D,
                 width: 1,
                 height: 1,
@@ -710,7 +710,7 @@ impl GlobalRenderData {
         let white_cube_map = CubeMap::new(
             ctx.clone(),
             CubeMapCreateInfo {
-                format: TextureFormat::Rgba8Unorm,
+                format: Format::Rgba8Unorm,
                 size: 1,
                 array_elements: 1,
                 mip_levels: 1,

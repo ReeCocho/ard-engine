@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::{
     context::Context,
-    types::{PresentMode, TextureFormat},
+    types::{Format, PresentMode},
     Backend,
 };
 
@@ -26,7 +26,16 @@ pub struct SurfaceConfiguration {
     /// Preferred presentation mode of the surface.
     pub present_mode: PresentMode,
     /// Preferred texture format of the surface.
-    pub format: TextureFormat,
+    pub format: Format,
+}
+
+pub struct SurfaceCapabilities {
+    /// Minimum surface width and height.
+    pub min_size: (u32, u32),
+    /// Maximum surface width and height.
+    pub max_size: (u32, u32),
+    /// Available presentation modes.
+    pub present_modes: Vec<PresentMode>,
 }
 
 pub struct Surface<B: Backend> {
@@ -101,6 +110,12 @@ impl<B: Backend> Surface<B> {
         self.dims
     }
 
+    /// Gets most up to date surface capabilities.
+    #[inline(always)]
+    pub fn get_capabilities(&self) -> SurfaceCapabilities {
+        unsafe { self.ctx.0.get_surface_capabilities(&self.id) }
+    }
+
     /// Update the configuration of the surface.
     ///
     /// There must not be any images pending presentation before the configuration is updated.
@@ -109,11 +124,9 @@ impl<B: Backend> Surface<B> {
         &mut self,
         config: SurfaceConfiguration,
     ) -> Result<(), SurfaceUpdateError> {
-        let new_dims = (config.width, config.height);
         unsafe {
-            self.ctx.0.update_surface(&mut self.id, config)?;
+            self.dims = self.ctx.0.update_surface(&mut self.id, config)?;
         };
-        self.dims = new_dims;
         Ok(())
     }
 

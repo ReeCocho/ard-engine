@@ -14,9 +14,9 @@ pub mod math {
     pub use ard_math::*;
 }
 
-pub mod game {
-    pub use ard_game::*;
-}
+//pub mod game {
+//    pub use ard_game::*;
+//}
 
 #[cfg(feature = "assets")]
 pub mod assets {
@@ -36,13 +36,13 @@ pub mod window {
     }
 }
 
-#[cfg(feature = "render")]
-pub mod render {
-    pub mod prelude {
-        pub use ard_pal::prelude::*;
-        pub use ard_render::prelude::*;
-    }
-
-    pub use ard_pal::*;
-    pub use ard_render::*;
-}
+// #[cfg(feature = "render")]
+// pub mod render {
+//     pub mod prelude {
+//         pub use ard_pal::prelude::*;
+//         pub use ard_render::prelude::*;
+//     }
+//
+//     pub use ard_pal::*;
+//     pub use ard_render::*;
+// }

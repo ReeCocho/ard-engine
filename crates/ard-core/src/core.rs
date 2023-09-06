@@ -58,6 +58,13 @@ pub struct ArdCoreState {
 #[storage(CommonStorage)]
 pub struct Disabled;
 
+/// A component indicating that a particular entity is static. The definition of "static" is
+/// dependent on how a system uses an entity. For example, for rendering and physics it might
+/// mean that an entity does not move, which can allow for better optimizations. Assume that all
+/// entities without this component are "dynmaic".
+#[derive(Debug, Component, Copy, Clone)]
+pub struct Static;
+
 /// The base engine plugin.
 ///
 /// A default runner is used which, every iteration of dispatch, generates new `Tick` and

@@ -1,7 +1,7 @@
 use std::{
-    cell::{Ref, RefCell, RefMut},
     ops::{Deref, DerefMut},
     ptr::NonNull,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::{context::Context, types::*, Backend};
@@ -41,14 +41,14 @@ pub struct Buffer<B: Backend> {
     memory_usage: MemoryUsage,
     array_elements: usize,
     debug_name: Option<String>,
-    view_check: RefCell<()>,
+    view_check: RwLock<()>,
     pub(crate) id: B::Buffer,
 }
 
 pub struct BufferReadView<'a, B: Backend> {
     _buffer: &'a Buffer<B>,
     slice: &'a [u8],
-    _borrow: Ref<'a, ()>,
+    _borrow: RwLockReadGuard<'a, ()>,
 }
 
 pub struct BufferWriteView<'a, B: Backend> {
@@ -56,7 +56,7 @@ pub struct BufferWriteView<'a, B: Backend> {
     idx: usize,
     buffer: &'a Buffer<B>,
     slice: &'a mut [u8],
-    _borrow: RefMut<'a, ()>,
+    _borrow: RwLockWriteGuard<'a, ()>,
 }
 
 impl<B: Backend> Buffer<B> {
@@ -89,7 +89,7 @@ impl<B: Backend> Buffer<B> {
             memory_usage,
             buffer_usage,
             array_elements,
-            view_check: RefCell::default(),
+            view_check: RwLock::default(),
             debug_name,
         })
     }
@@ -172,7 +172,7 @@ impl<B: Backend> Buffer<B> {
             "buffer is not mappable"
         );
 
-        let borrow = self.view_check.borrow();
+        let borrow = self.view_check.read().unwrap();
         let (map, len) = unsafe {
             let res = self.ctx.0.map_memory(&self.id, idx)?;
             self.ctx.0.invalidate_range(&self.id, idx);
@@ -193,7 +193,7 @@ impl<B: Backend> Buffer<B> {
     /// - `idx` - The array element of the buffer to view.
     #[inline(always)]
     pub fn write(&self, idx: usize) -> Result<BufferWriteView<B>, BufferViewError> {
-        let borrow = self.view_check.borrow_mut();
+        let borrow = self.view_check.write().unwrap();
         let (map, len) = unsafe {
             let res = self.ctx.0.map_memory(&self.id, idx)?;
             self.ctx.0.invalidate_range(&self.id, idx);

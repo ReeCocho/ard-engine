@@ -165,7 +165,7 @@ impl Entities {
 
                     // Update the created entities archetypes
                     for (i, entity) in entities.iter().enumerate() {
-                        let mut info = &mut self.entities[entity.id() as usize];
+                        let info = &mut self.entities[entity.id() as usize];
                         info.archetype = archetype;
                         info.collection = collection;
                         info.index = (begin + i) as u32;
@@ -178,7 +178,7 @@ impl Entities {
                         // Verify that the entity handles are valid
                         debug_assert!(ind < self.entities.len());
 
-                        let mut info = &mut self.entities[ind];
+                        let info = &mut self.entities[ind];
                         debug_assert!(info.ver.get() == entity.ver().as_u32());
 
                         // Update version counter
@@ -212,7 +212,7 @@ impl Entities {
                     }
                 }
                 EntityCommand::RemoveComponent { entity, id } => {
-                    let mut info = &mut self.entities[entity.id() as usize];
+                    let info = &mut self.entities[entity.id() as usize];
                     debug_assert!(info.ver.get() == entity.ver());
 
                     if let Some((new_archetype, new_index, moved_entity)) =
@@ -254,13 +254,13 @@ impl Entities {
 
                     // Update the entities archetypes
                     for (i, entity) in entities.iter().enumerate() {
-                        let mut info = &mut self.entities[entity.id() as usize];
+                        let info = &mut self.entities[entity.id() as usize];
                         info.archetype = archetype;
                         info.index = (begin + i) as u32;
                     }
                 }
                 EntityCommand::AddComponent { entity, component } => {
-                    let mut info = &mut self.entities[entity.id() as usize];
+                    let info = &mut self.entities[entity.id() as usize];
                     debug_assert!(info.ver.get() == entity.ver());
 
                     if let Some((new_archetype, new_index, moved_entity)) = archetypes
@@ -276,14 +276,14 @@ impl Entities {
                     }
                 }
                 EntityCommand::RemoveTag { entity, id } => {
-                    let mut info = &mut self.entities[entity.id() as usize];
+                    let info = &mut self.entities[entity.id() as usize];
                     assert!(info.ver.get() == entity.ver());
                     if let Some(collection) = info.collection {
                         info.collection = tags.remove_tag(entity, id, collection);
                     }
                 }
                 EntityCommand::AddTag { entity, tag } => {
-                    let mut info = &mut self.entities[entity.id() as usize];
+                    let info = &mut self.entities[entity.id() as usize];
                     assert!(info.ver.get() == entity.ver());
                     info.collection = Some(tags.add_tag(entity, info.collection, tag));
                 }

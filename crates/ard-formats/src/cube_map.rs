@@ -1,4 +1,4 @@
-use ard_pal::prelude::TextureFormat;
+use ard_pal::prelude::Format;
 use serde::{Deserialize, Serialize};
 
 use crate::texture::Sampler;
@@ -7,6 +7,6 @@ use crate::texture::Sampler;
 pub struct CubeMapHeader {
     pub size: u32,
     pub mip_count: u32,
-    pub format: TextureFormat,
+    pub format: Format,
     pub sampler: Sampler,
 }

@@ -34,8 +34,8 @@ use queue::SurfacePresentFailure;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use shader::{ShaderCreateError, ShaderCreateInfo};
 use surface::{
-    SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo, SurfaceImageAcquireError,
-    SurfacePresentSuccess, SurfaceUpdateError,
+    SurfaceCapabilities, SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo,
+    SurfaceImageAcquireError, SurfacePresentSuccess, SurfaceUpdateError,
 };
 use texture::{TextureCreateError, TextureCreateInfo};
 use types::{JobStatus, QueueType};
@@ -68,7 +68,8 @@ pub trait Backend: Sized + 'static {
         &self,
         id: &mut Self::Surface,
         config: SurfaceConfiguration,
-    ) -> Result<(), SurfaceUpdateError>;
+    ) -> Result<(u32, u32), SurfaceUpdateError>;
+    unsafe fn get_surface_capabilities(&self, id: &Self::Surface) -> SurfaceCapabilities;
     unsafe fn acquire_image(
         &self,
         id: &mut Self::Surface,

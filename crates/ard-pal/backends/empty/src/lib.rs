@@ -1,4 +1,4 @@
-use api::Backend;
+use api::{surface::SurfaceCapabilities, Backend};
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct EmptyBackend;
@@ -26,12 +26,20 @@ impl Backend for EmptyBackend {
 
     unsafe fn destroy_surface(&self, _id: &mut Self::Surface) {}
 
+    unsafe fn get_surface_capabilities(&self, _: &Self::Surface) -> SurfaceCapabilities {
+        SurfaceCapabilities {
+            min_size: (0, 0),
+            max_size: (0, 0),
+            present_modes: Vec::default(),
+        }
+    }
+
     unsafe fn update_surface(
         &self,
         _id: &mut Self::Surface,
         _config: api::surface::SurfaceConfiguration,
-    ) -> Result<(), api::surface::SurfaceUpdateError> {
-        Ok(())
+    ) -> Result<(u32, u32), api::surface::SurfaceUpdateError> {
+        Ok((0, 0))
     }
 
     unsafe fn acquire_image(

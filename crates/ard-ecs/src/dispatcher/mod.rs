@@ -194,7 +194,7 @@ impl Dispatcher {
                         // while modifying 'states' because of mutable/immutable borrow.
                         for i in 0..dispatcher_state.states[idx].dependents.len() {
                             let dependent_idx = dispatcher_state.states[idx].dependents[i];
-                            let mut dependent = &mut dispatcher_state.states[dependent_idx];
+                            let dependent = &mut dispatcher_state.states[dependent_idx];
 
                             dependent.waiting_on -= 1;
 

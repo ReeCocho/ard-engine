@@ -1,0 +1,48 @@
+#version 450 core
+
+// Most of the code for this comes from here:
+// https://miketuritzin.com/post/hierarchical-depth-buffers/
+
+#define ARD_SET_HZB_GEN 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    HzbGenPushConstants consts;
+};
+
+shared uint min_depth_as_uint;
+
+void main() {
+    if (gl_LocalInvocationIndex == 0) {
+        min_depth_as_uint = floatBitsToUint(1.0);
+    }
+
+    memoryBarrierShared();
+    barrier();
+
+    // Fetch a 2x2 texel region
+    vec2 texel_coord = vec2(gl_WorkGroupID.xy) + vec2(0.5);
+    texel_coord += (vec2(gl_LocalInvocationID.xy) - vec2(0.5)) * 2.0;
+    vec2 gather_coord = texel_coord * consts.inv_output_size;
+    vec4 texel_value = textureGather(input_depth_buffer, gather_coord);
+
+    // Find the minimum value of the gathered texels
+    float min_depth = min(texel_value.x, min(texel_value.y, min(texel_value.z, texel_value.w)));
+    atomicMin(min_depth_as_uint, floatBitsToUint(min_depth));
+
+    memoryBarrierShared();
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0) {
+        min_depth = uintBitsToFloat(min_depth_as_uint);
+        imageStore(
+            output_depth_buffer,
+            ivec2(gl_WorkGroupID.xy),
+            vec4(min_depth)
+        );
+    }
+}
