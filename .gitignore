@@ -22,7 +22,7 @@ Cargo.lock
 *.spv
 
 # Engine files and folders
-build/
+/build/
 log.txt
 *.ini
 *.meta
