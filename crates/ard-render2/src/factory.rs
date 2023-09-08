@@ -8,7 +8,10 @@ use crate::{
     FRAMES_IN_FLIGHT,
 };
 use ard_ecs::prelude::*;
-use ard_formats::{mesh::{IndexSource, VertexSource}, texture::TextureSource};
+use ard_formats::{
+    mesh::{IndexSource, VertexSource},
+    texture::TextureSource,
+};
 use ard_pal::prelude::Context;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_material::{
@@ -30,7 +33,7 @@ use ard_render_si::{
 };
 use ard_render_textures::{
     factory::{MipUpdate, TextureFactory},
-    texture::{TextureResource, TextureCreateInfo, Texture, TextureCreateError},
+    texture::{Texture, TextureCreateError, TextureCreateInfo, TextureResource},
 };
 
 // TODO: Make these configurable
@@ -274,9 +277,9 @@ impl FactoryInner {
         let handle = textures.insert(texture);
 
         // Submit the upload request
-        staging.add(StagingRequest::Texture { 
-            id: handle.id(), 
-            upload
+        staging.add(StagingRequest::Texture {
+            id: handle.id(),
+            upload,
         });
 
         Ok(Texture::new(handle))

@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 ard-formats = { path = "../ard-formats" }
+ard-alloc = { path = "../ard-alloc" }
 ard-render-base = { path = "../ard-render-base" }
 ard-math = { path = "../ard-math" }
 ard-pal = { path = "../ard-pal" }

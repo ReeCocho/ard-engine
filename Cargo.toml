@@ -24,6 +24,7 @@ ard-ecs = { path = "./crates/ard-ecs" }
 ard-log = { path = "./crates/ard-log" }
 ard-math = { path = "./crates/ard-math" }
 ard-formats = { path = "./crates/ard-formats" }
+ard-alloc = { path = "./crates/ard-alloc" }
 # ard-game = { path = "./crates/ard-game" }
 
 # Optional

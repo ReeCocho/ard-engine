@@ -1,0 +1,7 @@
+[package]
+name = "ard-alloc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fxhash.workspace = true
