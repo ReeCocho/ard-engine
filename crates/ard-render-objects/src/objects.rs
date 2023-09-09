@@ -2,7 +2,6 @@ use ard_core::prelude::{Disabled, Static};
 use ard_ecs::{prelude::Entity, resource::Resource};
 use ard_math::Vec3A;
 use ard_pal::prelude::{Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage};
-use ard_render_base::ecs::Frame;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 
@@ -11,16 +10,12 @@ use ard_render_si::types::GpuObjectData;
 
 pub const DEFAULT_OBJECT_DATA_CAP: usize = 1;
 
-/// Flag used to indicate if static objects have been modified.
-#[derive(Resource, Copy, Clone)]
-pub struct StaticDirty(bool);
-
 /// Contains a complete collection of objects to render.
 pub struct RenderObjects {
     object_data: Buffer,
     static_objects: ObjectList,
     dynamic_objects: ObjectList,
-    static_dirty: Vec<u32>,
+    static_dirty: bool,
 }
 
 #[derive(Default)]
@@ -50,13 +45,13 @@ pub struct TransparentObjectIndex {
 }
 
 impl RenderObjects {
-    pub fn new(ctx: Context, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: Context) -> Self {
         Self {
             object_data: Buffer::new(
                 ctx,
                 BufferCreateInfo {
                     size: (DEFAULT_OBJECT_DATA_CAP * std::mem::size_of::<GpuObjectData>()) as u64,
-                    array_elements: frames_in_flight,
+                    array_elements: 1,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     debug_name: Some("object_data".into()),
@@ -65,7 +60,7 @@ impl RenderObjects {
             .unwrap(),
             static_objects: ObjectList::default(),
             dynamic_objects: ObjectList::default(),
-            static_dirty: (0..frames_in_flight).map(|_| 2).collect(),
+            static_dirty: true,
         }
     }
 
@@ -75,13 +70,12 @@ impl RenderObjects {
     }
 
     #[inline(always)]
-    pub fn static_dirty(&self, frame: Frame) -> bool {
-        self.static_dirty[usize::from(frame)] > 0
+    pub fn static_dirty(&self) -> bool {
+        self.static_dirty
     }
 
     pub fn upload_objects<'a>(
         &mut self,
-        frame: Frame,
         static_objs: impl ExactSizeIterator<
             Item = (
                 Entity,
@@ -129,16 +123,15 @@ impl RenderObjects {
 
         // Update dirty flags
         if static_dirty || expanded {
-            self.static_dirty.iter_mut().for_each(|f| *f = 2);
+            self.static_dirty = true;
             static_dirty = true;
         } else {
-            static_dirty = self.static_dirty(frame);
-            self.static_dirty[usize::from(frame)] =
-                self.static_dirty[usize::from(frame)].saturating_sub(1);
+            static_dirty = self.static_dirty;
+            self.static_dirty = false;
         }
 
         // Write in every object into the buffer
-        let mut view = self.object_data.write(frame.into()).unwrap();
+        let mut view = self.object_data.write(0).unwrap();
         let slice = bytemuck::cast_slice_mut::<_, GpuObjectData>(&mut view);
         let mut idx = 0;
 
@@ -245,30 +238,6 @@ impl RenderObjects {
             material: mat.data_slot().map(|slot| slot.into()).unwrap_or_default(),
             textures: mat.tex_slot().map(|slot| slot.into()).unwrap_or_default(),
         };
-    }
-}
-
-impl StaticDirty {
-    #[inline(always)]
-    pub fn mark(&mut self) {
-        self.0 = true;
-    }
-
-    #[inline(always)]
-    pub fn reset(&mut self) {
-        self.0 = false;
-    }
-}
-
-impl From<StaticDirty> for bool {
-    fn from(value: StaticDirty) -> Self {
-        value.0
-    }
-}
-
-impl Default for StaticDirty {
-    fn default() -> Self {
-        Self(true)
     }
 }
 

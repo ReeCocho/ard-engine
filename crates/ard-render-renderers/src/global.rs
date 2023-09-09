@@ -40,7 +40,7 @@ impl GlobalSets {
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_data,
-                    array_element: usize::from(frame),
+                    array_element: 0,
                 },
             },
             DescriptorSetUpdate {

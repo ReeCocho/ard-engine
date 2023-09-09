@@ -5,7 +5,10 @@ use std::{
 
 use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 
-use crate::prelude::{App, AppBuilder, Plugin};
+use crate::{
+    prelude::{App, AppBuilder, Plugin},
+    stat::DirtyStatic,
+};
 
 const DEFAULT_FIXED_TICK_RATE: Duration = Duration::from_millis(33);
 
@@ -57,13 +60,6 @@ pub struct ArdCoreState {
 #[derive(Debug, Tag, Copy, Clone)]
 #[storage(CommonStorage)]
 pub struct Disabled;
-
-/// A component indicating that a particular entity is static. The definition of "static" is
-/// dependent on how a system uses an entity. For example, for rendering and physics it might
-/// mean that an entity does not move, which can allow for better optimizations. Assume that all
-/// entities without this component are "dynmaic".
-#[derive(Debug, Component, Copy, Clone)]
-pub struct Static;
 
 /// The base engine plugin.
 ///
@@ -162,6 +158,7 @@ impl Plugin for ArdCorePlugin {
 
         app.add_system(ArdCore::default());
         app.add_resource(ArdCoreState { stopping: false });
+        app.add_resource(DirtyStatic::default());
         app.add_event(Start);
         app.with_runner(default_core_runner);
     }

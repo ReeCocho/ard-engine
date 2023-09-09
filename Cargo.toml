@@ -42,6 +42,7 @@ ard-render2 = { path = "./crates/ard-render2" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
 
 [workspace.dependencies]
+allocator-api2 = { version = "0.2" }
 anymap = { version = "0.12" }
 async-trait = { version = "0.1" }
 bincode = { version = "1" }

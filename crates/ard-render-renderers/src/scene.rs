@@ -140,7 +140,7 @@ impl SceneRenderer {
             .with_opaque()
             .with_alpha_cutout()
             .with_transparent()
-            .update(frame, view_location, objects, |_| true, |_| true, |_| true);
+            .update(view_location, objects, |_| true, |_| true, |_| true);
 
         // Expand ID buffers if needed
         let input_id_buffer_size =
@@ -165,7 +165,7 @@ impl SceneRenderer {
         let id_slice = bytemuck::cast_slice_mut::<_, GpuObjectId>(id_view.deref_mut());
 
         // Write in static ids if they were modified
-        if input_id_buffer_expanded || objects.static_dirty(frame) {
+        if input_id_buffer_expanded || objects.static_dirty() {
             id_slice[self.set.static_object_ranges().opaque.clone()]
                 .copy_from_slice(&self.set.ids()[self.set.static_object_ranges().opaque.clone()]);
             id_slice[self.set.static_object_ranges().alpha_cutout.clone()].copy_from_slice(

@@ -3,7 +3,6 @@ use std::time::Duration;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
-use ard_render_objects::objects::StaticDirty;
 use ard_window::prelude::*;
 use ard_winit::windows::WinitWindows;
 use system::RenderSystem;
@@ -43,7 +42,6 @@ pub struct RenderPlugin {
 impl Plugin for RenderPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.add_resource(self.clone());
-        app.add_resource(StaticDirty::default());
         app.add_startup_function(late_render_init);
     }
 }
@@ -51,12 +49,18 @@ impl Plugin for RenderPlugin {
 fn late_render_init(app: &mut App) {
     let plugin = app.resources.get::<RenderPlugin>().unwrap().clone();
     let windows = app.resources.get::<WinitWindows>().unwrap();
+    let dirty_static = app.resources.get::<DirtyStatic>().unwrap();
     let window = windows.get_window(plugin.window).unwrap();
     let size = window.inner_size();
 
     let window_id = plugin.window;
-    let (render_system, factory) =
-        RenderSystem::new(plugin, window, window_id, (size.width, size.height));
+    let (render_system, factory) = RenderSystem::new(
+        plugin,
+        &dirty_static,
+        window,
+        window_id,
+        (size.width, size.height),
+    );
 
     app.dispatcher.add_system(render_system);
     app.resources.add(factory);

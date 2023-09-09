@@ -4,7 +4,7 @@ use ard_pal::prelude::*;
 use ard_render2::{factory::Factory, RenderPlugin, RendererSettings};
 use ard_render_camera::{Camera, CameraClearColor};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
-use ard_render_objects::{objects::StaticDirty, Model, RenderFlags, RenderingMode};
+use ard_render_objects::{Model, RenderFlags, RenderingMode};
 use ard_window::prelude::*;
 use ard_winit::prelude::*;
 
@@ -93,10 +93,13 @@ fn setup(app: &mut App) {
             vec![Model(Mat4::IDENTITY)],
             vec![RenderingMode::Opaque],
             vec![RenderFlags::empty()],
-            vec![Static],
+            vec![Static(0)],
         ),
         &mut [],
     );
 
-    app.resources.get_mut::<StaticDirty>().unwrap().mark();
+    app.resources
+        .get_mut::<DirtyStatic>()
+        .unwrap()
+        .signal(0);
 }

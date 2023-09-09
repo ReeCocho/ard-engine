@@ -238,7 +238,7 @@ impl RenderEcs {
         mesh_factory: &'a MeshFactory,
     ) {
         commands.render_pass(canvas.render_target().hzb_pass(), |pass| {
-            if frame_data.object_data.static_dirty(frame_data.frame) {
+            if frame_data.object_data.static_dirty() {
                 info!("Skipping HZB render because static objects are dirty.");
                 return;
             }

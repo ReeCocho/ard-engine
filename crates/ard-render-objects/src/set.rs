@@ -1,7 +1,6 @@
 use std::ops::Range;
 
 use ard_math::Vec3A;
-use ard_render_base::ecs::Frame;
 use ordered_float::OrderedFloat;
 
 use crate::{
@@ -108,7 +107,6 @@ impl<'a> RenderableSetUpdate<'a> {
 
     pub fn update(
         self,
-        frame: Frame,
         view_location: Vec3A,
         objects: &RenderObjects,
         filter_opaque: impl Fn(&OpaqueObjectIndex) -> bool,
@@ -124,7 +122,7 @@ impl<'a> RenderableSetUpdate<'a> {
         // for `DrawKey`.
 
         // Either reset everything or ignore static objects and groups
-        if objects.static_dirty(frame) {
+        if objects.static_dirty() {
             ids.clear();
             groups.clear();
 

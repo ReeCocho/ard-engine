@@ -7,10 +7,7 @@ use ard_render_camera::{
 };
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
-use ard_render_objects::{
-    objects::{RenderObjects, StaticDirty},
-    Model, RenderFlags, RenderingMode,
-};
+use ard_render_objects::{objects::RenderObjects, Model, RenderFlags, RenderingMode};
 use ard_window::prelude::*;
 use crossbeam_channel::{self, Receiver, Sender};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -42,6 +39,7 @@ enum RenderSystemMessage {
 impl RenderSystem {
     pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         plugin: RenderPlugin,
+        dirty_static: &DirtyStatic,
         window: &W,
         window_id: WindowId,
         window_size: (u32, u32),
@@ -61,7 +59,8 @@ impl RenderSystem {
             complete_frames_send
                 .send(Box::new(FrameDataInner {
                     frame: Frame::from(frame),
-                    object_data: RenderObjects::new(render_ecs.ctx().clone(), FRAMES_IN_FLIGHT),
+                    dirty_static: dirty_static.listen().to_all().build(),
+                    object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     active_cameras: ActiveCameras::default(),
                     job: None,
                     window_size,
@@ -106,10 +105,9 @@ impl RenderSystem {
             ),
             Read<Disabled>,
         )>,
-        res: Res<(Read<Windows>, Write<StaticDirty>)>,
+        res: Res<(Read<Windows>,)>,
     ) {
         let windows = res.get::<Windows>().unwrap();
-        let mut static_dirty = res.get_mut::<StaticDirty>().unwrap();
 
         // Do not render if the window is minimized
         let window = windows
@@ -175,13 +173,10 @@ impl RenderSystem {
         )>();
 
         frame.object_data.upload_objects(
-            frame.frame,
             static_objs,
             dynamic_objs,
-            bool::from(*static_dirty),
+            frame.dirty_static.recv().is_some(),
         );
-
-        static_dirty.reset();
 
         // Prepare data for the render thread
         frame.window_size = (window.physical_width(), window.physical_height());

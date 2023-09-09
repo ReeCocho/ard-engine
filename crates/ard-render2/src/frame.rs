@@ -1,3 +1,4 @@
+use ard_core::stat::DirtyStaticListener;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
@@ -9,6 +10,8 @@ use ard_render_objects::objects::RenderObjects;
 pub struct FrameDataInner {
     /// Frame handle for this frame.
     pub frame: Frame,
+    /// Listener for dirty static objects.
+    pub dirty_static: DirtyStaticListener,
     /// The job of the currently processing frame.
     pub job: Option<Job>,
     /// Object data captured from the primary ECS.

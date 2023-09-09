@@ -4,4 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+ard-pal = { path = "../ard-pal" }
 fxhash.workspace = true
+allocator-api2.workspace = true
