@@ -4,7 +4,8 @@ use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::RenderPreprocessing, resource::ResourceAllocator};
 use ard_render_camera::{froxels::FroxelGenPipeline, ubo::CameraUbo, CameraClearColor};
-use ard_render_material::material::MaterialResource;
+use ard_render_lighting::lights::Lighting;
+use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_renderers::{
     draw_gen::DrawGenPipeline,
@@ -12,6 +13,7 @@ use ard_render_renderers::{
     scene::{SceneRenderArgs, SceneRenderer},
 };
 use ard_render_si::bindings::Layouts;
+use ard_render_textures::factory::TextureFactory;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{
@@ -33,7 +35,7 @@ pub(crate) struct RenderEcs {
     world: World,
     resources: Resources,
     dispatcher: Dispatcher,
-    layouts: Layouts,
+    _layouts: Layouts,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
     hzb_render: HzbRenderer,
@@ -105,6 +107,7 @@ impl RenderEcs {
             &draw_gen,
             FRAMES_IN_FLIGHT,
         ));
+        resources.add(Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT));
 
         (
             Self {
@@ -120,7 +123,7 @@ impl RenderEcs {
                     .add_system(CameraSetupSystem)
                     .add_system(SceneRendererSetup)
                     .build(),
-                layouts,
+                _layouts: layouts,
                 factory: factory.clone(),
                 ctx,
             },
@@ -150,7 +153,7 @@ impl RenderEcs {
             .get_mut::<FrameDataRes>()
             .unwrap()
             .insert(frame);
-        self.dispatcher.run(&mut self.world, &mut self.resources);
+        self.dispatcher.run(&mut self.world, &self.resources);
         self.world.process_entities();
 
         // Run the render graph to perform primary rendering
@@ -161,8 +164,11 @@ impl RenderEcs {
         let meshes = self.factory.inner.meshes.lock().unwrap();
         let materials = self.factory.inner.materials.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
+        let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
+        let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let scene_render = self.resources.get::<SceneRenderer>().unwrap();
         let camera = self.resources.get::<CameraUbo>().unwrap();
+        let lighting = self.resources.get::<Lighting>().unwrap();
 
         // Render the high-z depth image
         self.render_hzb(
@@ -174,6 +180,8 @@ impl RenderEcs {
             &materials,
             &meshes,
             &mesh_factory,
+            &material_factory,
+            &texture_factory,
         );
 
         // Generate the high-z depth pyramid
@@ -182,13 +190,14 @@ impl RenderEcs {
         // Regenerate froxels
         self.generate_froxels(&mut cb, &frame, &camera);
 
-        // TODO: Perform light clustering
+        // Perform light clustering
+        self.cluster_lights(&mut cb, &frame, &lighting, &camera);
 
         // Generate draw calls
         self.generate_draw_calls(&mut cb, &frame, &canvas, &scene_render, &camera);
 
         // Perform the depth prepass
-        self.depth_prepass(
+        Self::depth_prepass(
             &mut cb,
             &frame,
             &canvas,
@@ -197,10 +206,12 @@ impl RenderEcs {
             &materials,
             &meshes,
             &mesh_factory,
+            &material_factory,
+            &texture_factory,
         );
 
         // Render opaque and alpha masked geometry
-        self.render_opaque(
+        Self::render_opaque(
             &mut cb,
             &frame,
             &canvas,
@@ -209,9 +220,23 @@ impl RenderEcs {
             &materials,
             &meshes,
             &mesh_factory,
+            &material_factory,
+            &texture_factory,
         );
 
-        // TODO: Render transparent geometry
+        // Render transparent geometry
+        Self::render_transparent(
+            &mut cb,
+            &frame,
+            &canvas,
+            &camera,
+            &scene_render,
+            &materials,
+            &meshes,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+        );
 
         // Blit to the surface image
         canvas.blit_to_surface(&mut cb);
@@ -226,6 +251,7 @@ impl RenderEcs {
     }
 
     /// Renders the depth image used to generate the hierarchical-z buffer
+    #[allow(clippy::too_many_arguments)]
     fn render_hzb<'a>(
         &'a self,
         commands: &mut CommandBuffer<'a>,
@@ -236,6 +262,8 @@ impl RenderEcs {
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        texture_factory: &'a TextureFactory,
     ) {
         commands.render_pass(canvas.render_target().hzb_pass(), |pass| {
             if frame_data.object_data.static_dirty() {
@@ -248,7 +276,10 @@ impl RenderEcs {
                 SceneRenderArgs {
                     camera,
                     pass,
+                    global: scene_render.global_sets(),
                     mesh_factory,
+                    material_factory,
+                    texture_factory,
                     meshes,
                     materials,
                 },
@@ -284,6 +315,17 @@ impl RenderEcs {
         });
     }
 
+    // Perform light clustering
+    fn cluster_lights<'a>(
+        &'a self,
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        lighting: &'a Lighting,
+        camera: &'a CameraUbo,
+    ) {
+        lighting.cluster(commands, frame_data.frame, camera);
+    }
+
     /// Generates draw calls.
     fn generate_draw_calls<'a>(
         &'a self,
@@ -304,8 +346,8 @@ impl RenderEcs {
     }
 
     /// Performs the entire depth prepass.
+    #[allow(clippy::too_many_arguments)]
     fn depth_prepass<'a>(
-        &'a self,
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
         canvas: &'a Canvas,
@@ -314,6 +356,8 @@ impl RenderEcs {
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        texture_factory: &'a TextureFactory,
     ) {
         commands.render_pass(canvas.render_target().depth_prepass(), |pass| {
             scene_render.render_depth_prepass(
@@ -321,7 +365,10 @@ impl RenderEcs {
                 SceneRenderArgs {
                     pass,
                     camera,
+                    global: scene_render.global_sets(),
                     mesh_factory,
+                    material_factory,
+                    texture_factory,
                     meshes,
                     materials,
                 },
@@ -329,9 +376,9 @@ impl RenderEcs {
         });
     }
 
-    /// Renders opaque geometry
+    /// Renders opaque and alpha cutout geometry
+    #[allow(clippy::too_many_arguments)]
     fn render_opaque<'a>(
-        &'a self,
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
         canvas: &'a Canvas,
@@ -340,6 +387,8 @@ impl RenderEcs {
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        texture_factory: &'a TextureFactory,
     ) {
         commands.render_pass(
             canvas
@@ -351,12 +400,46 @@ impl RenderEcs {
                     SceneRenderArgs {
                         pass,
                         camera,
+                        global: scene_render.global_sets(),
                         mesh_factory,
+                        material_factory,
+                        texture_factory,
                         meshes,
                         materials,
                     },
                 );
             },
         );
+    }
+
+    /// Renders transparent geometry
+    #[allow(clippy::too_many_arguments)]
+    fn render_transparent<'a>(
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        canvas: &'a Canvas,
+        camera: &'a CameraUbo,
+        scene_render: &'a SceneRenderer,
+        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
+        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        texture_factory: &'a TextureFactory,
+    ) {
+        commands.render_pass(canvas.render_target().transparent_pass(), |pass| {
+            scene_render.render_transparent(
+                frame_data.frame,
+                SceneRenderArgs {
+                    pass,
+                    camera,
+                    global: scene_render.global_sets(),
+                    mesh_factory,
+                    material_factory,
+                    texture_factory,
+                    meshes,
+                    materials,
+                },
+            );
+        });
     }
 }

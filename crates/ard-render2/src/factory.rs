@@ -12,14 +12,14 @@ use ard_formats::{
     mesh::{IndexSource, VertexSource},
     texture::TextureSource,
 };
-use ard_pal::prelude::Context;
+use ard_pal::prelude::{Buffer, Context, QueueType};
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_material::{
     factory::{MaterialFactory, MaterialFactoryConfig},
     material::{Material, MaterialCreateError, MaterialCreateInfo, MaterialResource},
     material_instance::{
         MaterialInstance, MaterialInstanceCreateError, MaterialInstanceCreateInfo,
-        MaterialInstanceResource,
+        MaterialInstanceResource, TextureSlot,
     },
     shader::{Shader, ShaderCreateError, ShaderCreateInfo, ShaderResource},
 };
@@ -32,9 +32,10 @@ use ard_render_si::{
     consts::*,
 };
 use ard_render_textures::{
-    factory::{MipUpdate, TextureFactory},
+    factory::{MipUpdate, TextureFactory, TextureMipUpload},
     texture::{Texture, TextureCreateError, TextureCreateInfo, TextureResource},
 };
+use bytemuck::{Pod, Zeroable};
 
 // TODO: Make these configurable
 pub const DROP_LATENCY: usize = 2;
@@ -236,6 +237,28 @@ impl Factory {
                 material: self.pbr_material.clone(),
             })
     }
+
+    pub fn load_texture_mip(&self, texture: &Texture, level: usize, source: impl TextureSource) {
+        self.inner.load_texture_mip(texture, level, source)
+    }
+
+    pub fn set_material_data(
+        &self,
+        material_instance: &MaterialInstance,
+        data: &(impl Pod + Zeroable),
+    ) {
+        self.inner.set_material_data(material_instance, data)
+    }
+
+    pub fn set_material_texture_slot(
+        &self,
+        material_instance: &MaterialInstance,
+        slot: TextureSlot,
+        texture: Option<&Texture>,
+    ) {
+        self.inner
+            .set_material_texture_slot(material_instance, slot, texture)
+    }
 }
 
 impl FactoryInner {
@@ -324,13 +347,79 @@ impl FactoryInner {
         let material = create_info.material.clone();
         let material_instance = MaterialInstanceResource::new(create_info, &mut material_factory)?;
 
-        let data_slot = material_instance.data_slot.clone().map(|slot| slot.into());
-        let tex_slot = material_instance
-            .textures_slot
-            .clone()
-            .map(|slot| slot.into());
+        let data_slot = material_instance.data_slot;
+        let tex_slot = material_instance.textures_slot;
         let handle = material_instances.insert(material_instance);
 
         Ok(MaterialInstance::new(handle, material, data_slot, tex_slot))
+    }
+
+    fn load_texture_mip(&self, texture: &Texture, level: usize, source: impl TextureSource) {
+        let mut staging = self.staging.lock().unwrap();
+        let textures = self.textures.lock().unwrap();
+
+        let id = texture.id();
+        let texture_inner = textures.get(id).unwrap();
+
+        // Mip level must not already be loaded
+        if texture_inner.loaded_mips & (1 << level) != 0 {
+            return;
+        }
+
+        let data = source.into_texture_data().unwrap();
+
+        let (width, height, _) = texture_inner.texture.dims();
+        assert_eq!(data.width(), width >> level);
+        assert_eq!(data.height(), height >> level);
+        assert_eq!(data.format(), texture_inner.texture.format());
+
+        let staging_buffer = Buffer::new_staging(
+            self.ctx.clone(),
+            QueueType::Transfer,
+            Some(format!("texture_{id:?}_mip_level_{level}_staging")),
+            data.raw(),
+        )
+        .unwrap();
+
+        staging.add(StagingRequest::TextureMip {
+            id,
+            upload: TextureMipUpload {
+                staging: staging_buffer,
+                mip_level: level as u32,
+            },
+        });
+    }
+
+    fn set_material_data(
+        &self,
+        material_instance: &MaterialInstance,
+        data: &(impl Pod + Zeroable),
+    ) {
+        let mut material_instances = self.material_instances.lock().unwrap();
+        let mut material_factory = self.material_factory.lock().unwrap();
+
+        let inner = material_instances.get_mut(material_instance.id()).unwrap();
+
+        // Mark as dirty
+        material_factory.mark_dirty(material_instance.clone());
+
+        // Write in the data
+        inner.data.copy_from_slice(bytemuck::bytes_of(data));
+    }
+
+    fn set_material_texture_slot(
+        &self,
+        material_instance: &MaterialInstance,
+        slot: TextureSlot,
+        texture: Option<&Texture>,
+    ) {
+        let mut material_instances = self.material_instances.lock().unwrap();
+        let mut material_factory = self.material_factory.lock().unwrap();
+
+        let inner = material_instances.get_mut(material_instance.id()).unwrap();
+        inner.textures[slot.0 as usize] = texture.cloned();
+
+        // Mark as dirty
+        material_factory.mark_dirty(material_instance.clone());
     }
 }

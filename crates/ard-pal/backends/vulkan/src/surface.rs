@@ -13,7 +13,7 @@ use api::{
 use ash::vk::{self, Handle};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use crate::VulkanBackend;
+use crate::{util::usage::ImageRegion, VulkanBackend};
 
 pub struct SurfaceId(pub(crate) usize);
 
@@ -420,9 +420,11 @@ impl Surface {
         // Layout is undefined after presenting, so if the
         // image is reaquired we must update its layout
         ctx.resource_state.write().unwrap().set_layout(
-            self.images[image_idx].0,
-            0,
-            0,
+            ImageRegion {
+                image: self.images[image_idx].0,
+                array_elem: 0,
+                mip_level: 0,
+            },
             vk::ImageLayout::UNDEFINED,
         );
 

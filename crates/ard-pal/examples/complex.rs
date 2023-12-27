@@ -44,14 +44,16 @@ fn main() {
     .unwrap();
 
     // Create buffers
-    let color_buffer = Buffer::new(
+    let mut color_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
-            /// Three vertices, each of four components.
+            // Three vertices, each of four components.
             size: 3 * 4 * std::mem::size_of::<f32>() as u64,
             array_elements: 1,
             buffer_usage: BufferUsage::TRANSFER_SRC,
             memory_usage: MemoryUsage::CpuToGpu,
+            queue_types: QueueTypes::TRANSFER,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("color_buffer")),
         },
     )
@@ -60,13 +62,15 @@ fn main() {
     let vertex_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
-            /// Three vertices, each of four components. Positions and colors means two attributes.
+            // Three vertices, each of four components. Positions and colors means two attributes.
             size: 3 * 4 * 2 * std::mem::size_of::<f32>() as u64,
             array_elements: 1,
             buffer_usage: BufferUsage::TRANSFER_DST
                 | BufferUsage::VERTEX_BUFFER
                 | BufferUsage::STORAGE_BUFFER,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::NON_PRESENT,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("vertex_buffer")),
         },
     )
@@ -79,6 +83,8 @@ fn main() {
             array_elements: 1,
             buffer_usage: BufferUsage::TRANSFER_DST | BufferUsage::INDEX_BUFFER,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("index_buffer")),
         },
     )
@@ -91,6 +97,8 @@ fn main() {
             array_elements: 1,
             buffer_usage: BufferUsage::TRANSFER_SRC | BufferUsage::STORAGE_BUFFER,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::COMPUTE | QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("index_buffer_intermediate")),
         },
     )
@@ -314,6 +322,11 @@ fn main() {
                     dst_offset: 3 * 4 * std::mem::size_of::<f32>() as u64,
                     len: color_buffer.size(),
                 });
+
+                // Since the vertex buffer was marked as having an `Exclusive` usage, we must
+                // release control of the buffer to the `Compute` queue explicitly.
+                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Compute);
+
                 context
                     .transfer()
                     .submit(Some("color_buffer_copy"), command_buffer);
@@ -322,11 +335,17 @@ fn main() {
                 // GPU to GPU sync with the transfer command because we can't write until the
                 // buffer is done being written to).
                 let mut command_buffer = context.compute().command_buffer();
+
                 command_buffer.compute_pass(|pass| {
                     pass.bind_pipeline(vertex_compute_pipeline.clone());
                     pass.bind_sets(0, vec![&vertex_compute_set]);
                     pass.dispatch(1, 1, 1);
                 });
+
+                // Since the vertex buffer was marked as having an `Exclusive` usage, we must
+                // release control of the buffer to the `Main` queue explicitly.
+                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Main);
+
                 context
                     .compute()
                     .submit(Some("vertex_compute"), command_buffer);
@@ -383,6 +402,10 @@ fn main() {
                         pass.draw_indexed(3, 1, 0, 0, 0);
                     },
                 );
+
+                // Since the vertex buffer was marked as having an `Exclusive` usage, we must
+                // release control of the buffer to the `Main` queue explicitly.
+                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Transfer);
 
                 context.main().submit(Some("main_pass"), command_buffer);
 

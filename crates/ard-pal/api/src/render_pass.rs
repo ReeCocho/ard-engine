@@ -239,7 +239,7 @@ impl<'a, B: Backend> RenderPass<'a, B> {
     /// - `stride` - The stride in bytes for each draw command.
     ///
     /// # Panics
-    /// - If `stride = 0`.
+    /// - If `stride == 0`.
     #[inline]
     pub fn draw_indexed_indirect(
         &mut self,
@@ -256,6 +256,50 @@ impl<'a, B: Backend> RenderPass<'a, B> {
             offset,
             draw_count,
             stride,
+        });
+    }
+
+    /// Draw an indexed sequence of triangles with draw commands contained within an indirect
+    /// buffer. An unsigned 32-bit draw count is sourced from an alternative buffer.
+    ///
+    /// # Arguments
+    /// - `draw_buffer` - The indirect buffer to read commands from.
+    /// - `draw_array_element` - The array element of the indirect buffer to read from.
+    /// - `draw_offset` - The offset in bytes within the indirect buffer array element to read
+    /// from.
+    /// - `count_buffer` - The buffer to read draw counts from.
+    /// - `count_array_element` - The array element of the draw count buffer to read from.
+    /// - `count_offset` - The offset in bytes within the draw count buffer array element to read
+    /// from.
+    /// - `max_draw_count` - The maximum number of draw commands to read. The actual draw count is
+    /// the minimum of `max_draw_count` and the value read from the `count_buffer`.
+    /// - `draw_stride` - The stride in bytes for each draw command.
+    ///
+    /// # Panics
+    /// - If `draw_stride == 0`.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_indexed_indirect_count(
+        &mut self,
+        draw_buffer: &'a Buffer<B>,
+        draw_array_element: usize,
+        draw_offset: u64,
+        count_buffer: &'a Buffer<B>,
+        count_array_element: usize,
+        count_offset: u64,
+        max_draw_count: usize,
+        draw_stride: u64,
+    ) {
+        assert_ne!(draw_stride, 0, "draw stride cannot be 0");
+        self.commands.push(Command::DrawIndexedIndirectCount {
+            draw_buffer,
+            draw_array_element,
+            draw_offset,
+            draw_stride,
+            count_buffer,
+            count_array_element,
+            count_offset,
+            max_draw_count,
         });
     }
 }

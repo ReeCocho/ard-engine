@@ -46,6 +46,7 @@ use thiserror::Error;
 use util::{
     descriptor_pool::DescriptorPools,
     garbage_collector::{GarbageCleanupArgs, GarbageCollector, TimelineValues},
+    ownership::OwnershipTransferTracker,
     pipeline_cache::PipelineCache,
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
@@ -256,7 +257,14 @@ impl Backend for VulkanBackend {
         let mut semaphore_tracker = SemaphoreTracker::default();
         let mut active_render_pass = vk::RenderPass::null();
         let mut active_layout = vk::PipelineLayout::null();
-        let mut pipeline_tracker = PipelineTracker::new(&mut resc_state, queue, next_target_value);
+        let mut pipeline_tracker = PipelineTracker::new(
+            &mut resc_state,
+            &self.queue_family_indices,
+            queue,
+            next_target_value,
+        );
+        let mut ownership_tracker =
+            OwnershipTransferTracker::new(queue, &self.queue_family_indices);
 
         // Acquire a command buffer from the queue
         let cb = match queue {
@@ -559,6 +567,26 @@ impl Backend for VulkanBackend {
                         *stride as u32,
                     );
                 }
+                Command::DrawIndexedIndirectCount {
+                    draw_buffer,
+                    draw_array_element,
+                    draw_offset,
+                    draw_stride,
+                    count_buffer,
+                    count_array_element,
+                    count_offset,
+                    max_draw_count,
+                } => {
+                    self.device.cmd_draw_indexed_indirect_count(
+                        cb,
+                        draw_buffer.internal().buffer,
+                        draw_buffer.internal().offset(*draw_array_element) + *draw_offset,
+                        count_buffer.internal().buffer,
+                        count_buffer.internal().offset(*count_array_element) + *count_offset,
+                        *max_draw_count as u32,
+                        *draw_stride as u32,
+                    );
+                }
                 Command::CopyBufferToBuffer(copy) => {
                     let src = copy.src.internal();
                     let dst = copy.dst.internal();
@@ -826,6 +854,8 @@ impl Backend for VulkanBackend {
                         scope.use_resource(
                             SubResource::Texture {
                                 texture: si.image(),
+                                queue_types: QueueTypes::all(),
+                                sharing: SharingMode::Concurrent,
                                 aspect_mask: vk::ImageAspectFlags::COLOR,
                                 array_elem: blit.dst_array_element as u32,
                                 mip_level: blit.dst_mip as u32,
@@ -849,6 +879,49 @@ impl Backend for VulkanBackend {
                     0,
                     data,
                 ),
+                Command::TransferBufferOwnership {
+                    buffer,
+                    array_element,
+                    new_queue,
+                } => {
+                    ownership_tracker.register_buffer(
+                        buffer.internal(),
+                        *array_element,
+                        *new_queue,
+                    );
+                }
+                Command::TransferTextureOwnership {
+                    texture,
+                    array_element,
+                    base_mip,
+                    mip_count,
+                    new_queue,
+                } => {
+                    ownership_tracker.register_texture(
+                        texture.internal(),
+                        *array_element,
+                        *base_mip as u32,
+                        *mip_count as u32,
+                        *new_queue,
+                    );
+                }
+                Command::TransferCubeMapOwnership {
+                    cube_map,
+                    array_element,
+                    base_mip,
+                    mip_count,
+                    face,
+                    new_queue,
+                } => {
+                    ownership_tracker.register_cube_map(
+                        cube_map.internal(),
+                        *array_element,
+                        *base_mip as u32,
+                        *mip_count as u32,
+                        *face,
+                        *new_queue,
+                    );
+                }
             }
         }
 
@@ -868,6 +941,9 @@ impl Backend for VulkanBackend {
                 },
             );
         }
+
+        // Perform ownership transfers
+        ownership_tracker.transfer_ownership(&resc_state, &self.device, cb);
 
         // Submit to the queue
         if debug_name.is_some() {
@@ -1324,6 +1400,7 @@ impl VulkanBackend {
             .timeline_semaphore(true)
             .buffer_device_address(true)
             .runtime_descriptor_array(true)
+            .draw_indirect_count(true)
             .build();
 
         let mut create_info = vk::DeviceCreateInfo::builder()
@@ -1597,18 +1674,12 @@ impl QueueFamilyIndices {
         }
 
         let unique = {
-            let mut qfi_set = std::collections::HashSet::<usize>::new();
-            qfi_set.insert(main);
-            qfi_set.insert(present);
-            qfi_set.insert(transfer);
-            qfi_set.insert(compute);
-
-            let mut unique_qfis = Vec::with_capacity(qfi_set.len());
-            for q in qfi_set {
-                unique_qfis.push(q as u32);
-            }
-
-            unique_qfis
+            let mut qfi_set = std::collections::HashSet::<u32>::new();
+            qfi_set.insert(main as u32);
+            qfi_set.insert(present as u32);
+            qfi_set.insert(transfer as u32);
+            qfi_set.insert(compute as u32);
+            qfi_set.into_iter().collect::<Vec<_>>()
         };
 
         Some(QueueFamilyIndices {
@@ -1618,6 +1689,33 @@ impl QueueFamilyIndices {
             compute: compute as u32,
             unique,
         })
+    }
+
+    pub fn queue_types_to_indices(&self, queue_types: QueueTypes) -> Vec<u32> {
+        let mut qfi_set = std::collections::HashSet::<u32>::new();
+        if queue_types.contains(QueueTypes::MAIN) {
+            qfi_set.insert(self.main);
+        }
+        if queue_types.contains(QueueTypes::TRANSFER) {
+            qfi_set.insert(self.transfer);
+        }
+        if queue_types.contains(QueueTypes::COMPUTE) {
+            qfi_set.insert(self.compute);
+        }
+        if queue_types.contains(QueueTypes::PRESENT) {
+            qfi_set.insert(self.present);
+        }
+        qfi_set.into_iter().collect::<Vec<_>>()
+    }
+
+    #[inline(always)]
+    pub fn to_index(&self, queue: QueueType) -> u32 {
+        match queue {
+            QueueType::Main => self.main,
+            QueueType::Transfer => self.transfer,
+            QueueType::Compute => self.compute,
+            QueueType::Present => self.present,
+        }
     }
 }
 

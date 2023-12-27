@@ -34,6 +34,8 @@ impl BufferBlockAllocator {
                 array_elements: 1,
                 buffer_usage: usage,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::TRANSFER,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: debug_name.clone(),
             },
         )
@@ -57,7 +59,7 @@ impl BufferBlockAllocator {
     ///
     /// Returns `None` if allocation failed.
     pub fn allocate(&mut self, count: usize) -> Option<BufferBlock> {
-        self.alloc.allocate(count).map(|block| BufferBlock(block))
+        self.alloc.allocate(count).map(BufferBlock)
     }
 
     /// Frees an allocated block.
@@ -84,6 +86,8 @@ impl BufferBlockAllocator {
                 array_elements: 1,
                 buffer_usage: self.buffer.buffer_usage(),
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::TRANSFER,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: self.debug_name.clone(),
             },
         )
@@ -134,5 +138,10 @@ impl BufferBlock {
     #[inline]
     pub fn len(&self) -> u32 {
         self.0.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
     }
 }

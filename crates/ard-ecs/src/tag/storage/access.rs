@@ -50,7 +50,7 @@ impl<S: TagStorage<T> + 'static, T: Tag<Storage = S>> TagStorageAccess for ReadT
         Self {
             lock,
             storage,
-            phantom: std::marker::PhantomData::<T>::default(),
+            phantom: std::marker::PhantomData::<T>,
         }
     }
 
@@ -79,7 +79,7 @@ impl<S: TagStorage<T> + 'static, T: Tag<Storage = S>> TagStorageAccess for Write
         Self {
             lock,
             storage,
-            phantom: std::marker::PhantomData::<T>::default(),
+            phantom: std::marker::PhantomData::<T>,
         }
     }
 

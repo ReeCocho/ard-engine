@@ -5,7 +5,7 @@
         bindings: [
             // All objects.
             (
-                name: "ObjectData",
+                name: "GlobalObjectData",
                 stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
@@ -25,6 +25,30 @@
                     access: ReadOnly,
                     inner: None,
                     unbounded_array: Some((name: "object_ids", ty: U32)),
+                )
+            ),
+            // Global light buffer.
+            (
+                name: "Lights",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "lights", ty: Struct("Light"))),
+                )
+            ),
+            // Clusters of indices of lights.
+            (
+                name: "LightClusters",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "light_table", ty: Struct("LightTable"))),
+                    unbounded_array: None,
                 )
             ),
         ]
@@ -67,7 +91,7 @@
                 name: "Textures",
                 stage: AllGraphics,
                 count: "MAX_TEXTURES",
-                data: Texture("textures"),
+                data: UnboundedTextureArray("textures"),
             )
         ]
     ),
@@ -194,6 +218,79 @@
                     unbounded_array: Some((name: "output_ids", ty: U32)),
                 )
             ),
+            (
+                name: "HzbImage",
+                stage: Compute,
+                count: "1",
+                data: Texture("hzb_image"),
+            )
+        ]
+    ),
+    // Draw call compaction.
+    (
+        name: "DrawCompact",
+        bindings: [
+            (
+                name: "DrawCallsSrc",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "draw_calls_src", ty: Struct("DrawCall"))),
+                )
+            ),
+            (
+                name: "DrawCallsDst",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "draw_calls_dst", ty: Struct("DrawCall"))),
+                )
+            ),
+            (
+                name: "DrawCounts",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "draw_counts", ty: U32)),
+                )
+            )
+        ],
+    ),
+    // Light clustering.
+    (
+        name: "LightClustering",
+        bindings: [
+            (
+                name: "Lights",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "lights", ty: Struct("Light"))),
+                )
+            ),
+            (
+                name: "LightClusters",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "light_table", ty: Struct("LightTable"))),
+                    unbounded_array: None,
+                )
+            )
         ]
     ),
 ]

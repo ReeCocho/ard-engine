@@ -11,7 +11,6 @@ pub struct GlobalSets {
 impl GlobalSets {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let sets = (0..frames_in_flight)
-            .into_iter()
             .map(|_| {
                 DescriptorSet::new(
                     ctx.clone(),
@@ -32,11 +31,13 @@ impl GlobalSets {
         frame: Frame,
         object_data: &Buffer,
         object_ids: &Buffer,
+        lights: &Buffer,
+        clusters: &Buffer,
     ) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: GLOBAL_SET_OBJECT_DATA_BINDING,
+                binding: GLOBAL_SET_GLOBAL_OBJECT_DATA_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_data,
@@ -51,6 +52,27 @@ impl GlobalSets {
                     array_element: 0,
                 },
             },
+            DescriptorSetUpdate {
+                binding: GLOBAL_SET_LIGHTS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: lights,
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: GLOBAL_SET_LIGHT_CLUSTERS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: clusters,
+                    array_element: 0,
+                },
+            },
         ]);
+    }
+
+    #[inline(always)]
+    pub fn get_set(&self, frame: Frame) -> &DescriptorSet {
+        &self.sets[usize::from(frame)]
     }
 }

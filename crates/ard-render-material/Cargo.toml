@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 ard-formats = { path = "../ard-formats" }
 ard-render-base = { path = "../ard-render-base" }
+ard-render-textures = { path = "../ard-render-textures" }
 ard-render-si = { path = "../ard-render-si" }
 ard-math = { path = "../ard-math" }
 ard-pal = { path = "../ard-pal" }
@@ -15,3 +16,4 @@ thiserror.workspace = true
 serde.workspace = true
 fxhash.workspace = true
 bitflags.workspace = true
+bytemuck.workspace = true

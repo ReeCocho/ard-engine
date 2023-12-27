@@ -112,6 +112,8 @@ impl<const FIF: usize> HzbImage<FIF> {
                 mip_levels,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("hzb_image")),
             },
         )
@@ -198,6 +200,29 @@ impl<const FIF: usize> HzbImage<FIF> {
                 mip_count: 1,
             },
         }]);
+    }
+
+    pub fn descriptor_value(&self) -> DescriptorValue {
+        DescriptorValue::Texture {
+            texture: &self.image,
+            array_element: 0,
+            sampler: Sampler {
+                min_filter: Filter::Nearest,
+                mag_filter: Filter::Nearest,
+                mipmap_filter: Filter::Nearest,
+                address_u: SamplerAddressMode::ClampToEdge,
+                address_v: SamplerAddressMode::ClampToEdge,
+                address_w: SamplerAddressMode::ClampToEdge,
+                anisotropy: None,
+                compare: None,
+                min_lod: NotNan::new(0.0).unwrap(),
+                max_lod: None,
+                border_color: None,
+                unnormalize_coords: false,
+            },
+            base_mip: 0,
+            mip_count: self.image.mip_count(),
+        }
     }
 
     #[inline(always)]

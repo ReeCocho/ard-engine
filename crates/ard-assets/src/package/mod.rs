@@ -58,10 +58,10 @@ pub trait PackageInterface: Clone + Send {
     fn manifest_mut(&self) -> ShardedLockWriteGuard<Manifest>;
 
     /// Reads the contents of a file within the package and returns the bytes.
-    async fn read(&self, file: &Path) -> Result<Vec<u8>, PackageReadError>;
+    async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError>;
 
     /// Reads the contents of a file within the package and returns the bytes as a string.
-    async fn read_str(&self, file: &Path) -> Result<String, PackageReadError>;
+    async fn read_str(&self, file: PathBuf) -> Result<String, PackageReadError>;
 }
 
 impl From<std::io::Error> for PackageReadError {

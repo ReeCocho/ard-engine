@@ -74,6 +74,8 @@ fn main() {
                     array_elements: 1,
                     buffer_usage: BufferUsage::UNIFORM_BUFFER,
                     memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::COMPUTE,
+                    sharing_mode: SharingMode::Exclusive,
                     debug_name: None,
                 },
             )

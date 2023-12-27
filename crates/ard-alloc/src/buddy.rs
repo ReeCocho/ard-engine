@@ -258,4 +258,9 @@ impl BuddyBlock {
     pub fn len(&self) -> u32 {
         self.len
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 }

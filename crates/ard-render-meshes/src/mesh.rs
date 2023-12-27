@@ -1,6 +1,6 @@
 use ard_ecs::prelude::Component;
-use ard_formats::mesh::{IndexSource, VertexLayout, VertexSource};
-use ard_pal::prelude::{BufferCreateError, Context};
+use ard_formats::mesh::{IndexSource, ObjectBounds, VertexLayout, VertexSource};
+use ard_pal::prelude::{BufferCreateError, Context, QueueType};
 use ard_render_base::resource::{ResourceHandle, ResourceId};
 use thiserror::Error;
 
@@ -32,8 +32,10 @@ pub struct Mesh {
     handle: ResourceHandle,
 }
 
+#[derive(Debug)]
 pub struct MeshResource {
     pub block: MeshBlock,
+    pub bounds: ObjectBounds,
     pub index_count: usize,
     pub vertex_count: usize,
     /// Indicates tht the mesh has been uploaded to the GPU and is ready to be rendered.
@@ -84,10 +86,12 @@ impl MeshResource {
         // Create staging buffers
         let vertex_staging = vertex_data.staging_buffer(
             ctx.clone(),
+            QueueType::Transfer,
             Some(format!("vertex_stating({:?})", &create_info.debug_name)),
         )?;
         let index_staging = index_data.staging_buffer(
             ctx.clone(),
+            QueueType::Transfer,
             Some(format!("index_stating({:?})", &create_info.debug_name)),
         )?;
 
@@ -99,6 +103,7 @@ impl MeshResource {
                 block,
                 index_count: index_data.len(),
                 vertex_count: vertex_data.len(),
+                bounds: vertex_data.bounds(),
                 ready: false,
             },
             MeshUpload {

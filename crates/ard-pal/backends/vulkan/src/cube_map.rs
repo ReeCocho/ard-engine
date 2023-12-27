@@ -34,7 +34,7 @@ pub struct CubeMap {
 impl CubeMap {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        _qfi: &QueueFamilyIndices,
+        qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -42,6 +42,7 @@ impl CubeMap {
     ) -> Result<Self, CubeMapCreateError> {
         // Create the image
         let format = crate::util::to_vk_format(create_info.format);
+        let qfi = qfi.queue_types_to_indices(create_info.queue_types);
         let image_create_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
@@ -55,7 +56,12 @@ impl CubeMap {
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(crate::util::to_vk_image_usage(create_info.texture_usage))
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .sharing_mode(if qfi.len() == 1 {
+                vk::SharingMode::EXCLUSIVE
+            } else {
+                crate::util::to_vk_sharing_mode(create_info.sharing_mode)
+            })
+            .queue_family_indices(&qfi)
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
             .build();
@@ -324,7 +330,7 @@ impl Drop for CubeMap {
             views: {
                 let face_views = std::mem::take(&mut self.face_views);
                 let mut views = std::mem::take(&mut self.views);
-                views.extend(face_views.into_iter());
+                views.extend(face_views);
                 views
             },
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },

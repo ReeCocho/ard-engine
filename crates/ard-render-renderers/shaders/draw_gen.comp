@@ -83,6 +83,14 @@ void main() {
 
     // Grab the object
     ObjectId obj = input_ids[object_index];
+
+    // If this object is transparent, we don't want to do culling because it could mess up the
+    // ordering of the draw calls. Instead, we just pass the ID directly along.
+    if (object_index >= consts.transparent_start) {
+        output_ids[object_index] = obj.data_idx;
+        return;
+    }
+
     uint draw_idx = obj.draw_idx[0];
     mat4 model = objects[obj.data_idx].model;
 
@@ -99,11 +107,39 @@ void main() {
     [[unroll]]
     for (int i = 0; i < 6; i++) { 
         if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
-            // return;
+            return;
         }
     }
 
-    // TODO: HZB occlusion culling
+    // Find the AABB of the object
+    BoundingBox bb = transform_bounding_box(
+        model, 
+        bounds_center, 
+        draw_calls[draw_idx].bounds.half_extents
+    );
+
+    // Determine the appropriate mip level to sample the HZB image
+    vec2 dbl_pixel_size = vec2(
+        bb.max_pt.x - bb.min_pt.x,
+        bb.max_pt.y - bb.min_pt.y
+    ) * consts.render_area;
+    float level = floor(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
+    
+    // Clip space to UV
+    bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);
+    bb.max_pt.y = 1.0 - bb.max_pt.y;
+
+    bb.min_pt = (bb.min_pt * 0.5) + vec2(0.5);
+    bb.min_pt.y = 1.0 - bb.min_pt.y;
+
+    // Determine depth (in world space)
+    float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
+    depth = camera.near_clip / depth;
+
+    // If our object is behind all local objects, cull
+    if (bb.depth > depth) {
+        return;
+    }
 
     // Insert the object into the output list and notify the associated call of the object
     uint model_offset = atomicAdd(draw_calls[draw_idx].instance_count, 1);

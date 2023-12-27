@@ -11,3 +11,5 @@ thiserror.workspace = true
 bitflags.workspace = true
 ordered-float.workspace = true
 raw-window-handle.workspace = true
+bytemuck.workspace = true
+unsafe_unwrap.workspace = true

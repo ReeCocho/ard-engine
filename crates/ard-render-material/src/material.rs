@@ -314,6 +314,14 @@ impl MaterialResource {
 
         Some(&self.variants[new_variant])
     }
+
+    /// Gets a particular variant of this material by ID.
+    ///
+    /// Returns `None` if the variant ID was invalid.
+    #[inline(always)]
+    pub fn get_variant_by_id(&self, id: u32) -> Option<&MaterialVariant> {
+        self.variants.get(id as usize)
+    }
 }
 
 impl From<GraphicsPipelineCreateError> for MaterialCreateError {

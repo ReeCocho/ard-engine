@@ -5,6 +5,7 @@ use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
 };
+use ard_render_lighting::{lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 use ard_render_objects::{objects::RenderObjects, Model, RenderFlags, RenderingMode};
@@ -61,6 +62,7 @@ impl RenderSystem {
                     frame: Frame::from(frame),
                     dirty_static: dirty_static.listen().to_all().build(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
+                    lights: Lights::new(render_ecs.ctx()),
                     active_cameras: ActiveCameras::default(),
                     job: None,
                     window_size,
@@ -88,6 +90,7 @@ impl RenderSystem {
     /// The render systems `tick` handler is responsible for signaling to the render ECS when
     /// a new frame should be rendered, and additionally preparing all the data that needs to be
     /// sent from the main ECS to the render ECS.
+    #[allow(clippy::type_complexity)]
     fn tick(
         &mut self,
         _: Tick,
@@ -97,6 +100,7 @@ impl RenderSystem {
             (
                 Read<Camera>,
                 Read<Mesh>,
+                Read<Light>,
                 Read<MaterialInstance>,
                 Read<Model>,
                 Read<RenderingMode>,
@@ -172,11 +176,13 @@ impl RenderSystem {
             Read<Disabled>,
         )>();
 
-        frame.object_data.upload_objects(
-            static_objs,
-            dynamic_objs,
-            frame.dirty_static.recv().is_some(),
-        );
+        let lights = queries.make::<(Entity, (Read<Light>, Read<Model>), Read<Disabled>)>();
+
+        frame
+            .object_data
+            .upload_objects(static_objs, dynamic_objs, &frame.dirty_static);
+
+        frame.lights.update(lights);
 
         // Prepare data for the render thread
         frame.window_size = (window.physical_width(), window.physical_height());

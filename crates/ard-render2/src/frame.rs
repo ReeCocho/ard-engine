@@ -3,6 +3,7 @@ use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_camera::active::ActiveCameras;
+use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
 
 /// Information used by the render system to draw things. This data is persisted between frames
@@ -16,6 +17,8 @@ pub struct FrameDataInner {
     pub job: Option<Job>,
     /// Object data captured from the primary ECS.
     pub object_data: RenderObjects,
+    /// Lights captured from the primary ECS.
+    pub lights: Lights,
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.
@@ -42,6 +45,6 @@ impl FrameDataRes {
 
     #[inline(always)]
     pub fn inner(&self) -> &FrameDataInner {
-        &self.0.as_ref().unwrap().as_ref()
+        self.0.as_ref().unwrap().as_ref()
     }
 }

@@ -5,6 +5,7 @@ use gpu_allocator::MemoryLocation;
 pub mod descriptor_pool;
 pub mod fast_int_hasher;
 pub mod garbage_collector;
+pub mod ownership;
 pub mod pipeline_cache;
 pub mod sampler_cache;
 pub mod semaphores;
@@ -307,6 +308,14 @@ pub(crate) fn to_vk_color_components(cc: ColorComponents) -> vk::ColorComponentF
         out |= vk::ColorComponentFlags::A;
     }
     out
+}
+
+#[inline(always)]
+pub(crate) fn to_vk_sharing_mode(sm: SharingMode) -> vk::SharingMode {
+    match sm {
+        SharingMode::Exclusive => vk::SharingMode::EXCLUSIVE,
+        SharingMode::Concurrent => vk::SharingMode::CONCURRENT,
+    }
 }
 
 #[inline(always)]

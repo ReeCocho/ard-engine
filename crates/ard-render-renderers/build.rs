@@ -19,4 +19,11 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/draw_compact.comp",
+        PathBuf::from(&out_dir).join("draw_compact.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

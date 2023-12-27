@@ -36,6 +36,7 @@
             (name: "position", ty: Vec4),
             (name: "near_clip", ty: F32),
             (name: "far_clip", ty: F32),
+            (name: "cluster_scale_bias", ty: Vec2),
         ]
     ),
     (
@@ -92,7 +93,32 @@
             (name: "first_index", ty: U32),
             (name: "vertex_offset", ty: I32),
             (name: "first_instance", ty: U32),
+            (name: "draw_bin", ty: U32),
+            (name: "bin_offset", ty: U32),
             (name: "bounds", ty: Struct("ObjectBounds")),
+        ]
+    ),
+    // Data used by point and spot lights.
+    (
+        name: "Light",
+        no_mangle: false,
+        fields: [
+            /// XYZ = Color       W = Intensity
+            (name: "color_intensity", ty: Vec4),
+            /// XYZ = Position    W = Range
+            (name: "position_range", ty: Vec4),
+            /// XYZ = Direction   W = Cosine of the half angle of the light
+            /// If radius is negative, the light is a point light.
+            (name: "direction_angle", ty: Vec4),
+        ]
+    ),
+    // Array used for light binning/clustering.
+    (
+        name: "LightTable",
+        no_mangle: false,
+        fields: [
+            (name: "counts", ty: Array(ty: Array(ty: Array(ty: U32, len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
+            (name: "clusters", ty: Array(ty: Array(ty: Array(ty: Array(ty: U32, len: "MAX_LIGHTS_PER_CLUSTER"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
         ]
     ),
     // PBR material info.
@@ -122,6 +148,25 @@
         fields: [
             (name: "render_area", ty: Vec2),
             (name: "object_count", ty: U32),
+            (name: "transparent_start", ty: U32),
+        ]
+    ),
+    // Push constants for draw call compaction.
+    (
+        name: "DrawCompactPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "base_draw_call", ty: U32),
+            (name: "draw_call_count", ty: U32),
+            (name: "transparent_start", ty: U32),
+        ]
+    ),
+    // Push constants used for light binning/clustering.
+    (
+        name: "LightClusteringPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "total_lights", ty: U32),
         ]
     )
 ]

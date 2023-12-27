@@ -125,7 +125,9 @@ impl<W: Write> RustSetsCodeGen<W> {
                 )
             }
             GpuBindingData::Ubo(_) => "DescriptorType::UniformBuffer".to_owned(),
-            GpuBindingData::Texture(_) => "DescriptorType::Texture".to_owned(),
+            GpuBindingData::Texture(_) | GpuBindingData::UnboundedTextureArray(_) => {
+                "DescriptorType::Texture".to_owned()
+            }
             GpuBindingData::StorageImage { access, .. } => {
                 format!(
                     "DescriptorType::StorageImage(AccessType::{:?})",
@@ -199,7 +201,7 @@ impl<W: Write> DescriptorSetCodeGen for RustSetsCodeGen<W> {
         for (i, name) in binding_consts.iter().enumerate() {
             writeln!(self.writer, "pub const {}: u32 = {};", name, i).unwrap();
         }
-        writeln!(self.writer, "").unwrap();
+        writeln!(self.writer).unwrap();
 
         // Create binding struct
         writeln!(self.writer, "pub struct {}Layout;\n", set_name).unwrap();

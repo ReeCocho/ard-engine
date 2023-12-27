@@ -5,8 +5,8 @@ use ard_log::warn;
 use ard_pal::prelude::{
     AnisotropyLevel, Blit, BlitDestination, BlitSource, Buffer, BufferTextureCopy, CommandBuffer,
     Context, DescriptorSet, DescriptorSetCreateInfo, DescriptorSetUpdate, DescriptorValue, Filter,
-    Format, MemoryUsage, Sampler, SamplerAddressMode, Texture, TextureCreateInfo, TextureType,
-    TextureUsage,
+    Format, MemoryUsage, QueueType, QueueTypes, Sampler, SamplerAddressMode, SharingMode, Texture,
+    TextureCreateInfo, TextureType, TextureUsage,
 };
 use ard_render_base::{
     ecs::Frame,
@@ -146,6 +146,25 @@ impl TextureFactory {
         // Hash set of already observed image ids so we don't double update
         let mut observed = FxHashSet::<ResourceId>::default();
 
+        // Replaced dropped textures with the error texture
+        self.dropped_textures[frame].drain(..).for_each(|id| {
+            if !observed.insert(id) {
+                return;
+            }
+
+            updates.push(DescriptorSetUpdate {
+                binding: 0,
+                array_element: usize::from(id),
+                value: DescriptorValue::Texture {
+                    texture: &self.error_tex,
+                    array_element: 0,
+                    sampler: DEFAULT_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            });
+        });
+
         // Write new textures to the set
         self.new_textures[frame].drain(..).for_each(|id| {
             if !observed.insert(id) {
@@ -208,52 +227,37 @@ impl TextureFactory {
                     };
 
                     let (base_mip, mip_count) = texture.loaded_mips();
-                        updates.push(DescriptorSetUpdate {
-                            binding: 0,
-                            array_element: usize::from(id),
-                            value: DescriptorValue::Texture {
-                                texture: &texture.texture,
-                                array_element: 0,
-                                sampler: Sampler {
-                                    min_filter: texture.sampler.min_filter,
-                                    mag_filter: texture.sampler.mag_filter,
-                                    mipmap_filter: texture.sampler.mipmap_filter,
-                                    address_u: texture.sampler.address_u,
-                                    address_v: texture.sampler.address_v,
-                                    address_w: SamplerAddressMode::ClampToEdge,
-                                    anisotropy: if texture.sampler.anisotropy {
-                                        self.anisotropy
-                                    } else {
-                                        None
-                                    },
-                                    compare: None,
-                                    min_lod: NotNan::new(0.0).unwrap(),
-                                    max_lod: None,
-                                    unnormalize_coords: false,
-                                    border_color: None,
+                    updates.push(DescriptorSetUpdate {
+                        binding: 0,
+                        array_element: usize::from(id),
+                        value: DescriptorValue::Texture {
+                            texture: &texture.texture,
+                            array_element: 0,
+                            sampler: Sampler {
+                                min_filter: texture.sampler.min_filter,
+                                mag_filter: texture.sampler.mag_filter,
+                                mipmap_filter: texture.sampler.mipmap_filter,
+                                address_u: texture.sampler.address_u,
+                                address_v: texture.sampler.address_v,
+                                address_w: SamplerAddressMode::ClampToEdge,
+                                anisotropy: if texture.sampler.anisotropy {
+                                    self.anisotropy
+                                } else {
+                                    None
                                 },
-                                base_mip: base_mip as usize,
-                                mip_count: mip_count as usize,
+                                compare: None,
+                                min_lod: NotNan::new(0.0).unwrap(),
+                                max_lod: None,
+                                unnormalize_coords: false,
+                                border_color: None,
                             },
-                        });
+                            base_mip: base_mip as usize,
+                            mip_count: mip_count as usize,
+                        },
+                    });
                 },
                 MipUpdate::CubeMap(_) => todo!(),
             }
-        });
-
-        // Replaced dropped textures with the error texture
-        self.dropped_textures[frame].drain(..).for_each(|id| {
-            updates.push(DescriptorSetUpdate {
-                binding: 0,
-                array_element: usize::from(id),
-                value: DescriptorValue::Texture {
-                    texture: &self.error_tex,
-                    array_element: 0,
-                    sampler: DEFAULT_SAMPLER,
-                    base_mip: 0,
-                    mip_count: 1,
-                },
-            });
         });
 
         // Perform the update
@@ -340,6 +344,8 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+
+        commands.transfer_texture_ownership(texture, 0, mip_level as usize, 1, QueueType::Main);
     }
 
     /// Records a command to upload a texture mip level.
@@ -371,11 +377,20 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+
+        commands.transfer_texture_ownership(
+            texture,
+            0,
+            upload.mip_level as usize,
+            1,
+            QueueType::Main,
+        );
     }
 
     fn create_error_texture(ctx: &Context) -> PalTexture {
         let staging = Buffer::new_staging(
             ctx.clone(),
+            QueueType::Transfer,
             Some("error_texture_staging".to_owned()),
             &[255u8, 0, 255, 255],
         )
@@ -393,6 +408,8 @@ impl TextureFactory {
                 mip_levels: 1,
                 texture_usage: TextureUsage::TRANSFER_DST | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::TRANSFER,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("error_texture".to_owned()),
             },
         )
@@ -413,6 +430,7 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+        commands.transfer_texture_ownership(&tex, 0, 0, 1, QueueType::Main);
         ctx.transfer()
             .submit(Some("error_texture_upload"), commands);
 

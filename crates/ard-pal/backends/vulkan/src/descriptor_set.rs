@@ -4,7 +4,7 @@ use api::{
         DescriptorSetLayoutCreateError, DescriptorSetLayoutCreateInfo, DescriptorSetUpdate,
         DescriptorType, DescriptorValue,
     },
-    types::{AccessType, ShaderStage},
+    types::{AccessType, QueueTypes, ShaderStage, SharingMode},
     Backend,
 };
 use ash::vk;
@@ -40,17 +40,25 @@ pub(crate) enum BoundValue {
     UniformBuffer {
         _ref_counter: BufferRefCounter,
         buffer: vk::Buffer,
+        queue_types: QueueTypes,
+        sharing_mode: SharingMode,
         array_element: usize,
+        aligned_size: usize,
     },
     StorageBuffer {
         _ref_counter: BufferRefCounter,
         buffer: vk::Buffer,
+        queue_types: QueueTypes,
+        sharing_mode: SharingMode,
         array_element: usize,
+        aligned_size: usize,
     },
     StorageImage {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
         view: vk::ImageView,
+        queue_types: QueueTypes,
+        sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
         mip: u32,
         array_element: usize,
@@ -59,7 +67,10 @@ pub(crate) enum BoundValue {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
         view: vk::ImageView,
+        queue_types: QueueTypes,
+        sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
+        base_mip: u32,
         mip_count: u32,
         array_element: usize,
     },
@@ -67,7 +78,10 @@ pub(crate) enum BoundValue {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
         view: vk::ImageView,
+        queue_types: QueueTypes,
+        sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
+        base_mip: u32,
         mip_count: u32,
         array_element: usize,
     },
@@ -209,7 +223,10 @@ impl DescriptorSet {
                         buffer,
                         array_element,
                     } => {
+                        let queue_types = buffer.queue_types();
+                        let sharing_mode = buffer.sharing_mode();
                         let buffer = buffer.internal();
+
                         buffers.push(
                             vk::DescriptorBufferInfo::builder()
                                 .buffer(buffer.buffer)
@@ -234,7 +251,10 @@ impl DescriptorSet {
                             value: BoundValue::UniformBuffer {
                                 _ref_counter: buffer.ref_counter.clone(),
                                 buffer: buffer.buffer,
+                                queue_types,
+                                sharing_mode,
                                 array_element: *array_element,
+                                aligned_size: buffer.aligned_size as usize,
                             },
                         }
                     }
@@ -242,7 +262,10 @@ impl DescriptorSet {
                         buffer,
                         array_element,
                     } => {
+                        let queue_types = buffer.queue_types();
+                        let sharing_mode = buffer.sharing_mode();
                         let buffer = buffer.internal();
+
                         buffers.push(
                             vk::DescriptorBufferInfo::builder()
                                 .buffer(buffer.buffer)
@@ -267,7 +290,10 @@ impl DescriptorSet {
                             value: BoundValue::StorageBuffer {
                                 _ref_counter: buffer.ref_counter.clone(),
                                 buffer: buffer.buffer,
+                                queue_types,
+                                sharing_mode,
                                 array_element: *array_element,
+                                aligned_size: buffer.aligned_size as usize,
                             },
                         }
                     }
@@ -278,6 +304,8 @@ impl DescriptorSet {
                         base_mip,
                         mip_count,
                     } => {
+                        let queue_types = texture.queue_types();
+                        let sharing_mode = texture.sharing_mode();
                         let texture = texture.internal();
 
                         // Create a view for the texture
@@ -326,9 +354,12 @@ impl DescriptorSet {
                             value: BoundValue::Texture {
                                 _ref_counter: texture.ref_counter.clone(),
                                 image: texture.image,
+                                queue_types,
+                                sharing_mode,
                                 view,
                                 aspect_mask: texture.aspect_flags,
-                                mip_count: texture.mip_count,
+                                mip_count: *mip_count as u32,
+                                base_mip: *base_mip as u32,
                                 array_element: *array_element,
                             },
                         }
@@ -338,6 +369,8 @@ impl DescriptorSet {
                         array_element,
                         mip,
                     } => {
+                        let queue_types = texture.queue_types();
+                        let sharing_mode = texture.sharing_mode();
                         let texture = texture.internal();
 
                         // Create a view for the texture
@@ -386,6 +419,8 @@ impl DescriptorSet {
                                 _ref_counter: texture.ref_counter.clone(),
                                 image: texture.image,
                                 view,
+                                queue_types,
+                                sharing_mode,
                                 aspect_mask: texture.aspect_flags,
                                 mip: *mip as u32,
                                 array_element: *array_element,
@@ -399,6 +434,8 @@ impl DescriptorSet {
                         base_mip,
                         mip_count,
                     } => {
+                        let queue_types = cube_map.queue_types();
+                        let sharing_mode = cube_map.sharing_mode();
                         let cube_map = cube_map.internal();
 
                         // Create a view for the texture
@@ -448,8 +485,11 @@ impl DescriptorSet {
                                 _ref_counter: cube_map.ref_counter.clone(),
                                 image: cube_map.image,
                                 view,
+                                queue_types,
+                                sharing_mode,
                                 aspect_mask: cube_map.aspect_flags,
-                                mip_count: cube_map.mip_count,
+                                mip_count: *mip_count as u32,
+                                base_mip: *base_mip as u32,
                                 array_element: *array_element,
                             },
                         }

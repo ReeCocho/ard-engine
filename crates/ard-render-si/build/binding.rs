@@ -26,6 +26,7 @@ pub enum GpuBindingData {
     },
     Ubo(GpuStructField),
     Texture(String),
+    UnboundedTextureArray(String),
     StorageImage {
         field_name: String,
         restrict: bool,
@@ -89,7 +90,7 @@ impl GpuBinding {
 }
 
 impl GpuStorageImageFormat {
-    pub fn to_glsl(&self) -> &'static str {
+    pub fn to_glsl(self) -> &'static str {
         match self {
             GpuStorageImageFormat::R16F => "r16f",
             GpuStorageImageFormat::R32F => "r32f",
@@ -98,7 +99,7 @@ impl GpuStorageImageFormat {
 }
 
 impl GpuSsboAccessType {
-    pub fn to_pal_access_type(&self) -> AccessType {
+    pub fn to_pal_access_type(self) -> AccessType {
         match self {
             GpuSsboAccessType::ReadOnly => AccessType::Read,
             GpuSsboAccessType::WriteOnly => AccessType::ReadWrite,

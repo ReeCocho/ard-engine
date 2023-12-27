@@ -166,7 +166,7 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
                 )
                 .unwrap();
             }
-            GpuBindingData::Texture(_) => {
+            GpuBindingData::Texture(_) | GpuBindingData::UnboundedTextureArray(_) => {
                 write!(
                     self.writer,
                     "layout(set = {}, binding = {}) ",
@@ -242,6 +242,9 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
             }
             GpuBindingData::Texture(field_name) => {
                 writeln!(self.writer, "uniform sampler2D {field_name};\n").unwrap();
+            }
+            GpuBindingData::UnboundedTextureArray(field_name) => {
+                writeln!(self.writer, "uniform sampler2D {field_name}[];\n").unwrap();
             }
             GpuBindingData::StorageImage {
                 field_name,

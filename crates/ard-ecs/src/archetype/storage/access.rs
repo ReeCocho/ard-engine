@@ -143,7 +143,7 @@ impl<T: Component + 'static> StorageBufferAccess for WriteStorageBuffer<T> {
                     )
                 }
             } else {
-                unsafe { NonNull::new_unchecked(ptr as *mut T) }
+                unsafe { NonNull::new_unchecked(ptr) }
             },
         }
     }

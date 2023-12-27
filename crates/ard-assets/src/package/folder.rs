@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use crossbeam_utils::sync::{ShardedLock, ShardedLockReadGuard, ShardedLockWriteGuard};
-use path_slash::{PathBufExt, PathExt};
+use path_slash::PathBufExt;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -62,7 +62,7 @@ impl PackageInterface for FolderPackage {
         }
     }
 
-    async fn read(&self, file: &Path) -> Result<Vec<u8>, PackageReadError> {
+    async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
         let file: PathBuf = file.to_slash().unwrap().to_string().into();
 
@@ -86,7 +86,7 @@ impl PackageInterface for FolderPackage {
         Ok(contents)
     }
 
-    async fn read_str(&self, file: &Path) -> Result<String, PackageReadError> {
+    async fn read_str(&self, file: PathBuf) -> Result<String, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
         let file: PathBuf = file.to_slash().unwrap().to_string().into();
 

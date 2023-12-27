@@ -38,7 +38,9 @@ ard-render-material = { path = "./crates/ard-render-material" }
 ard-render-meshes = { path = "./crates/ard-render-meshes" }
 ard-render-pbr = { path = "./crates/ard-render-pbr" }
 ard-render-objects = { path = "./crates/ard-render-objects" }
+ard-render-lighting = { path = "./crates/ard-render-lighting" }
 ard-render2 = { path = "./crates/ard-render2" }
+ard-render-assets = { path = "./crates/ard-render-assets" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
 
 [workspace.dependencies]
@@ -58,6 +60,7 @@ futures = { version = "0.3" }
 fxhash = { version = "0.2" }
 gltf = { version = "1", features = ["KHR_lights_punctual"] }
 image = { version = "0.24" }
+itertools = { version = "0.11.0" }
 num_cpus = { version = "1" }
 paste = { version = "1" }
 ordered-float = { version = "3" }
@@ -80,8 +83,17 @@ tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", 
 rand = "0.8"
 egui = { version = "0.22", features = ["bytemuck"] }
 
-[profile.release]
+[profile.opt-dev]
+inherits = "dev"
 debug = 1
-# lto = "fat"
+opt-level = 3
+incremental = true
+
+[profile.release]
+debug = 0
+strip = "debuginfo"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
 panic = "abort"
 incremental = true

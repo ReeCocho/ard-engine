@@ -77,7 +77,7 @@ fn gen_types(output_dir: impl Into<PathBuf>, types_file: impl Into<PathBuf>) {
             .unwrap(),
     );
 
-    let glsl_path = PathBuf::from(output_dir).join("glsl/ard_types.glsl");
+    let glsl_path = output_dir.join("glsl/ard_types.glsl");
 
     let mut glsl_code_gen = GlslStructCodeGen::new(
         std::fs::OpenOptions::new()
@@ -129,7 +129,7 @@ fn gen_consts(output_dir: impl Into<PathBuf>, consts_file: impl Into<PathBuf>) {
             .unwrap(),
     );
 
-    let glsl_path = PathBuf::from(output_dir).join("glsl/ard_consts.glsl");
+    let glsl_path = output_dir.join("glsl/ard_consts.glsl");
 
     let mut glsl_code_gen = GlslConstantsCodeGen::new(
         std::fs::OpenOptions::new()

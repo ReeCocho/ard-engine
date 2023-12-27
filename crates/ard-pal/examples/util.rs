@@ -23,12 +23,15 @@ pub fn create_triangle(ctx: &Context) -> MeshBuffers {
                 array_elements: 1,
                 buffer_usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("triangle_vertex_buffer")),
             },
         )
         .unwrap(),
         vertex_staging: Buffer::new_staging(
             ctx.clone(),
+            QueueType::Main,
             Some(String::from("triangle_vertex_staging")),
             bytemuck::cast_slice(&VERTICES),
         )
@@ -40,12 +43,15 @@ pub fn create_triangle(ctx: &Context) -> MeshBuffers {
                 array_elements: 1,
                 buffer_usage: BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("triangle_index_buffer")),
             },
         )
         .unwrap(),
         index_staging: Buffer::new_staging(
             ctx.clone(),
+            QueueType::Main,
             Some(String::from("triangle_index_staging")),
             bytemuck::cast_slice(&INDICES),
         )
@@ -83,12 +89,15 @@ pub fn create_cube(ctx: &Context) -> MeshBuffers {
                 array_elements: 1,
                 buffer_usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("cube_vertex_buffer")),
             },
         )
         .unwrap(),
         vertex_staging: Buffer::new_staging(
             ctx.clone(),
+            QueueType::Main,
             Some(String::from("cube_vertex_staging")),
             bytemuck::cast_slice(&VERTICES),
         )
@@ -100,12 +109,15 @@ pub fn create_cube(ctx: &Context) -> MeshBuffers {
                 array_elements: 1,
                 buffer_usage: BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("cube_index_buffer")),
             },
         )
         .unwrap(),
         index_staging: Buffer::new_staging(
             ctx.clone(),
+            QueueType::Main,
             Some(String::from("cube_index_staging")),
             bytemuck::cast_slice(&INDICES),
         )

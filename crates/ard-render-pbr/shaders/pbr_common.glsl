@@ -1,6 +1,18 @@
 #ifndef _ARD_PBR_COMMON
 #define _ARD_PBR_COMMON
 
+#ifdef VERTEX_SHADER
+    #include "pbr_common.vs.glsl"
+#endif
+
+#ifdef FRAGMENT_SHADER
+    #include "pbr_common.fs.glsl"
+#endif
+
+/////////////////
+/// CONSTANTS ///
+/////////////////
+
 const float PI = 3.14159265359;
 
 /// Trowbridge-Reitz GGZ normal distribution function for approximating surface area of 
@@ -70,5 +82,54 @@ vec3 fresnel_schlick(float NdotH, vec3 F0) {
 vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }  
+
+/// Get the cluster ID for the given screen coordinate.
+ivec3 get_cluster_id(vec4 vpos) {
+    vec2 uv = (vpos.xy / vpos.w) * vec2(0.5) + vec2(0.5);
+    float depth = (vpos.w * camera.near_clip) / vpos.z;
+    return ivec3(
+        clamp(int(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
+        clamp(int(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
+        clamp(
+            int(log(depth) * camera.cluster_scale_bias.x - camera.cluster_scale_bias.y), 
+            0,
+            CAMERA_FROXELS_DEPTH - 1
+        )
+    );
+}
+
+#ifdef VERTEX_SHADER
+    #define ard_ObjectId (object_ids[gl_InstanceIndex])
+#endif
+
+#define ard_ModelMatrix(ID) (object_data[ID].model)
+#define ard_NormalMatrix(ID) (object_data[ID].normal)
+#define ard_TextureSlot(ID) (object_data[ID].textures)
+#define ard_MaterialSlot(ID) (object_data[ID].material)
+
+/// Bindless texture sampling.
+#ifdef ARD_TEXTURE_COUNT
+
+/// Samples a texture at a given slot. If the texture is unbound, the provided default will be 
+/// returned.
+vec4 sample_texture_default(uint slot, vec2 uv, vec4 def) {
+    const uint tex = texture_slots[vs_TextureSlotsIdx][slot];
+    const vec4 tex_val = texture(textures[tex], uv);
+    return mix(tex_val, def, float(tex == EMPTY_TEXTURE_ID));
+}
+
+/// Samples a texture at a given slot. Will return `vec4(0)` if the texture is unbound.
+vec4 sample_texture(uint slot, vec2 uv) {
+    return sample_texture_default(slot, uv, vec4(0));
+}
+
+#endif
+
+/// Bindless material data.
+#ifdef ArdMaterialData
+ArdMaterialData get_material_data() {
+    return material_data[vs_MaterialDataSlotIdx];
+}
+#endif
 
 #endif

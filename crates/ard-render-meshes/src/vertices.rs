@@ -22,15 +22,15 @@ pub struct VertexAttributeMismatchingLen;
 impl<'a> VertexSource for VertexAttributes<'a> {
     type Error = VertexAttributeMismatchingLen;
 
-    fn into_vertex_data(&self) -> Result<VertexData, Self::Error> {
+    fn into_vertex_data(self) -> Result<VertexData, Self::Error> {
         let len = self.positions.len();
         if self.normals.len() != len {
             return Err(VertexAttributeMismatchingLen);
         }
 
         let mut builder = VertexDataBuilder::new(self.layout(), self.positions.len())
-            .add_positions(&self.positions)
-            .add_vec4_normals(&self.normals);
+            .add_positions(self.positions)
+            .add_vec4_normals(self.normals);
 
         if let Some(tangents) = &self.tangents {
             builder = builder.add_vec4_tangents(tangents);

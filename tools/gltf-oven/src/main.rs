@@ -3,14 +3,14 @@ use std::ops::Div;
 use std::path::{Path, PathBuf};
 
 use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
-use ard_formats::mesh::{MeshHeader, VertexLayout};
+use ard_formats::mesh::{IndexData, MeshHeader, VertexDataBuilder, VertexLayout};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
-use ard_formats::texture::{Sampler, TextureHeader};
-use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfModel, GltfTexture};
+use ard_formats::texture::{Sampler, TextureData, TextureHeader};
+use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfTexture};
 use ard_math::{Mat4, Vec4};
+use ard_pal::prelude::Format;
 use clap::Parser;
 use image::GenericImageView;
-use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -53,17 +53,13 @@ fn main() {
 
     // Parse the model
     println!("Parsing model...");
-    let mut model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
+    let model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
     std::mem::drop(bin);
-
-    // Fix GLTF handedness
-    fix_gltf(&mut model);
 
     // Construct the model header and save it
     println!("Constructing header...");
     let header = create_header(&args, &model);
-    let mut header_path = out_path.clone();
-    header_path.push("header");
+    let header_path = ModelHeader::header_path(out_path.clone());
     let mut file = std::fs::File::create(header_path).unwrap();
     bincode::serialize_into(&mut file, &header).unwrap();
     std::mem::drop(file);
@@ -75,39 +71,6 @@ fn main() {
         || save_mesh_groups(&args, &out_path, &model.mesh_groups),
         || save_textures(&args, &out_path, &model.textures),
     );
-}
-
-fn fix_gltf(model: &mut GltfModel) {
-    model.mesh_groups.par_iter_mut().for_each(|mesh_group| {
-        mesh_group.0.par_iter_mut().for_each(|mesh_instance| {
-
-            /*
-            // Reverse Z direction
-            for position in &mut mesh_instance.mesh.positions {
-                position.z = -position.z;
-            }
-
-            if let Some(normals) = &mut mesh_instance.mesh.normals {
-                for normal in normals {
-                    normal.z = -normal.z;
-                }
-            }
-
-            if let Some(tangents) = &mut mesh_instance.mesh.tangents {
-                for tangent in tangents {
-                    tangent.z = -tangent.z;
-                }
-            }
-
-            // Reverse face of triangle to preserve front-face
-            mesh_instance.mesh.indices.chunks_exact_mut(3).for_each(|triangle| {
-                let p0 = triangle[0];
-                triangle[0] = triangle[1];
-                triangle[1] = p0;
-            });
-            */
-        })
-    });
 }
 
 fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
@@ -182,7 +145,7 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
     for mesh_group in &gltf.mesh_groups {
         let mut instances = Vec::with_capacity(mesh_group.0.len());
         for instance in &mesh_group.0 {
-            let mut vertex_layout = VertexLayout::empty();
+            let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
 
             if instance.mesh.tangents.is_some() {
                 vertex_layout |= VertexLayout::TANGENT;
@@ -249,6 +212,7 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
                 mipmap_filter: texture.sampler.mipmap_filter,
                 address_u: texture.sampler.address_u,
                 address_v: texture.sampler.address_v,
+                anisotropy: true,
             },
         });
     }
@@ -297,10 +261,9 @@ fn save_mesh_groups(args: &Args, out: &Path, mesh_groups: &[GltfMeshGroup]) {
             // Save each mesh
             mesh_group.0.par_iter().enumerate().for_each(|(j, mesh)| {
                 println!("Saving mesh {i}.{j}");
-                let mut mesh_path = mg_path.clone();
-                mesh_path.push(j.to_string());
-                fs::create_dir_all(&mesh_path).unwrap();
-                save_mesh(args, &mesh_path, &mesh.mesh);
+                let mesh_instance_path = ModelHeader::mesh_instance_path(out, i, j);
+                fs::create_dir_all(&mesh_instance_path).unwrap();
+                save_mesh(args, &mesh_instance_path, &mesh.mesh);
             });
         });
 }
@@ -309,49 +272,83 @@ fn save_mesh(_args: &Args, out: &Path, mesh: &GltfMesh) {
     rayon::join(
         // Save indices
         || {
-            let mut indices_path = PathBuf::from(out);
-            indices_path.push("indices");
-            fs::write(&indices_path, bytemuck::cast_slice(&mesh.indices)).unwrap();
+            let indices_path = MeshHeader::index_path(out);
+            let index_data = IndexData::new(&mesh.indices);
+            fs::write(&indices_path, bincode::serialize(&index_data).unwrap()).unwrap();
         },
         // Save vertices
         || {
-            let mut vertices_path = PathBuf::from(out);
-            vertices_path.push("vertices");
+            let vertices_path = MeshHeader::vertex_path(out);
 
-            // Combine vertices into a single big buffer
-            let mut combined = Vec::<u8>::default();
-            combined.extend_from_slice(bytemuck::cast_slice(&mesh.positions));
+            let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
 
-            if let Some(normals) = &mesh.normals {
-                combined.extend_from_slice(bytemuck::cast_slice(&normals));
+            if mesh.tangents.is_some() {
+                vertex_layout |= VertexLayout::TANGENT;
             }
 
+            if mesh.colors.is_some() {
+                vertex_layout |= VertexLayout::COLOR;
+            }
+
+            if mesh.uv0.is_some() {
+                vertex_layout |= VertexLayout::UV0;
+            }
+
+            if mesh.uv1.is_some() {
+                vertex_layout |= VertexLayout::UV1;
+            }
+
+            if mesh.uv2.is_some() {
+                vertex_layout |= VertexLayout::UV2;
+            }
+
+            if mesh.uv3.is_some() {
+                vertex_layout |= VertexLayout::UV3;
+            }
+
+            // Build vertex data
+            let mut vertices = VertexDataBuilder::new(vertex_layout, mesh.positions.len());
+
+            vertices = vertices.add_positions(&mesh.positions);
+
+            vertices = match &mesh.normals {
+                Some(normals) => vertices.add_vec4_normals(normals),
+                None => {
+                    println!("WARNING: Vertices at {vertices_path:?} are missing normals. Generating dummy normals...");
+                    vertices.add_vec4_normals(&vec![
+                        Vec4::new(0.0, 0.0, 1.0, 0.0);
+                        mesh.positions.len()
+                    ])
+                }
+            };
+
             if let Some(tangents) = &mesh.tangents {
-                combined.extend_from_slice(bytemuck::cast_slice(&tangents));
+                vertices = vertices.add_vec4_tangents(&tangents);
             }
 
             if let Some(colors) = &mesh.colors {
-                combined.extend_from_slice(bytemuck::cast_slice(&colors));
+                vertices = vertices.add_vec4_colors(&colors);
             }
 
             if let Some(uv0) = &mesh.uv0 {
-                combined.extend_from_slice(bytemuck::cast_slice(&uv0));
+                vertices = vertices.add_vec2_uvs(&uv0, 0);
             }
 
             if let Some(uv1) = &mesh.uv1 {
-                combined.extend_from_slice(bytemuck::cast_slice(&uv1));
+                vertices = vertices.add_vec2_uvs(&uv1, 1);
             }
 
             if let Some(uv2) = &mesh.uv2 {
-                combined.extend_from_slice(bytemuck::cast_slice(&uv2));
+                vertices = vertices.add_vec2_uvs(&uv2, 2);
             }
 
             if let Some(uv3) = &mesh.uv3 {
-                combined.extend_from_slice(bytemuck::cast_slice(&uv3));
+                vertices = vertices.add_vec2_uvs(&uv3, 3);
             }
 
             // Save the buffer
-            fs::write(&vertices_path, combined).unwrap();
+            let raw = bincode::serialize(&vertices.build()).unwrap();
+            fs::write(&vertices_path, raw).unwrap();
         },
     );
 }
@@ -362,9 +359,7 @@ fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
         println!("Saving texture {i}");
 
         // Path to the folder for the texture
-        let mut tex_path = PathBuf::from(out);
-        tex_path.push("textures");
-        tex_path.push(i.to_string());
+        let tex_path = ModelHeader::texture_path(out, i);
 
         // Create the texture path if it doesn't exist
         fs::create_dir_all(&tex_path).unwrap();
@@ -399,10 +394,20 @@ fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
                 );
             }
 
+            let tex_data = TextureData::new(
+                bytes,
+                width,
+                height,
+                if compress {
+                    Format::BC7Srgb
+                } else {
+                    Format::Rgba8Srgb
+                },
+            );
+
             // Save the file to disk
-            let mut mip_path = tex_path.clone();
-            mip_path.push(mip.to_string());
-            fs::write(mip_path, bytes).unwrap();
+            let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
+            fs::write(mip_path, bincode::serialize(&tex_data).unwrap()).unwrap();
 
             // Downsample the image for the next mip
             if mip != mip_count - 1 {

@@ -37,7 +37,7 @@ impl<T: Asset> Handle<T> {
         Self {
             raw,
             escaper: Arc::new(HandleEscaper { assets, id }),
-            _phantom: std::marker::PhantomData::default(),
+            _phantom: std::marker::PhantomData,
         }
     }
 

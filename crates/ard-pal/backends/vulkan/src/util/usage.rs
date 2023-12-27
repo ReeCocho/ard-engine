@@ -1,32 +1,49 @@
 use std::collections::{hash_map::Iter, HashMap};
 
-use api::types::QueueType;
+use api::types::{QueueType, QueueTypes, SharingMode};
 use ash::vk;
 use fxhash::FxHashMap;
 
+use crate::QueueFamilyIndices;
+
 use super::fast_int_hasher::FIHashMap;
 
-/// This keeps track of which queues and when buffers and images are used in. Additionally, it
+/// This keeps track of when and which queues buffers and images are used in. Additionally, it
 /// keeps track of the layouts of images on a per-mip level.
 #[derive(Default)]
 pub(crate) struct GlobalResourceUsage {
     sets: FIHashMap<vk::DescriptorSet, QueueUsage>,
-    /// Buffer + array element.
-    buffers: FxHashMap<(vk::Buffer, u32), QueueUsage>,
-    /// Texture + array element.
-    images: FxHashMap<(vk::Image, u32), QueueUsage>,
-    /// Texture + array element + mip level.
-    image_layouts: FxHashMap<(vk::Image, u32, u32), vk::ImageLayout>,
+    buffers: FxHashMap<BufferRegion, QueueUsage>,
+    images: FxHashMap<ImageRegion, QueueUsage>,
+    image_layouts: FxHashMap<ImageRegion, vk::ImageLayout>,
+}
+
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub(crate) struct BufferRegion {
+    pub buffer: vk::Buffer,
+    pub array_elem: u32,
+}
+
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub(crate) struct ImageRegion {
+    pub image: vk::Image,
+    pub array_elem: u32,
+    pub mip_level: u32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct QueueUsage {
+    /// Which queue is using the resource.
     pub queue: QueueType,
+    /// The timeline value the `queue` must reach before the resource is released.
     pub timeline_value: u64,
+    /// If the resource is being released, indicates which queue must reaquire the resource.
+    pub reaquire: Option<QueueType>,
 }
 
 pub(crate) struct PipelineTracker<'a> {
     global: &'a mut GlobalResourceUsage,
+    qfi: &'a QueueFamilyIndices,
     queue_ty: QueueType,
     next_value: u64,
     usages: FxHashMap<SubResource, SubResourceUsage>,
@@ -53,19 +70,26 @@ pub(crate) enum SubResource {
     },
     Buffer {
         buffer: vk::Buffer,
+        queue_types: QueueTypes,
+        aligned_size: usize,
         array_elem: u32,
+        sharing: SharingMode,
     },
     Texture {
         texture: vk::Image,
+        queue_types: QueueTypes,
         aspect_mask: vk::ImageAspectFlags,
         array_elem: u32,
         mip_level: u32,
+        sharing: SharingMode,
     },
     CubeMap {
         cube_map: vk::Image,
+        queue_types: QueueTypes,
         aspect_mask: vk::ImageAspectFlags,
         array_elem: u32,
         mip_level: u32,
+        sharing: SharingMode,
     },
 }
 
@@ -78,6 +102,14 @@ pub(crate) struct PipelineBarrier {
 }
 
 impl GlobalResourceUsage {
+    #[inline(always)]
+    pub fn get_layout(&self, region: &ImageRegion) -> vk::ImageLayout {
+        *self
+            .image_layouts
+            .get(region)
+            .unwrap_or(&vk::ImageLayout::UNDEFINED)
+    }
+
     #[inline(always)]
     pub fn register_set(
         &mut self,
@@ -93,62 +125,55 @@ impl GlobalResourceUsage {
     #[inline(always)]
     pub fn register_buffer(
         &mut self,
-        buffer: vk::Buffer,
-        array_elem: u32,
+        region: BufferRegion,
         usage: Option<QueueUsage>,
     ) -> Option<QueueUsage> {
         match usage {
-            Some(usage) => self.buffers.insert((buffer, array_elem), usage),
-            None => self.buffers.remove(&(buffer, array_elem)),
+            Some(usage) => self.buffers.insert(region, usage),
+            None => self.buffers.remove(&region),
         }
     }
 
     #[inline(always)]
     pub fn register_image(
         &mut self,
-        image: vk::Image,
-        array_elem: u32,
+        region: ImageRegion,
         usage: Option<QueueUsage>,
     ) -> Option<QueueUsage> {
         match usage {
-            Some(usage) => self.images.insert((image, array_elem), usage),
-            None => self.images.remove(&(image, array_elem)),
+            Some(usage) => self.images.insert(region, usage),
+            None => self.images.remove(&region),
         }
     }
 
     #[inline(always)]
     pub fn register_layout(
         &mut self,
-        image: vk::Image,
-        array_elem: u32,
-        mip_level: u32,
+        region: ImageRegion,
         layout: vk::ImageLayout,
     ) -> vk::ImageLayout {
         self.image_layouts
-            .insert((image, array_elem, mip_level), layout)
+            .insert(region, layout)
             .unwrap_or(vk::ImageLayout::UNDEFINED)
     }
 
     #[inline(always)]
-    pub fn set_layout(
-        &mut self,
-        image: vk::Image,
-        array_elem: u32,
-        mip_level: u32,
-        layout: vk::ImageLayout,
-    ) {
-        *self
-            .image_layouts
-            .entry((image, array_elem, mip_level))
-            .or_default() = layout;
+    pub fn set_layout(&mut self, region: ImageRegion, layout: vk::ImageLayout) {
+        *self.image_layouts.entry(region).or_default() = layout;
     }
 }
 
 impl<'a> PipelineTracker<'a> {
     #[inline(always)]
-    pub fn new(global: &'a mut GlobalResourceUsage, queue_ty: QueueType, next_value: u64) -> Self {
+    pub fn new(
+        global: &'a mut GlobalResourceUsage,
+        qfi: &'a QueueFamilyIndices,
+        queue_ty: QueueType,
+        next_value: u64,
+    ) -> Self {
         Self {
             global,
+            qfi,
             queue_ty,
             next_value,
             usages: HashMap::default(),
@@ -184,45 +209,99 @@ impl<'a> PipelineTracker<'a> {
             let resc_usage = QueueUsage {
                 queue: self.queue_ty,
                 timeline_value: self.next_value,
+                reaquire: None,
             };
-            let (old_queue_usage, old_layout) = match &resource {
+            let (old_queue_usage, old_layout, queue_types, sharing) = match &resource {
                 SubResource::Set { set } => (
                     self.global.register_set(*set, Some(resc_usage)),
                     vk::ImageLayout::UNDEFINED,
+                    QueueTypes::all(),
+                    SharingMode::Concurrent,
                 ),
-                SubResource::Buffer { buffer, array_elem } => (
-                    self.global
-                        .register_buffer(*buffer, *array_elem, Some(resc_usage)),
+                SubResource::Buffer {
+                    buffer,
+                    array_elem,
+                    queue_types,
+                    sharing,
+                    ..
+                } => (
+                    self.global.register_buffer(
+                        BufferRegion {
+                            buffer: *buffer,
+                            array_elem: *array_elem,
+                        },
+                        Some(resc_usage),
+                    ),
                     vk::ImageLayout::UNDEFINED,
+                    *queue_types,
+                    *sharing,
                 ),
                 SubResource::Texture {
                     texture,
                     array_elem,
                     mip_level,
+                    queue_types,
+                    sharing,
                     ..
                 } => (
-                    self.global
-                        .register_image(*texture, *array_elem, Some(resc_usage)),
-                    self.global
-                        .register_layout(*texture, *array_elem, *mip_level, usage.layout),
+                    self.global.register_image(
+                        ImageRegion {
+                            image: *texture,
+                            array_elem: *array_elem,
+                            mip_level: *mip_level,
+                        },
+                        Some(resc_usage),
+                    ),
+                    self.global.register_layout(
+                        ImageRegion {
+                            image: *texture,
+                            array_elem: *array_elem,
+                            mip_level: *mip_level,
+                        },
+                        usage.layout,
+                    ),
+                    *queue_types,
+                    *sharing,
                 ),
                 SubResource::CubeMap {
                     cube_map,
                     array_elem,
                     mip_level,
+                    queue_types,
+                    sharing,
                     ..
                 } => (
-                    self.global
-                        .register_image(*cube_map, *array_elem, Some(resc_usage)),
-                    self.global
-                        .register_layout(*cube_map, *array_elem, *mip_level, usage.layout),
+                    self.global.register_image(
+                        ImageRegion {
+                            image: *cube_map,
+                            array_elem: *array_elem,
+                            mip_level: *mip_level,
+                        },
+                        Some(resc_usage),
+                    ),
+                    self.global.register_layout(
+                        ImageRegion {
+                            image: *cube_map,
+                            array_elem: *array_elem,
+                            mip_level: *mip_level,
+                        },
+                        usage.layout,
+                    ),
+                    *queue_types,
+                    *sharing,
                 ),
             };
+
+            // Ensure that this resource can be accessed by this queue type
+            assert!(queue_types.contains(self.queue_ty.into()));
 
             // If we have mismatching layouts, a couple things happen:
             // 1. A barrier is needed
             // 2. We need the transfer stage
             let mut needs_barrier = false;
+            let mut src_qfi;
+            let mut dst_qfi = self.qfi.to_index(self.queue_ty);
+
             if old_layout != usage.layout {
                 needs_barrier = true;
                 usage.access |= vk::AccessFlags::TRANSFER_WRITE | vk::AccessFlags::TRANSFER_READ;
@@ -232,12 +311,26 @@ impl<'a> PipelineTracker<'a> {
             // Check if this resource was last used by a queue other than us
             if let Some(old_queue_usage) = old_queue_usage {
                 if old_queue_usage.queue != self.queue_ty {
+                    // Mark which stage needs to wait on the previous queue
                     let entry = self
                         .queues
                         .entry(old_queue_usage.queue)
                         .or_insert(vk::PipelineStageFlags::empty());
                     *entry |= usage.stage;
                 }
+
+                src_qfi = self.qfi.to_index(old_queue_usage.queue);
+            } else {
+                src_qfi = vk::QUEUE_FAMILY_EXTERNAL;
+            }
+
+            // If the families are the same, or we don't need exclusive access, ownership transfer
+            // is not needed
+            if src_qfi == dst_qfi || sharing != SharingMode::Exclusive {
+                src_qfi = vk::QUEUE_FAMILY_IGNORED;
+                dst_qfi = vk::QUEUE_FAMILY_IGNORED;
+            } else {
+                needs_barrier = true;
             }
 
             let (src_access, src_stage) = match self.usages.get_mut(&resource) {
@@ -257,17 +350,22 @@ impl<'a> PipelineTracker<'a> {
 
             if needs_barrier {
                 match resource {
-                    SubResource::Buffer { buffer, array_elem } => {
+                    SubResource::Buffer {
+                        buffer,
+                        array_elem,
+                        aligned_size,
+                        ..
+                    } => {
                         buffer_barriers.insert(
                             (buffer, array_elem),
                             vk::BufferMemoryBarrier::builder()
                                 .src_access_mask(src_access)
                                 .dst_access_mask(usage.access)
-                                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                                .src_queue_family_index(src_qfi)
+                                .dst_queue_family_index(dst_qfi)
                                 .buffer(buffer)
-                                .offset(0)
-                                .size(vk::WHOLE_SIZE)
+                                .offset((aligned_size * array_elem as usize) as vk::DeviceSize)
+                                .size(aligned_size as vk::DeviceSize)
                                 .build(),
                         );
                     }
@@ -276,6 +374,7 @@ impl<'a> PipelineTracker<'a> {
                         array_elem,
                         mip_level,
                         aspect_mask,
+                        ..
                     } => {
                         image_barriers.insert(
                             (texture, array_elem, mip_level),
@@ -284,8 +383,8 @@ impl<'a> PipelineTracker<'a> {
                                 .dst_access_mask(usage.access)
                                 .old_layout(old_layout)
                                 .new_layout(usage.layout)
-                                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                                .src_queue_family_index(src_qfi)
+                                .dst_queue_family_index(dst_qfi)
                                 .image(texture)
                                 .subresource_range(vk::ImageSubresourceRange {
                                     aspect_mask,
@@ -302,6 +401,7 @@ impl<'a> PipelineTracker<'a> {
                         aspect_mask,
                         array_elem,
                         mip_level,
+                        ..
                     } => {
                         image_barriers.insert(
                             (cube_map, array_elem, mip_level),
@@ -310,8 +410,8 @@ impl<'a> PipelineTracker<'a> {
                                 .dst_access_mask(usage.access)
                                 .old_layout(old_layout)
                                 .new_layout(usage.layout)
-                                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                                .src_queue_family_index(src_qfi)
+                                .dst_queue_family_index(dst_qfi)
                                 .image(cube_map)
                                 .subresource_range(vk::ImageSubresourceRange {
                                     aspect_mask,

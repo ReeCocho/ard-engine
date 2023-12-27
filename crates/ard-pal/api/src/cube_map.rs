@@ -9,6 +9,8 @@ pub struct CubeMapCreateInfo {
     pub mip_levels: usize,
     pub texture_usage: TextureUsage,
     pub memory_usage: MemoryUsage,
+    pub queue_types: QueueTypes,
+    pub sharing_mode: SharingMode,
     pub debug_name: Option<String>,
 }
 
@@ -22,6 +24,8 @@ pub struct CubeMap<B: Backend> {
     ctx: Context<B>,
     dim: u32,
     mip_count: usize,
+    queue_types: QueueTypes,
+    sharing_mode: SharingMode,
     pub(crate) id: B::CubeMap,
 }
 
@@ -32,11 +36,15 @@ impl<B: Backend> CubeMap<B> {
     ) -> Result<Self, CubeMapCreateError> {
         let size = create_info.size;
         let mip_count = create_info.mip_levels;
+        let queue_types = create_info.queue_types;
+        let sharing_mode = create_info.sharing_mode;
         let id = unsafe { ctx.0.create_cube_map(create_info)? };
         Ok(Self {
             ctx,
             dim: size,
             mip_count,
+            queue_types,
+            sharing_mode,
             id,
         })
     }
@@ -44,6 +52,16 @@ impl<B: Backend> CubeMap<B> {
     #[inline(always)]
     pub fn internal(&self) -> &B::CubeMap {
         &self.id
+    }
+
+    #[inline(always)]
+    pub fn queue_types(&self) -> QueueTypes {
+        self.queue_types
+    }
+
+    #[inline(always)]
+    pub fn sharing_mode(&self) -> SharingMode {
+        self.sharing_mode
     }
 
     #[inline(always)]
@@ -82,6 +100,8 @@ impl Default for CubeMapCreateInfo {
             mip_levels: 1,
             texture_usage: TextureUsage::empty(),
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::all(),
+            sharing_mode: SharingMode::Concurrent,
             debug_name: None,
         }
     }

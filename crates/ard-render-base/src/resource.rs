@@ -37,8 +37,7 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
         let (on_drop, dropped) = crossbeam_channel::bounded(max);
         let resources = Vec::with_capacity(max);
 
-        let pending_drop =
-            std::array::from_fn(|_| (0..latency).into_iter().map(|_| Vec::default()).collect());
+        let pending_drop = std::array::from_fn(|_| (0..latency).map(|_| Vec::default()).collect());
 
         Self {
             max,
@@ -109,22 +108,16 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
     #[inline(always)]
     pub fn get(&self, id: ResourceId) -> Option<&R> {
         match self.resources.get(id.0) {
-            Some(v) => match v {
-                Some(v) => Some(v),
-                None => None,
-            },
-            None => None,
+            Some(Some(v)) => Some(v),
+            _ => None,
         }
     }
 
     #[inline(always)]
     pub fn get_mut(&mut self, id: ResourceId) -> Option<&mut R> {
         match self.resources.get_mut(id.0) {
-            Some(v) => match v {
-                Some(v) => Some(v),
-                None => None,
-            },
-            None => None,
+            Some(Some(v)) => Some(v),
+            _ => None,
         }
     }
 }

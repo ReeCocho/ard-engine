@@ -1,6 +1,7 @@
 use ard_render_material::factory::{MaterialFactory, PassDefinition, PassId};
 use ard_render_si::bindings::Layouts;
 
+pub mod bins;
 pub mod draw_gen;
 pub mod global;
 pub mod highz;
@@ -29,7 +30,12 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
         .add_pass(
             DEPTH_PREPASS_PASS_ID,
             PassDefinition {
-                layouts: vec![layouts.camera.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.camera.clone(),
+                    layouts.materials.clone(),
+                ],
                 has_depth_stencil_attachment: true,
                 color_attachment_count: 0,
             },
@@ -40,7 +46,12 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
         .add_pass(
             HIGH_Z_PASS_ID,
             PassDefinition {
-                layouts: vec![layouts.camera.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.camera.clone(),
+                    layouts.materials.clone(),
+                ],
                 has_depth_stencil_attachment: true,
                 color_attachment_count: 0,
             },
@@ -51,7 +62,28 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
         .add_pass(
             OPAQUE_PASS_ID,
             PassDefinition {
-                layouts: vec![layouts.camera.clone()],
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.camera.clone(),
+                    layouts.materials.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 1,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            TRANSPARENT_PASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.camera.clone(),
+                    layouts.materials.clone(),
+                ],
                 has_depth_stencil_attachment: true,
                 color_attachment_count: 1,
             },

@@ -1,6 +1,7 @@
 use ard_formats::texture::{MipType, Sampler, TextureSource};
 use ard_pal::prelude::{
-    Buffer, BufferCreateError, Context, MemoryUsage, TextureType, TextureUsage,
+    Buffer, BufferCreateError, Context, MemoryUsage, QueueType, QueueTypes, SharingMode,
+    TextureType, TextureUsage,
 };
 use ard_render_base::resource::{ResourceHandle, ResourceId};
 use thiserror::*;
@@ -66,7 +67,12 @@ impl TextureResource {
             Err(err) => return Err(TextureCreateError::TextureDataErr(err)),
         };
 
-        let max_mip_levels = (data.width().max(data.height()) as f32).log2().floor() as usize + 1;
+        let (width, height) = match create_info.mip_type {
+            MipType::Generate => (data.width(), data.height()),
+            MipType::Upload(w, h) => (w, h),
+        };
+
+        let max_mip_levels = (width.max(height) as f32).log2().floor() as usize + 1;
 
         if create_info.mip_count > max_mip_levels {
             return Err(TextureCreateError::InvalidMipCount(max_mip_levels));
@@ -77,8 +83,8 @@ impl TextureResource {
             PalTextureCreateInfo {
                 format: data.format(),
                 ty: TextureType::Type2D,
-                width: data.width(),
-                height: data.height(),
+                width,
+                height,
                 depth: 1,
                 array_elements: 1,
                 mip_levels: create_info.mip_count,
@@ -86,19 +92,25 @@ impl TextureResource {
                     | TextureUsage::TRANSFER_DST
                     | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::TRANSFER,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: create_info.debug_name,
             },
         )?;
 
-        let staging =
-            Buffer::new_staging(ctx.clone(), Some("texture_staging".to_owned()), data.raw())?;
-
-        let loaded_mips: u32 = match create_info.mip_type {
+        let (loaded_mips, staging_queue): (u32, QueueType) = match create_info.mip_type {
             // All mips will be available when the texture is ready
-            MipType::Generate => (1 << create_info.mip_count as u32) - 1,
+            MipType::Generate => ((1 << create_info.mip_count as u32) - 1, QueueType::Main),
             // Only the lowest detail mip is loaded.
-            MipType::Upload => 1 << (create_info.mip_count as u32 - 1),
+            MipType::Upload(_, _) => (1 << (create_info.mip_count as u32 - 1), QueueType::Transfer),
         };
+
+        let staging = Buffer::new_staging(
+            ctx.clone(),
+            staging_queue,
+            Some("texture_staging".to_owned()),
+            data.raw(),
+        )?;
 
         Ok((
             Self {

@@ -35,7 +35,7 @@ impl AssetLoader for TestAssetLoader {
         package: Package,
         asset: &AssetName,
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
-        let data = package.read_str(asset).await?;
+        let data = package.read_str(asset.to_owned()).await?;
 
         match ron::from_str::<TestAsset>(&data) {
             Ok(asset) => Ok(AssetLoadResult::Loaded {

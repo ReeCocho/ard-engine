@@ -1,8 +1,8 @@
 use crate::{
     context::Context,
     types::{
-        AnisotropyLevel, BorderColor, CompareOp, Filter, Format, MemoryUsage, SamplerAddressMode,
-        TextureType, TextureUsage,
+        AnisotropyLevel, BorderColor, CompareOp, Filter, Format, MemoryUsage, QueueTypes,
+        SamplerAddressMode, SharingMode, TextureType, TextureUsage,
     },
     Backend,
 };
@@ -19,6 +19,8 @@ pub struct TextureCreateInfo {
     pub mip_levels: usize,
     pub texture_usage: TextureUsage,
     pub memory_usage: MemoryUsage,
+    pub queue_types: QueueTypes,
+    pub sharing_mode: SharingMode,
     pub debug_name: Option<String>,
 }
 
@@ -59,7 +61,10 @@ pub enum TextureCreateError {
 pub struct Texture<B: Backend> {
     ctx: Context<B>,
     dims: (u32, u32, u32),
+    format: Format,
     mip_count: usize,
+    queue_types: QueueTypes,
+    sharing_mode: SharingMode,
     pub(crate) id: B::Texture,
 }
 
@@ -70,11 +75,18 @@ impl<B: Backend> Texture<B> {
     ) -> Result<Self, TextureCreateError> {
         let dims = (create_info.width, create_info.height, create_info.depth);
         let mip_count = create_info.mip_levels;
+        let format = create_info.format;
+        let queue_types = create_info.queue_types;
+        let sharing_mode = create_info.sharing_mode;
         let id = unsafe { ctx.0.create_texture(create_info)? };
+
         Ok(Self {
             ctx,
             dims,
             id,
+            format,
+            queue_types,
+            sharing_mode,
             mip_count,
         })
     }
@@ -85,8 +97,23 @@ impl<B: Backend> Texture<B> {
     }
 
     #[inline(always)]
+    pub fn queue_types(&self) -> QueueTypes {
+        self.queue_types
+    }
+
+    #[inline(always)]
+    pub fn sharing_mode(&self) -> SharingMode {
+        self.sharing_mode
+    }
+
+    #[inline(always)]
     pub fn dims(&self) -> (u32, u32, u32) {
         self.dims
+    }
+
+    #[inline(always)]
+    pub fn format(&self) -> Format {
+        self.format
     }
 
     /// Gets the size in bytes of a single array element of the texture.
@@ -123,6 +150,8 @@ impl Default for TextureCreateInfo {
             mip_levels: 1,
             texture_usage: TextureUsage::empty(),
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::all(),
+            sharing_mode: SharingMode::Concurrent,
             debug_name: None,
         }
     }

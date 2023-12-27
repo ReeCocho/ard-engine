@@ -87,7 +87,7 @@ impl WinitWindows {
         }) {
             Ok(_) => {}
             Err(winit::error::ExternalError::NotSupported(_)) => {}
-            Err(err) => Err(err).unwrap(),
+            Err(err) => panic!("{:?}", err),
         }
 
         winit_window.set_cursor_visible(descriptor.cursor_visible);

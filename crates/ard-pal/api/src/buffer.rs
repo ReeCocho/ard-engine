@@ -1,10 +1,10 @@
 use std::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::{context::Context, types::*, Backend};
+use bytemuck::Pod;
 use thiserror::Error;
 
 pub struct BufferCreateInfo {
@@ -17,6 +17,10 @@ pub struct BufferCreateInfo {
     pub buffer_usage: BufferUsage,
     /// Describes what memory operations are supported by this buffer.
     pub memory_usage: MemoryUsage,
+    /// What queue(s) will access this buffer.
+    pub queue_types: QueueTypes,
+    /// How this buffer will be shared between multiple queues.
+    pub sharing_mode: SharingMode,
     /// The backend *should* use the provided debug name for easy identification.
     pub debug_name: Option<String>,
 }
@@ -39,24 +43,24 @@ pub struct Buffer<B: Backend> {
     size: u64,
     buffer_usage: BufferUsage,
     memory_usage: MemoryUsage,
+    queue_types: QueueTypes,
+    sharing_mode: SharingMode,
     array_elements: usize,
     debug_name: Option<String>,
-    view_check: RwLock<()>,
     pub(crate) id: B::Buffer,
 }
 
 pub struct BufferReadView<'a, B: Backend> {
     _buffer: &'a Buffer<B>,
     slice: &'a [u8],
-    _borrow: RwLockReadGuard<'a, ()>,
 }
 
 pub struct BufferWriteView<'a, B: Backend> {
     ctx: Context<B>,
     idx: usize,
-    buffer: &'a Buffer<B>,
-    slice: &'a mut [u8],
-    _borrow: RwLockWriteGuard<'a, ()>,
+    buffer: &'a mut Buffer<B>,
+    base: NonNull<u8>,
+    len: usize,
 }
 
 impl<B: Backend> Buffer<B> {
@@ -80,6 +84,8 @@ impl<B: Backend> Buffer<B> {
         let buffer_usage = create_info.buffer_usage;
         let memory_usage = create_info.memory_usage;
         let array_elements = create_info.array_elements;
+        let queue_types = create_info.queue_types;
+        let sharing_mode = create_info.sharing_mode;
         let debug_name = create_info.debug_name.clone();
         let id = unsafe { ctx.0.create_buffer(create_info)? };
         Ok(Self {
@@ -88,8 +94,9 @@ impl<B: Backend> Buffer<B> {
             size,
             memory_usage,
             buffer_usage,
+            queue_types,
+            sharing_mode,
             array_elements,
-            view_check: RwLock::default(),
             debug_name,
         })
     }
@@ -105,6 +112,7 @@ impl<B: Backend> Buffer<B> {
     ///
     /// # Arguments
     /// - `ctx` - The [`Context`] to create the buffer with.
+    /// - `queue` - The [`Queue`] this staging buffer will be accessed from.
     /// - `debug_name` - The backend *should* use the provided debug name for easy identification.
     /// - `data` - The data to upload to the buffer.
     ///
@@ -112,6 +120,7 @@ impl<B: Backend> Buffer<B> {
     /// - If `data.is_empty()`.
     pub fn new_staging(
         ctx: Context<B>,
+        queue: QueueType,
         debug_name: Option<String>,
         data: &[u8],
     ) -> Result<Buffer<B>, BufferCreateError> {
@@ -120,9 +129,11 @@ impl<B: Backend> Buffer<B> {
             array_elements: 1,
             buffer_usage: BufferUsage::TRANSFER_SRC,
             memory_usage: MemoryUsage::CpuToGpu,
+            queue_types: queue.into(),
+            sharing_mode: SharingMode::Exclusive,
             debug_name,
         };
-        let buffer = Buffer::new(ctx, create_info)?;
+        let mut buffer = Buffer::new(ctx, create_info)?;
         let mut view = buffer.write(0).unwrap();
         view.copy_from_slice(data);
         std::mem::drop(view);
@@ -132,6 +143,16 @@ impl<B: Backend> Buffer<B> {
     #[inline(always)]
     pub fn internal(&self) -> &B::Buffer {
         &self.id
+    }
+
+    #[inline(always)]
+    pub fn queue_types(&self) -> QueueTypes {
+        self.queue_types
+    }
+
+    #[inline(always)]
+    pub fn sharing_mode(&self) -> SharingMode {
+        self.sharing_mode
     }
 
     #[inline(always)]
@@ -172,7 +193,6 @@ impl<B: Backend> Buffer<B> {
             "buffer is not mappable"
         );
 
-        let borrow = self.view_check.read().unwrap();
         let (map, len) = unsafe {
             let res = self.ctx.0.map_memory(&self.id, idx)?;
             self.ctx.0.invalidate_range(&self.id, idx);
@@ -181,7 +201,6 @@ impl<B: Backend> Buffer<B> {
         Ok(BufferReadView {
             _buffer: self,
             slice: unsafe { std::slice::from_raw_parts(map.as_ptr(), len as usize) },
-            _borrow: borrow,
         })
     }
 
@@ -192,8 +211,7 @@ impl<B: Backend> Buffer<B> {
     /// # Arguments
     /// - `idx` - The array element of the buffer to view.
     #[inline(always)]
-    pub fn write(&self, idx: usize) -> Result<BufferWriteView<B>, BufferViewError> {
-        let borrow = self.view_check.write().unwrap();
+    pub fn write(&mut self, idx: usize) -> Result<BufferWriteView<B>, BufferViewError> {
         let (map, len) = unsafe {
             let res = self.ctx.0.map_memory(&self.id, idx)?;
             self.ctx.0.invalidate_range(&self.id, idx);
@@ -203,8 +221,8 @@ impl<B: Backend> Buffer<B> {
             idx,
             ctx: self.ctx.clone(),
             buffer: self,
-            slice: unsafe { std::slice::from_raw_parts_mut(map.as_ptr(), len as usize) },
-            _borrow: borrow,
+            base: map,
+            len: len as usize,
         })
     }
 
@@ -232,13 +250,15 @@ impl<B: Backend> Buffer<B> {
         }
 
         // Create a new buffer with the size
-        let new_buffer = Self::new(
+        let mut new_buffer = Self::new(
             buffer.ctx.clone(),
             BufferCreateInfo {
                 size: final_size,
                 array_elements: buffer.array_elements,
                 buffer_usage: buffer.buffer_usage,
                 memory_usage: buffer.memory_usage,
+                queue_types: buffer.queue_types,
+                sharing_mode: buffer.sharing_mode,
                 debug_name: buffer.debug_name.clone(),
             },
         )
@@ -287,9 +307,55 @@ impl<'a, B: Backend> Deref for BufferReadView<'a, B> {
 impl<'a, B: Backend> BufferWriteView<'a, B> {
     #[inline]
     pub fn into_raw(self) -> (NonNull<u8>, usize) {
-        let ptr = unsafe { NonNull::new_unchecked(self.slice.as_mut_ptr()) };
-        let len = self.slice.len();
-        (ptr, len)
+        (self.base, self.len)
+    }
+
+    #[inline]
+    pub fn set_as_array<T: Pod + 'static>(&mut self, value: T, idx: usize) {
+        debug_assert!(std::mem::size_of::<T>() * (idx + 1) <= self.len);
+
+        // Safety: Bounds checking verified above in release builds
+        unsafe {
+            *self
+                .base
+                .cast::<T>()
+                .as_ptr()
+                .add(idx)
+                .as_mut()
+                .unwrap_unchecked() = value;
+        }
+    }
+
+    /// Convenience method for expanding writeable buffers.
+    ///
+    /// Behaves the same as `Buffer::expand`, except this expands the buffer in place instead of
+    /// returning a new buffer.
+    ///
+    /// See `Buffer::expand` for documentation.
+    ///
+    /// Returns `true` if the buffer was expanded, and `false` otherwise.
+    pub fn expand(&mut self, new_size: u64, preserve: bool) -> Result<bool, BufferViewError> {
+        match Buffer::expand(self.buffer, new_size, preserve) {
+            Some(new_buff) => {
+                // Flush the old view before expanding
+                unsafe {
+                    self.ctx.0.flush_range(&self.buffer.id, self.idx);
+                }
+
+                // Replace the buffer and map
+                *self.buffer = new_buff;
+                let (map, len) = unsafe {
+                    let res = self.ctx.0.map_memory(&self.buffer.id, self.idx)?;
+                    self.ctx.0.invalidate_range(&self.buffer.id, self.idx);
+                    res
+                };
+                self.base = map;
+                self.len = len as usize;
+
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 }
 
@@ -298,14 +364,14 @@ impl<'a, B: Backend> Deref for BufferWriteView<'a, B> {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.slice
+        unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len) }
     }
 }
 
 impl<'a, B: Backend> DerefMut for BufferWriteView<'a, B> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.slice
+        unsafe { std::slice::from_raw_parts_mut(self.base.as_ptr(), self.len) }
     }
 }
 

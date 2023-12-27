@@ -144,7 +144,7 @@ impl Staging {
                             texture.mip_levels,
                             upload,
                         ),
-                        MipType::Upload => TextureFactory::upload(
+                        MipType::Upload(_, _) => TextureFactory::upload(
                             commands.transfer(),
                             &texture.texture,
                             texture.mip_levels.saturating_sub(1),

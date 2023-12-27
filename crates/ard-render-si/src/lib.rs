@@ -3,7 +3,7 @@
 /// Essentially, this is a collection of all the types, constants, and descriptor set layouts and
 /// bindings needed to communicate between the CPU and GPU.
 
-pub const GLSL_INCLUDE_DIR: &'static str = concat!(env!("OUT_DIR"), "/glsl/");
+pub const GLSL_INCLUDE_DIR: &str = concat!(env!("OUT_DIR"), "/glsl/");
 
 pub mod consts {
     include!(concat!(env!("OUT_DIR"), "./gpu_consts.rs"));

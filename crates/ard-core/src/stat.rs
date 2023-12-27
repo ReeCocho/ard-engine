@@ -8,14 +8,14 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
 use fxhash::FxHashSet;
 
-type StaticGroup = u32;
+pub type StaticGroup = u32;
 
 /// A component indicating that a particular entity is static. The definition of "static" is
 /// dependent on how a system uses an entity. For example, for rendering and physics it might
 /// mean that an entity does not move, which can allow for better optimizations. Assume that all
-/// entities without this component are "dynmaic".
+/// entities without this component are "dynamic".
 ///
-/// The contained integer value is the static objects group.
+/// The contained integer value is the static objects group identifier.
 #[derive(Debug, Default, Component, Copy, Clone)]
 pub struct Static(pub StaticGroup);
 

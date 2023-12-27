@@ -20,12 +20,16 @@ use ard_render_si::types::GpuObjectId;
 pub struct RenderableSet {
     /// Object IDs for sorting draw calls or GPU driven rendering.
     object_ids: Vec<GpuObjectId>,
+    non_transparent_object_count: usize,
     /// Draw groups to render.
     groups: Vec<DrawGroup>,
+    non_transparent_draw_count: usize,
     static_object_ranges: RenderableRanges,
     dynamic_object_ranges: RenderableRanges,
+    transparent_object_range: Range<usize>,
     static_group_ranges: RenderableRanges,
     dynamic_group_ranges: RenderableRanges,
+    transparent_group_range: Range<usize>,
 }
 
 pub struct RenderableSetUpdate<'a> {
@@ -35,6 +39,8 @@ pub struct RenderableSetUpdate<'a> {
     include_transparent: bool,
 }
 
+/// A group represents a set of objects that have matching material and mesh, meaning they can all
+/// be rendered with a single draw call.
 #[derive(Debug, Copy, Clone)]
 pub struct DrawGroup {
     pub key: DrawKey,
@@ -45,13 +51,22 @@ pub struct DrawGroup {
 pub struct RenderableRanges {
     pub opaque: Range<usize>,
     pub alpha_cutout: Range<usize>,
-    pub transparent: Range<usize>,
 }
 
 impl RenderableSet {
     #[inline(always)]
     pub fn ids(&self) -> &[GpuObjectId] {
         &self.object_ids
+    }
+
+    #[inline(always)]
+    pub fn non_transparent_object_count(&self) -> usize {
+        self.non_transparent_object_count
+    }
+
+    #[inline(always)]
+    pub fn non_transparent_draw_count(&self) -> usize {
+        self.non_transparent_draw_count
     }
 
     #[inline(always)]
@@ -70,6 +85,11 @@ impl RenderableSet {
     }
 
     #[inline(always)]
+    pub fn transparent_object_range(&self) -> &Range<usize> {
+        &self.transparent_object_range
+    }
+
+    #[inline(always)]
     pub fn static_group_ranges(&self) -> &RenderableRanges {
         &self.static_group_ranges
     }
@@ -77,6 +97,11 @@ impl RenderableSet {
     #[inline(always)]
     pub fn dynamic_group_ranges(&self) -> &RenderableRanges {
         &self.dynamic_group_ranges
+    }
+
+    #[inline(always)]
+    pub fn transparent_group_range(&self) -> &Range<usize> {
+        &self.transparent_group_range
     }
 }
 
@@ -128,34 +153,55 @@ impl<'a> RenderableSetUpdate<'a> {
 
             // Write in opaque and alpha cut static objects and draws. These are the only kinds
             // of objects we can cache since dynamic objects have to be reset every frame and
-            // the sorting function for transparent static objects is not consistent between frames
-            // (it sorts by distance to camera).
+            // the sorting function for transparent static objects is not consistent between
+            // frames (it sorts by distance to camera).
+
+            // Do opaque objects first
+            let mut opaque_obj_count = 0;
             self.set.static_object_ranges.opaque = if self.include_opaque {
-                Self::write_keyed_ids(
-                    ids,
-                    objects
-                        .static_objects()
-                        .opaque
-                        .iter()
-                        .filter(|&obj| filter_opaque(obj))
-                        .map(|obj| (obj.key, obj.idx, 0.0)),
-                    |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
-                )
+                objects.static_objects().values().for_each(|set| {
+                    let base = set.block.base();
+                    opaque_obj_count += Self::write_keyed_ids(
+                        ids,
+                        set.opaque
+                            .indices
+                            .iter()
+                            .filter(|&obj| filter_opaque(obj))
+                            .map(|obj| (obj.key, base + obj.idx, 0.0)),
+                        |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                    )
+                    .len();
+                });
+
+                Range {
+                    start: 0,
+                    end: opaque_obj_count,
+                }
             } else {
                 Range::default()
             };
 
+            // Then do alpha cutout
+            let mut ac_obj_count = 0;
             self.set.static_object_ranges.alpha_cutout = if self.include_alpha_cutout {
-                Self::write_keyed_ids(
-                    ids,
-                    objects
-                        .static_objects()
-                        .alpha_cutout
-                        .iter()
-                        .filter(|&obj| filter_alpha_cut(obj))
-                        .map(|obj| (obj.key, obj.idx, 0.0)),
-                    |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
-                )
+                objects.static_objects().values().for_each(|set| {
+                    let base = set.block.base();
+                    ac_obj_count += Self::write_keyed_ids(
+                        ids,
+                        set.alpha_cutout
+                            .indices
+                            .iter()
+                            .filter(|&obj| filter_alpha_cut(obj))
+                            .map(|obj| (obj.key, base + obj.idx, 0.0)),
+                        |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                    )
+                    .len();
+                });
+
+                Range {
+                    start: opaque_obj_count,
+                    end: opaque_obj_count + ac_obj_count,
+                }
             } else {
                 Range::default()
             };
@@ -181,15 +227,18 @@ impl<'a> RenderableSetUpdate<'a> {
         }
 
         // Add in dynamic opaque and dynamic alpha cutout objects
+        let base = objects.dynamic_objects().block.base();
+
         self.set.dynamic_object_ranges.opaque = if self.include_opaque {
             Self::write_keyed_ids(
                 ids,
                 objects
                     .dynamic_objects()
                     .opaque
+                    .indices
                     .iter()
                     .filter(|&obj| filter_opaque(obj))
-                    .map(|obj| (obj.key, obj.idx, 0.0)),
+                    .map(|obj| (obj.key, base + obj.idx, 0.0)),
                 |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
             )
         } else {
@@ -202,9 +251,10 @@ impl<'a> RenderableSetUpdate<'a> {
                 objects
                     .dynamic_objects()
                     .alpha_cutout
+                    .indices
                     .iter()
                     .filter(|&obj| filter_alpha_cut(obj))
-                    .map(|obj| (obj.key, obj.idx, 0.0)),
+                    .map(|obj| (obj.key, base + obj.idx, 0.0)),
                 |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
             )
         } else {
@@ -222,57 +272,45 @@ impl<'a> RenderableSetUpdate<'a> {
         );
 
         // Add in dynamic and static transparent objects
+        self.set.non_transparent_object_count = ids.len();
+        self.set.non_transparent_draw_count = groups.len();
+
         if self.include_transparent {
-            self.set.dynamic_object_ranges.transparent = Self::write_keyed_ids(
-                ids,
-                objects
-                    .dynamic_objects()
-                    .transparent
+            let dyn_objects = objects
+                .dynamic_objects()
+                .transparent
+                .indices
+                .iter()
+                .zip(Some(base).into_iter().cycle());
+
+            let static_objects = objects.static_objects().values().flat_map(|set| {
+                set.transparent
+                    .indices
                     .iter()
-                    .filter(|&obj| filter_transparent(obj))
-                    .map(|obj| {
+                    .zip(Some(set.block.base()).into_iter().cycle())
+            });
+
+            self.set.transparent_object_range = Self::write_keyed_ids(
+                ids,
+                dyn_objects
+                    .chain(static_objects)
+                    .filter(|(obj, _)| filter_transparent(obj))
+                    .map(|(obj, base)| {
                         (
                             obj.key,
-                            obj.idx,
+                            base + obj.idx,
                             // Fill the padding in with the distance from the view...
-                            (view_location - obj.position).length_squared(),
-                        )
-                    }),
-                // ... so we can sort by distance from the view
-                |id| OrderedFloat::from(id._padding),
-            );
-
-            self.set.static_object_ranges.transparent = Self::write_keyed_ids(
-                ids,
-                objects
-                    .static_objects()
-                    .transparent
-                    .iter()
-                    .filter(|&obj| filter_transparent(obj))
-                    .map(|obj| {
-                        (
-                            obj.key,
-                            obj.idx,
-                            (view_location - obj.position).length_squared(),
+                            -(view_location - obj.position).length_squared(),
                         )
                     }),
                 |id| OrderedFloat::from(id._padding),
             );
 
-            self.set.dynamic_group_ranges.transparent = Self::compact_groups(
-                &mut ids[self.set.dynamic_object_ranges.transparent.clone()],
-                groups,
-            );
-
-            self.set.static_group_ranges.transparent = Self::compact_groups(
-                &mut ids[self.set.static_object_ranges.transparent.clone()],
-                groups,
-            );
+            self.set.transparent_group_range =
+                Self::compact_groups(&mut ids[self.set.transparent_object_range.clone()], groups);
         } else {
-            self.set.static_object_ranges.transparent = Range::default();
-            self.set.dynamic_object_ranges.transparent = Range::default();
-            self.set.static_group_ranges.transparent = Range::default();
-            self.set.dynamic_group_ranges.transparent = Range::default();
+            self.set.transparent_object_range = Range::default();
+            self.set.transparent_group_range = Range::default();
         }
     }
 

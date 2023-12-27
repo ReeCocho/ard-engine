@@ -9,7 +9,11 @@ use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
-use crate::{job::Job, util::garbage_collector::Garbage, QueueFamilyIndices, VulkanBackend};
+use crate::{
+    job::Job,
+    util::{garbage_collector::Garbage, usage::BufferRegion},
+    QueueFamilyIndices, VulkanBackend,
+};
 
 pub struct Buffer {
     pub(crate) buffer: vk::Buffer,
@@ -31,7 +35,7 @@ pub(crate) struct BufferRefCounter(Arc<()>);
 impl Buffer {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        _qfi: &QueueFamilyIndices,
+        qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
@@ -66,10 +70,16 @@ impl Buffer {
         };
 
         // Create the buffer
+        let qfi = qfi.queue_types_to_indices(create_info.queue_types);
         let buffer_create_info = vk::BufferCreateInfo::builder()
             .size(aligned_size * create_info.array_elements as u64)
             .usage(crate::util::to_vk_buffer_usage(create_info.buffer_usage))
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .sharing_mode(if qfi.len() == 1 {
+                vk::SharingMode::EXCLUSIVE
+            } else {
+                crate::util::to_vk_sharing_mode(create_info.sharing_mode)
+            })
+            .queue_family_indices(&qfi)
             .build();
         let buffer = match device.create_buffer(&buffer_create_info, None) {
             Ok(buffer) => buffer,
@@ -148,7 +158,13 @@ impl Buffer {
         // NOTE: The reason we set the usage to `None` is because we have to wait for the previous
         // usage to complete. This implies that no one is using this buffer anymore and thus no
         // waits are further needed.
-        if let Some(old) = resc_state.register_buffer(self.buffer, idx as u32, None) {
+        if let Some(old) = resc_state.register_buffer(
+            BufferRegion {
+                buffer: self.buffer,
+                array_elem: idx as u32,
+            },
+            None,
+        ) {
             ctx.wait_on(
                 &Job {
                     ty: old.queue,

@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, DescriptorSet, DescriptorSetCreateInfo,
-    DescriptorSetUpdate, DescriptorValue, MemoryUsage,
+    DescriptorSetUpdate, DescriptorValue, MemoryUsage, QueueTypes, SharingMode,
 };
 use ard_render_base::ecs::Frame;
 use ard_render_objects::Model;
@@ -39,6 +39,8 @@ impl CameraUbo {
                 array_elements: fif,
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("camera_ubo".to_owned()),
             },
         )
@@ -51,13 +53,14 @@ impl CameraUbo {
                 array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("camera_froxels".to_owned()),
             },
         )
         .unwrap();
 
         let sets = (0..fif)
-            .into_iter()
             .map(|frame_idx| {
                 let mut set = DescriptorSet::new(
                     ctx.clone(),
@@ -92,7 +95,6 @@ impl CameraUbo {
             .collect();
 
         let froxel_regen_sets = (0..fif)
-            .into_iter()
             .map(|frame_idx| {
                 let mut set = DescriptorSet::new(
                     ctx.clone(),

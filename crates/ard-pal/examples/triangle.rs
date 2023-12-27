@@ -53,7 +53,7 @@ fn main() {
     let index_staging = buffers.index_staging;
 
     // Write the staging buffers to the primary buffers
-    let mut command_buffer = context.transfer().command_buffer();
+    let mut command_buffer = context.main().command_buffer();
     command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
         src: &index_staging,
         src_array_element: 0,
@@ -74,7 +74,7 @@ fn main() {
         len: vertex_buffer.size(),
     });
     context
-        .transfer()
+        .main()
         .submit(Some("staging_upload"), command_buffer);
 
     std::mem::drop(vertex_staging);

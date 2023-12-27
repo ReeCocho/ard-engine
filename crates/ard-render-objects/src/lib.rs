@@ -1,7 +1,7 @@
 use std::ops::Mul;
 
 use ard_ecs::prelude::Component;
-use ard_math::{Mat3, Mat4, Quat, Vec3A, Vec4Swizzles};
+use ard_math::{Mat3, Mat4, Quat, Vec3, Vec3A, Vec4Swizzles};
 use bitflags::*;
 
 pub mod keys;
@@ -57,5 +57,20 @@ impl Model {
             self.0.col(1).mul(inv_scale.y).xyz(),
             self.0.col(2).mul(inv_scale.z).xyz(),
         ))
+    }
+
+    #[inline(always)]
+    pub fn right(&self) -> Vec3 {
+        self.0.col(0).xyz()
+    }
+
+    #[inline(always)]
+    pub fn up(&self) -> Vec3 {
+        self.0.col(1).xyz()
+    }
+
+    #[inline(always)]
+    pub fn forward(&self) -> Vec3 {
+        self.0.col(2).xyz()
     }
 }

@@ -1,5 +1,6 @@
 use ard_ecs::prelude::Component;
 use ard_render_base::resource::{ResourceHandle, ResourceId};
+use ard_render_textures::texture::Texture;
 use thiserror::Error;
 
 use crate::{
@@ -31,6 +32,7 @@ pub struct MaterialInstance {
 pub struct MaterialInstanceResource {
     pub material: Material,
     pub data: Vec<u8>,
+    pub textures: Vec<Option<Texture>>,
     pub data_slot: Option<MaterialSlot>,
     pub textures_slot: Option<MaterialSlot>,
 }
@@ -92,9 +94,17 @@ impl MaterialInstanceResource {
 
         Ok(MaterialInstanceResource {
             data: vec![0; create_info.material.data_size() as usize],
+            textures: vec![None; create_info.material.texture_slots() as usize],
             material: create_info.material,
             data_slot,
             textures_slot,
         })
+    }
+}
+
+impl TextureSlot {
+    #[inline(always)]
+    pub const fn empty() -> Self {
+        Self(ard_render_si::consts::EMPTY_TEXTURE_ID)
     }
 }

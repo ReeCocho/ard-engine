@@ -1,7 +1,7 @@
 use ard_ecs::prelude::Component;
-use ard_math::{Mat4, Vec3, Vec3A, Vec4, Vec4Swizzles};
+use ard_math::{Mat4, Vec2, Vec3, Vec3A, Vec4, Vec4Swizzles};
 use ard_render_objects::{Model, RenderFlags};
-use ard_render_si::types::GpuCamera;
+use ard_render_si::{consts::CAMERA_FROXELS_DEPTH, types::GpuCamera};
 
 pub mod active;
 pub mod froxels;
@@ -83,6 +83,10 @@ impl Camera {
             position: Vec4::new(position.x, position.y, position.z, 1.0),
             near_clip: self.near,
             far_clip: self.far,
+            cluster_scale_bias: Vec2::new(
+                (CAMERA_FROXELS_DEPTH as f32) / (self.far / self.near).ln(),
+                ((CAMERA_FROXELS_DEPTH as f32) * self.near.ln()) / (self.far / self.near).ln(),
+            ),
         }
     }
 }

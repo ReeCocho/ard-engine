@@ -1,0 +1,111 @@
+#version 450
+#extension GL_EXT_control_flow_attributes: enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define ARD_SET_CAMERA 0
+#define ARD_SET_LIGHT_CLUSTERING 1
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    LightClusteringPushConstants consts;
+};
+
+// Batch of lights to work on
+#define SLICE_SIZE (CAMERA_FROXELS_WIDTH * CAMERA_FROXELS_HEIGHT)
+shared vec4 shared_light_pos_rng[SLICE_SIZE];
+shared uint shared_light_idx[SLICE_SIZE];
+shared uint shared_lights_count;
+
+void main() {
+    const uint total_lights = consts.total_lights;
+
+    Froxel froxel = froxels.froxels
+        [gl_WorkGroupID.z]
+        [gl_LocalInvocationID.x]
+        [gl_LocalInvocationID.y];
+
+    const uint local_inv_idx = 
+        (gl_LocalInvocationID.y * gl_WorkGroupSize.x) + gl_LocalInvocationID.x;
+
+    // Offset within the primary lights list
+    uint lights_offset = 0;
+
+    // Offset within the cluster list
+    uint out_idx = 0;
+
+    while (lights_offset < total_lights) {
+        // Reset light count
+        if (local_inv_idx == 0) {
+            shared_lights_count = 0;
+        }
+
+        barrier();
+
+        // Read a batch of lights into shared memory
+        const uint batch_size = min(SLICE_SIZE, total_lights - lights_offset);
+
+        if(local_inv_idx < batch_size)
+        {
+            uint local_light_idx = lights_offset + local_inv_idx;
+
+            // Transform to view space
+            Light light = lights[local_light_idx];
+            vec3 position = (camera.view * vec4(light.position_range.xyz, 1.0)).xyz;
+
+            // Early discard based on Z slice since all clusters share the same Z
+            const vec2 min_max_z = froxel.min_max_z.xy;
+            if (
+                position.z - light.position_range.w <= min_max_z.y && 
+                position.z + light.position_range.w >= min_max_z.x
+            ) {
+                uint idx = atomicAdd(shared_lights_count, 1);
+                shared_light_pos_rng[idx] = vec4(position, light.position_range.w);
+                shared_light_idx[idx] = local_light_idx;
+            }
+        }
+
+        barrier();
+
+        // Cull light
+        for (uint i = 0; i < shared_lights_count; ++i) {
+            if (out_idx >= MAX_LIGHTS_PER_CLUSTER) {
+                break;
+            }
+
+            vec4 light_pos_rng = shared_light_pos_rng[i];
+
+            // Check planes
+            if (
+                dot(light_pos_rng.xyz, froxel.planes[0].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel.planes[1].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel.planes[2].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel.planes[3].xyz) > light_pos_rng.w
+            ) {
+                continue;
+            }
+
+            // Add light to cluster
+            light_table.clusters
+                [gl_WorkGroupID.z]
+                [gl_LocalInvocationID.x]
+                [gl_LocalInvocationID.y]
+                [out_idx] = shared_light_idx[i];
+            out_idx += 1;
+        }
+
+        lights_offset += batch_size;
+
+        // Wait for all lights to be checked
+        barrier();
+    }
+
+    // Set light count
+    light_table.counts
+        [gl_WorkGroupID.z]
+        [gl_LocalInvocationID.x]
+        [gl_LocalInvocationID.y] = out_idx;
+}

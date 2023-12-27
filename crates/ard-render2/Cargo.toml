@@ -24,6 +24,7 @@ ard-render-pbr = { path = "../ard-render-pbr" }
 ard-render-objects = { path = "../ard-render-objects" }
 ard-render-renderers = { path = "../ard-render-renderers" }
 ard-render-camera = { path = "../ard-render-camera" }
+ard-render-lighting = { path = "../ard-render-lighting" }
 crossbeam-channel.workspace = true
 thiserror.workspace = true
 raw-window-handle.workspace = true

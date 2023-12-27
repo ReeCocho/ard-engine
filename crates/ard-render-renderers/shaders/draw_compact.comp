@@ -1,0 +1,45 @@
+#version 450 core
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define ARD_SET_DRAW_COMPACT 0
+#include "ard_types.glsl"
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    DrawCompactPushConstants consts;
+};
+
+void main() {
+    // Stop early if we've hit the object limit
+    if (gl_GlobalInvocationID.x >= consts.draw_call_count) {
+        return;
+    }
+
+    // Grab the draw call
+    uint draw_index = gl_GlobalInvocationID.x + consts.base_draw_call;
+    DrawCall call = draw_calls_src[draw_index];
+
+    // If this call is transparent, we want to preserve ordering, so we just insert into the
+    // bin like so (even if the instance count is 0)
+    if (gl_GlobalInvocationID.x >= consts.transparent_start) {
+        uint bin_base = draw_counts[(call.draw_bin * 2) + 1];
+        atomicAdd(draw_counts[call.draw_bin * 2], 1);
+        draw_calls_dst[bin_base + call.bin_offset] = call;
+        return;
+    }
+
+    // If the draw count is equal to 0, we can cull this draw
+    if (call.instance_count == 0) {
+        return;
+    }
+
+    // Otherwise, we lookup the bin base for this draw and increment the bin's draw count
+    uint bin_offset = atomicAdd(draw_counts[call.draw_bin * 2], 1);
+    uint bin_base = draw_counts[(call.draw_bin * 2) + 1];
+    draw_calls_dst[bin_base + bin_offset] = call;
+}

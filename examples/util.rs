@@ -7,13 +7,8 @@ use ard_engine::{
 };
 use ard_input::{InputState, Key};
 use ard_math::Vec4Swizzles;
-use ard_render::{
-    camera::{Camera, CameraDescriptor},
-    factory::Factory,
-    material::Material,
-    renderer::{gui::View, PreRender, RendererSettings},
-    static_geometry::StaticRenderableHandle,
-};
+use ard_render2::camera::{Camera, CameraDescriptor};
+use ard_render_objects::Model;
 use ard_window::{window::WindowId, windows::Windows};
 
 pub const CUBE_INDICES: &'static [u32] = &[
@@ -98,109 +93,6 @@ pub const CUBE_COLORS: &'static [Vec4] = &[
     Vec4::new(1.0, 1.0, 0.0, 1.0),
     Vec4::new(1.0, 1.0, 0.0, 1.0),
 ];
-
-#[derive(Component)]
-pub struct MainCamera(pub Camera);
-
-#[derive(Resource)]
-pub struct StaticHandles(pub Vec<StaticRenderableHandle>);
-
-#[derive(SystemState)]
-pub struct CameraMover {
-    pub cursor_locked: bool,
-    pub look_speed: f32,
-    pub move_speed: f32,
-    pub entity: Entity,
-    pub position: Vec3,
-    pub rotation: Vec3,
-    pub descriptor: CameraDescriptor,
-}
-
-impl CameraMover {
-    fn on_tick(
-        &mut self,
-        evt: Tick,
-        _: Commands,
-        queries: Queries<(Write<MainCamera>,)>,
-        res: Res<(Read<Factory>, Read<InputState>, Write<Windows>)>,
-    ) {
-        let factory = res.get::<Factory>().unwrap();
-        let input = res.get::<InputState>().unwrap();
-        let mut windows = res.get_mut::<Windows>().unwrap();
-        let main_camera = queries.get::<Write<MainCamera>>(self.entity).unwrap();
-
-        // Rotate the camera
-        let delta = evt.0.as_secs_f32();
-        if self.cursor_locked {
-            let (mx, my) = input.mouse_delta();
-            self.rotation.x += (my as f32) * self.look_speed;
-            self.rotation.y += (mx as f32) * self.look_speed;
-            self.rotation.x = self.rotation.x.clamp(-85.0, 85.0);
-        }
-
-        // Direction from rotation
-        let rot = Mat4::from_euler(
-            EulerRot::YXZ,
-            self.rotation.y.to_radians(),
-            self.rotation.x.to_radians(),
-            0.0,
-        );
-
-        // Move the camera
-        let right = rot.col(0);
-        let up = rot.col(1);
-        let forward = rot.col(2);
-
-        if self.cursor_locked {
-            if input.key(Key::W) {
-                self.position += forward.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::S) {
-                self.position -= forward.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::A) {
-                self.position -= right.xyz() * delta * self.move_speed;
-            }
-
-            if input.key(Key::D) {
-                self.position += right.xyz() * delta * self.move_speed;
-            }
-        }
-
-        // Lock cursor
-        if input.key_up(Key::M) {
-            self.cursor_locked = !self.cursor_locked;
-
-            let window = windows.get_mut(WindowId::primary()).unwrap();
-
-            window.set_cursor_lock_mode(self.cursor_locked);
-            window.set_cursor_visibility(!self.cursor_locked);
-        }
-
-        // Toggle AO
-        if input.key_up(Key::O) {
-            self.descriptor.ao = !self.descriptor.ao;
-        }
-
-        // Update the camera
-        self.descriptor.position = self.position;
-        self.descriptor.target = self.position + forward.xyz();
-        self.descriptor.up = up.xyz();
-        self.descriptor.near = 0.1;
-        self.descriptor.far = 150.0;
-        factory.update_camera(&main_camera.0, self.descriptor.clone());
-    }
-}
-
-impl From<CameraMover> for System {
-    fn from(mover: CameraMover) -> Self {
-        SystemBuilder::new(mover)
-            .with_handler(CameraMover::on_tick)
-            .build()
-    }
-}
 
 #[derive(SystemState)]
 pub struct FrameRate {

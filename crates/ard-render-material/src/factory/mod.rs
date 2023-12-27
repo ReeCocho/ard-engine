@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::material_instance::MaterialInstance;
 use crate::material_instance::{MaterialInstanceResource, TextureSlot};
-use ard_render_si::consts::MAX_TEXTURES_PER_MATERIAL;
+use ard_render_si::consts::{EMPTY_TEXTURE_ID, MAX_TEXTURES_PER_MATERIAL};
 
 use self::buffer::MaterialSlot;
 use self::{buffer::MaterialBuffer, set::MaterialSet};
@@ -137,7 +137,8 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
     pub fn free_data_slot(&mut self, data_size: u64, slot: MaterialSlot) {
         self.data
             .get_mut(&data_size)
-            .map(|buffer| buffer.free(slot));
+            .iter_mut()
+            .for_each(|buffer| buffer.free(slot));
     }
 
     pub fn free_textures_slot(&mut self, slot: MaterialSlot) {
@@ -166,8 +167,23 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
         let mut need_rebind;
 
         // Flush textures
-        need_rebind = self.textures.flush(frame, materials, |_, _| {
-            // TODO: Update when textures are added
+        need_rebind = self.textures.flush(frame, materials, |buffer, mat| {
+            const DATA_SIZE: usize =
+                MAX_TEXTURES_PER_MATERIAL as usize * std::mem::size_of::<TextureSlot>();
+
+            let start = match mat.textures_slot {
+                Some(slot) => usize::from(slot) * DATA_SIZE,
+                None => return,
+            };
+            let end = start + DATA_SIZE;
+            let slots = bytemuck::cast_slice_mut::<_, u32>(&mut buffer[start..end]);
+
+            for (i, tex) in mat.textures.iter().enumerate() {
+                slots[i] = match tex {
+                    Some(tex) => usize::from(tex.id()) as u32,
+                    None => EMPTY_TEXTURE_ID,
+                };
+            }
         });
 
         // Flush every data buffer

@@ -1,5 +1,7 @@
 use ard_log::warn;
-use ard_pal::prelude::{Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage};
+use ard_pal::prelude::{
+    Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, SharingMode,
+};
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 
 use crate::material_instance::{MaterialInstance, MaterialInstanceResource};
@@ -38,6 +40,8 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialBuffer<FRAMES_IN_FLIGHT> {
                     array_elements: FRAMES_IN_FLIGHT,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
                     debug_name: Some(debug_name),
                 },
             )

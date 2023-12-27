@@ -61,6 +61,7 @@ fn main() {
     ];
     let vertex_staging = Buffer::new_staging(
         context.clone(),
+        QueueType::Main,
         Some(String::from("vertex_staging")),
         bytemuck::cast_slice(&VERTICES),
     )
@@ -73,6 +74,8 @@ fn main() {
             array_elements: 1,
             buffer_usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("vertex_buffer")),
         },
     )
@@ -82,6 +85,7 @@ fn main() {
     const INDEX: &'static [u16] = &[0, 1, 2];
     let index_staging = Buffer::new_staging(
         context.clone(),
+        QueueType::Main,
         Some(String::from("index_staging")),
         bytemuck::cast_slice(&INDEX),
     )
@@ -94,13 +98,15 @@ fn main() {
             array_elements: 1,
             buffer_usage: BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("index_buffer")),
         },
     )
     .unwrap();
 
     // Write the staging buffers to the primary buffers
-    let mut command_buffer = context.transfer().command_buffer();
+    let mut command_buffer = context.main().command_buffer();
     command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
         src: &index_staging,
         src_array_element: 0,
@@ -120,21 +126,21 @@ fn main() {
         dst_offset: 0,
         len: vertex_buffer.size(),
     });
-    context
-        .transfer()
-        .submit(Some("buffer_upload"), command_buffer);
+    context.main().submit(Some("buffer_upload"), command_buffer);
 
     std::mem::drop(vertex_staging);
     std::mem::drop(index_staging);
 
     // Create uniform buffer
-    let uniform_buffer = Buffer::new(
+    let mut uniform_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
             size: std::mem::size_of::<UniformData>() as u64,
             array_elements: 1,
             buffer_usage: BufferUsage::UNIFORM_BUFFER,
             memory_usage: MemoryUsage::CpuToGpu,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("uniform_buffer")),
         },
     )

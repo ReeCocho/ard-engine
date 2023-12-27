@@ -8,7 +8,7 @@ use crate::{
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
     surface::SurfaceImage,
     texture::{Blit, Texture},
-    types::{CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage},
+    types::{CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode},
     Backend,
 };
 
@@ -92,6 +92,26 @@ pub enum Command<'a, B: Backend> {
         stage: ShaderStage,
         data: Vec<u8>,
     },
+    TransferBufferOwnership {
+        buffer: &'a Buffer<B>,
+        array_element: usize,
+        new_queue: QueueType,
+    },
+    TransferTextureOwnership {
+        texture: &'a Texture<B>,
+        array_element: usize,
+        base_mip: usize,
+        mip_count: usize,
+        new_queue: QueueType,
+    },
+    TransferCubeMapOwnership {
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
+        base_mip: usize,
+        mip_count: usize,
+        face: CubeFace,
+        new_queue: QueueType,
+    },
     BindDescriptorSets {
         sets: Vec<&'a DescriptorSet<B>>,
         first: usize,
@@ -130,6 +150,16 @@ pub enum Command<'a, B: Backend> {
         offset: u64,
         draw_count: usize,
         stride: u64,
+    },
+    DrawIndexedIndirectCount {
+        draw_buffer: &'a Buffer<B>,
+        draw_array_element: usize,
+        draw_offset: u64,
+        draw_stride: u64,
+        count_buffer: &'a Buffer<B>,
+        count_array_element: usize,
+        count_offset: u64,
+        max_draw_count: usize,
     },
     CopyBufferToBuffer(CopyBufferToBuffer<'a, B>),
     CopyBufferToTexture {
@@ -221,6 +251,102 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         pass(&mut compute_pass);
         self.commands.extend(compute_pass.commands);
         self.commands.push(Command::EndComputePass);
+    }
+
+    /// Relinquishes ownership of a buffer by the current queue for another queue type.
+    ///
+    /// # Arguments
+    /// - `buffer` - The buffer to transfer ownership of.
+    /// - `array_element` - Array element of the buffer to transfer ownership of.
+    /// - `new_queue` - The new queue type the buffer will be owned by.
+    ///
+    /// # Panics
+    /// - If the buffer was not created with the queue type provided.
+    #[inline(always)]
+    pub fn transfer_buffer_ownership(
+        &mut self,
+        buffer: &'a Buffer<B>,
+        array_element: usize,
+        new_queue: QueueType,
+    ) {
+        assert!(
+            buffer.sharing_mode() == SharingMode::Exclusive
+                && buffer.queue_types().contains(new_queue.into())
+        );
+        self.commands.push(Command::TransferBufferOwnership {
+            buffer,
+            array_element,
+            new_queue,
+        });
+    }
+
+    /// Relinquishes ownership of a texture by the current queue for another queue type.
+    ///
+    /// # Arguments
+    /// - `texture` - The texture to transfer ownership of.
+    /// - `array_element` - Array element of the texture to transfer ownership of.
+    /// - `base_mip` - The base mip level of the array element to transfer ownership of.
+    /// - `mip_count` - The number of mips to transfer ownership of.
+    /// - `new_queue` - The new queue type the texture will be owned by.
+    ///
+    /// # Panics
+    /// - If the texture was not created with the queue type provided.
+    #[inline(always)]
+    pub fn transfer_texture_ownership(
+        &mut self,
+        texture: &'a Texture<B>,
+        array_element: usize,
+        base_mip: usize,
+        mip_count: usize,
+        new_queue: QueueType,
+    ) {
+        assert!(
+            texture.sharing_mode() == SharingMode::Exclusive
+                && texture.queue_types().contains(new_queue.into())
+        );
+        self.commands.push(Command::TransferTextureOwnership {
+            texture,
+            array_element,
+            base_mip,
+            mip_count,
+            new_queue,
+        });
+    }
+
+    /// Relinquishes ownership of a cube map by the current queue for another queue type.
+    ///
+    /// # Arguments
+    /// - `cube_map` - The cube map to transfer ownership of.
+    /// - `array_element` - Array element of the cube map to transfer ownership of.
+    /// - `base_mip` - The base mip level of the array element to transfer ownership of.
+    /// - `mip_count` - The number of mips to transfer ownership of.
+    /// - `face` - The face of the cube map to transfer ownership of.
+    /// - `new_queue` - The new queue type the cube map will be owned by.
+    ///
+    /// # Panics
+    /// - If the cube map was not created with the queue type provided.
+    #[inline(always)]
+    pub fn transfer_cube_map_ownership(
+        &mut self,
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
+        base_mip: usize,
+        mip_count: usize,
+        face: CubeFace,
+        new_queue: QueueType,
+    ) {
+        assert!(
+            cube_map.sharing_mode() == SharingMode::Exclusive
+                && cube_map.queue_types().contains(new_queue.into())
+        );
+        self.commands.push(Command::TransferCubeMapOwnership {
+            cube_map,
+            array_element,
+            base_mip,
+            mip_count,
+            face,
+            new_queue,
+        });
     }
 
     /// Copies data from one buffer into another.

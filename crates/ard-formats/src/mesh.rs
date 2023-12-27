@@ -1,8 +1,9 @@
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, path::PathBuf};
 
 use ard_math::*;
 use ard_pal::prelude::*;
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use thiserror::Error;
@@ -11,7 +12,7 @@ pub trait VertexSource {
     type Error: Error;
 
     /// Converts the vertex source into a combined raw buffer for uploading to the GPU.
-    fn into_vertex_data(&self) -> Result<VertexData, Self::Error>;
+    fn into_vertex_data(self) -> Result<VertexData, Self::Error>;
 
     /// Number of vertices within the source.
     fn vertex_count(&self) -> usize;
@@ -36,6 +37,18 @@ pub struct MeshHeader {
     pub vertex_count: u32,
     pub vertex_layout: VertexLayout,
 }
+
+/// Volume bounded by the dimensions of a box and sphere.
+#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone)]
+#[repr(C)]
+pub struct ObjectBounds {
+    /// `w` component of `center` should be a bounding sphere radius.
+    pub center: Vec4,
+    pub half_extents: Vec4,
+}
+
+unsafe impl Pod for ObjectBounds {}
+unsafe impl Zeroable for ObjectBounds {}
 
 #[derive(Debug, Error, Copy, Clone)]
 #[error("vertex layout must have only one bit enabled to be converted to an attribute")]
@@ -76,6 +89,7 @@ pub struct IndexData {
 #[derive(Debug)]
 pub struct VertexDataBuilder {
     data: Vec<u8>,
+    bounds: ObjectBounds,
     len: usize,
     offsets: HashMap<VertexAttribute, u32>,
     layout: VertexLayout,
@@ -85,10 +99,26 @@ pub struct VertexDataBuilder {
 pub struct VertexData {
     /// The actual packed vertex data
     data: Vec<u8>,
+    /// Object bounds for the contained vertex data in local space.
+    bounds: ObjectBounds,
     /// The number of vertex elements.
     len: usize,
     /// Offsets within the data buffer for the beginning of each attribute.
     offsets: HashMap<VertexAttribute, u32>,
+}
+
+impl MeshHeader {
+    pub fn index_path(root: impl Into<PathBuf>) -> PathBuf {
+        let mut path: PathBuf = root.into();
+        path.push("indices");
+        path
+    }
+
+    pub fn vertex_path(root: impl Into<PathBuf>) -> PathBuf {
+        let mut path: PathBuf = root.into();
+        path.push("vertices");
+        path
+    }
 }
 
 impl VertexAttribute {
@@ -101,10 +131,10 @@ impl VertexAttribute {
             VertexAttribute::Normal => std::mem::size_of::<i8>() * 4,
             VertexAttribute::Tangent => std::mem::size_of::<i8>() * 4,
             VertexAttribute::Color => std::mem::size_of::<u8>() * 4,
-            VertexAttribute::Uv0 => std::mem::size_of::<u16>() * 2,
-            VertexAttribute::Uv1 => std::mem::size_of::<u16>() * 2,
-            VertexAttribute::Uv2 => std::mem::size_of::<u16>() * 2,
-            VertexAttribute::Uv3 => std::mem::size_of::<u16>() * 2,
+            VertexAttribute::Uv0 => std::mem::size_of::<f32>() * 2,
+            VertexAttribute::Uv1 => std::mem::size_of::<f32>() * 2,
+            VertexAttribute::Uv2 => std::mem::size_of::<f32>() * 2,
+            VertexAttribute::Uv3 => std::mem::size_of::<f32>() * 2,
         }
     }
 
@@ -114,10 +144,10 @@ impl VertexAttribute {
             VertexAttribute::Normal => Format::Rgba8Snorm,
             VertexAttribute::Tangent => Format::Rgba8Snorm,
             VertexAttribute::Color => Format::Rgba8Unorm,
-            VertexAttribute::Uv0 => Format::Rg16Unorm,
-            VertexAttribute::Uv1 => Format::Rg16Unorm,
-            VertexAttribute::Uv2 => Format::Rg16Unorm,
-            VertexAttribute::Uv3 => Format::Rg16Unorm,
+            VertexAttribute::Uv0 => Format::Rg32SFloat,
+            VertexAttribute::Uv1 => Format::Rg32SFloat,
+            VertexAttribute::Uv2 => Format::Rg32SFloat,
+            VertexAttribute::Uv3 => Format::Rg32SFloat,
         }
     }
 
@@ -130,9 +160,15 @@ impl VertexData {
     pub fn staging_buffer(
         &self,
         ctx: Context,
+        queue: QueueType,
         debug_name: Option<String>,
     ) -> Result<Buffer, BufferCreateError> {
-        Buffer::new_staging(ctx, debug_name, &self.data)
+        Buffer::new_staging(ctx, queue, debug_name, &self.data)
+    }
+
+    #[inline(always)]
+    pub fn bounds(&self) -> ObjectBounds {
+        self.bounds
     }
 
     #[inline]
@@ -175,7 +211,27 @@ impl VertexData {
 
     #[inline(always)]
     pub fn get_offset(&self, attribute: VertexAttribute) -> Option<u32> {
-        self.offsets.get(&attribute).and_then(|a| Some(*a))
+        self.offsets.get(&attribute).copied()
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("unknown vertex error")]
+pub struct VertexError;
+
+impl VertexSource for VertexData {
+    type Error = VertexError;
+
+    fn into_vertex_data(self) -> Result<VertexData, Self::Error> {
+        Ok(self)
+    }
+
+    fn vertex_count(&self) -> usize {
+        self.len
+    }
+
+    fn layout(&self) -> VertexLayout {
+        self.layout()
     }
 }
 
@@ -193,9 +249,10 @@ impl IndexData {
     pub fn staging_buffer(
         &self,
         ctx: Context,
+        queue: QueueType,
         debug_name: Option<String>,
     ) -> Result<Buffer, BufferCreateError> {
-        Buffer::new_staging(ctx, debug_name, &self.data)
+        Buffer::new_staging(ctx, queue, debug_name, &self.data)
     }
 
     #[inline(always)]
@@ -262,14 +319,12 @@ impl VertexDataBuilder {
             buff_size += VertexAttribute::try_from(bit).unwrap().size() as u32 * len as u32;
         }
 
-        let mut data = Vec::with_capacity(buff_size as usize);
-        data.resize(buff_size as usize, 0);
-
         Self {
             layout,
+            bounds: ObjectBounds::default(),
             len,
             offsets,
-            data,
+            data: vec![0; buff_size as usize],
         }
     }
 
@@ -289,6 +344,8 @@ impl VertexDataBuilder {
         dst.iter_mut().zip(src.iter()).for_each(|(dst, src)| {
             *dst = Vec4::new(src.x, src.y, src.z, 1.0);
         });
+
+        self.bounds = ObjectBounds::from_positions(dst);
 
         self
     }
@@ -381,10 +438,10 @@ impl VertexDataBuilder {
     }
 
     pub fn add_vec2_uvs(mut self, src: &[Vec2], idx: usize) -> Self {
-        const_assert!(matches!(VertexAttribute::Uv0.format(), Format::Rg16Unorm));
-        const_assert!(matches!(VertexAttribute::Uv1.format(), Format::Rg16Unorm));
-        const_assert!(matches!(VertexAttribute::Uv2.format(), Format::Rg16Unorm));
-        const_assert!(matches!(VertexAttribute::Uv3.format(), Format::Rg16Unorm));
+        const_assert!(matches!(VertexAttribute::Uv0.format(), Format::Rg32SFloat));
+        const_assert!(matches!(VertexAttribute::Uv1.format(), Format::Rg32SFloat));
+        const_assert!(matches!(VertexAttribute::Uv2.format(), Format::Rg32SFloat));
+        const_assert!(matches!(VertexAttribute::Uv3.format(), Format::Rg32SFloat));
 
         if !self.layout.contains(VertexLayout::UV0) {
             return self;
@@ -402,34 +459,9 @@ impl VertexDataBuilder {
             None => return self,
         };
         let end = start + (VertexAttribute::Uv0.size() * self.len);
-        let dst: &mut [u16] = bytemuck::cast_slice_mut(&mut self.data[start..end]);
+        let dst: &mut [Vec2] = bytemuck::cast_slice_mut(&mut self.data[start..end]);
 
-        dst.chunks_exact_mut(2)
-            .zip(src.iter())
-            .for_each(|(dst, src)| {
-                // Loop UV values between 0 and 1.
-                // This feels dumb. Probably a better way to do it.
-                let abs = src.abs();
-                let fract = abs.fract();
-                let trunc = Vec2::new(fract.x.trunc(), fract.y.trunc());
-
-                let mut val = Vec2::new(
-                    if fract.x == 0.0 && trunc.x != 0.0 {
-                        1.0
-                    } else {
-                        fract.x
-                    },
-                    if fract.y == 0.0 && trunc.y != 0.0 {
-                        1.0
-                    } else {
-                        fract.y
-                    },
-                ) * 65535.0;
-                val = val.round();
-
-                dst[0] = val.x as u16;
-                dst[1] = val.y as u16;
-            });
+        dst.copy_from_slice(src);
 
         self
     }
@@ -437,6 +469,7 @@ impl VertexDataBuilder {
     pub fn build(self) -> VertexData {
         VertexData {
             data: self.data,
+            bounds: self.bounds,
             len: self.len,
             offsets: self.offsets,
         }
@@ -446,6 +479,18 @@ impl VertexDataBuilder {
 #[derive(Debug, Error)]
 #[error("unknown index error")]
 pub struct IndexError;
+
+impl IndexSource for IndexData {
+    type Error = IndexError;
+
+    fn into_index_data(self) -> Result<IndexData, Self::Error> {
+        Ok(self)
+    }
+
+    fn index_count(&self) -> usize {
+        self.len
+    }
+}
 
 impl<'a> IndexSource for &'a [u32] {
     type Error = IndexError;
@@ -500,6 +545,65 @@ impl TryFrom<VertexLayout> for VertexAttribute {
             VertexLayout::UV2 => Ok(VertexAttribute::Uv2),
             VertexLayout::UV3 => Ok(VertexAttribute::Uv3),
             _ => Err(VertexLayoutToAttributeError),
+        }
+    }
+}
+
+impl ObjectBounds {
+    pub fn from_positions(src: &[Vec4]) -> Self {
+        if src.is_empty() {
+            return ObjectBounds::default();
+        }
+
+        let mut min = src[0];
+        let mut max = src[0];
+        let mut sqr_radius = min.x.powi(2) + min.z.powi(2) + min.y.powi(2);
+
+        for position in src {
+            let new_sqr_radius = position.x.powi(2) + position.z.powi(2) + position.y.powi(2);
+
+            if new_sqr_radius > sqr_radius {
+                sqr_radius = new_sqr_radius;
+            }
+
+            if position.x < min.x {
+                min.x = position.x;
+            }
+
+            if position.y < min.y {
+                min.y = position.y;
+            }
+
+            if position.z < min.z {
+                min.z = position.z;
+            }
+
+            if position.x > max.x {
+                max.x = position.x;
+            }
+
+            if position.y > max.y {
+                max.y = position.y;
+            }
+
+            if position.z > max.z {
+                max.z = position.z;
+            }
+        }
+
+        ObjectBounds {
+            center: Vec4::new(
+                (max.x + min.x) / 2.0,
+                (max.y + min.y) / 2.0,
+                (max.z + min.z) / 2.0,
+                sqr_radius.sqrt(),
+            ),
+            half_extents: Vec4::new(
+                (max.x - min.x) / 2.0,
+                (max.y - min.y) / 2.0,
+                (max.z - min.z) / 2.0,
+                1.0,
+            ),
         }
     }
 }

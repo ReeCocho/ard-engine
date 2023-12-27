@@ -32,6 +32,8 @@ impl RenderTarget {
                     | TextureUsage::SAMPLED
                     | TextureUsage::TRANSFER_SRC,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("color_target".to_owned()),
             },
         )
@@ -49,6 +51,8 @@ impl RenderTarget {
                 mip_levels: 1,
                 texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("depth_target".to_owned()),
             },
         )
@@ -114,6 +118,27 @@ impl RenderTarget {
         }
     }
 
+    pub fn transparent_pass(&self) -> RenderPassDescriptor {
+        RenderPassDescriptor {
+            color_attachments: vec![ColorAttachment {
+                source: ColorAttachmentSource::Texture {
+                    texture: &self.color,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::Load,
+                store_op: StoreOp::Store,
+            }],
+            depth_stencil_attachment: Some(DepthStencilAttachment {
+                texture: &self.depth,
+                array_element: 0,
+                mip_level: 0,
+                load_op: LoadOp::Load,
+                store_op: StoreOp::DontCare,
+            }),
+        }
+    }
+
     #[inline(always)]
     pub fn dims(&self) -> (u32, u32) {
         self.dims
@@ -144,6 +169,8 @@ impl RenderTarget {
                 mip_levels: 1,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("color_target".to_owned()),
             },
         )
@@ -161,6 +188,8 @@ impl RenderTarget {
                 mip_levels: 1,
                 texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("depth_target".to_owned()),
             },
         )

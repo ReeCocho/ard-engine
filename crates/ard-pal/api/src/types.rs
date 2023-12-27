@@ -195,6 +195,27 @@ pub enum QueueType {
     Present,
 }
 
+bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
+    pub struct QueueTypes: u32 {
+        const MAIN      = 0b0001;
+        const TRANSFER  = 0b0010;
+        const COMPUTE   = 0b0100;
+        const PRESENT   = 0b1000;
+
+        const NON_PRESENT     = 0b0111;
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SharingMode {
+    /// The resource will be accessed by a single queue at a time.
+    Exclusive,
+    /// The resource may be accessed concurrently from multiple queues simultaneously.
+    Concurrent,
+}
+
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum StoreOp {
     /// We don't care what happens to the contents of the image after the pass.
@@ -362,5 +383,16 @@ impl Format {
     #[inline(always)]
     pub fn is_stencil(&self) -> bool {
         matches!(*self, Format::D24UnormS8Uint | Format::D32SfloatS8Uint)
+    }
+}
+
+impl From<QueueType> for QueueTypes {
+    fn from(value: QueueType) -> Self {
+        match value {
+            QueueType::Main => QueueTypes::MAIN,
+            QueueType::Transfer => QueueTypes::TRANSFER,
+            QueueType::Compute => QueueTypes::COMPUTE,
+            QueueType::Present => QueueTypes::PRESENT,
+        }
     }
 }

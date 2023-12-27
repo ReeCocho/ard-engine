@@ -5,20 +5,29 @@ use ard_render_camera::ubo::CameraUbo;
 use ard_render_objects::objects::RenderObjects;
 use ard_render_si::{bindings::*, types::*};
 
+use crate::highz::HzbImage;
+
 /// Number of objects processed per workgroup.
 const DRAW_GEN_WORKGROUP_SIZE: u32 = 64;
+const DRAW_COMPACT_WORKGROUP_SIZE: u32 = 64;
 
 /// Pipeline for generating draw calls.
 pub struct DrawGenPipeline {
     ctx: Context,
-    pipeline: ComputePipeline,
-    layout: DescriptorSetLayout,
+    gen_pipeline: ComputePipeline,
+    compact_pipeline: ComputePipeline,
+    gen_layout: DescriptorSetLayout,
+    compact_layout: DescriptorSetLayout,
 }
 
 /// Sets per frame in flight to be used when generating draw calls.
 pub struct DrawGenSets {
+    non_transparent_object_count: usize,
     object_count: usize,
-    sets: Vec<DescriptorSet>,
+    draw_count: usize,
+    non_transparent_draw_count: usize,
+    gen_sets: Vec<DescriptorSet>,
+    compact_sets: Vec<DescriptorSet>,
 }
 
 impl DrawGenPipeline {
@@ -32,7 +41,7 @@ impl DrawGenPipeline {
         )
         .unwrap();
 
-        let pipeline = ComputePipeline::new(
+        let gen_pipeline = ComputePipeline::new(
             ctx.clone(),
             ComputePipelineCreateInfo {
                 layouts: vec![layouts.draw_gen.clone(), layouts.camera.clone()],
@@ -44,10 +53,36 @@ impl DrawGenPipeline {
         )
         .unwrap();
 
+        let module = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!(concat!(env!("OUT_DIR"), "./draw_compact.comp.spv")),
+                debug_name: Some("draw_compact_shader".into()),
+            },
+        )
+        .unwrap();
+
+        let compact_pipeline =
+            ComputePipeline::new(
+                ctx.clone(),
+                ComputePipelineCreateInfo {
+                    layouts: vec![layouts.draw_compact.clone()],
+                    module,
+                    work_group_size: (DRAW_COMPACT_WORKGROUP_SIZE, 1, 1),
+                    push_constants_size: Some(
+                        std::mem::size_of::<GpuDrawCompactPushConstants>() as u32
+                    ),
+                    debug_name: Some("draw_compact_pipeline".into()),
+                },
+            )
+            .unwrap();
+
         Self {
             ctx: ctx.clone(),
-            pipeline,
-            layout: layouts.draw_gen.clone(),
+            gen_pipeline,
+            compact_pipeline,
+            gen_layout: layouts.draw_gen.clone(),
+            compact_layout: layouts.draw_compact.clone(),
         }
     }
 
@@ -60,21 +95,33 @@ impl DrawGenPipeline {
         render_area: Vec2,
     ) {
         commands.compute_pass(|pass| {
-            pass.bind_pipeline(self.pipeline.clone());
-            pass.bind_sets(0, vec![sets.get(frame), camera.get_set(frame)]);
+            // Generate draw calls
+            pass.bind_pipeline(self.gen_pipeline.clone());
+            pass.bind_sets(0, vec![sets.get_gen(frame), camera.get_set(frame)]);
 
-            // Determine the number of groups to dispatch
             let object_count = sets.object_count as u32;
-            let group_count = if object_count as u32 % DRAW_GEN_WORKGROUP_SIZE != 0 {
-                (object_count as u32 / DRAW_GEN_WORKGROUP_SIZE) + 1
-            } else {
-                object_count as u32 / DRAW_GEN_WORKGROUP_SIZE
-            }
-            .max(1);
+            let group_count = object_count.div_ceil(DRAW_COMPACT_WORKGROUP_SIZE).max(1);
 
             let constants = [GpuDrawGenPushConstants {
                 object_count,
                 render_area,
+                transparent_start: sets.non_transparent_object_count as u32,
+            }];
+
+            pass.push_constants(bytemuck::cast_slice(&constants));
+            pass.dispatch(group_count, 1, 1);
+
+            // Compact non-transparent draw calls
+            pass.bind_pipeline(self.compact_pipeline.clone());
+            pass.bind_sets(0, vec![sets.get_compact(frame)]);
+
+            let draw_count = sets.draw_count as u32;
+            let group_count = draw_count.div_ceil(DRAW_COMPACT_WORKGROUP_SIZE).max(1);
+
+            let constants = [GpuDrawCompactPushConstants {
+                base_draw_call: 0,
+                draw_call_count: draw_count,
+                transparent_start: sets.non_transparent_draw_count as u32,
             }];
 
             pass.push_constants(bytemuck::cast_slice(&constants));
@@ -85,13 +132,12 @@ impl DrawGenPipeline {
 
 impl DrawGenSets {
     pub fn new(pipeline: &DrawGenPipeline, frames_in_flight: usize) -> Self {
-        let sets = (0..frames_in_flight)
-            .into_iter()
+        let gen_sets = (0..frames_in_flight)
             .map(|frame_idx| {
                 DescriptorSet::new(
                     pipeline.ctx.clone(),
                     DescriptorSetCreateInfo {
-                        layout: pipeline.layout.clone(),
+                        layout: pipeline.gen_layout.clone(),
                         debug_name: Some(format!("draw_gen_set_{frame_idx}")),
                     },
                 )
@@ -99,34 +145,67 @@ impl DrawGenSets {
             })
             .collect();
 
+        let compact_sets = (0..frames_in_flight)
+            .map(|frame_idx| {
+                DescriptorSet::new(
+                    pipeline.ctx.clone(),
+                    DescriptorSetCreateInfo {
+                        layout: pipeline.compact_layout.clone(),
+                        debug_name: Some(format!("draw_compact_set_{frame_idx}")),
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+
         Self {
-            sets,
+            gen_sets,
+            compact_sets,
             object_count: 0,
+            non_transparent_object_count: 0,
+            draw_count: 0,
+            non_transparent_draw_count: 0,
         }
     }
 
     #[inline(always)]
-    pub fn get(&self, frame: Frame) -> &DescriptorSet {
-        &self.sets[usize::from(frame)]
+    pub fn get_gen(&self, frame: Frame) -> &DescriptorSet {
+        &self.gen_sets[usize::from(frame)]
     }
 
-    pub fn update_bindings(
+    #[inline(always)]
+    pub fn get_compact(&self, frame: Frame) -> &DescriptorSet {
+        &self.compact_sets[usize::from(frame)]
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_bindings<const FIF: usize>(
         &mut self,
         frame: Frame,
         object_count: usize,
-        draw_calls: (&Buffer, usize),
+        non_transparent_object_count: usize,
+        draw_count: usize,
+        non_transparent_draw_count: usize,
+        src_draw_calls: (&Buffer, usize),
+        dst_draw_calls: (&Buffer, usize),
+        draw_counts: (&Buffer, usize),
         objects: &RenderObjects,
+        hzb: &HzbImage<FIF>,
         input_ids: &Buffer,
         output_ids: &Buffer,
     ) {
         self.object_count = object_count;
-        self.sets[usize::from(frame)].update(&[
+        self.non_transparent_object_count = non_transparent_object_count;
+        self.draw_count = draw_count;
+        self.non_transparent_draw_count = non_transparent_draw_count;
+
+        self.gen_sets[usize::from(frame)].update(&[
             DescriptorSetUpdate {
                 binding: DRAW_GEN_SET_DRAW_CALLS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
-                    buffer: draw_calls.0,
-                    array_element: draw_calls.1,
+                    buffer: src_draw_calls.0,
+                    array_element: src_draw_calls.1,
                 },
             },
             DescriptorSetUpdate {
@@ -151,6 +230,38 @@ impl DrawGenSets {
                 value: DescriptorValue::StorageBuffer {
                     buffer: output_ids,
                     array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: DRAW_GEN_SET_HZB_IMAGE_BINDING,
+                array_element: 0,
+                value: hzb.descriptor_value(),
+            },
+        ]);
+
+        self.compact_sets[usize::from(frame)].update(&[
+            DescriptorSetUpdate {
+                binding: DRAW_COMPACT_SET_DRAW_CALLS_SRC_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: src_draw_calls.0,
+                    array_element: src_draw_calls.1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: DRAW_COMPACT_SET_DRAW_CALLS_DST_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: dst_draw_calls.0,
+                    array_element: dst_draw_calls.1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: DRAW_COMPACT_SET_DRAW_COUNTS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: draw_counts.0,
+                    array_element: draw_counts.1,
                 },
             },
         ]);

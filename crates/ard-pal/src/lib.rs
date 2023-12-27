@@ -62,9 +62,9 @@ pub mod prelude {
 
     // Buffer
     pub type Buffer = api::buffer::Buffer<crate::Backend>;
-    pub use api::buffer::{
-        BufferCreateError, BufferCreateInfo, BufferReadView, BufferViewError, BufferWriteView,
-    };
+    pub type BufferReadView<'a> = api::buffer::BufferReadView<'a, crate::Backend>;
+    pub type BufferWriteView<'a> = api::buffer::BufferWriteView<'a, crate::Backend>;
+    pub use api::buffer::{BufferCreateError, BufferCreateInfo, BufferViewError};
 
     // Texture
     pub type Texture = api::texture::Texture<crate::Backend>;
@@ -77,9 +77,10 @@ pub mod prelude {
     // Descriptor set & layout
     pub type DescriptorSetLayout = api::descriptor_set::DescriptorSetLayout<crate::Backend>;
     pub type DescriptorSet = api::descriptor_set::DescriptorSet<crate::Backend>;
+    pub type DescriptorValue<'a> = api::descriptor_set::DescriptorValue<'a, crate::Backend>;
     pub use api::descriptor_set::{
         DescriptorBinding, DescriptorSetCreateError, DescriptorSetCreateInfo,
         DescriptorSetLayoutCreateError, DescriptorSetLayoutCreateInfo, DescriptorSetUpdate,
-        DescriptorType, DescriptorValue,
+        DescriptorType,
     };
 }

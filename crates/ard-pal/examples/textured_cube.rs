@@ -69,7 +69,7 @@ fn main() {
     let cube_index_buffer = buffers.index;
     let cube_index_staging = buffers.index_staging;
 
-    let mut command_buffer = context.transfer().command_buffer();
+    let mut command_buffer = context.main().command_buffer();
     command_buffer.copy_buffer_to_buffer(CopyBufferToBuffer {
         src: &triangle_index_staging,
         src_array_element: 0,
@@ -107,7 +107,7 @@ fn main() {
         len: cube_vertex_buffer.size(),
     });
     context
-        .transfer()
+        .main()
         .submit(Some("staging_upload"), command_buffer);
 
     std::mem::drop(triangle_vertex_staging);
@@ -193,18 +193,22 @@ fn main() {
             mip_levels: 1,
             texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("triangle_texture")),
         },
     )
     .unwrap();
 
-    let uniform_buffer = Buffer::new(
+    let mut uniform_buffer = Buffer::new(
         context.clone(),
         BufferCreateInfo {
             size: std::mem::size_of::<Mat4>() as u64,
             array_elements: 1,
             buffer_usage: BufferUsage::UNIFORM_BUFFER,
             memory_usage: MemoryUsage::CpuToGpu,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("uniform_buffer")),
         },
     )
@@ -367,6 +371,8 @@ fn main() {
             mip_levels: 1,
             texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
             memory_usage: MemoryUsage::GpuOnly,
+            queue_types: QueueTypes::MAIN,
+            sharing_mode: SharingMode::Exclusive,
             debug_name: Some(String::from("depth_buffer")),
         },
     )
