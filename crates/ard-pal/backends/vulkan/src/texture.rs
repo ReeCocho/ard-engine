@@ -60,7 +60,7 @@ impl Texture {
                 crate::util::to_vk_sharing_mode(create_info.sharing_mode)
             })
             .queue_family_indices(&qfi)
-            .samples(vk::SampleCountFlags::TYPE_1)
+            .samples(crate::util::to_vk_sample_count(create_info.sample_count))
             .flags(vk::ImageCreateFlags::empty())
             .build();
 

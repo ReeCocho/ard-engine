@@ -1,6 +1,7 @@
 #version 450
 #extension GL_EXT_control_flow_attributes: enable
 #extension GL_EXT_scalar_block_layout : enable
+// #extension GL_EXT_debug_printf : enable
 
 #define ARD_SET_CAMERA 0
 #define ARD_SET_LIGHT_CLUSTERING 1
@@ -23,10 +24,10 @@ shared uint shared_lights_count;
 void main() {
     const uint total_lights = consts.total_lights;
 
-    Froxel froxel = froxels.froxels
-        [gl_WorkGroupID.z]
+    const Froxel froxel = froxels.froxels
         [gl_LocalInvocationID.x]
-        [gl_LocalInvocationID.y];
+        [gl_LocalInvocationID.y]
+        [gl_WorkGroupID.z];
 
     const uint local_inv_idx = 
         (gl_LocalInvocationID.y * gl_WorkGroupSize.x) + gl_LocalInvocationID.x;
@@ -42,32 +43,48 @@ void main() {
         if (local_inv_idx == 0) {
             shared_lights_count = 0;
         }
-
+        
+        memoryBarrierShared();
         barrier();
 
         // Read a batch of lights into shared memory
         const uint batch_size = min(SLICE_SIZE, total_lights - lights_offset);
 
-        if(local_inv_idx < batch_size)
-        {
-            uint local_light_idx = lights_offset + local_inv_idx;
+        if(local_inv_idx < batch_size) {
+            const uint local_light_idx = lights_offset + local_inv_idx;
 
             // Transform to view space
-            Light light = lights[local_light_idx];
-            vec3 position = (camera.view * vec4(light.position_range.xyz, 1.0)).xyz;
+            const Light light = lights[local_light_idx];
+            const vec4 light_pos_hmg = vec4(light.position_range.xyz, 1.0);
+            const float light_radius = light.position_range.w;
+            const vec3 position = (camera.view * light_pos_hmg).xyz;
 
-            // Early discard based on Z slice since all clusters share the same Z
+            // Early discard based on Z slice since all clusters share the same Z.
             const vec2 min_max_z = froxel.min_max_z.xy;
-            if (
-                position.z - light.position_range.w <= min_max_z.y && 
-                position.z + light.position_range.w >= min_max_z.x
-            ) {
-                uint idx = atomicAdd(shared_lights_count, 1);
-                shared_light_pos_rng[idx] = vec4(position, light.position_range.w);
+            const bool within_z_bounds =
+                position.z - light_radius <= min_max_z.y &&
+                position.z + light_radius >= min_max_z.x;
+
+            // Early discard if outside of camera frustum.
+            //
+            // It's good to test for this since if we know that if the light is outside the camera 
+            // frustum it must also be outside of all froxels, meaning we can avoid testing all of 
+            // them.
+            const bool outside_camera_bounds = 
+                dot(light_pos_hmg, camera.frustum.planes[0]) < -light_radius ||
+                dot(light_pos_hmg, camera.frustum.planes[1]) < -light_radius ||
+                dot(light_pos_hmg, camera.frustum.planes[2]) < -light_radius ||
+                dot(light_pos_hmg, camera.frustum.planes[3]) < -light_radius ||
+                dot(light_pos_hmg, camera.frustum.planes[4]) < -light_radius;
+
+            if (within_z_bounds && !outside_camera_bounds) {
+                const uint idx = atomicAdd(shared_lights_count, 1);
+                shared_light_pos_rng[idx] = vec4(position, light_radius);
                 shared_light_idx[idx] = local_light_idx;
             }
         }
 
+        memoryBarrierShared();
         barrier();
 
         // Cull light
@@ -76,7 +93,7 @@ void main() {
                 break;
             }
 
-            vec4 light_pos_rng = shared_light_pos_rng[i];
+            const vec4 light_pos_rng = shared_light_pos_rng[i];
 
             // Check planes
             if (

@@ -7,6 +7,7 @@ use ard_pal::prelude::{
 };
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
+use ard_render_image_effects::ao::AoImage;
 use ard_render_lighting::lights::{Lighting, Lights};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
@@ -21,8 +22,9 @@ use std::ops::DerefMut;
 use crate::{
     bins::{DrawBins, RenderArgs},
     draw_gen::{DrawGenPipeline, DrawGenSets},
-    global::GlobalSets,
+    global::{GlobalSetBindingUpdate, GlobalSets},
     highz::HzbImage,
+    shadow::SunShadowsRenderer,
     DEPTH_PREPASS_PASS_ID, HIGH_Z_PASS_ID, OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 
@@ -95,7 +97,7 @@ impl SceneRenderer {
             bins: DrawBins::new(ctx, frames_in_flight, true),
             set: RenderableSet::default(),
             global: GlobalSets::new(ctx, layouts, frames_in_flight),
-            draw_gen: DrawGenSets::new(draw_gen, frames_in_flight),
+            draw_gen: DrawGenSets::new(draw_gen, true, frames_in_flight),
         }
     }
 
@@ -186,18 +188,28 @@ impl SceneRenderer {
     pub fn update_bindings<const FIF: usize>(
         &mut self,
         frame: Frame,
+        sun_shadows: &SunShadowsRenderer,
         lighting: &Lighting,
         objects: &RenderObjects,
         lights: &Lights,
         hzb_image: &HzbImage<FIF>,
+        ao_image: &AoImage<FIF>,
     ) {
-        self.global.update_object_bindings(
+        self.global.update_object_bindings(GlobalSetBindingUpdate {
             frame,
-            objects.object_data(),
-            &self.output_ids,
-            lights.buffer(),
-            lighting.clusters(),
-        );
+            object_data: objects.object_data(),
+            object_ids: &self.output_ids,
+            global_lighting: lights.global_buffer(),
+            lights: lights.buffer(),
+            clusters: lighting.clusters(),
+            sun_shadow_info: sun_shadows.sun_shadow_info(frame),
+            shadow_cascades: std::array::from_fn(|i| {
+                sun_shadows
+                    .shadow_cascade(i)
+                    .unwrap_or_else(|| sun_shadows.empty_shadow())
+            }),
+            ao_image: ao_image.texture(),
+        });
 
         self.draw_gen.update_bindings(
             frame,
@@ -209,7 +221,7 @@ impl SceneRenderer {
             self.bins.dst_draw_call_buffer(frame),
             self.bins.draw_counts_buffer(frame),
             objects,
-            hzb_image,
+            Some(hzb_image),
             &self.input_ids,
             &self.output_ids,
         );

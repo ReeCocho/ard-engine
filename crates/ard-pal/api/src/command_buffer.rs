@@ -80,6 +80,24 @@ pub struct BufferCubeMapCopy {
     pub cube_map_array_element: usize,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TextureResolve {
+    /// Source texture array element to resolve.
+    pub src_array_element: usize,
+    /// Source texture mip level to resolve.
+    pub src_mip: usize,
+    /// Destination texture array element to resolve to.
+    pub dst_array_element: usize,
+    /// Destination texture mip level to resolve to.
+    pub dst_mip: usize,
+    /// Offset in pixels within the source texture to begin resolving.
+    pub src_offset: (i32, i32, i32),
+    /// Offset in pixels within the destination texture to resolve to.
+    pub dst_offset: (i32, i32, i32),
+    /// Pixel extents to resolve.
+    pub extent: (u32, u32, u32),
+}
+
 pub enum Command<'a, B: Backend> {
     BeginRenderPass(RenderPassDescriptor<'a, B>),
     EndRenderPass,
@@ -187,6 +205,11 @@ pub enum Command<'a, B: Backend> {
         dst: BlitDestination<'a, B>,
         blit: Blit,
         filter: Filter,
+    },
+    TextureResolve {
+        src: &'a Texture<B>,
+        dst: &'a Texture<B>,
+        resolve: TextureResolve,
     },
 }
 
@@ -529,5 +552,22 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             blit,
             filter,
         });
+    }
+
+    /// Resolves a multi-sampled texture.
+    ///
+    /// # Arguments
+    /// - `src` - The source multi-sampled textre.
+    /// - `dst` - The texture to resolve values to.
+    /// - `resolve` - Resolution arguments.
+    #[inline(always)]
+    pub fn resolve_texture(
+        &mut self,
+        src: &'a Texture<B>,
+        dst: &'a Texture<B>,
+        resolve: TextureResolve,
+    ) {
+        self.commands
+            .push(Command::TextureResolve { src, dst, resolve });
     }
 }

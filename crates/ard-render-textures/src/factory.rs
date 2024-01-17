@@ -5,8 +5,8 @@ use ard_log::warn;
 use ard_pal::prelude::{
     AnisotropyLevel, Blit, BlitDestination, BlitSource, Buffer, BufferTextureCopy, CommandBuffer,
     Context, DescriptorSet, DescriptorSetCreateInfo, DescriptorSetUpdate, DescriptorValue, Filter,
-    Format, MemoryUsage, QueueType, QueueTypes, Sampler, SamplerAddressMode, SharingMode, Texture,
-    TextureCreateInfo, TextureType, TextureUsage,
+    Format, MemoryUsage, MultiSamples, QueueType, QueueTypes, Sampler, SamplerAddressMode,
+    SharingMode, Texture, TextureCreateInfo, TextureType, TextureUsage,
 };
 use ard_render_base::{
     ecs::Frame,
@@ -406,6 +406,7 @@ impl TextureFactory {
                 depth: 1,
                 array_elements: 1,
                 mip_levels: 1,
+                sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::TRANSFER_DST | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN | QueueTypes::TRANSFER,

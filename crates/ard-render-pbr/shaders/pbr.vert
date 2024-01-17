@@ -23,9 +23,18 @@ void main() {
     const mat4 model_mat = ard_ModelMatrix(id);
     const mat3 normal_mat = mat3(ard_NormalMatrix(id));
 
-    vec4 position = camera.vp * model_mat * ard_Position;
+    const vec4 ws_frag_pos = model_mat * ard_Position;
+    vs_WorldSpaceFragPos = ws_frag_pos.xyz;
+
+    vec4 position = camera.vp * ws_frag_pos;
     gl_Position = position;
     vs_Position = position;
+    vs_ViewSpacePosition = camera.view * ws_frag_pos;
+
+    // Compute light space positions
+    for (int i = 0; i < sun_shadow_info.count; i++) {
+        vs_LightSpacePositions[i] = sun_shadow_info.cascades[i].vp * ws_frag_pos;
+    }
 
     // Compute TBN if we have tangents
 #if ARD_VS_HAS_TANGENT

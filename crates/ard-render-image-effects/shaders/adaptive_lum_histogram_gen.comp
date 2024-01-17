@@ -1,0 +1,52 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_HISTOGRAM_GEN 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+const float EPSILON = 0.005;
+
+layout(push_constant) uniform constants {
+    AdaptiveLumHistogramGenPushConstants consts;
+};
+
+shared uint histogram_shared[ADAPTIVE_LUM_HISTOGRAM_SIZE];
+
+// Convert color and luminance range to histogram bin index.
+uint color_to_bin(vec3 hdr_color) {
+    const float lum = dot(hdr_color, vec3(0.2125, 0.7154, 0.0721));
+
+    if (lum < EPSILON) {
+        return 0;
+    }
+
+    // Compute log2 of luminance and get it on the range [0, 1]
+    const float log_lum = clamp((log2(lum) - consts.min_log2_lum) * consts.inv_log2_lum, 0.0, 1.0);
+    return uint(log_lum * 254.0 + 1.0);
+}
+
+void main() {
+    // Initialize bin to 0
+    histogram_shared[gl_LocalInvocationIndex] = 0;
+    barrier();
+
+    const uvec2 dim = textureSize(hdr_src, 0).xy;
+
+    // Ignore out of bounds
+    if (gl_GlobalInvocationID.x < dim.x && gl_GlobalInvocationID.y < dim.y) {
+        const vec3 hdr_color = texture(hdr_src, vec2(gl_GlobalInvocationID.xy)).rgb;
+        const uint bin_idx = color_to_bin(hdr_color);
+
+        atomicAdd(histogram_shared[bin_idx], 1);
+    }
+
+    barrier();
+
+    atomicAdd(histogram[gl_LocalInvocationIndex], histogram_shared[gl_LocalInvocationIndex]);
+}

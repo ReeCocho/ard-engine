@@ -311,10 +311,31 @@ pub(crate) fn to_vk_color_components(cc: ColorComponents) -> vk::ColorComponentF
 }
 
 #[inline(always)]
-pub(crate) fn to_vk_sharing_mode(sm: SharingMode) -> vk::SharingMode {
+pub(crate) const fn to_vk_sharing_mode(sm: SharingMode) -> vk::SharingMode {
     match sm {
         SharingMode::Exclusive => vk::SharingMode::EXCLUSIVE,
         SharingMode::Concurrent => vk::SharingMode::CONCURRENT,
+    }
+}
+
+#[inline(always)]
+pub(crate) const fn to_vk_sample_count(ms: MultiSamples) -> vk::SampleCountFlags {
+    match ms {
+        MultiSamples::Count1 => vk::SampleCountFlags::TYPE_1,
+        MultiSamples::Count2 => vk::SampleCountFlags::TYPE_2,
+        MultiSamples::Count4 => vk::SampleCountFlags::TYPE_4,
+        MultiSamples::Count8 => vk::SampleCountFlags::TYPE_8,
+        MultiSamples::Count16 => vk::SampleCountFlags::TYPE_16,
+    }
+}
+
+#[inline(always)]
+pub(crate) const fn to_vk_resolve_mode(rm: ResolveMode) -> vk::ResolveModeFlags {
+    match rm {
+        ResolveMode::SampleZero => vk::ResolveModeFlags::SAMPLE_ZERO,
+        ResolveMode::Average => vk::ResolveModeFlags::AVERAGE,
+        ResolveMode::Min => vk::ResolveModeFlags::MIN,
+        ResolveMode::Max => vk::ResolveModeFlags::MAX,
     }
 }
 

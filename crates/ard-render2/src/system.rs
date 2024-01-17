@@ -5,7 +5,7 @@ use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
 };
-use ard_render_lighting::{lights::Lights, Light};
+use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 use ard_render_objects::{objects::RenderObjects, Model, RenderFlags, RenderingMode};
@@ -109,9 +109,10 @@ impl RenderSystem {
             ),
             Read<Disabled>,
         )>,
-        res: Res<(Read<Windows>,)>,
+        res: Res<(Read<Windows>, Read<GlobalLighting>)>,
     ) {
         let windows = res.get::<Windows>().unwrap();
+        let global_lighting = res.get::<GlobalLighting>().unwrap();
 
         // Do not render if the window is minimized
         let window = windows
@@ -182,7 +183,9 @@ impl RenderSystem {
             .object_data
             .upload_objects(static_objs, dynamic_objs, &frame.dirty_static);
 
+        // Update lighting
         frame.lights.update(lights);
+        frame.lights.update_global(&global_lighting);
 
         // Prepare data for the render thread
         frame.window_size = (window.physical_width(), window.physical_height());

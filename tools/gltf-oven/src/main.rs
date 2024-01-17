@@ -1,13 +1,14 @@
 use std::fs;
 use std::ops::Div;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
 use ard_formats::mesh::{IndexData, MeshHeader, VertexDataBuilder, VertexLayout};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
 use ard_formats::texture::{Sampler, TextureData, TextureHeader};
 use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfTexture};
-use ard_math::{Mat4, Vec4};
+use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::Format;
 use clap::Parser;
 use image::GenericImageView;
@@ -56,9 +57,17 @@ fn main() {
     let model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
     std::mem::drop(bin);
 
+    // For each texture, we mark if it was used in a way that needs a UNORM color format and not
+    // SRGB.
+    let texture_is_unorm: Vec<_> = model
+        .textures
+        .iter()
+        .map(|_| AtomicBool::new(false))
+        .collect();
+
     // Construct the model header and save it
     println!("Constructing header...");
-    let header = create_header(&args, &model);
+    let header = create_header(&args, &model, &texture_is_unorm);
     let header_path = ModelHeader::header_path(out_path.clone());
     let mut file = std::fs::File::create(header_path).unwrap();
     bincode::serialize_into(&mut file, &header).unwrap();
@@ -69,11 +78,15 @@ fn main() {
     println!("Saving...");
     rayon::join(
         || save_mesh_groups(&args, &out_path, &model.mesh_groups),
-        || save_textures(&args, &out_path, &model.textures),
+        || save_textures(&args, &out_path, &model.textures, &texture_is_unorm),
     );
 }
 
-fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
+fn create_header(
+    args: &Args,
+    gltf: &ard_gltf::GltfModel,
+    texture_is_unorm: &[AtomicBool],
+) -> ModelHeader {
     let mut header = ModelHeader::default();
     header.lights = Vec::with_capacity(gltf.lights.len());
     header.materials = Vec::with_capacity(gltf.materials.len());
@@ -135,8 +148,14 @@ fn create_header(args: &Args, gltf: &ard_gltf::GltfModel) -> ModelHeader {
                     roughness: *roughness,
                     alpha_cutoff: *alpha_cutoff,
                     diffuse_map: diffuse_map.map(|v| v as u32),
-                    normal_map: normal_map.map(|v| v as u32),
-                    metallic_roughness_map: metallic_roughness_map.map(|v| v as u32),
+                    normal_map: normal_map.map(|v| {
+                        texture_is_unorm[v].store(true, Ordering::Relaxed);
+                        v as u32
+                    }),
+                    metallic_roughness_map: metallic_roughness_map.map(|v| {
+                        texture_is_unorm[v].store(true, Ordering::Relaxed);
+                        v as u32
+                    }),
                 },
             },
         });
@@ -268,7 +287,7 @@ fn save_mesh_groups(args: &Args, out: &Path, mesh_groups: &[GltfMeshGroup]) {
         });
 }
 
-fn save_mesh(_args: &Args, out: &Path, mesh: &GltfMesh) {
+fn save_mesh(args: &Args, out: &Path, mesh: &GltfMesh) {
     rayon::join(
         // Save indices
         || {
@@ -322,8 +341,16 @@ fn save_mesh(_args: &Args, out: &Path, mesh: &GltfMesh) {
                 }
             };
 
-            if let Some(tangents) = &mesh.tangents {
-                vertices = vertices.add_vec4_tangents(&tangents);
+            // Check if we can compute tangents
+            if args.compute_tangents {
+                if let Some(uvs) = &mesh.uv0 {
+                    let tangents = compute_tangents(&mesh.positions, uvs, &mesh.indices);
+                    vertices = vertices.add_vec4_tangents(&tangents);
+                }
+            } else {
+                if let Some(tangents) = &mesh.tangents {
+                    vertices = vertices.add_vec4_tangents(&tangents);
+                }
             }
 
             if let Some(colors) = &mesh.colors {
@@ -353,7 +380,12 @@ fn save_mesh(_args: &Args, out: &Path, mesh: &GltfMesh) {
     );
 }
 
-fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
+fn save_textures(
+    args: &Args,
+    out: &Path,
+    textures: &[GltfTexture],
+    texture_is_unorm: &[AtomicBool],
+) {
     use rayon::prelude::*;
     textures.par_iter().enumerate().for_each(|(i, texture)| {
         println!("Saving texture {i}");
@@ -373,6 +405,15 @@ fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
 
         let compress = args.compress_textures && texture_needs_compression(&image);
         let mip_count = texture_mip_count(&image, compress);
+        let format = if compress {
+            if texture_is_unorm[i].load(Ordering::Relaxed) {
+                Format::BC7Unorm
+            } else {
+                Format::BC7Srgb
+            }
+        } else {
+            Format::Rgba8Srgb
+        };
 
         // Compute each mip and save to disc
         for mip in 0..mip_count {
@@ -394,16 +435,7 @@ fn save_textures(args: &Args, out: &Path, textures: &[GltfTexture]) {
                 );
             }
 
-            let tex_data = TextureData::new(
-                bytes,
-                width,
-                height,
-                if compress {
-                    Format::BC7Srgb
-                } else {
-                    Format::Rgba8Srgb
-                },
-            );
+            let tex_data = TextureData::new(bytes, width, height, format);
 
             // Save the file to disk
             let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
@@ -439,4 +471,41 @@ fn texture_mip_count(image: &image::DynamicImage, compressed: bool) -> usize {
     } else {
         (width.max(height) as f32).log2() as usize + 1
     }
+}
+
+/// Helper to compute tangents from UVs and positions
+fn compute_tangents(positions: &[Vec4], uvs: &[Vec2], indices: &[u32]) -> Vec<Vec4> {
+    assert!(positions.len() == uvs.len() && !positions.is_empty());
+
+    let mut tangents = Vec::with_capacity(positions.len());
+
+    for tri in indices.chunks_exact(3) {
+        let p0 = &positions[tri[0] as usize];
+        let p1 = &positions[tri[1] as usize];
+        let p2 = &positions[tri[2] as usize];
+
+        let uv0 = &uvs[tri[0] as usize];
+        let uv1 = &uvs[tri[1] as usize];
+        let uv2 = &uvs[tri[2] as usize];
+
+        let edge1 = *p1 - *p0;
+        let edge2 = *p2 - *p0;
+
+        let delta_uv1 = *uv1 - *uv0;
+        let delta_uv2 = *uv2 - *uv0;
+
+        let f = 1.0 / ((delta_uv1.x * delta_uv2.y) - (delta_uv2.x * delta_uv1.y));
+
+        tangents.push(
+            Vec4::new(
+                f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x),
+                f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y),
+                f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z),
+                0.0,
+            )
+            .normalize(),
+        );
+    }
+
+    tangents
 }

@@ -3,7 +3,10 @@ use ard_math::{Vec3, Vec4};
 use ard_render_si::types::GpuLight;
 
 pub mod clustering;
+pub mod global;
 pub mod lights;
+pub mod proc_skybox;
+pub mod shadows;
 
 #[derive(Debug, Component, Copy, Clone)]
 pub enum Light {

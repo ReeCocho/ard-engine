@@ -15,13 +15,16 @@ const DRAW_COMPACT_WORKGROUP_SIZE: u32 = 64;
 pub struct DrawGenPipeline {
     ctx: Context,
     gen_pipeline: ComputePipeline,
+    gen_no_hzb_pipeline: ComputePipeline,
     compact_pipeline: ComputePipeline,
     gen_layout: DescriptorSetLayout,
+    gen_no_hzb_layout: DescriptorSetLayout,
     compact_layout: DescriptorSetLayout,
 }
 
 /// Sets per frame in flight to be used when generating draw calls.
 pub struct DrawGenSets {
+    use_hzb: bool,
     non_transparent_object_count: usize,
     object_count: usize,
     draw_count: usize,
@@ -56,6 +59,27 @@ impl DrawGenPipeline {
         let module = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
+                code: include_bytes!(concat!(env!("OUT_DIR"), "./draw_gen_no_hzb.comp.spv")),
+                debug_name: Some("draw_gen_no_hzb_shader".into()),
+            },
+        )
+        .unwrap();
+
+        let gen_no_hzb_pipeline = ComputePipeline::new(
+            ctx.clone(),
+            ComputePipelineCreateInfo {
+                layouts: vec![layouts.draw_gen_no_hzb.clone(), layouts.camera.clone()],
+                module,
+                work_group_size: (DRAW_GEN_WORKGROUP_SIZE, 1, 1),
+                push_constants_size: Some(std::mem::size_of::<GpuDrawGenPushConstants>() as u32),
+                debug_name: Some("draw_gen_no_hzb_pipeline".into()),
+            },
+        )
+        .unwrap();
+
+        let module = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
                 code: include_bytes!(concat!(env!("OUT_DIR"), "./draw_compact.comp.spv")),
                 debug_name: Some("draw_compact_shader".into()),
             },
@@ -80,8 +104,10 @@ impl DrawGenPipeline {
         Self {
             ctx: ctx.clone(),
             gen_pipeline,
+            gen_no_hzb_pipeline,
             compact_pipeline,
             gen_layout: layouts.draw_gen.clone(),
+            gen_no_hzb_layout: layouts.draw_gen_no_hzb.clone(),
             compact_layout: layouts.draw_compact.clone(),
         }
     }
@@ -96,7 +122,11 @@ impl DrawGenPipeline {
     ) {
         commands.compute_pass(|pass| {
             // Generate draw calls
-            pass.bind_pipeline(self.gen_pipeline.clone());
+            pass.bind_pipeline(if sets.use_hzb {
+                self.gen_pipeline.clone()
+            } else {
+                self.gen_no_hzb_pipeline.clone()
+            });
             pass.bind_sets(0, vec![sets.get_gen(frame), camera.get_set(frame)]);
 
             let object_count = sets.object_count as u32;
@@ -131,14 +161,21 @@ impl DrawGenPipeline {
 }
 
 impl DrawGenSets {
-    pub fn new(pipeline: &DrawGenPipeline, frames_in_flight: usize) -> Self {
+    pub fn new(pipeline: &DrawGenPipeline, use_hzb: bool, frames_in_flight: usize) -> Self {
         let gen_sets = (0..frames_in_flight)
             .map(|frame_idx| {
                 DescriptorSet::new(
                     pipeline.ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: pipeline.gen_layout.clone(),
-                        debug_name: Some(format!("draw_gen_set_{frame_idx}")),
+                    if use_hzb {
+                        DescriptorSetCreateInfo {
+                            layout: pipeline.gen_layout.clone(),
+                            debug_name: Some(format!("draw_gen_set_{frame_idx}")),
+                        }
+                    } else {
+                        DescriptorSetCreateInfo {
+                            layout: pipeline.gen_no_hzb_layout.clone(),
+                            debug_name: Some(format!("draw_gen_no_hzb_set_{frame_idx}")),
+                        }
                     },
                 )
                 .unwrap()
@@ -159,6 +196,7 @@ impl DrawGenSets {
             .collect();
 
         Self {
+            use_hzb,
             gen_sets,
             compact_sets,
             object_count: 0,
@@ -190,7 +228,7 @@ impl DrawGenSets {
         dst_draw_calls: (&Buffer, usize),
         draw_counts: (&Buffer, usize),
         objects: &RenderObjects,
-        hzb: &HzbImage<FIF>,
+        hzb: Option<&HzbImage<FIF>>,
         input_ids: &Buffer,
         output_ids: &Buffer,
     ) {
@@ -199,45 +237,82 @@ impl DrawGenSets {
         self.draw_count = draw_count;
         self.non_transparent_draw_count = non_transparent_draw_count;
 
-        self.gen_sets[usize::from(frame)].update(&[
-            DescriptorSetUpdate {
-                binding: DRAW_GEN_SET_DRAW_CALLS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: src_draw_calls.0,
-                    array_element: src_draw_calls.1,
-                },
-            },
-            DescriptorSetUpdate {
-                binding: DRAW_GEN_SET_OBJECTS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: objects.object_data(),
+        if self.use_hzb {
+            self.gen_sets[usize::from(frame)].update(&[
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_DRAW_CALLS_BINDING,
                     array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: src_draw_calls.0,
+                        array_element: src_draw_calls.1,
+                    },
                 },
-            },
-            DescriptorSetUpdate {
-                binding: DRAW_GEN_SET_INPUT_IDS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: input_ids,
-                    array_element: usize::from(frame),
-                },
-            },
-            DescriptorSetUpdate {
-                binding: DRAW_GEN_SET_OUTPUT_IDS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: output_ids,
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_OBJECTS_BINDING,
                     array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: objects.object_data(),
+                        array_element: 0,
+                    },
                 },
-            },
-            DescriptorSetUpdate {
-                binding: DRAW_GEN_SET_HZB_IMAGE_BINDING,
-                array_element: 0,
-                value: hzb.descriptor_value(),
-            },
-        ]);
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_INPUT_IDS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: input_ids,
+                        array_element: usize::from(frame),
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_OUTPUT_IDS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: output_ids,
+                        array_element: 0,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_HZB_IMAGE_BINDING,
+                    array_element: 0,
+                    value: hzb.unwrap().descriptor_value(),
+                },
+            ]);
+        } else {
+            self.gen_sets[usize::from(frame)].update(&[
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_DRAW_CALLS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: src_draw_calls.0,
+                        array_element: src_draw_calls.1,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_OBJECTS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: objects.object_data(),
+                        array_element: 0,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_INPUT_IDS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: input_ids,
+                        array_element: usize::from(frame),
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_OUTPUT_IDS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: output_ids,
+                        array_element: 0,
+                    },
+                },
+            ]);
+        }
 
         self.compact_sets[usize::from(frame)].update(&[
             DescriptorSetUpdate {

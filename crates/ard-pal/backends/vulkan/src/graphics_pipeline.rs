@@ -3,7 +3,10 @@ use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
 use std::ffi::CString;
 
-use crate::util::{garbage_collector::Garbage, pipeline_cache::PipelineCache};
+use crate::{
+    render_pass::VkRenderPass,
+    util::{garbage_collector::Garbage, pipeline_cache::PipelineCache},
+};
 
 pub struct GraphicsPipeline {
     descriptor: GraphicsPipelineCreateInfo<crate::VulkanBackend>,
@@ -59,9 +62,9 @@ impl GraphicsPipeline {
         device: &ash::Device,
         pipelines: &mut PipelineCache,
         debug: Option<&ash::extensions::ext::DebugUtils>,
-        render_pass: vk::RenderPass,
+        render_pass: VkRenderPass,
     ) -> vk::Pipeline {
-        if let Some(pipeline) = pipelines.get(self.layout, render_pass) {
+        if let Some(pipeline) = pipelines.get(self.layout, render_pass.pass) {
             return pipeline;
         }
 
@@ -114,9 +117,9 @@ impl GraphicsPipeline {
             .build();
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-            .min_sample_shading(1.0)
+            .sample_shading_enable(true)
+            .rasterization_samples(render_pass.samples)
+            .min_sample_shading(0.2)
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false)
             .build();
@@ -233,7 +236,7 @@ impl GraphicsPipeline {
             .dynamic_state(&dynamic_state)
             .layout(self.layout)
             .color_blend_state(&color_blend)
-            .render_pass(render_pass)
+            .render_pass(render_pass.pass)
             .subpass(0)
             .build()];
 
@@ -262,7 +265,7 @@ impl GraphicsPipeline {
             }
         }
 
-        pipelines.insert(self.layout, render_pass, pipeline);
+        pipelines.insert(self.layout, render_pass.pass, pipeline);
         pipeline
     }
 }

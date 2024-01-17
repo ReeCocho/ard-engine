@@ -20,5 +20,8 @@ layout(location = 4) in mat3 vs_TBN;
 #endif
 
 layout(location = 8) in vec4 vs_Position;
+layout(location = 9) in vec3 vs_WorldSpaceFragPos;
+layout(location = 10) in vec4 vs_ViewSpacePosition;
+layout(location = 11) in vec4 vs_LightSpacePositions[MAX_SHADOW_CASCADES];
 
 #endif

@@ -39,6 +39,7 @@ ard-render-meshes = { path = "./crates/ard-render-meshes" }
 ard-render-pbr = { path = "./crates/ard-render-pbr" }
 ard-render-objects = { path = "./crates/ard-render-objects" }
 ard-render-lighting = { path = "./crates/ard-render-lighting" }
+ard-render-image-effects = { path = "./crates/ard-render-image-effects" }
 ard-render2 = { path = "./crates/ard-render2" }
 ard-render-assets = { path = "./crates/ard-render-assets" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
@@ -59,6 +60,7 @@ enum_dispatch = { version = "0.3" }
 futures = { version = "0.3" }
 fxhash = { version = "0.2" }
 gltf = { version = "1", features = ["KHR_lights_punctual"] }
+half = { version = "2.1.0", features = ["bytemuck"] }
 image = { version = "0.24" }
 itertools = { version = "0.11.0" }
 num_cpus = { version = "1" }

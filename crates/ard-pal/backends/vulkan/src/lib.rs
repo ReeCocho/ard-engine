@@ -30,7 +30,7 @@ use graphics_pipeline::GraphicsPipeline;
 use job::Job;
 use queue::VkQueue;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use render_pass::{DrawIndexedIndirect, FramebufferCache, RenderPassCache};
+use render_pass::{DrawIndexedIndirect, FramebufferCache, RenderPassCache, VkRenderPass};
 use shader::Shader;
 use std::{
     borrow::Cow,
@@ -255,7 +255,7 @@ impl Backend for VulkanBackend {
             + 1;
 
         let mut semaphore_tracker = SemaphoreTracker::default();
-        let mut active_render_pass = vk::RenderPass::null();
+        let mut active_render_pass = VkRenderPass::default();
         let mut active_layout = vk::PipelineLayout::null();
         let mut pipeline_tracker = PipelineTracker::new(
             &mut resc_state,
@@ -308,9 +308,48 @@ impl Backend for VulkanBackend {
 
                     // Find the render pass
                     let mut dims = (0, 0);
-                    let mut views = Vec::with_capacity(descriptor.color_attachments.len());
+                    let mut views = Vec::with_capacity(
+                        descriptor.color_attachments.len()
+                            + descriptor.color_resolve_attachments.len(),
+                    );
                     for attachment in &descriptor.color_attachments {
                         views.push(match &attachment.source {
+                            ColorAttachmentSource::SurfaceImage(image) => {
+                                // Indicate that the surface image has been drawn to
+                                image.internal().signal_draw();
+                                dims = image.internal().dims();
+                                image.internal().view()
+                            }
+                            ColorAttachmentSource::Texture {
+                                texture,
+                                array_element,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    texture.dims().0.shr(mip_level).max(1),
+                                    texture.dims().1.shr(mip_level).max(1),
+                                );
+                                texture.internal().get_view(*array_element, *mip_level)
+                            }
+                            ColorAttachmentSource::CubeMap {
+                                cube_map,
+                                array_element,
+                                face,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map
+                                    .internal()
+                                    .get_face_view(*array_element, *mip_level, *face)
+                            }
+                        });
+                    }
+
+                    for attachment in &descriptor.color_resolve_attachments {
+                        views.push(match &attachment.dst {
                             ColorAttachmentSource::SurfaceImage(image) => {
                                 // Indicate that the surface image has been drawn to
                                 image.internal().signal_draw();
@@ -353,10 +392,18 @@ impl Backend for VulkanBackend {
                             .push(texture.get_view(attachment.array_element, attachment.mip_level));
                     }
 
+                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
+                        let (width, height, _) = attachment.dst.dims();
+                        let texture = attachment.dst.internal();
+                        dims = (width, height);
+                        views
+                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
+                    }
+
                     // Find the framebuffer
                     let framebuffer = self.framebuffers.get(
                         &self.device,
-                        active_render_pass,
+                        active_render_pass.pass,
                         views,
                         vk::Extent2D {
                             width: dims.0,
@@ -383,7 +430,37 @@ impl Backend for VulkanBackend {
                         }
                     }
 
+                    for attachment in &descriptor.color_resolve_attachments {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let color = match clear_color {
+                                ClearColor::RgbaF32(r, g, b, a) => vk::ClearColorValue {
+                                    float32: [*r, *g, *b, *a],
+                                },
+                                ClearColor::RU32(r) => vk::ClearColorValue {
+                                    uint32: [*r, 0, 0, 0],
+                                },
+                                ClearColor::D32S32(_, _) => {
+                                    panic!("invalid color clear color type")
+                                }
+                            };
+                            clear_values.push(vk::ClearValue { color });
+                        }
+                    }
+
                     if let Some(attachment) = &descriptor.depth_stencil_attachment {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let depth_stencil = match clear_color {
+                                ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
+                                    depth: *d,
+                                    stencil: *s,
+                                },
+                                _ => panic!("invalid depth clear color"),
+                            };
+                            clear_values.push(vk::ClearValue { depth_stencil })
+                        }
+                    }
+
+                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
                         if let LoadOp::Clear(clear_color) = &attachment.load_op {
                             let depth_stencil = match clear_color {
                                 ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
@@ -420,7 +497,7 @@ impl Backend for VulkanBackend {
 
                     // Begin the render pass
                     let begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(active_render_pass)
+                        .render_pass(active_render_pass.pass)
                         .clear_values(&clear_values)
                         .framebuffer(framebuffer)
                         .render_area(vk::Rect2D {
@@ -432,8 +509,12 @@ impl Backend for VulkanBackend {
                         })
                         .build();
 
+                    let subpass_info = vk::SubpassBeginInfo::builder()
+                        .contents(vk::SubpassContents::INLINE)
+                        .build();
+
                     self.device
-                        .cmd_begin_render_pass(cb, &begin_info, vk::SubpassContents::INLINE);
+                        .cmd_begin_render_pass2(cb, &begin_info, &subpass_info);
                 }
                 Command::EndRenderPass => self.device.cmd_end_render_pass(cb),
                 Command::BeginComputePass => {}
@@ -922,6 +1003,48 @@ impl Backend for VulkanBackend {
                         *new_queue,
                     );
                 }
+                Command::TextureResolve { src, dst, resolve } => {
+                    self.device.cmd_resolve_image(
+                        cb,
+                        src.internal().image,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        dst.internal().image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[vk::ImageResolve::builder()
+                            .src_subresource(
+                                vk::ImageSubresourceLayers::builder()
+                                    .aspect_mask(src.internal().aspect_flags)
+                                    .mip_level(resolve.src_mip as u32)
+                                    .base_array_layer(resolve.src_array_element as u32)
+                                    .layer_count(1)
+                                    .build(),
+                            )
+                            .src_offset(vk::Offset3D {
+                                x: resolve.src_offset.0,
+                                y: resolve.src_offset.1,
+                                z: resolve.src_offset.2,
+                            })
+                            .dst_subresource(
+                                vk::ImageSubresourceLayers::builder()
+                                    .aspect_mask(dst.internal().aspect_flags)
+                                    .mip_level(resolve.dst_mip as u32)
+                                    .base_array_layer(resolve.dst_array_element as u32)
+                                    .layer_count(1)
+                                    .build(),
+                            )
+                            .dst_offset(vk::Offset3D {
+                                x: resolve.dst_offset.0,
+                                y: resolve.dst_offset.1,
+                                z: resolve.dst_offset.2,
+                            })
+                            .extent(vk::Extent3D {
+                                width: resolve.extent.0,
+                                height: resolve.extent.1,
+                                depth: resolve.extent.2,
+                            })
+                            .build()],
+                    );
+                }
             }
         }
 
@@ -1388,12 +1511,7 @@ impl VulkanBackend {
             .draw_indirect_first_instance(true)
             .multi_draw_indirect(true)
             .depth_clamp(true)
-            .robust_buffer_access(create_info.debug)
-            .build();
-
-        let mut robustness = vk::PhysicalDeviceRobustness2FeaturesEXT::builder()
-            .robust_buffer_access2(true)
-            .robust_image_access2(true)
+            .sample_rate_shading(true)
             .build();
 
         let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
@@ -1403,15 +1521,11 @@ impl VulkanBackend {
             .draw_indirect_count(true)
             .build();
 
-        let mut create_info = vk::DeviceCreateInfo::builder()
+        let create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_infos)
             .enabled_extension_names(&device_extensions)
             .push_next(&mut features12)
             .enabled_features(&features);
-
-        if debug.is_some() {
-            create_info = create_info.push_next(&mut robustness);
-        }
 
         let create_info = create_info.build();
 

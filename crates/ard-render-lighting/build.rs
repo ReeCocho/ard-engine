@@ -12,4 +12,18 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/proc_skybox.vert",
+        PathBuf::from(&out_dir).join("proc_skybox.vert.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/proc_skybox.frag",
+        PathBuf::from(&out_dir).join("proc_skybox.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

@@ -6,11 +6,12 @@ use ard_render_camera::ubo::CameraUbo;
 use ard_render_objects::Model;
 use ard_render_si::{
     bindings::Layouts,
-    types::{GpuLight, GpuLightTable},
+    types::{GpuGlobalLighting, GpuLight, GpuLightTable},
 };
 
 use crate::{
     clustering::{LightClusteringPipeline, LightClusteringSet},
+    global::GlobalLighting,
     Light,
 };
 
@@ -27,6 +28,8 @@ pub struct Lighting {
 }
 
 pub struct Lights {
+    global: Buffer,
+    global_properties: GlobalLighting,
     lights: Buffer,
     count: usize,
 }
@@ -102,8 +105,32 @@ impl Lights {
                 },
             )
             .unwrap(),
+            global_properties: GlobalLighting::default(),
+            global: Buffer::new(
+                ctx.clone(),
+                BufferCreateInfo {
+                    size: std::mem::size_of::<GpuGlobalLighting>() as u64,
+                    array_elements: 1,
+                    buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                    memory_usage: MemoryUsage::CpuToGpu,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("global_lighting".into()),
+                },
+            )
+            .unwrap(),
             count: 0,
         }
+    }
+
+    #[inline(always)]
+    pub fn global_buffer(&self) -> &Buffer {
+        &self.global
+    }
+
+    #[inline(always)]
+    pub fn global(&self) -> &GlobalLighting {
+        &self.global_properties
     }
 
     #[inline(always)]
@@ -114,6 +141,12 @@ impl Lights {
     #[inline(always)]
     pub fn light_count(&self) -> usize {
         self.count
+    }
+
+    pub fn update_global(&mut self, global: &GlobalLighting) {
+        let mut global_view = self.global.write(0).unwrap();
+        global_view.set_as_array(global.to_gpu(), 0);
+        self.global_properties = global.clone();
     }
 
     pub fn update<'a>(

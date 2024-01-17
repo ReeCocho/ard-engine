@@ -1,9 +1,13 @@
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_camera::target::RenderTarget;
+use ard_render_image_effects::{
+    ao::{AmbientOcclusion, AoImage},
+    effects::ImageEffectTextures,
+};
 use ard_render_renderers::highz::{HzbImage, HzbRenderer};
 
-use crate::FRAMES_IN_FLIGHT;
+use crate::{AntiAliasingMode, FRAMES_IN_FLIGHT};
 
 #[derive(Resource)]
 pub(crate) struct Canvas {
@@ -11,12 +15,16 @@ pub(crate) struct Canvas {
     render_target: RenderTarget,
     /// HZB image for occlusion culling.
     hzb: HzbImage<FRAMES_IN_FLIGHT>,
+    /// AO image.
+    ao: AoImage<FRAMES_IN_FLIGHT>,
     /// Surface being rendered to.
     surface: Surface,
     /// Surface image for the current frame.
     image: Option<SurfaceImage>,
     /// Size of the canvas.
     size: (u32, u32),
+    /// Anti aliasing mode being used.
+    anti_aliasing: AntiAliasingMode,
     /// Presentation mode being used.
     present_mode: PresentMode,
     /// Surface image format.
@@ -28,19 +36,23 @@ impl Canvas {
         ctx: &Context,
         surface: Surface,
         dims: (u32, u32),
+        anti_aliasing: AntiAliasingMode,
         present_mode: PresentMode,
         hzb_render: &HzbRenderer,
+        ao: &AmbientOcclusion,
     ) -> Self {
         let mut canvas = Self {
             image: None,
-            render_target: RenderTarget::new(ctx, dims),
+            render_target: RenderTarget::new(ctx, dims, anti_aliasing.into()),
             hzb: HzbImage::new(hzb_render, dims.0, dims.1),
+            ao: AoImage::new(ao, dims),
             size: dims,
             surface,
             present_mode,
+            anti_aliasing,
             format: Format::Bgra8Unorm,
         };
-        canvas.bind_hzb_src();
+        canvas.update_bindings();
         canvas
     }
 
@@ -59,6 +71,12 @@ impl Canvas {
         &self.hzb
     }
 
+    #[inline(always)]
+    pub fn ao(&self) -> &AoImage<FRAMES_IN_FLIGHT> {
+        &self.ao
+    }
+
+    #[allow(dead_code)]
     pub fn blit_to_surface<'a>(&'a self, commands: &mut CommandBuffer<'a>) {
         let (width, height) = self.surface.dimensions();
         let color = self.render_target.color();
@@ -93,15 +111,28 @@ impl Canvas {
     }
 
     /// Updates the canvas with a new size. Does nothing if the size is matching.
-    pub fn resize(&mut self, ctx: &Context, hzb_render: &HzbRenderer, dims: (u32, u32)) {
+    ///
+    /// Returns `true` if the canvas was resized.
+    pub fn resize(
+        &mut self,
+        ctx: &Context,
+        hzb_render: &HzbRenderer,
+        ao: &AmbientOcclusion,
+        effects: &mut ImageEffectTextures,
+        dims: (u32, u32),
+    ) -> bool {
         if dims == self.size {
-            return;
+            return false;
         }
 
         self.size = dims;
-        self.render_target = RenderTarget::new(ctx, dims);
+        self.render_target = RenderTarget::new(ctx, dims, self.anti_aliasing.into());
         self.hzb = HzbImage::new(hzb_render, dims.0, dims.1);
-        self.bind_hzb_src();
+        self.ao = AoImage::new(ao, dims);
+        effects.resize(ctx, dims);
+        self.update_bindings();
+
+        true
     }
 
     /// Presents the currently active surface image and optionally resizes the surface to meet the
@@ -128,9 +159,10 @@ impl Canvas {
         }
     }
 
-    fn bind_hzb_src(&mut self) {
+    fn update_bindings(&mut self) {
         for i in 0..FRAMES_IN_FLIGHT {
             self.hzb.bind_src(i.into(), self.render_target.depth());
+            self.ao.update_binding(i.into(), self.render_target.depth());
         }
     }
 }

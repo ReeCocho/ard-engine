@@ -3,6 +3,7 @@ use std::time::Duration;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
+use ard_render_lighting::global::GlobalLighting;
 use ard_window::prelude::*;
 use ard_winit::windows::WinitWindows;
 use system::RenderSystem;
@@ -25,11 +26,19 @@ pub struct RendererSettings {
     pub render_time: Option<Duration>,
     /// Preferred presentation mode.
     pub present_mode: PresentMode,
+    /// Type of anti-aliasing to use.
+    pub anti_aliasing: AntiAliasingMode,
     /// Super resolution scale factor. A value of `1.0` means no super sampling is performed.
     pub render_scale: f32,
     /// Width and height of the renderer image. `None` indicates the dimensions should match that
     /// of the surface being presented to.
     pub canvas_size: Option<(u32, u32)>,
+}
+
+#[derive(Clone, Copy)]
+pub enum AntiAliasingMode {
+    None,
+    MSAA(MultiSamples),
 }
 
 #[derive(Resource, Clone)]
@@ -42,6 +51,7 @@ pub struct RenderPlugin {
 impl Plugin for RenderPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.add_resource(self.clone());
+        app.add_resource(GlobalLighting::default());
         app.add_startup_function(late_render_init);
     }
 }
@@ -64,4 +74,13 @@ fn late_render_init(app: &mut App) {
 
     app.dispatcher.add_system(render_system);
     app.resources.add(factory);
+}
+
+impl From<AntiAliasingMode> for MultiSamples {
+    fn from(value: AntiAliasingMode) -> Self {
+        match value {
+            AntiAliasingMode::MSAA(samples) => samples,
+            _ => MultiSamples::Count1,
+        }
+    }
 }

@@ -17,6 +17,13 @@ fn main() {
         "./shaders/draw_gen.comp",
         PathBuf::from(&out_dir).join("draw_gen.comp.spv"),
         &["./shaders/"],
+        &["HIGH_Z_CULLING"],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/draw_gen.comp",
+        PathBuf::from(&out_dir).join("draw_gen_no_hzb.comp.spv"),
+        &["./shaders/"],
         &[],
     );
 

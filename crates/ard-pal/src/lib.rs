@@ -30,12 +30,14 @@ pub mod prelude {
     pub type RenderPass<'a> = api::render_pass::RenderPass<'a, crate::Backend>;
     pub type RenderPassDescriptor<'a> = api::render_pass::RenderPassDescriptor<'a, crate::Backend>;
     pub use api::render_pass::{
-        ColorAttachment, ColorAttachmentSource, DepthStencilAttachment, VertexBind,
+        ColorAttachment, ColorAttachmentSource, ColorResolveAttachment, DepthStencilAttachment,
+        DepthStencilResolveAttachment, VertexBind,
     };
 
     // Command buffer
     pub use api::command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, CopyBufferToBuffer,
+        TextureResolve,
     };
     pub type CommandBuffer<'a> = api::command_buffer::CommandBuffer<'a, crate::Backend>;
 

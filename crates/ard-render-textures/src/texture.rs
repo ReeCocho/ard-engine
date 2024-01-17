@@ -1,7 +1,7 @@
 use ard_formats::texture::{MipType, Sampler, TextureSource};
 use ard_pal::prelude::{
-    Buffer, BufferCreateError, Context, MemoryUsage, QueueType, QueueTypes, SharingMode,
-    TextureType, TextureUsage,
+    Buffer, BufferCreateError, Context, MemoryUsage, MultiSamples, QueueType, QueueTypes,
+    SharingMode, TextureType, TextureUsage,
 };
 use ard_render_base::resource::{ResourceHandle, ResourceId};
 use thiserror::*;
@@ -88,6 +88,7 @@ impl TextureResource {
                 depth: 1,
                 array_elements: 1,
                 mip_levels: create_info.mip_count,
+                sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::TRANSFER_SRC
                     | TextureUsage::TRANSFER_DST
                     | TextureUsage::SAMPLED,

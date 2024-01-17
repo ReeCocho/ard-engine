@@ -12,7 +12,10 @@ use ard_render2::factory::Factory;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::{Mesh, MeshCreateInfo};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
-use ard_render_pbr::{PbrMaterialData, PBR_MATERIAL_DIFFUSE_SLOT};
+use ard_render_pbr::{
+    PbrMaterialData, PBR_MATERIAL_DIFFUSE_SLOT, PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT,
+    PBR_MATERIAL_NORMAL_SLOT,
+};
 use ard_render_textures::texture::{Texture, TextureCreateInfo};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -392,7 +395,8 @@ impl ModelLoader {
                         roughness,
                         alpha_cutoff,
                         diffuse_map,
-                        ..
+                        normal_map,
+                        metallic_roughness_map,
                     } => {
                         let instance = match self.factory.create_pbr_material_instance() {
                             Ok(instance) => instance,
@@ -415,6 +419,22 @@ impl ModelLoader {
                             self.factory.set_material_texture_slot(
                                 &instance,
                                 PBR_MATERIAL_DIFFUSE_SLOT,
+                                Some(&textures[*tex as usize]),
+                            );
+                        }
+
+                        if let Some(tex) = normal_map {
+                            self.factory.set_material_texture_slot(
+                                &instance,
+                                PBR_MATERIAL_NORMAL_SLOT,
+                                Some(&textures[*tex as usize]),
+                            );
+                        }
+
+                        if let Some(tex) = metallic_roughness_map {
+                            self.factory.set_material_texture_slot(
+                                &instance,
+                                PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT,
                                 Some(&textures[*tex as usize]),
                             );
                         }

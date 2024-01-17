@@ -31,7 +31,7 @@ pub struct CameraUbo {
 }
 
 impl CameraUbo {
-    pub fn new(ctx: &Context, fif: usize, layouts: &Layouts) -> Self {
+    pub fn new(ctx: &Context, fif: usize, has_froxels: bool, layouts: &Layouts) -> Self {
         let ubo = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -49,7 +49,11 @@ impl CameraUbo {
         let froxels = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
-                size: std::mem::size_of::<GpuFroxels>() as u64,
+                size: if has_froxels {
+                    std::mem::size_of::<GpuFroxels>() as u64
+                } else {
+                    1
+                },
                 array_elements: 1,
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
@@ -94,39 +98,43 @@ impl CameraUbo {
             })
             .collect();
 
-        let froxel_regen_sets = (0..fif)
-            .map(|frame_idx| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.froxel_gen.clone(),
-                        debug_name: Some(format!("froxel_regen_set_{frame_idx}")),
-                    },
-                )
-                .unwrap();
-
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: FROXEL_GEN_SET_CAMERA_UBO_BINDING,
-                        array_element: 0,
-                        value: DescriptorValue::UniformBuffer {
-                            buffer: &ubo,
-                            array_element: frame_idx,
+        let froxel_regen_sets = if has_froxels {
+            (0..fif)
+                .map(|frame_idx| {
+                    let mut set = DescriptorSet::new(
+                        ctx.clone(),
+                        DescriptorSetCreateInfo {
+                            layout: layouts.froxel_gen.clone(),
+                            debug_name: Some(format!("froxel_regen_set_{frame_idx}")),
                         },
-                    },
-                    DescriptorSetUpdate {
-                        binding: FROXEL_GEN_SET_CAMERA_FROXELS_BINDING,
-                        array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &froxels,
+                    )
+                    .unwrap();
+
+                    set.update(&[
+                        DescriptorSetUpdate {
+                            binding: FROXEL_GEN_SET_CAMERA_UBO_BINDING,
                             array_element: 0,
+                            value: DescriptorValue::UniformBuffer {
+                                buffer: &ubo,
+                                array_element: frame_idx,
+                            },
                         },
-                    },
-                ]);
+                        DescriptorSetUpdate {
+                            binding: FROXEL_GEN_SET_CAMERA_FROXELS_BINDING,
+                            array_element: 0,
+                            value: DescriptorValue::StorageBuffer {
+                                buffer: &froxels,
+                                array_element: 0,
+                            },
+                        },
+                    ]);
 
-                set
-            })
-            .collect();
+                    set
+                })
+                .collect()
+        } else {
+            Vec::default()
+        };
 
         Self {
             last_camera: Camera {
@@ -154,7 +162,7 @@ impl CameraUbo {
 
     #[inline(always)]
     pub fn needs_froxel_regen(&self) -> bool {
-        self.froxel_regen
+        !self.froxel_regen_sets.is_empty() && self.froxel_regen
     }
 
     pub fn update(&mut self, frame: Frame, value: &Camera, width: u32, height: u32, model: Model) {
@@ -169,5 +177,10 @@ impl CameraUbo {
         let mut view = self.ubo.write(frame.into()).unwrap();
         bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[0] =
             value.into_gpu_struct(width as f32, height as f32, model);
+    }
+
+    pub fn update_raw(&mut self, frame: Frame, value: &GpuCamera) {
+        let mut view = self.ubo.write(frame.into()).unwrap();
+        bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[0] = *value;
     }
 }

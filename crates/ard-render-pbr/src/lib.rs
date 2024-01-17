@@ -9,13 +9,16 @@ use ard_render_material::{
     shader::{Shader, ShaderCreateInfo},
 };
 use ard_render_renderers::{
-    DEPTH_PREPASS_PASS_ID, HIGH_Z_PASS_ID, OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
+    DEPTH_PREPASS_PASS_ID, HIGH_Z_PASS_ID, OPAQUE_PASS_ID, SHADOW_PASS_ID, TRANSPARENT_PASS_ID,
 };
 use ard_render_si::types::GpuPbrMaterial;
 
 pub type PbrMaterialData = GpuPbrMaterial;
 
+pub const PBR_MATERIAL_TEXTURE_COUNT: usize = 3;
 pub const PBR_MATERIAL_DIFFUSE_SLOT: TextureSlot = TextureSlot(0);
+pub const PBR_MATERIAL_NORMAL_SLOT: TextureSlot = TextureSlot(1);
+pub const PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT: TextureSlot = TextureSlot(2);
 
 /// Creates the PBR material given functions that can create shader modules and materials (this is
 /// probably going to be a wrapper for the factories shader creation function).
@@ -27,42 +30,42 @@ pub fn create_pbr_material(
     let vertex_shader = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.spv")),
         debug_name: Some("pbr_vertex".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
     let fragment_shader = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.spv")),
         debug_name: Some("pbr_fragment".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
     let vertex_shader_tuv0 = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.tuv0.spv")),
         debug_name: Some("pbr_vertex_tuv0".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
     let fragment_shader_tuv0 = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.tuv0.spv")),
         debug_name: Some("pbr_fragment_tuv0".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
     let vertex_shader_uv0d = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.uv0d.spv")),
         debug_name: Some("pbr_vertex_uv0d".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
     let fragment_shader_uv0d = create_shader(ShaderCreateInfo {
         code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.uv0d.spv")),
         debug_name: Some("pbr_fragment_uv0d".into()),
-        texture_slots: 0,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
@@ -111,6 +114,49 @@ pub fn create_pbr_material(
                 }),
                 color_blend: ColorBlendState::default(),
                 debug_name: Some("pbr_depth_prepass_pipeline(Position, Normal, Uv0)".into()),
+            },
+            // Shadow passes
+            MaterialVariantDescriptor {
+                pass_id: SHADOW_PASS_ID,
+                vertex_layout: VertexLayout::POSITION | VertexLayout::NORMAL,
+                vertex_shader: vertex_shader.clone(),
+                fragment_shader: None,
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::Back,
+                    front_face: FrontFace::CounterClockwise,
+                },
+                depth_stencil: Some(DepthStencilState {
+                    depth_clamp: true,
+                    depth_test: true,
+                    depth_write: true,
+                    depth_compare: CompareOp::Less,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }),
+                color_blend: ColorBlendState::default(),
+                debug_name: Some("pbr_shadow_pass_pipeline(Position, Normal)".into()),
+            },
+            MaterialVariantDescriptor {
+                pass_id: SHADOW_PASS_ID,
+                vertex_layout: VertexLayout::POSITION | VertexLayout::NORMAL | VertexLayout::UV0,
+                vertex_shader: vertex_shader_uv0d.clone(),
+                fragment_shader: Some(fragment_shader_uv0d.clone()),
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::Back,
+                    front_face: FrontFace::CounterClockwise,
+                },
+                depth_stencil: Some(DepthStencilState {
+                    depth_clamp: true,
+                    depth_test: true,
+                    depth_write: true,
+                    depth_compare: CompareOp::Less,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }),
+                color_blend: ColorBlendState::default(),
+                debug_name: Some("pbr_shadow_pass_pipeline(Position, Normal, Uv0)".into()),
             },
             // Opaque passes
             MaterialVariantDescriptor {
@@ -275,11 +321,10 @@ pub fn create_pbr_material(
             // TODO: Depth prepass for alpha masked instances.
             // TODO: Opaque pass for textured instances.
             // TODO: Depth only pass for opaque instances.
-            // TOOD: Shadow pass for opaque instances.
             // TODO: Transparent pass for untextured instances.
             // TODO: Transparent pass for textured instances.
         ],
         data_size: std::mem::size_of::<GpuPbrMaterial>() as u32,
-        texture_slots: 1,
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT as u32,
     })
 }

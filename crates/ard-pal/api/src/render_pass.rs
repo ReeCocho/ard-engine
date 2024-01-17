@@ -6,7 +6,9 @@ use crate::{
     graphics_pipeline::GraphicsPipeline,
     surface::SurfaceImage,
     texture::Texture,
-    types::{CubeFace, IndexType, LoadOp, Scissor, ShaderStage, StoreOp},
+    types::{
+        CubeFace, IndexType, LoadOp, MultiSamples, ResolveMode, Scissor, ShaderStage, StoreOp,
+    },
     Backend,
 };
 
@@ -16,12 +18,31 @@ pub struct RenderPassDescriptor<'a, B: Backend> {
     pub color_attachments: Vec<ColorAttachment<'a, B>>,
     /// An optional depth stencil attachment used by the render pass.
     pub depth_stencil_attachment: Option<DepthStencilAttachment<'a, B>>,
+    /// Color attachments to use for multi-sample resolution.
+    pub color_resolve_attachments: Vec<ColorResolveAttachment<'a, B>>,
+    /// An optional depth stencil attachment used for multi-sample resolution.
+    pub depth_stencil_resolve_attachment: Option<DepthStencilResolveAttachment<'a, B>>,
 }
 
 /// Describes a color attachment of a render pass.
 pub struct ColorAttachment<'a, B: Backend> {
     /// The source image of the attachment.
     pub source: ColorAttachmentSource<'a, B>,
+    /// How the color attachment should be loaded.
+    pub load_op: LoadOp,
+    /// How the color attachment should be stored.
+    pub store_op: StoreOp,
+    /// The number of samples to render per fragment.
+    pub samples: MultiSamples,
+}
+
+/// Describes a color attachment used for multi-sample resolution.
+pub struct ColorResolveAttachment<'a, B: Backend> {
+    /// The index of the source multi-sampled texture within the `color_attachments` of the render
+    /// pass.
+    pub src: usize,
+    /// The source image of the attachment.
+    pub dst: ColorAttachmentSource<'a, B>,
     /// How the color attachment should be loaded.
     pub load_op: LoadOp,
     /// How the color attachment should be stored.
@@ -56,6 +77,26 @@ pub struct DepthStencilAttachment<'a, B: Backend> {
     pub load_op: LoadOp,
     /// How the depth stencil attachment should be stored.
     pub store_op: StoreOp,
+    /// The number of samples to render per fragment.
+    pub samples: MultiSamples,
+}
+
+/// Describes the depth stencil attachment used for multi-sample resolution of a render pass.
+pub struct DepthStencilResolveAttachment<'a, B: Backend> {
+    /// The texture destination to resolve to.
+    pub dst: &'a Texture<B>,
+    /// The array element of the texture to use.
+    pub array_element: usize,
+    /// The mip level of the array element of the texture to use.
+    pub mip_level: usize,
+    /// How the depth stencil attachment should be loaded.
+    pub load_op: LoadOp,
+    /// How the depth stencil attachment should be stored.
+    pub store_op: StoreOp,
+    /// How depth values should be resolved.
+    pub depth_resolve_mode: ResolveMode,
+    /// How stencil values should be resolved.
+    pub stencil_resolve_mode: ResolveMode,
 }
 
 pub struct RenderPass<'a, B: Backend> {

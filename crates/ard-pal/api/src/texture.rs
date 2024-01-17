@@ -1,8 +1,8 @@
 use crate::{
     context::Context,
     types::{
-        AnisotropyLevel, BorderColor, CompareOp, Filter, Format, MemoryUsage, QueueTypes,
-        SamplerAddressMode, SharingMode, TextureType, TextureUsage,
+        AnisotropyLevel, BorderColor, CompareOp, Filter, Format, MemoryUsage, MultiSamples,
+        QueueTypes, SamplerAddressMode, SharingMode, TextureType, TextureUsage,
     },
     Backend,
 };
@@ -17,6 +17,7 @@ pub struct TextureCreateInfo {
     pub depth: u32,
     pub array_elements: usize,
     pub mip_levels: usize,
+    pub sample_count: MultiSamples,
     pub texture_usage: TextureUsage,
     pub memory_usage: MemoryUsage,
     pub queue_types: QueueTypes,
@@ -148,6 +149,7 @@ impl Default for TextureCreateInfo {
             depth: 1,
             array_elements: 1,
             mip_levels: 1,
+            sample_count: MultiSamples::Count1,
             texture_usage: TextureUsage::empty(),
             memory_usage: MemoryUsage::GpuOnly,
             queue_types: QueueTypes::all(),

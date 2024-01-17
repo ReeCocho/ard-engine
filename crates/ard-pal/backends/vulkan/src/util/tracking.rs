@@ -2,7 +2,7 @@ use api::{
     buffer::Buffer,
     command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
-        CopyBufferToBuffer,
+        CopyBufferToBuffer, TextureResolve,
     },
     cube_map::CubeMap,
     descriptor_set::DescriptorSet,
@@ -61,6 +61,9 @@ pub(crate) unsafe fn track_resources(mut state: TrackState) {
             copy,
         } => track_cube_map_to_buffer_copy(&mut state, cube_map, buffer, copy),
         Command::Blit { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
+        Command::TextureResolve { src, dst, resolve } => {
+            track_texture_resolve(&mut state, src, dst, resolve)
+        }
         // All other commands do not need state tracking
         _ => {}
     }
@@ -144,6 +147,77 @@ unsafe fn track_render_pass(
         );
     }
 
+    for attachment in &descriptor.color_resolve_attachments {
+        let (subresource, layout) = match attachment.dst {
+            ColorAttachmentSource::SurfaceImage(image) => {
+                // Surface image has special semaphores
+                let semaphores = image.internal().semaphores();
+                state
+                    .semaphores
+                    .register_signal(semaphores.presentable, None);
+                state.semaphores.register_wait(
+                    semaphores.available,
+                    WaitInfo {
+                        value: None,
+                        stage: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    },
+                );
+
+                (
+                    SubResource::Texture {
+                        texture: image.internal().image(),
+                        queue_types: QueueTypes::all(),
+                        sharing: SharingMode::Concurrent,
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        array_elem: 0,
+                        mip_level: 0,
+                    },
+                    vk::ImageLayout::PRESENT_SRC_KHR,
+                )
+            }
+            ColorAttachmentSource::Texture {
+                texture,
+                array_element,
+                mip_level,
+            } => (
+                SubResource::Texture {
+                    texture: texture.internal().image,
+                    queue_types: texture.queue_types(),
+                    sharing: texture.sharing_mode(),
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    array_elem: array_element as u32,
+                    mip_level: mip_level as u32,
+                },
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            ),
+            ColorAttachmentSource::CubeMap {
+                cube_map,
+                array_element,
+                mip_level,
+                ..
+            } => (
+                SubResource::CubeMap {
+                    cube_map: cube_map.internal().image,
+                    queue_types: cube_map.queue_types(),
+                    sharing: cube_map.sharing_mode(),
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    array_elem: array_element as u32,
+                    mip_level: mip_level as u32,
+                },
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            ),
+        };
+        scope.use_resource(
+            subresource,
+            SubResourceUsage {
+                access: vk::AccessFlags::COLOR_ATTACHMENT_WRITE
+                    | vk::AccessFlags::COLOR_ATTACHMENT_READ,
+                stage: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                layout,
+            },
+        );
+    }
+
     // Track depth stencil attachment
     if let Some(attachment) = &descriptor.depth_stencil_attachment {
         let internal = attachment.texture.internal();
@@ -152,6 +226,27 @@ unsafe fn track_render_pass(
                 texture: internal.image,
                 queue_types: attachment.texture.queue_types(),
                 sharing: attachment.texture.sharing_mode(),
+                aspect_mask: internal.aspect_flags,
+                array_elem: attachment.array_element as u32,
+                mip_level: attachment.mip_level as u32,
+            },
+            SubResourceUsage {
+                access: vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                    | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                stage: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            },
+        );
+    }
+
+    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
+        let internal = attachment.dst.internal();
+        scope.use_resource(
+            SubResource::Texture {
+                texture: internal.image,
+                queue_types: attachment.dst.queue_types(),
+                sharing: attachment.dst.sharing_mode(),
                 aspect_mask: internal.aspect_flags,
                 array_elem: attachment.array_element as u32,
                 mip_level: attachment.mip_level as u32,
@@ -680,6 +775,49 @@ unsafe fn track_blit(
             aspect_mask: dst_aspect_flags,
             array_elem: dst_array_elem as u32,
             mip_level: blit.dst_mip as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_WRITE,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        },
+    );
+
+    if let Some(barrier) = state.pipeline_tracker.submit(scope) {
+        barrier.execute(state.device, state.command_buffer);
+    }
+}
+
+unsafe fn track_texture_resolve(
+    state: &mut TrackState,
+    src: &Texture<crate::VulkanBackend>,
+    dst: &Texture<crate::VulkanBackend>,
+    resolve: &TextureResolve,
+) {
+    let mut scope = UsageScope::default();
+    scope.use_resource(
+        SubResource::Texture {
+            texture: src.internal().image,
+            queue_types: src.queue_types(),
+            sharing: src.sharing_mode(),
+            aspect_mask: src.internal().aspect_flags,
+            array_elem: resolve.src_array_element as u32,
+            mip_level: resolve.src_mip as u32,
+        },
+        SubResourceUsage {
+            access: vk::AccessFlags::TRANSFER_READ,
+            stage: vk::PipelineStageFlags::TRANSFER,
+            layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        },
+    );
+    scope.use_resource(
+        SubResource::Texture {
+            texture: dst.internal().image,
+            queue_types: dst.queue_types(),
+            sharing: dst.sharing_mode(),
+            aspect_mask: dst.internal().aspect_flags,
+            array_elem: resolve.dst_array_element as u32,
+            mip_level: resolve.dst_mip as u32,
         },
         SubResourceUsage {
             access: vk::AccessFlags::TRANSFER_WRITE,

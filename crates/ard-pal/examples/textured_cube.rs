@@ -191,6 +191,7 @@ fn main() {
             depth: 1,
             array_elements: 1,
             mip_levels: 1,
+            sample_count: MultiSamples::Count1,
             texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
             memory_usage: MemoryUsage::GpuOnly,
             queue_types: QueueTypes::MAIN,
@@ -369,6 +370,7 @@ fn main() {
             depth: 1,
             array_elements: 1,
             mip_levels: 1,
+            sample_count: MultiSamples::Count1,
             texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
             memory_usage: MemoryUsage::GpuOnly,
             queue_types: QueueTypes::MAIN,
@@ -440,8 +442,11 @@ fn main() {
                             },
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
                             store_op: StoreOp::Store,
+                            samples: MultiSamples::Count1,
                         }],
+                        color_resolve_attachments: Vec::default(),
                         depth_stencil_attachment: None,
+                        depth_stencil_resolve_attachment: None,
                     },
                     |pass| {
                         pass.bind_pipeline(triangle_pipeline.clone());
@@ -465,14 +470,18 @@ fn main() {
                             source: ColorAttachmentSource::SurfaceImage(&surface_image),
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.2, 0.2, 0.2, 0.0)),
                             store_op: StoreOp::Store,
+                            samples: MultiSamples::Count1,
                         }],
+                        color_resolve_attachments: Vec::default(),
                         depth_stencil_attachment: Some(DepthStencilAttachment {
                             texture: &depth_buffer,
                             array_element: 0,
                             mip_level: 0,
                             load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
                             store_op: StoreOp::DontCare,
+                            samples: MultiSamples::Count1,
                         }),
+                        depth_stencil_resolve_attachment: None,
                     },
                     |pass| {
                         pass.bind_pipeline(cube_pipeline.clone());

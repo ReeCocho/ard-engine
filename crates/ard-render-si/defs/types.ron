@@ -121,6 +121,40 @@
             (name: "clusters", ty: Array(ty: Array(ty: Array(ty: Array(ty: U32, len: "MAX_LIGHTS_PER_CLUSTER"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
         ]
     ),
+    // Global lighting data.
+    (
+        name: "GlobalLighting",
+        no_mangle: false,
+        fields: [
+            (name: "ambient_color_intensity", ty: Vec4),
+            (name: "sun_direction", ty: Vec4),
+            (name: "sun_color_intensity", ty: Vec4),
+        ]
+    ),
+    // Describes a shadow cascade.
+    (
+        name: "ShadowCascade",
+        no_mangle: false,
+        fields: [
+            (name: "vp", ty: Mat4),
+            (name: "view", ty: Mat4),
+            (name: "proj", ty: Mat4),
+            (name: "uv_size", ty: Vec2),
+            (name: "far_plane", ty: F32),
+            (name: "min_bias", ty: F32),
+            (name: "max_bias", ty: F32),
+            (name: "depth_range", ty: F32),
+        ]
+    ),
+    // Describes sun shadows.
+    (
+        name: "SunShadows",
+        no_mangle: false,
+        fields: [
+            (name: "cascades", ty: Array(ty: Struct("ShadowCascade"), len: "MAX_SHADOW_CASCADES")),
+            (name: "count", ty: U32),
+        ]
+    ),
     // PBR material info.
     (
         name: "PbrMaterial",
@@ -167,6 +201,47 @@
         no_mangle: false,
         fields: [
             (name: "total_lights", ty: U32),
+        ]
+    ),
+    // Push constants for generating the AO image.
+    (
+        name: "AoConstructPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "render_area", ty: Vec2),
+            (name: "inv_render_area", ty: Vec2),
+            (name: "noise_scale", ty: Vec2),
+            (name: "radius", ty: F32),
+            (name: "bias", ty: F32),
+        ]
+    ),
+    // Push constants for adaptive luminance histogram generation.
+    (
+        name: "AdaptiveLumHistogramGenPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "min_log2_lum", ty: F32),
+            (name: "inv_log2_lum", ty: F32),
+        ]
+    ),
+    // Push constants for adaptive luminance computation.
+    (
+        name: "AdaptiveLumPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "min_log_lum", ty: F32),
+            (name: "log_lum_range", ty: F32),
+            (name: "time_coeff", ty: F32),
+            (name: "num_pixels", ty: F32),
+        ]
+    ),
+    // Push constants used for tonemapping.
+    (
+        name: "ToneMappingPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "exposure", ty: F32),
+            (name: "gamma", ty: F32),
         ]
     )
 ]

@@ -3,14 +3,22 @@ use ard_log::info;
 use ard_math::{Vec2, Vec4};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::RenderPreprocessing, resource::ResourceAllocator};
-use ard_render_camera::{froxels::FroxelGenPipeline, ubo::CameraUbo, CameraClearColor};
-use ard_render_lighting::lights::Lighting;
+use ard_render_camera::{
+    froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, CameraClearColor,
+};
+use ard_render_image_effects::{
+    ao::AmbientOcclusion,
+    effects::{ImageEffectTextures, ImageEffectsBindImages, ImageEffectsRender},
+    tonemapping::Tonemapping,
+};
+use ard_render_lighting::{lights::Lighting, proc_skybox::ProceduralSkyBox};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_renderers::{
     draw_gen::DrawGenPipeline,
     highz::HzbRenderer,
     scene::{SceneRenderArgs, SceneRenderer},
+    shadow::{ShadowRenderArgs, SunShadowsRenderer},
 };
 use ard_render_si::bindings::Layouts;
 use ard_render_textures::factory::TextureFactory;
@@ -39,6 +47,10 @@ pub(crate) struct RenderEcs {
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
     hzb_render: HzbRenderer,
+    effect_textures: ImageEffectTextures,
+    tonemapping: Tonemapping,
+    ao: AmbientOcclusion,
+    proc_skybox: ProceduralSkyBox,
     factory: Factory,
     ctx: Context,
 }
@@ -86,7 +98,9 @@ impl RenderEcs {
         let factory = Factory::new(ctx.clone(), &layouts);
 
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
+        let ao = AmbientOcclusion::new(&ctx, &layouts);
         let draw_gen = DrawGenPipeline::new(&ctx, &layouts);
+        let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
 
         // Define resources used in the render ECS
         let mut resources = Resources::default();
@@ -95,10 +109,12 @@ impl RenderEcs {
             &ctx,
             surface,
             window_size,
+            plugin.settings.anti_aliasing,
             plugin.settings.present_mode,
             &hzb_render,
+            &ao,
         ));
-        resources.add(CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, &layouts));
+        resources.add(CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts));
         resources.add(layouts.clone());
         resources.add(factory.clone());
         resources.add(SceneRenderer::new(
@@ -107,6 +123,13 @@ impl RenderEcs {
             &draw_gen,
             FRAMES_IN_FLIGHT,
         ));
+        resources.add(SunShadowsRenderer::new(
+            &ctx,
+            &layouts,
+            &draw_gen,
+            FRAMES_IN_FLIGHT,
+            4,
+        ));
         resources.add(Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT));
 
         (
@@ -114,6 +137,15 @@ impl RenderEcs {
                 froxels: FroxelGenPipeline::new(&ctx, &layouts),
                 draw_gen,
                 hzb_render,
+                ao,
+                effect_textures: ImageEffectTextures::new(
+                    &ctx,
+                    RenderTarget::COLOR_FORMAT,
+                    Format::Bgra8Unorm,
+                    window_size,
+                ),
+                tonemapping: Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT),
+                proc_skybox,
                 world: World::default(),
                 resources,
                 dispatcher: DispatcherBuilder::new()
@@ -139,7 +171,13 @@ impl RenderEcs {
     pub fn render(&mut self, mut frame: FrameData) -> FrameData {
         // Update the canvas size and acquire a new swap chain image
         let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
-        canvas.resize(&self.ctx, &self.hzb_render, frame.canvas_size);
+        canvas.resize(
+            &self.ctx,
+            &self.hzb_render,
+            &self.ao,
+            &mut self.effect_textures,
+            frame.canvas_size,
+        );
         canvas.acquire_image();
 
         std::mem::drop(canvas);
@@ -161,12 +199,23 @@ impl RenderEcs {
 
         frame = self.resources.get_mut::<FrameDataRes>().unwrap().take();
         let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
+
+        ImageEffectsBindImages::new(&self.effect_textures)
+            .add(&mut self.tonemapping)
+            .bind(
+                frame.frame,
+                canvas.render_target().color(),
+                canvas.render_target().depth(),
+                canvas.image(),
+            );
+
         let meshes = self.factory.inner.meshes.lock().unwrap();
         let materials = self.factory.inner.materials.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let scene_render = self.resources.get::<SceneRenderer>().unwrap();
+        let shadow_renderer = self.resources.get::<SunShadowsRenderer>().unwrap();
         let camera = self.resources.get::<CameraUbo>().unwrap();
         let lighting = self.resources.get::<Lighting>().unwrap();
 
@@ -194,7 +243,14 @@ impl RenderEcs {
         self.cluster_lights(&mut cb, &frame, &lighting, &camera);
 
         // Generate draw calls
-        self.generate_draw_calls(&mut cb, &frame, &canvas, &scene_render, &camera);
+        self.generate_draw_calls(
+            &mut cb,
+            &frame,
+            &canvas,
+            &scene_render,
+            &shadow_renderer,
+            &camera,
+        );
 
         // Perform the depth prepass
         Self::depth_prepass(
@@ -210,6 +266,21 @@ impl RenderEcs {
             &texture_factory,
         );
 
+        // Render shadows
+        Self::render_shadows(
+            &mut cb,
+            &frame,
+            &shadow_renderer,
+            &materials,
+            &meshes,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+        );
+
+        // Generate the AO image
+        Self::generate_ao_image(&mut cb, &frame, &canvas, &camera, &self.ao);
+
         // Render opaque and alpha masked geometry
         Self::render_opaque(
             &mut cb,
@@ -217,6 +288,7 @@ impl RenderEcs {
             &canvas,
             &camera,
             &scene_render,
+            &self.proc_skybox,
             &materials,
             &meshes,
             &mesh_factory,
@@ -238,8 +310,15 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        // Blit to the surface image
-        canvas.blit_to_surface(&mut cb);
+        // Run image effects and blit to surface
+        ImageEffectsRender::new(&self.effect_textures)
+            .add(&self.tonemapping)
+            .render(
+                frame.frame,
+                &mut cb,
+                canvas.render_target().color(),
+                canvas.image(),
+            );
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));
@@ -333,6 +412,7 @@ impl RenderEcs {
         frame_data: &FrameData,
         canvas: &'a Canvas,
         scene_render: &'a SceneRenderer,
+        shadow_renderer: &'a SunShadowsRenderer,
         camera: &'a CameraUbo,
     ) {
         let (width, height) = canvas.size();
@@ -343,6 +423,8 @@ impl RenderEcs {
             camera,
             Vec2::new(width as f32, height as f32),
         );
+
+        shadow_renderer.generate_draw_calls(frame_data.frame, commands, &self.draw_gen);
     }
 
     /// Performs the entire depth prepass.
@@ -376,6 +458,41 @@ impl RenderEcs {
         });
     }
 
+    fn generate_ao_image<'a>(
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        canvas: &'a Canvas,
+        camera: &'a CameraUbo,
+        ao: &'a AmbientOcclusion,
+    ) {
+        ao.generate(frame_data.frame, commands, canvas.ao(), camera);
+    }
+
+    /// Performs shadow rendering
+    #[allow(clippy::too_many_arguments)]
+    fn render_shadows<'a>(
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        shadow_renderer: &'a SunShadowsRenderer,
+        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
+        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        texture_factory: &'a TextureFactory,
+    ) {
+        shadow_renderer.render(
+            frame_data.frame,
+            ShadowRenderArgs {
+                commands,
+                mesh_factory,
+                material_factory,
+                texture_factory,
+                meshes,
+                materials,
+            },
+        );
+    }
+
     /// Renders opaque and alpha cutout geometry
     #[allow(clippy::too_many_arguments)]
     fn render_opaque<'a>(
@@ -384,6 +501,7 @@ impl RenderEcs {
         canvas: &'a Canvas,
         camera: &'a CameraUbo,
         scene_render: &'a SceneRenderer,
+        proc_skybox: &'a ProceduralSkyBox,
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
@@ -395,6 +513,12 @@ impl RenderEcs {
                 .render_target()
                 .opaque_pass(CameraClearColor::Color(Vec4::ZERO)),
             |pass| {
+                proc_skybox.render(
+                    pass,
+                    camera.get_set(frame_data.frame),
+                    scene_render.global_sets().get_set(frame_data.frame),
+                );
+
                 scene_render.render_opaque(
                     frame_data.frame,
                     SceneRenderArgs {

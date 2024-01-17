@@ -117,6 +117,23 @@ pub enum FrontFace {
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MultiSamples {
+    Count1,
+    Count2,
+    Count4,
+    Count8,
+    Count16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ResolveMode {
+    SampleZero,
+    Average,
+    Min,
+    Max,
+}
+
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CompareOp {
     Never,
     Less,

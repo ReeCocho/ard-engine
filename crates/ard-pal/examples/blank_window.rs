@@ -78,8 +78,12 @@ fn main() {
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
                             // And store the image instead of discarding the contents
                             store_op: StoreOp::Store,
+                            // Only a single sample per fragment.
+                            samples: MultiSamples::Count1,
                         }],
+                        color_resolve_attachments: Vec::default(),
                         depth_stencil_attachment: None,
+                        depth_stencil_resolve_attachment: None,
                     },
                     |_pass| {
                         // Here is where you would put rendering commands if you wanted to draw

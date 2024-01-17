@@ -125,9 +125,9 @@ impl<W: Write> RustSetsCodeGen<W> {
                 )
             }
             GpuBindingData::Ubo(_) => "DescriptorType::UniformBuffer".to_owned(),
-            GpuBindingData::Texture(_) | GpuBindingData::UnboundedTextureArray(_) => {
-                "DescriptorType::Texture".to_owned()
-            }
+            GpuBindingData::Texture(_)
+            | GpuBindingData::UnboundedTextureArray(_)
+            | GpuBindingData::ShadowTextureArray(_) => "DescriptorType::Texture".to_owned(),
             GpuBindingData::StorageImage { access, .. } => {
                 format!(
                     "DescriptorType::StorageImage(AccessType::{:?})",

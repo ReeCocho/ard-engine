@@ -110,6 +110,7 @@ impl<const FIF: usize> HzbImage<FIF> {
                 depth: 1,
                 array_elements: 1,
                 mip_levels,
+                sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,

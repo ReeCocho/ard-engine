@@ -17,6 +17,7 @@ ard-render-objects = { path = "../ard-render-objects" }
 ard-render-camera = { path = "../ard-render-camera" }
 ard-render-lighting = { path = "../ard-render-lighting" }
 ard-render-textures = { path = "../ard-render-textures" }
+ard-render-image-effects = { path = "../ard-render-image-effects" }
 bytemuck.workspace = true
 ordered-float.workspace = true
 

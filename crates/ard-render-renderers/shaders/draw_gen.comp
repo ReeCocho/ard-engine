@@ -5,7 +5,12 @@
 // Most of the code for this comes from here:
 // https://miketuritzin.com/post/hierarchical-depth-buffers/
 
-#define ARD_SET_DRAW_GEN 0
+#if defined(HIGH_Z_CULLING)
+    #define ARD_SET_DRAW_GEN 0
+#else
+    #define ARD_SET_DRAW_GEN_NO_HZB 0
+#endif
+
 #define ARD_SET_CAMERA 1
 #include "ard_types.glsl"
 #include "ard_bindings.glsl"
@@ -104,13 +109,17 @@ void main() {
     );
     float radius = bounds_center.w * sqrt(max(scale.x, max(scale.y, scale.z)));
 
+    // NOTE: We are only checking the first five planes because we're using an infinite perspective
+    // matrix, meaning all objects are always within the final plane. If that should ever change,
+    // make sure to add back in the check for the final plane.
     [[unroll]]
-    for (int i = 0; i < 6; i++) { 
+    for (int i = 0; i < 5; i++) { 
         if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
             return;
         }
     }
 
+#if defined(HIGH_Z_CULLING)
     // Find the AABB of the object
     BoundingBox bb = transform_bounding_box(
         model, 
@@ -140,6 +149,7 @@ void main() {
     if (bb.depth > depth) {
         return;
     }
+#endif
 
     // Insert the object into the output list and notify the associated call of the object
     uint model_offset = atomicAdd(draw_calls[draw_idx].instance_count, 1);

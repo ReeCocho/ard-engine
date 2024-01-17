@@ -6,6 +6,7 @@ pub mod draw_gen;
 pub mod global;
 pub mod highz;
 pub mod scene;
+pub mod shadow;
 pub mod state;
 
 /// The depth prepass results in a depth image containing opaque geometry and an image containing
@@ -29,6 +30,22 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
     factory
         .add_pass(
             DEPTH_PREPASS_PASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.global.clone(),
+                    layouts.textures.clone(),
+                    layouts.camera.clone(),
+                    layouts.materials.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 0,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            SHADOW_PASS_ID,
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),

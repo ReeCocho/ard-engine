@@ -27,6 +27,7 @@ pub enum GpuBindingData {
     Ubo(GpuStructField),
     Texture(String),
     UnboundedTextureArray(String),
+    ShadowTextureArray(String),
     StorageImage {
         field_name: String,
         restrict: bool,

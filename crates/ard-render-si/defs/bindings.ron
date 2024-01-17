@@ -27,6 +27,40 @@
                     unbounded_array: Some((name: "object_ids", ty: U32)),
                 )
             ),
+            // Global lighting data (sun).
+            (
+                name: "GlobalLightingInfo",
+                stage: AllGraphics,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            // Shadow cascades
+            (
+                name: "ShadowCascades",
+                stage: AllGraphics,
+                count: "MAX_SHADOW_CASCADES",
+                data: ShadowTextureArray("shadow_cascades")
+            ),
+            // Sun shadowing info
+            (
+                name: "SunShadowInfo",
+                stage: AllGraphics,
+                count: "1",
+                data: Ubo((
+                    name: "sun_shadow_info",
+                    ty: Struct("SunShadows"),
+                ))
+            ),
+            // Ambient occlusion image.
+            (
+                name: "AoImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("ao_image")
+            ),
             // Global light buffer.
             (
                 name: "Lights",
@@ -226,6 +260,56 @@
             )
         ]
     ),
+    // Draw call generation WITHOUT hzb culling.
+    (
+        name: "DrawGenNoHzb",
+        bindings: [
+            (
+                name: "DrawCalls",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "draw_calls", ty: Struct("DrawCall"))),
+                )
+            ),
+            (
+                name: "Objects",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "objects", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "InputIds",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U32)),
+                )
+            )
+        ]
+    ),
     // Draw call compaction.
     (
         name: "DrawCompact",
@@ -293,4 +377,139 @@
             )
         ]
     ),
+    // AO construction.
+    (
+        name: "AoConstruct",
+        bindings: [
+            (
+                name: "DepthTexture",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex")
+            ),
+            (
+                name: "AoImage",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "ao_image",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R16F,
+                )
+            ),
+            (
+                name: "NoiseTexture",
+                stage: Compute,
+                count: "1",
+                data: Texture("noise_tex")
+            ),
+            (
+                name: "KernelSamples",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "samples",
+                    ty: Array(name: "samples", ty: Vec4, len: "KERNEL_SIZE")
+                ))
+            )
+        ]
+    ),
+    // AO blurring.
+    (
+        name: "AoBlur",
+        bindings: [
+            (
+                name: "InputTexture",
+                stage: Compute,
+                count: "1",
+                data: Texture("input_tex")
+            ),
+            (
+                name: "AoImage",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "ao_image",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R16F,
+                )
+            )
+        ],
+    ),
+    // Adaptive luminance histogram generation.
+    (
+        name: "HistogramGen",
+        bindings: [
+            (
+                name: "InputTexture",
+                stage: Compute,
+                count: "1",
+                data: Texture("hdr_src")
+            ),
+            (
+                name: "Histogram",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "histogram", ty: Array(ty: U32, len: "ADAPTIVE_LUM_HISTOGRAM_SIZE"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    // Adaptive luminance.
+    (
+        name: "AdaptiveLum",
+        bindings: [
+            (
+                name: "Histogram",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "histogram", ty: Array(ty: U32, len: "ADAPTIVE_LUM_HISTOGRAM_SIZE"))),
+                    unbounded_array: None,
+                )
+            ),
+            (
+                name: "Luminance",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "out_luminance", ty: F32)),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    // Tonemapping.
+    (
+        name: "Tonemapping",
+        bindings: [
+            (
+                name: "SourceImage",
+                stage: Fragment,
+                count: "1",
+                data: Texture("screen_tex")
+            ),
+            (
+                name: "Luminance",
+                stage: Fragment,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "luminance", ty: F32)),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    )
 ]

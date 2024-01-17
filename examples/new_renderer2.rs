@@ -4,10 +4,9 @@ use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
-use ard_render2::{factory::Factory, RenderPlugin, RendererSettings};
+use ard_render2::{factory::Factory, AntiAliasingMode, RenderPlugin, RendererSettings};
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
-use ard_render_lighting::Light;
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
 use ard_render_pbr::PbrMaterialData;
@@ -122,10 +121,11 @@ fn main() {
                 render_scene: true,
                 render_time: None,
                 present_mode: PresentMode::Mailbox,
+                anti_aliasing: AntiAliasingMode::MSAA(MultiSamples::Count8),
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_startup_function(setup)
@@ -142,8 +142,6 @@ fn setup(app: &mut App) {
 
     // Instantiate models
     let instance = assets.get(&model).unwrap().instantiate();
-
-    println!("{}", instance.meshes.meshes.len() * 3);
 
     app.world.entities().commands().create(
         (
@@ -188,7 +186,7 @@ fn setup(app: &mut App) {
     factory.set_material_data(
         &material,
         &PbrMaterialData {
-            alpha_cutoff: 1.0,
+            alpha_cutoff: 0.0,
             color: Vec4::new(1.0, 1.0, 1.0, 0.2),
             metallic: 0.0,
             roughness: 1.0,
@@ -199,7 +197,7 @@ fn setup(app: &mut App) {
     factory.set_material_data(
         &red,
         &PbrMaterialData {
-            alpha_cutoff: 1.0,
+            alpha_cutoff: 0.0,
             color: Vec4::new(1.0, 0.0, 0.0, 0.2),
             metallic: 0.0,
             roughness: 1.0,
@@ -210,7 +208,7 @@ fn setup(app: &mut App) {
     factory.set_material_data(
         &green,
         &PbrMaterialData {
-            alpha_cutoff: 1.0,
+            alpha_cutoff: 0.0,
             color: Vec4::new(0.0, 1.0, 0.0, 0.2),
             metallic: 0.0,
             roughness: 1.0,
@@ -221,7 +219,7 @@ fn setup(app: &mut App) {
     factory.set_material_data(
         &blue,
         &PbrMaterialData {
-            alpha_cutoff: 1.0,
+            alpha_cutoff: 0.0,
             color: Vec4::new(0.0, 0.0, 1.0, 0.2),
             metallic: 0.0,
             roughness: 1.0,
@@ -234,7 +232,7 @@ fn setup(app: &mut App) {
         (
             vec![Camera {
                 near: 0.03,
-                far: 250.0,
+                far: 300.0,
                 fov: 80.0_f32.to_radians(),
                 order: 0,
                 clear_color: CameraClearColor::Color(Vec4::ZERO),
@@ -248,7 +246,7 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 15.0,
+        move_speed: 8.0,
         entity: camera[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,
@@ -305,18 +303,18 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
-    // Gimmie a light
-    app.world.entities().commands().create(
-        (
-            vec![Light::Point {
-                color: Vec3::ONE,
-                range: 8.0,
-                intensity: 8.0,
-            }],
-            vec![Model(Mat4::IDENTITY)],
-        ),
-        &mut [],
-    );
+    // // Gimmie a light
+    // app.world.entities().commands().create(
+    //     (
+    //         vec![Light::Point {
+    //             color: Vec3::ONE,
+    //             range: 32.0,
+    //             intensity: 16.0,
+    //         }],
+    //         vec![Model(Mat4::from_translation(Vec3::new(8.0, 8.0, 8.0)))],
+    //     ),
+    //     &mut [],
+    // );
 
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(0);
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(1);
