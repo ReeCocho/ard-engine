@@ -47,4 +47,18 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/bloom_downscale.frag",
+        PathBuf::from(&out_dir).join("bloom_downscale.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/bloom_upscale.frag",
+        PathBuf::from(&out_dir).join("bloom_upscale.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

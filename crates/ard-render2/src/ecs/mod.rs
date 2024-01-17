@@ -8,6 +8,7 @@ use ard_render_camera::{
 };
 use ard_render_image_effects::{
     ao::AmbientOcclusion,
+    bloom::Bloom,
     effects::{ImageEffectTextures, ImageEffectsBindImages, ImageEffectsRender},
     tonemapping::Tonemapping,
 };
@@ -48,6 +49,7 @@ pub(crate) struct RenderEcs {
     draw_gen: DrawGenPipeline,
     hzb_render: HzbRenderer,
     effect_textures: ImageEffectTextures,
+    bloom: Bloom<FRAMES_IN_FLIGHT>,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
     proc_skybox: ProceduralSkyBox,
@@ -145,6 +147,7 @@ impl RenderEcs {
                     window_size,
                 ),
                 tonemapping: Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT),
+                bloom: Bloom::new(&ctx, &layouts, window_size, 6),
                 proc_skybox,
                 world: World::default(),
                 resources,
@@ -171,13 +174,18 @@ impl RenderEcs {
     pub fn render(&mut self, mut frame: FrameData) -> FrameData {
         // Update the canvas size and acquire a new swap chain image
         let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
-        canvas.resize(
+        if canvas.resize(
             &self.ctx,
             &self.hzb_render,
             &self.ao,
             &mut self.effect_textures,
             frame.canvas_size,
-        );
+        ) {
+            self.bloom.resize(&self.ctx, frame.canvas_size, 6);
+        }
+
+        self.tonemapping.bind_bloom(frame.frame, self.bloom.image());
+
         canvas.acquire_image();
 
         std::mem::drop(canvas);
@@ -201,6 +209,7 @@ impl RenderEcs {
         let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
 
         ImageEffectsBindImages::new(&self.effect_textures)
+            .add(&mut self.bloom)
             .add(&mut self.tonemapping)
             .bind(
                 frame.frame,
@@ -312,6 +321,7 @@ impl RenderEcs {
 
         // Run image effects and blit to surface
         ImageEffectsRender::new(&self.effect_textures)
+            .add(&self.bloom)
             .add(&self.tonemapping)
             .render(
                 frame.frame,

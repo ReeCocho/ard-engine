@@ -2,6 +2,8 @@ use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 
 pub trait ImageEffect: Send {
+    fn has_output(&self) -> bool;
+
     fn src_texture_type(&self) -> ImageEffectTextureType;
 
     fn dst_texture_type(&self) -> ImageEffectTextureType;
@@ -24,11 +26,13 @@ pub struct ImageEffectTextures {
 
 pub struct ImageEffectsBindImages<'a> {
     textures: &'a ImageEffectTextures,
+    output_effect_count: usize,
     effects: Vec<ImageEffectInstance<&'a mut dyn ImageEffect>>,
 }
 
 pub struct ImageEffectsRender<'a> {
     textures: &'a ImageEffectTextures,
+    output_effect_count: usize,
     effects: Vec<ImageEffectInstance<&'a dyn ImageEffect>>,
 }
 
@@ -187,16 +191,23 @@ impl<'a> ImageEffectsBindImages<'a> {
     pub fn new(textures: &'a ImageEffectTextures) -> Self {
         Self {
             textures,
+            output_effect_count: 0,
             effects: Vec::default(),
         }
     }
 
     pub fn add(mut self, effect: &'a mut impl ImageEffect) -> Self {
+        let ping = self.output_effect_count % 2 == 1;
+
+        if effect.has_output() {
+            self.output_effect_count += 1;
+        }
+
         self.effects.push(ImageEffectInstance {
-            src: (effect.src_texture_type(), self.effects.len() % 2 == 1),
+            src: (effect.src_texture_type(), ping),
             dst: (
                 effect.dst_texture_type(),
-                self.effects.len() % 2 == 0,
+                !ping,
                 ImageEffectDstType::Offscreen,
             ),
             effect,
@@ -252,17 +263,24 @@ impl<'a> ImageEffectsRender<'a> {
     pub fn new(textures: &'a ImageEffectTextures) -> Self {
         Self {
             textures,
+            output_effect_count: 0,
             effects: Vec::default(),
         }
     }
 
     pub fn add(mut self, effect: &'a impl ImageEffect) -> Self {
+        let ping = self.output_effect_count % 2 == 1;
+
+        if effect.has_output() {
+            self.output_effect_count += 1;
+        }
+
         self.effects.push(ImageEffectInstance {
             effect,
-            src: (effect.src_texture_type(), self.effects.len() % 2 == 1),
+            src: (effect.src_texture_type(), ping),
             dst: (
                 effect.dst_texture_type(),
-                self.effects.len() % 2 == 0,
+                !ping,
                 ImageEffectDstType::Offscreen,
             ),
         });

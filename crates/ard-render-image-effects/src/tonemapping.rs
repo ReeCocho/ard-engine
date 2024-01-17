@@ -3,7 +3,10 @@ use ard_render_base::ecs::Frame;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;
 
-use crate::effects::{ImageEffect, ImageEffectDst, ImageEffectTextureType};
+use crate::{
+    bloom::BLOOM_SAMPLE_FILTER,
+    effects::{ImageEffect, ImageEffectDst, ImageEffectTextureType},
+};
 
 const HISTOGRAM_GEN_BLOCK_SIZE: u32 = 16;
 
@@ -280,9 +283,27 @@ impl Tonemapping {
             tonemapping_sets,
         }
     }
+
+    pub fn bind_bloom(&mut self, frame: Frame, bloom_image: &Texture) {
+        self.tonemapping_sets[usize::from(frame)].update(&[DescriptorSetUpdate {
+            binding: TONEMAPPING_SET_BLOOM_IMAGE_BINDING,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: bloom_image,
+                array_element: 0,
+                sampler: BLOOM_SAMPLE_FILTER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }]);
+    }
 }
 
 impl ImageEffect for Tonemapping {
+    fn has_output(&self) -> bool {
+        true
+    }
+
     fn src_texture_type(&self) -> ImageEffectTextureType {
         ImageEffectTextureType::HDR
     }
@@ -325,8 +346,8 @@ impl ImageEffect for Tonemapping {
         commands: &mut CommandBuffer<'a>,
         dst: ImageEffectDst<'a>,
     ) {
-        const MIN_LOG_LUM: f32 = -12.0;
-        const MAX_LOG_LUM: f32 = 10.0;
+        const MIN_LOG_LUM: f32 = -120.0;
+        const MAX_LOG_LUM: f32 = 100.0;
 
         let histogram_params = [GpuAdaptiveLumHistogramGenPushConstants {
             min_log2_lum: MIN_LOG_LUM,
@@ -341,7 +362,7 @@ impl ImageEffect for Tonemapping {
         }];
 
         let tonemapping_params = [GpuToneMappingPushConstants {
-            exposure: 0.2,
+            exposure: 0.25,
             gamma: 2.2,
         }];
 

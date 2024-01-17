@@ -2,7 +2,6 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_control_flow_attributes : enable
-#extension GL_EXT_debug_printf : enable
 
 #define ARD_SET_ADAPTIVE_LUM 0
 #include "ard_bindings.glsl"
@@ -49,8 +48,6 @@ void main() {
         }
 
         const float adapted_lum = lum_last_frame + (weighted_avg_lum - lum_last_frame) * consts.time_coeff;
-
-        debugPrintfEXT("%d", hist_sum);
 
         out_luminance = adapted_lum;
     }

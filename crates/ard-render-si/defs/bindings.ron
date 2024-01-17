@@ -500,6 +500,12 @@
                 data: Texture("screen_tex")
             ),
             (
+                name: "BloomImage",
+                stage: Fragment,
+                count: "1",
+                data: Texture("bloom_image")
+            ),
+            (
                 name: "Luminance",
                 stage: Fragment,
                 count: "1",
@@ -509,6 +515,18 @@
                     inner: Some((name: "luminance", ty: F32)),
                     unbounded_array: None,
                 )
+            )
+        ]
+    ),
+    // Bloom.
+    (
+        name: "Bloom",
+        bindings: [
+            (
+                name: "SourceImage",
+                stage: Fragment,
+                count: "1",
+                data: Texture("screen_tex")
             )
         ]
     )
