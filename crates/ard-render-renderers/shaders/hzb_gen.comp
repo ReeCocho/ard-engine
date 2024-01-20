@@ -1,6 +1,8 @@
 #version 450 core
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
-// Most of the code for this comes from here:
+// Modified version of this:
 // https://miketuritzin.com/post/hierarchical-depth-buffers/
 
 #define ARD_SET_HZB_GEN 0
@@ -14,35 +16,64 @@ layout(push_constant) uniform constants {
     HzbGenPushConstants consts;
 };
 
-shared uint min_depth_as_uint;
+#define HALF_KERNEL_SIZE (HZB_GEN_KERNEL_SIZE / 2)
+#define OUTPUT_COUNT (HALF_KERNEL_SIZE * HALF_KERNEL_SIZE)
+
+shared uint min_depth_as_uint[OUTPUT_COUNT];
+
+uint min_depth_idx(const uvec2 localId) {
+    return ((localId.y / 2) * HALF_KERNEL_SIZE) + (localId.x / 2);
+}
+
+vec2 texel_offset(const uvec2 localId) {
+    return 2.0 * (vec2((localId.xy + uvec2(1)) / uvec2(2)) - vec2(0.5));
+}
 
 void main() {
-    if (gl_LocalInvocationIndex == 0) {
-        min_depth_as_uint = floatBitsToUint(1.0);
+    // Fill in default values of maximum depth
+    if (gl_LocalInvocationIndex < OUTPUT_COUNT) {
+        const uint i = gl_LocalInvocationIndex;
+        min_depth_as_uint[i] = floatBitsToUint(1.0);
     }
 
     memoryBarrierShared();
     barrier();
 
     // Fetch a 2x2 texel region
-    vec2 texel_coord = vec2(gl_WorkGroupID.xy) + vec2(0.5);
-    texel_coord += (vec2(gl_LocalInvocationID.xy) - vec2(0.5)) * 2.0;
-    vec2 gather_coord = texel_coord * consts.inv_output_size;
-    vec4 texel_value = textureGather(input_depth_buffer, gather_coord);
+    const ivec2 src_texel_idx = ivec2(gl_WorkGroupID.xy * HZB_GEN_KERNEL_SIZE);
+    const vec2 texel_coord = 
+        vec2(src_texel_idx) 
+        + vec2(0.5) 
+        + texel_offset(gl_LocalInvocationID.xy);
+
+    const vec2 gather_coord = texel_coord;
+    const vec4 texel_value = textureGather(input_depth_buffer, gather_coord);
 
     // Find the minimum value of the gathered texels
-    float min_depth = min(texel_value.x, min(texel_value.y, min(texel_value.z, texel_value.w)));
-    atomicMin(min_depth_as_uint, floatBitsToUint(min_depth));
+    const float min_depth = 
+        min(texel_value.x, min(texel_value.y, min(texel_value.z, texel_value.w)));
+        
+    atomicMin(
+        min_depth_as_uint[min_depth_idx(gl_LocalInvocationID.xy)], 
+        floatBitsToUint(min_depth)
+    );
 
     memoryBarrierShared();
     barrier();
 
-    if (gl_LocalInvocationIndex == 0) {
-        min_depth = uintBitsToFloat(min_depth_as_uint);
+    const int i = int(gl_LocalInvocationIndex);
+    const ivec2 local_texel_idx = 
+        ivec2(gl_WorkGroupID.xy * HALF_KERNEL_SIZE) 
+        + ivec2(i % HALF_KERNEL_SIZE, i / HALF_KERNEL_SIZE);
+
+    if (gl_LocalInvocationIndex < OUTPUT_COUNT
+        && local_texel_idx.x < consts.output_size.x
+        && local_texel_idx.y < consts.output_size.y
+    ) {
         imageStore(
             output_depth_buffer,
-            ivec2(gl_WorkGroupID.xy),
-            vec4(min_depth)
+            local_texel_idx,
+            vec4(uintBitsToFloat(min_depth_as_uint[i]))
         );
     }
 }

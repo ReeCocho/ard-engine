@@ -101,7 +101,7 @@ impl TextureFactory {
         Self {
             sets,
             error_tex,
-            anisotropy: None,
+            anisotropy: Some(AnisotropyLevel::X16),
             new_textures: (0..frames_in_flight).map(|_| Vec::default()).collect(),
             dropped_textures: (0..frames_in_flight).map(|_| Vec::default()).collect(),
             mip_updates: (0..frames_in_flight).map(|_| Vec::default()).collect(),

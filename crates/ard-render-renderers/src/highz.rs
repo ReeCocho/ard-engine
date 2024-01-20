@@ -1,7 +1,7 @@
 use ard_math::*;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
-use ard_render_si::{bindings::*, types::GpuHzbGenPushConstants};
+use ard_render_si::{bindings::*, consts::*, types::GpuHzbGenPushConstants};
 use ordered_float::NotNan;
 
 /// Renderer used to generate hierarchical depth buffers.
@@ -28,8 +28,8 @@ const HZB_INPUT_SAMPLER: Sampler = Sampler {
     anisotropy: None,
     compare: None,
     min_lod: unsafe { NotNan::new_unchecked(0.0) },
-    max_lod: None,
-    unnormalize_coords: false,
+    max_lod: Some(unsafe { NotNan::new_unchecked(0.0) }),
+    unnormalize_coords: true,
     border_color: None,
 };
 
@@ -49,7 +49,7 @@ impl HzbRenderer {
             ComputePipelineCreateInfo {
                 layouts: vec![layouts.hzb_gen.clone()],
                 module,
-                work_group_size: (2, 2, 1),
+                work_group_size: (HZB_GEN_KERNEL_SIZE as u32, HZB_GEN_KERNEL_SIZE as u32, 1),
                 push_constants_size: Some(std::mem::size_of::<GpuHzbGenPushConstants>() as u32),
                 debug_name: Some("hzb_gen_pipeline".into()),
             },
@@ -85,13 +85,18 @@ impl HzbRenderer {
                 // Determine the conversion factor for texels
                 let constants = [GpuHzbGenPushConstants {
                     input_size: IVec2::new(src_width as i32, src_height as i32),
+                    output_size: IVec2::new(dst_width as i32, dst_height as i32),
                     inv_output_size: 1.0 / Vec2::new(dst_width as f32, dst_height as f32),
                 }];
 
                 // Send constants and dispatch
                 pass.bind_sets(0, vec![set]);
                 pass.push_constants(bytemuck::cast_slice(&constants));
-                pass.dispatch(dst_width, dst_height, 1);
+                pass.dispatch(
+                    dst_width.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
+                    dst_height.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
+                    1,
+                );
             }
         });
     }

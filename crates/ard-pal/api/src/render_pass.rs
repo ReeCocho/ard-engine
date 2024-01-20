@@ -136,15 +136,33 @@ impl<'a, B: Backend> RenderPass<'a, B> {
     /// second set of your pipeline, you would set `first = 1`.
     /// - `sets` - The sets to bind.
     ///
-    /// # Panics
-    /// - If `sets.is_empty()`.
-    ///
     /// # Valid Usage
     /// The user *must* ensure that the bound sets do not go out of bounds of the pipeline they are
     /// used in. Backends *should* perform validity checking of set bounds.
     #[inline]
     pub fn bind_sets(&mut self, first: usize, sets: Vec<&'a DescriptorSet<B>>) {
         self.commands.push(Command::BindDescriptorSets {
+            sets,
+            first,
+            stage: ShaderStage::AllGraphics,
+        });
+    }
+
+    /// Allows you to bind descriptor sets without performing validation and synchronization
+    /// checks.
+    ///
+    /// # Arguments
+    /// Arguments are the same as the `RenderPass::bind_sets`.
+    ///
+    /// # Safety
+    /// For the use of this command to be safe, you must guarantee:
+    /// 1. All bound resources must have been verified/synchornized by a previous command within
+    ///    the same command buffer.
+    /// 2. The previous usage of each resource must have been read only.
+    /// 3. The next usage of each resource must be read only.
+    /// #[inline]
+    pub unsafe fn bind_sets_unchecked(&mut self, first: usize, sets: Vec<&'a DescriptorSet<B>>) {
+        self.commands.push(Command::BindDescriptorSetsUnchecked {
             sets,
             first,
             stage: ShaderStage::AllGraphics,

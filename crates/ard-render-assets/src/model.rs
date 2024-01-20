@@ -4,7 +4,7 @@ use ard_assets::prelude::*;
 use ard_formats::{
     material::{BlendType, MaterialType},
     mesh::{IndexData, MeshHeader, VertexData},
-    model::ModelHeader,
+    model::{MeshGroup, ModelHeader},
     texture::{MipType, Sampler, TextureData, TextureHeader},
 };
 use ard_math::Mat4;
@@ -29,6 +29,7 @@ pub struct ModelAsset {
     pub textures: Vec<Texture>,
     pub materials: Vec<ModelMaterialInstance>,
     pub mesh_groups: Vec<MeshGroup>,
+    pub meshes: Vec<Mesh>,
     pub node_count: usize,
     pub roots: Vec<Node>,
     post_load: Option<ModelPostLoad>,
@@ -65,15 +66,6 @@ struct ModelPostLoad {
 //     Spot,
 //     Directional,
 // }
-
-pub struct MeshGroup(pub Vec<MeshInstance>);
-
-pub struct MeshInstance {
-    /// Mesh used by this instance.
-    pub mesh: Mesh,
-    /// Index of the material used by this instance.
-    pub material: usize,
-}
 
 pub struct ModelMaterialInstance {
     pub instance: MaterialInstance,
@@ -140,7 +132,8 @@ impl AssetLoader for ModelLoader {
             // lights: Vec::default(),
             textures: Vec::default(),
             materials: Vec::default(),
-            mesh_groups: Vec::default(),
+            mesh_groups: header.mesh_groups.clone(),
+            meshes: Vec::default(),
             roots: Vec::with_capacity(header.roots.len()),
             node_count: 0,
             post_load: Some(ModelPostLoad {
@@ -161,16 +154,16 @@ impl AssetLoader for ModelLoader {
         };
 
         // Load in resources for the model
-        let (textures, mesh_groups) = futures::future::try_join(
+        let (textures, meshes) = futures::future::try_join(
             self.load_textures(&header, &package, &model_path),
-            self.load_mesh_groups(&header, &package, &model_path),
+            self.load_meshes(&header, &package, &model_path),
         )
         .await?;
 
         let materials = self.load_materials(&header, &textures).await?;
 
         model.textures = textures;
-        model.mesh_groups = mesh_groups;
+        model.meshes = meshes;
         model.materials = materials;
 
         // Helper function to parse model nodes recursively
@@ -306,79 +299,50 @@ impl ModelLoader {
         .collect::<Result<Vec<_>, _>>()
     }
 
-    async fn load_mesh_groups(
+    async fn load_meshes(
         &self,
         header: &ModelHeader,
         package: &Package,
         asset_path: &AssetName,
-    ) -> Result<Vec<MeshGroup>, AssetLoadError> {
+    ) -> Result<Vec<Mesh>, AssetLoadError> {
         // Read in mesh instances for each mesh group
-        Ok(futures::future::join_all(
-            (0..header.mesh_groups.len())
-                .map(|mg_idx| self.load_mesh_instances(header, package, mg_idx, asset_path)),
-        )
-        .await
-        // Check for errors
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
-        // Convert into mesh groups
-        .into_iter()
-        .map(MeshGroup)
-        .collect())
-    }
+        futures::future::join_all((0..header.meshes.len()).map(|mesh_idx| {
+            async move {
+                let mesh_path = ModelHeader::mesh_path(asset_path, mesh_idx);
+                let vertex_path = MeshHeader::vertex_path(mesh_path.clone());
+                let index_path = MeshHeader::index_path(mesh_path);
 
-    async fn load_mesh_instances(
-        &self,
-        header: &ModelHeader,
-        package: &Package,
-        mg_idx: usize,
-        asset_path: &AssetName,
-    ) -> Result<Vec<MeshInstance>, AssetLoadError> {
-        let mesh_group = &header.mesh_groups[mg_idx];
+                let (vdata, idata) =
+                    futures::future::try_join(package.read(vertex_path), package.read(index_path))
+                        .await?;
 
-        // Read in mesh data
-        futures::future::join_all((0..mesh_group.0.len()).map(|msh_idx| {
-            let mesh_path = ModelHeader::mesh_instance_path(asset_path, mg_idx, msh_idx);
-            let vertex_path = MeshHeader::vertex_path(mesh_path.clone());
-            let index_path = MeshHeader::index_path(mesh_path);
+                // Decode vertex and index data from bincode
+                let vdata = match bincode::deserialize::<VertexData>(&vdata) {
+                    Ok(data) => data,
+                    Err(err) => return Err(AssetLoadError::Other(err.to_string())),
+                };
 
-            futures::future::try_join(package.read(vertex_path), package.read(index_path))
+                let idata = match bincode::deserialize::<IndexData>(&idata) {
+                    Ok(data) => data,
+                    Err(err) => return Err(AssetLoadError::Other(err.to_string())),
+                };
+
+                // Create mesh
+                let create_info = MeshCreateInfo {
+                    debug_name: Some(format!("{asset_path:?}/meshes/{mesh_idx}")),
+                    vertices: vdata,
+                    indices: idata,
+                };
+
+                match self.factory.create_mesh(create_info) {
+                    Ok(mesh) => Ok(mesh),
+                    Err(err) => Err(AssetLoadError::Other(err.to_string())),
+                }
+            }
         }))
         .await
-        // Check for errors
         .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
-        // Convet into mesh groups
-        .into_iter()
-        .enumerate()
-        .map(|(msh_idx, (vdata, idata))| {
-            // Decode vertex and index data from bincode
-            let vdata = match bincode::deserialize::<VertexData>(&vdata) {
-                Ok(data) => data,
-                Err(err) => return Err(AssetLoadError::Other(err.to_string())),
-            };
-
-            let idata = match bincode::deserialize::<IndexData>(&idata) {
-                Ok(data) => data,
-                Err(err) => return Err(AssetLoadError::Other(err.to_string())),
-            };
-
-            // Create mesh
-            let create_info = MeshCreateInfo {
-                debug_name: Some(format!("{asset_path:?}/mesh_groups/{mg_idx}.{msh_idx}")),
-                vertices: vdata,
-                indices: idata,
-            };
-
-            match self.factory.create_mesh(create_info) {
-                Ok(mesh) => Ok(MeshInstance {
-                    mesh,
-                    material: header.mesh_groups[mg_idx].0[msh_idx].material as usize,
-                }),
-                Err(err) => Err(AssetLoadError::Other(err.to_string())),
-            }
-        })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
     }
 
     async fn load_materials(
@@ -481,8 +445,10 @@ impl ModelAsset {
                 NodeData::MeshGroup(mesh_group) => {
                     let mesh_group = &asset.mesh_groups[*mesh_group];
                     for instance in &mesh_group.0 {
-                        let material = &asset.materials[instance.material];
-                        meshes.meshes.push(instance.mesh.clone());
+                        let material = &asset.materials[instance.material as usize];
+                        let mesh = &asset.meshes[instance.mesh as usize];
+
+                        meshes.meshes.push(mesh.clone());
                         meshes.materials.push(material.instance.clone());
                         meshes.models.push(Model(parent_model * node.model.0));
                         meshes.flags.push(RenderFlags::SHADOW_CASTER);

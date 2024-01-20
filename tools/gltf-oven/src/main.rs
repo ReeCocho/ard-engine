@@ -7,7 +7,7 @@ use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
 use ard_formats::mesh::{IndexData, MeshHeader, VertexDataBuilder, VertexLayout};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
 use ard_formats::texture::{Sampler, TextureData, TextureHeader};
-use ard_gltf::{GltfLight, GltfMesh, GltfMeshGroup, GltfTexture};
+use ard_gltf::{GltfLight, GltfMesh, GltfTexture};
 use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::Format;
 use clap::Parser;
@@ -77,7 +77,7 @@ fn main() {
     // Save everything
     println!("Saving...");
     rayon::join(
-        || save_mesh_groups(&args, &out_path, &model.mesh_groups),
+        || save_meshes(&args, &out_path, &model.meshes),
         || save_textures(&args, &out_path, &model.textures, &texture_is_unorm),
     );
 }
@@ -93,6 +93,7 @@ fn create_header(
     header.mesh_groups = Vec::with_capacity(gltf.mesh_groups.len());
     header.textures = Vec::with_capacity(gltf.textures.len());
     header.roots = Vec::with_capacity(gltf.roots.len());
+    header.meshes = Vec::with_capacity(gltf.meshes.len());
 
     for light in &gltf.lights {
         header.lights.push(match light {
@@ -161,42 +162,46 @@ fn create_header(
         });
     }
 
+    for mesh in &gltf.meshes {
+        let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
+
+        if mesh.tangents.is_some() {
+            vertex_layout |= VertexLayout::TANGENT;
+        }
+
+        if mesh.colors.is_some() {
+            vertex_layout |= VertexLayout::COLOR;
+        }
+
+        if mesh.uv0.is_some() {
+            vertex_layout |= VertexLayout::UV0;
+        }
+
+        if mesh.uv1.is_some() {
+            vertex_layout |= VertexLayout::UV1;
+        }
+
+        if mesh.uv2.is_some() {
+            vertex_layout |= VertexLayout::UV2;
+        }
+
+        if mesh.uv3.is_some() {
+            vertex_layout |= VertexLayout::UV3;
+        }
+
+        header.meshes.push(MeshHeader {
+            index_count: mesh.indices.len() as u32,
+            vertex_count: mesh.positions.len() as u32,
+            vertex_layout,
+        });
+    }
+
     for mesh_group in &gltf.mesh_groups {
         let mut instances = Vec::with_capacity(mesh_group.0.len());
         for instance in &mesh_group.0 {
-            let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
-
-            if instance.mesh.tangents.is_some() {
-                vertex_layout |= VertexLayout::TANGENT;
-            }
-
-            if instance.mesh.colors.is_some() {
-                vertex_layout |= VertexLayout::COLOR;
-            }
-
-            if instance.mesh.uv0.is_some() {
-                vertex_layout |= VertexLayout::UV0;
-            }
-
-            if instance.mesh.uv1.is_some() {
-                vertex_layout |= VertexLayout::UV1;
-            }
-
-            if instance.mesh.uv2.is_some() {
-                vertex_layout |= VertexLayout::UV2;
-            }
-
-            if instance.mesh.uv3.is_some() {
-                vertex_layout |= VertexLayout::UV3;
-            }
-
             instances.push(MeshInstance {
                 material: instance.material as u32,
-                mesh: MeshHeader {
-                    index_count: instance.mesh.indices.len() as u32,
-                    vertex_count: instance.mesh.positions.len() as u32,
-                    vertex_layout,
-                },
+                mesh: instance.mesh as u32,
             });
         }
 
@@ -266,25 +271,13 @@ fn create_header(
     header
 }
 
-fn save_mesh_groups(args: &Args, out: &Path, mesh_groups: &[GltfMeshGroup]) {
+fn save_meshes(args: &Args, out: &Path, meshes: &[GltfMesh]) {
     use rayon::prelude::*;
-    mesh_groups
-        .par_iter()
-        .enumerate()
-        .for_each(|(i, mesh_group)| {
-            // Path to the folder for the mesh group
-            let mut mg_path = PathBuf::from(out);
-            mg_path.push("mesh_groups");
-            mg_path.push(i.to_string());
-
-            // Save each mesh
-            mesh_group.0.par_iter().enumerate().for_each(|(j, mesh)| {
-                println!("Saving mesh {i}.{j}");
-                let mesh_instance_path = ModelHeader::mesh_instance_path(out, i, j);
-                fs::create_dir_all(&mesh_instance_path).unwrap();
-                save_mesh(args, &mesh_instance_path, &mesh.mesh);
-            });
-        });
+    meshes.par_iter().enumerate().for_each(|(i, mesh)| {
+        let mesh_path = ModelHeader::mesh_path(out, i);
+        fs::create_dir_all(&mesh_path).unwrap();
+        save_mesh(args, &mesh_path, &mesh);
+    });
 }
 
 fn save_mesh(args: &Args, out: &Path, mesh: &GltfMesh) {
@@ -388,7 +381,7 @@ fn save_textures(
 ) {
     use rayon::prelude::*;
     textures.par_iter().enumerate().for_each(|(i, texture)| {
-        println!("Saving texture {i}");
+        // println!("Saving texture {i}");
 
         // Path to the folder for the texture
         let tex_path = ModelHeader::texture_path(out, i);

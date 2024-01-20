@@ -7,8 +7,8 @@
 #define ArdMaterialData PbrMaterial
 
 #define ARD_SET_GLOBAL 0
-#define ARD_SET_TEXTURES 1
-#define ARD_SET_CAMERA 2
+#define ARD_SET_CAMERA 1
+#define ARD_SET_TEXTURES 2
 #define ARD_SET_MATERIALS 3
 
 #define ARD_TEXTURE_COUNT 1
@@ -25,7 +25,7 @@ layout(location = 0) out vec4 OUT_COLOR;
 ////////////////////
 
 void main() {
-    PbrMaterial data = get_material_data();
+    const PbrMaterial data = ard_MaterialData(vs_MaterialSlotIdx);
 
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0
@@ -46,11 +46,11 @@ void main() {
     // Apply material properties from texture
     #if ARD_VS_HAS_UV0
         const vec4 mr_map = sample_texture_default(2, vs_Uv, vec4(0.0, 1.0, 0.0, 0.0));
-        data.metallic = clamp(data.metallic * mr_map.b, 0.0, 1.0);
-        data.roughness = clamp(data.roughness * mr_map.g, 0.0, 1.0);
+        const float metallic = clamp(data.metallic * mr_map.b, 0.0, 1.0);
+        const float roughness = clamp(data.roughness * mr_map.g, 0.0, 1.0);
     #else
-        data.metallic = clamp(data.metallic, 0.0, 1.0);
-        data.roughness = clamp(data.roughness, 0.0, 1.0);
+        const float metallic = clamp(data.metallic, 0.0, 1.0);
+        const float roughness = clamp(data.roughness, 0.0, 1.0);
     #endif
 
     // If we have tangents and uvs, we can support normal mapping
@@ -58,7 +58,6 @@ void main() {
         vec3 N = sample_texture_default(1, vs_Uv, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
         N = N * 2.0 - 1.0;
         N = normalize(vs_TBN * N);
-
     // Otherwise, we just use the vertex shader supplied normal
     #else
         vec3 N = normalize(vs_Normal);
@@ -70,7 +69,7 @@ void main() {
     // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
     vec3 F0 = vec3(0.04); 
-    F0 = mix(F0, color.rgb, data.metallic);
+    F0 = mix(F0, color.rgb, metallic);
 
     // Default color is black
     vec4 final_color = vec4(0.0, 0.0, 0.0, color.a);
@@ -81,8 +80,8 @@ void main() {
         global_lighting.sun_color_intensity.rgb * global_lighting.sun_color_intensity.a,
         compute_shadow_factor(N),
         color.rgb,
-        data.roughness,
-        data.metallic,
+        roughness,
+        metallic,
         F0,
         frag_to_sun,
         V,
@@ -96,6 +95,9 @@ void main() {
     const ivec3 cluster = get_cluster_id(screen_uv, screen_depth);
     const uint light_count = light_table.counts[cluster.z][cluster.x][cluster.y];
     
+    // OUT_COLOR = light_count > 0 ? vec4(1) : vec4(0.5, 0.5, 0.5, 1.0);
+    // return;
+
     for (int i = 0; i < light_count; i++) {
         const uint light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][i];
         const Light light = lights[light_idx];
@@ -109,8 +111,8 @@ void main() {
                 light.color_intensity.rgb,
                 light_attenuation(dist_to_light, light.position_range.w) * light.color_intensity.w,
                 color.rgb,
-                data.roughness,
-                data.metallic,
+                roughness,
+                metallic,
                 F0,
                 frag_to_light,
                 V,
@@ -120,13 +122,59 @@ void main() {
     }
 
     // Ambient lighting
-    const vec3 kS = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, data.roughness);
-    const vec3 kD = (1.0 - kS) * (1.0 - data.metallic);
+    const vec3 L00  = vec3(0.38, 0.43, 0.45);
+    const vec3 L1n1 = vec3(0.29, 0.36, 0.41);
+    const vec3 L10  = vec3(0.04, 0.03, 0.01);
+    const vec3 L1p1 = vec3(-0.10, -0.10, -0.09);
+    const vec3 L2n2 = vec3(-0.06, -0.06, -0.04);
+    const vec3 L2n1 = vec3(0.01, -0.01, -0.05);
+    const vec3 L20  = vec3(-0.09, -0.13, -0.15);
+    const vec3 L2p1 = vec3(-0.06, -0.05, -0.04);
+    const vec3 L2p2 = vec3(0.02, 0.0, -0.05);
+
+    const float c1 = 0.429043;
+    const float c2 = 0.511664;
+    const float c3 = 0.743125;
+    const float c4 = 0.886227;
+    const float c5 = 0.247708;
+
+    const mat4 Mr = mat4(
+        vec4(c1 * L2p2.r, c1 * L2n2.r, c1 * L2p1.r, c2 * L1p1.r),
+        vec4(c1 * L2n2.r, -c1 * L2p2.r, c1 * L2n1.r, c2 * L1n1.r),
+        vec4(c1 * L2p1.r, c1 * L2n1.r, c3 * L20.r, c2 * L10.r),
+        vec4(c2 * L1p1.r, c2 * L1n1.r, c2 * L10.r, (c4 * L00.r) - (c5 * L20.r))
+    );
+
+    const mat4 Mg = mat4(
+        vec4(c1 * L2p2.g, c1 * L2n2.g, c1 * L2p1.g, c2 * L1p1.g),
+        vec4(c1 * L2n2.g, -c1 * L2p2.g, c1 * L2n1.g, c2 * L1n1.g),
+        vec4(c1 * L2p1.g, c1 * L2n1.g, c3 * L20.g, c2 * L10.g),
+        vec4(c2 * L1p1.g, c2 * L1n1.g, c2 * L10.g, (c4 * L00.g) - (c5 * L20.g))
+    );
+
+    const mat4 Mb = mat4(
+        vec4(c1 * L2p2.b, c1 * L2n2.b, c1 * L2p1.b, c2 * L1p1.b),
+        vec4(c1 * L2n2.b, -c1 * L2p2.b, c1 * L2n1.b, c2 * L1n1.b),
+        vec4(c1 * L2p1.b, c1 * L2n1.b, c3 * L20.b, c2 * L10.b),
+        vec4(c2 * L1p1.b, c2 * L1n1.b, c2 * L10.b, (c4 * L00.b) - (c5 * L20.b))
+    );
+
+    const vec4 ir_N = vec4(N, 1.0);
+
+    const vec3 ambient_color = vec3(
+        dot(ir_N, Mr * ir_N),
+        dot(ir_N, Mg * ir_N),
+        dot(ir_N, Mb * ir_N)
+    );
+
+    const vec3 kS = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
+    const vec3 kD = (1.0 - kS) * (1.0 - metallic);
     const float ao = texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r;
     const vec3 ambient = ao
-        * global_lighting.ambient_color_intensity.a
+        // * global_lighting.ambient_color_intensity.a
         * color.rgb
-        * global_lighting.ambient_color_intensity.rgb;
+        * ambient_color;
+        // * global_lighting.ambient_color_intensity.rgb;
     final_color += vec4(ambient, 0.0);
 
     OUT_COLOR = final_color;

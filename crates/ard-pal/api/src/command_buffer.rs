@@ -135,6 +135,11 @@ pub enum Command<'a, B: Backend> {
         first: usize,
         stage: ShaderStage,
     },
+    BindDescriptorSetsUnchecked {
+        sets: Vec<&'a DescriptorSet<B>>,
+        first: usize,
+        stage: ShaderStage,
+    },
     BindVertexBuffers {
         first: usize,
         binds: Vec<VertexBind<'a, B>>,

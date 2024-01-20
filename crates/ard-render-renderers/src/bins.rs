@@ -80,6 +80,7 @@ pub struct BinGenOutput {
 pub struct RenderArgs<'a, 'b, const FIF: usize> {
     pub pass_id: PassId,
     pub frame: Frame,
+    pub skip_texture_verify: bool,
     pub pass: &'b mut RenderPass<'a>,
     pub camera: &'a CameraUbo,
     pub global: &'a GlobalSets,
@@ -546,7 +547,7 @@ impl DrawBins {
 
     fn render_bins<'a, const FIF: usize>(
         &'a self,
-        args: RenderArgs<'a, '_, FIF>,
+        mut args: RenderArgs<'a, '_, FIF>,
         draw_calls: (&'a Buffer, usize),
         draw_counts: (&'a Buffer, usize),
         bin_offset: usize,
@@ -596,14 +597,7 @@ impl DrawBins {
                 rebound_material = true;
 
                 // Bind global sets
-                args.pass.bind_sets(
-                    0,
-                    vec![
-                        args.global.get_set(args.frame),
-                        args.texture_factory.get_set(args.frame),
-                        args.camera.get_set(args.frame),
-                    ],
-                );
+                args.bind_global();
             }
 
             if let Some(data_size) = bin.data_size {
@@ -644,14 +638,7 @@ impl DrawBins {
                         args.pass.bind_pipeline(variant.pipeline.clone());
 
                         // Bind global sets
-                        args.pass.bind_sets(
-                            0,
-                            vec![
-                                args.global.get_set(args.frame),
-                                args.texture_factory.get_set(args.frame),
-                                args.camera.get_set(args.frame),
-                            ],
-                        );
+                        args.bind_global();
                     }
                 }
 
@@ -676,6 +663,34 @@ impl DrawBins {
                 (bin_idx * 2 * std::mem::size_of::<u32>()) as u64,
                 bin.count,
                 std::mem::size_of::<GpuDrawCall>() as u64,
+            );
+        }
+    }
+}
+
+impl<'a, 'b, const FIF: usize> RenderArgs<'a, 'b, FIF> {
+    fn bind_global(&mut self) {
+        if self.skip_texture_verify {
+            self.pass.bind_sets(
+                0,
+                vec![
+                    self.global.get_set(self.frame),
+                    self.camera.get_set(self.frame),
+                ],
+            );
+
+            unsafe {
+                self.pass
+                    .bind_sets_unchecked(2, vec![self.texture_factory.get_set(self.frame)]);
+            }
+        } else {
+            self.pass.bind_sets(
+                0,
+                vec![
+                    self.global.get_set(self.frame),
+                    self.camera.get_set(self.frame),
+                    self.texture_factory.get_set(self.frame),
+                ],
             );
         }
     }

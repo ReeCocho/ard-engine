@@ -67,7 +67,7 @@ layout(location = 1) in vec4 ard_Normal;
 
 layout(location = 0) out vec3 vs_Normal;
 layout(location = 1) flat out uint vs_TextureSlotsIdx;
-layout(location = 2) flat out uint vs_MaterialDataSlotIdx;
+layout(location = 2) flat out uint vs_MaterialSlotIdx;
 
 #if ARD_VS_HAS_UV0
 layout(location = 3) out vec2 vs_Uv;

@@ -33,8 +33,8 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),
-                    layouts.textures.clone(),
                     layouts.camera.clone(),
+                    layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
@@ -49,8 +49,8 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),
-                    layouts.textures.clone(),
                     layouts.camera.clone(),
+                    layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
@@ -65,8 +65,8 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),
-                    layouts.textures.clone(),
                     layouts.camera.clone(),
+                    layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
@@ -81,8 +81,8 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),
-                    layouts.textures.clone(),
                     layouts.camera.clone(),
+                    layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
@@ -97,8 +97,8 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             PassDefinition {
                 layouts: vec![
                     layouts.global.clone(),
-                    layouts.textures.clone(),
                     layouts.camera.clone(),
+                    layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,

@@ -55,7 +55,6 @@ pub mod prelude {
     pub use crate::world::entities::EntityCommands;
     pub use crate::world::World;
     pub use ard_ecs_derive::SystemState;
-    pub use ard_ecs_derive::*;
 }
 
 /// Maximum number of types that can be held in a bitset.

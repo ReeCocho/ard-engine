@@ -365,6 +365,7 @@ impl RenderEcs {
                 SceneRenderArgs {
                     camera,
                     pass,
+                    static_dirty: frame_data.object_data.static_dirty(),
                     global: scene_render.global_sets(),
                     mesh_factory,
                     material_factory,
@@ -457,6 +458,7 @@ impl RenderEcs {
                 SceneRenderArgs {
                     pass,
                     camera,
+                    static_dirty: frame_data.object_data.static_dirty(),
                     global: scene_render.global_sets(),
                     mesh_factory,
                     material_factory,
@@ -523,17 +525,12 @@ impl RenderEcs {
                 .render_target()
                 .opaque_pass(CameraClearColor::Color(Vec4::ZERO)),
             |pass| {
-                proc_skybox.render(
-                    pass,
-                    camera.get_set(frame_data.frame),
-                    scene_render.global_sets().get_set(frame_data.frame),
-                );
-
                 scene_render.render_opaque(
                     frame_data.frame,
                     SceneRenderArgs {
                         pass,
                         camera,
+                        static_dirty: frame_data.object_data.static_dirty(),
                         global: scene_render.global_sets(),
                         mesh_factory,
                         material_factory,
@@ -541,6 +538,12 @@ impl RenderEcs {
                         meshes,
                         materials,
                     },
+                );
+
+                proc_skybox.render(
+                    pass,
+                    camera.get_set(frame_data.frame),
+                    scene_render.global_sets().get_set(frame_data.frame),
                 );
             },
         );
@@ -566,6 +569,7 @@ impl RenderEcs {
                 SceneRenderArgs {
                     pass,
                     camera,
+                    static_dirty: frame_data.object_data.static_dirty(),
                     global: scene_render.global_sets(),
                     mesh_factory,
                     material_factory,

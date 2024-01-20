@@ -20,6 +20,7 @@ use ard_render_objects::{
 use ard_render_si::{bindings::Layouts, types::*};
 use ard_render_textures::factory::TextureFactory;
 use ordered_float::NotNan;
+use rayon::prelude::*;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
@@ -215,7 +216,8 @@ impl SunShadowsRenderer {
             + self.set.static_group_ranges().alpha_cutout.len()
             + self.set.dynamic_group_ranges().opaque.len()
             + self.set.dynamic_group_ranges().alpha_cutout.len();
-        self.cascades.iter_mut().for_each(|cascade| {
+
+        self.cascades.par_iter_mut().for_each(|cascade| {
             // Expand output buffer if needed
             let output_id_buffer_size = (self.set.ids().len() * std::mem::size_of::<u32>()) as u64;
             if let Some(mut new_buffer) =
@@ -355,6 +357,7 @@ impl SunShadowsRenderer {
                     cascade.bins.render_non_transparent_bins(RenderArgs {
                         pass_id: SHADOW_PASS_ID,
                         frame,
+                        skip_texture_verify: true,
                         camera: &cascade.camera,
                         global: &cascade.global,
                         pass,

@@ -559,6 +559,24 @@ impl Backend for VulkanBackend {
                         &[],
                     );
                 }
+                Command::BindDescriptorSetsUnchecked { sets, first, stage } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    self.device.cmd_bind_descriptor_sets(
+                        cb,
+                        match *stage {
+                            ShaderStage::Compute => vk::PipelineBindPoint::COMPUTE,
+                            _ => vk::PipelineBindPoint::GRAPHICS,
+                        },
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
                 Command::BindVertexBuffers { first, binds } => {
                     let mut buffers = Vec::with_capacity(binds.len());
                     let mut offsets = Vec::with_capacity(binds.len());
@@ -1512,6 +1530,7 @@ impl VulkanBackend {
             .multi_draw_indirect(true)
             .depth_clamp(true)
             .sample_rate_shading(true)
+            .sampler_anisotropy(true)
             .build();
 
         let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()

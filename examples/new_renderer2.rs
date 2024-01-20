@@ -7,6 +7,7 @@ use ard_pal::prelude::*;
 use ard_render2::{factory::Factory, AntiAliasingMode, RenderPlugin, RendererSettings};
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
+use ard_render_lighting::Light;
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
 use ard_render_pbr::PbrMaterialData;
@@ -125,7 +126,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_startup_function(setup)
@@ -232,7 +233,7 @@ fn setup(app: &mut App) {
         (
             vec![Camera {
                 near: 0.03,
-                far: 300.0,
+                far: 200.0,
                 fov: 80.0_f32.to_radians(),
                 order: 0,
                 clear_color: CameraClearColor::Color(Vec4::ZERO),
@@ -303,18 +304,18 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
-    // // Gimmie a light
-    // app.world.entities().commands().create(
-    //     (
-    //         vec![Light::Point {
-    //             color: Vec3::ONE,
-    //             range: 32.0,
-    //             intensity: 16.0,
-    //         }],
-    //         vec![Model(Mat4::from_translation(Vec3::new(8.0, 8.0, 8.0)))],
-    //     ),
-    //     &mut [],
-    // );
+    // Gimmie a light
+    app.world.entities().commands().create(
+        (
+            vec![Light::Point {
+                color: Vec3::new(1.0, 0.0, 0.0),
+                range: 8.0,
+                intensity: 32.0,
+            }],
+            vec![Model(Mat4::from_translation(Vec3::new(8.0, 8.0, 8.0)))],
+        ),
+        &mut [],
+    );
 
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(0);
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(1);

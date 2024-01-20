@@ -8,4 +8,6 @@
     (name: "CAMERA_FROXELS_DEPTH", value: USize(16)),
     (name: "MAX_LIGHTS_PER_CLUSTER", value: USize(128)),
     (name: "AdaptiveLumHistogramSize", value: USize(256)),
+    /// Must be a power of 2.
+    (name: "HzbGenKernelSize", value: USize(8)),
 ]

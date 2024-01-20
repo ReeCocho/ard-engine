@@ -7,7 +7,7 @@
 #define ARD_SET_GLOBAL 1
 #include "ard_bindings.glsl"
 
-layout(location = 0) out vec3 LOCAL_POS;
+layout(location = 0) out vec3 DIR;
 
 const vec3 POINTS[] = vec3[36](
     // East
@@ -65,6 +65,7 @@ const vec3 POINTS[] = vec3[36](
 );
 
 void main() {
-    LOCAL_POS = POINTS[gl_VertexIndex];
-    gl_Position = camera.vp * vec4(LOCAL_POS + camera.position.xyz, 1.0);
+    DIR = POINTS[gl_VertexIndex];
+    const vec4 pos = camera.vp * vec4(DIR + camera.position.xyz, 1.0);
+    gl_Position = vec4(pos.xy, 0.0, pos.w);
 }

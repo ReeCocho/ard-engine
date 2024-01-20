@@ -7,8 +7,8 @@
 #define ArdMaterialData PbrMaterial
 
 #define ARD_SET_GLOBAL 0
-#define ARD_SET_TEXTURES 1
-#define ARD_SET_CAMERA 2
+#define ARD_SET_CAMERA 1
+#define ARD_SET_TEXTURES 2
 #define ARD_SET_MATERIALS 3
 
 #include "ard_bindings.glsl"
@@ -36,25 +36,24 @@ void main() {
         vs_LightSpacePositions[i] = sun_shadow_info.cascades[i].vp * ws_frag_pos;
     }
 
-    // Compute TBN if we have tangents
-#if ARD_VS_HAS_TANGENT
+    // Compute TBN if we have tangents and UVs (UVs are required as well because the TBN is only
+    // used when doing normal mapping.
+#if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
     vec3 T = normalize(vec3(model_mat * ard_Tangent));
     vec3 N = normalize(vec3(model_mat * ard_Normal));
     T = normalize(T - dot(T, N) * N);
     vec3 B = cross(N, T);
+    
     vs_TBN = mat3(T, B, N);
-#endif
-
+#else
     // Output corrected normal
     vs_Normal = normalize(normal_mat * ard_Normal.xyz);
+#endif
     
-    // Bindless resource IDs
-    vs_TextureSlotsIdx = ard_TextureSlot(id);
-    vs_MaterialDataSlotIdx = ard_MaterialSlot(id);
-    
-    // Output UVs if we have them
 #if ARD_VS_HAS_UV0
+    vs_TextureSlotsIdx = ard_TextureSlot(id);
     vs_Uv = ard_Uv0;
 #endif
+    vs_MaterialSlotIdx = ard_MaterialSlot(id);
 
 }

@@ -9,7 +9,7 @@
 
 layout(location = 0) out vec4 FRAGMENT_COLOR;
 
-layout(location = 0) in vec3 LOCAL_POS;
+layout(location = 0) in vec3 DIR;
 
 const float Br = 0.0025;
 const float Bm = 0.0003;
@@ -19,14 +19,15 @@ const vec3 Kr = Br / pow(nitrogen, vec3(4.0));
 const vec3 Km = Bm / pow(nitrogen, vec3(0.84));
 
 void main() {
+    const vec3 pos = normalize(DIR);
+
     // Discard to default color below the horizon
-    if (LOCAL_POS.y < 0.0) {
+    if (pos.y < 0.0) {
         FRAGMENT_COLOR = vec4(0.408, 0.388, 0.373, 1.0);
         return;
     }
 
     // Atmosphere Scattering
-    const vec3 pos = normalize(LOCAL_POS);
     const vec3 fsun = -normalize(global_lighting.sun_direction.xyz);
 
     const float mu = dot(normalize(pos), normalize(fsun));

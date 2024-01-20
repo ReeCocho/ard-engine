@@ -172,6 +172,7 @@
         no_mangle: false,
         fields: [
             (name: "input_size", ty: IVec2),
+            (name: "output_size", ty: IVec2),
             (name: "inv_output_size", ty: Vec2),
         ]
     ),

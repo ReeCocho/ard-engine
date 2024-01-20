@@ -10,6 +10,7 @@ pub struct ModelHeader {
     pub materials: Vec<MaterialHeader<u32>>,
     pub lights: Vec<Light>,
     pub mesh_groups: Vec<MeshGroup>,
+    pub meshes: Vec<MeshHeader>,
     pub roots: Vec<Node>,
 }
 
@@ -33,12 +34,12 @@ pub enum Light {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MeshGroup(pub Vec<MeshInstance>);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct MeshInstance {
-    pub mesh: MeshHeader,
+    pub mesh: u32,
     pub material: u32,
 }
 
@@ -71,10 +72,9 @@ impl ModelHeader {
         path
     }
 
-    pub fn mesh_instance_path(root: impl Into<PathBuf>, group: usize, idx: usize) -> PathBuf {
+    pub fn mesh_path(root: impl Into<PathBuf>, idx: usize) -> PathBuf {
         let mut path: PathBuf = root.into();
-        path.push("mesh_groups");
-        path.push(group.to_string());
+        path.push("meshes");
         path.push(idx.to_string());
         path
     }

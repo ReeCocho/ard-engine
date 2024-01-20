@@ -14,7 +14,7 @@ layout(push_constant) uniform constants {
 };
 
 void main() {
-    vec3 color = texture(screen_tex, UV).rgb + (texture(bloom_image, UV).rgb * 0.12);
+    vec3 color = mix(texture(screen_tex, UV).rgb, texture(bloom_image, UV).rgb, 0.08);
     color = vec3(1.0) - exp(-color * (consts.exposure / luminance));
     color = pow(color, vec3(1.0 / consts.gamma));
 

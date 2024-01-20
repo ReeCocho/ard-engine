@@ -20,6 +20,7 @@ ard-render-textures = { path = "../ard-render-textures" }
 ard-render-image-effects = { path = "../ard-render-image-effects" }
 bytemuck.workspace = true
 ordered-float.workspace = true
+rayon.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

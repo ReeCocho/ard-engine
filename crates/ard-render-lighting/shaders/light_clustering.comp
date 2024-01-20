@@ -67,9 +67,10 @@ void main() {
 
             // Early discard if outside of camera frustum.
             //
-            // It's good to test for this since if we know that if the light is outside the camera 
+            // It's good to test for this since if we know that the light is outside the camera 
             // frustum it must also be outside of all froxels, meaning we can avoid testing all of 
-            // them.
+            // them. We can also skip testing the far plane since we're using an infinite
+            // perspective matrix (the light is always within it's bounds).
             const bool outside_camera_bounds = 
                 dot(light_pos_hmg, camera.frustum.planes[0]) < -light_radius ||
                 dot(light_pos_hmg, camera.frustum.planes[1]) < -light_radius ||

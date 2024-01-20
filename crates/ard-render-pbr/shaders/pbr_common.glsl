@@ -338,9 +338,7 @@ vec4 sample_texture(uint slot, vec2 uv) {
 
 /// Bindless material data.
 #ifdef ArdMaterialData
-ArdMaterialData get_material_data() {
-    return material_data[vs_MaterialDataSlotIdx];
-}
+    #define ard_MaterialData(ID) (material_data[ID])
 #endif
 
 #endif

@@ -4,6 +4,7 @@ use ard_math::{Mat4, Quat, Vec2, Vec3, Vec4};
 use ard_pal::prelude::{Filter, Format, SamplerAddressMode};
 use bytemuck::{Pod, Zeroable};
 use gltf::{json::extensions::scene::khr_lights_punctual, Glb, Gltf};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use thiserror::Error;
 
 pub struct GltfModel {
@@ -11,6 +12,7 @@ pub struct GltfModel {
     pub textures: Vec<GltfTexture>,
     pub materials: Vec<GltfMaterial>,
     pub mesh_groups: Vec<GltfMeshGroup>,
+    pub meshes: Vec<GltfMesh>,
     pub roots: Vec<GltfNode>,
 }
 
@@ -97,7 +99,7 @@ pub struct GltfMesh {
 }
 
 pub struct GltfMeshInstance {
-    pub mesh: GltfMesh,
+    pub mesh: usize,
     pub material: usize,
 }
 
@@ -147,6 +149,44 @@ struct DataMapping {
     materials: HashMap<usize, usize>,
 }
 
+#[derive(Clone, Default)]
+struct InvDataMapping {
+    lights: HashMap<usize, usize>,
+    mesh_groups: HashMap<usize, usize>,
+    /// Maps accessor index to associated primitives.
+    meshes: HashMap<Accessor, Vec<Primitive>>,
+    mesh_count: usize,
+    textures: HashMap<usize, (usize, TextureUsage)>,
+    materials: HashMap<usize, usize>,
+}
+
+// It would definetly be a good idea to pack these values into an array that we can key by
+// converting the accessor type to an index. This would simplify a lot of the associated
+// primitive code.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Primitive {
+    mesh_idx: usize,
+    indices: Accessor,
+    positions: Accessor,
+    normals: Option<Accessor>,
+    tangents: Option<Accessor>,
+    colors: Option<Accessor>,
+    uv0s: Option<Accessor>,
+    uv1s: Option<Accessor>,
+    uv2s: Option<Accessor>,
+    uv3s: Option<Accessor>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Accessor {
+    buffer: usize,
+    component_type: u32,
+    component_count: u32,
+    count: u32,
+    byte_offset: u32,
+    byte_stride: Option<u32>,
+}
+
 impl GltfModel {
     pub fn from_slice(data: &[u8]) -> Result<Self, GltfModelParseError> {
         // Load as GLB
@@ -155,7 +195,7 @@ impl GltfModel {
         let gltf = Gltf::from_slice(&glb.json)?;
 
         // Mappings from GLTF item indices to our own internal ones
-        let mut inv_mapping = DataMapping::default();
+        let mut inv_mapping = InvDataMapping::default();
 
         // Determine what resources are actually used and also construct the scene graph
         let gltf_doc = gltf.document.into_json();
@@ -167,22 +207,26 @@ impl GltfModel {
         }
 
         // Clone and remap from gltf indices -> our indices to our indices -> gltf indices
-        let mut mapping = inv_mapping.clone();
-        mapping.lights = mapping.lights.into_iter().map(|(i, j)| (j, i)).collect();
-        mapping.mesh_groups = mapping
+        let mut mapping = DataMapping::default();
+        mapping.lights = inv_mapping.lights.iter().map(|(i, j)| (*j, *i)).collect();
+        mapping.mesh_groups = inv_mapping
             .mesh_groups
-            .into_iter()
-            .map(|(i, j)| (j, i))
+            .iter()
+            .map(|(i, j)| (*j, *i))
             .collect();
-        mapping.textures = mapping
+        mapping.textures = inv_mapping
             .textures
-            .into_iter()
-            .map(|(i, (j, u))| (j, (i, u)))
+            .iter()
+            .map(|(i, (j, u))| (*j, (*i, *u)))
             .collect();
-        mapping.materials = mapping.materials.into_iter().map(|(i, j)| (j, i)).collect();
+        mapping.materials = inv_mapping
+            .materials
+            .iter()
+            .map(|(i, j)| (*j, *i))
+            .collect();
 
         // Construct all resources
-        let (lights, (textures, (materials, mesh_groups))) = rayon::join(
+        let (lights, (textures, (materials, (meshes, mesh_groups)))) = rayon::join(
             || load_gltf_lights(&gltf_doc, &mapping),
             || {
                 rayon::join(
@@ -190,7 +234,12 @@ impl GltfModel {
                     || {
                         rayon::join(
                             || load_gltf_materials(&gltf_doc, &mapping, &inv_mapping),
-                            || load_gltf_mesh_groups(&gltf_doc, &mapping, &inv_mapping, &bin),
+                            || {
+                                rayon::join(
+                                    || load_gltf_meshes(&gltf_doc, &inv_mapping, &bin),
+                                    || load_gltf_mesh_groups(&gltf_doc, &mapping, &inv_mapping),
+                                )
+                            },
                         )
                     },
                 )
@@ -202,6 +251,7 @@ impl GltfModel {
             textures,
             materials,
             mesh_groups,
+            meshes,
             roots,
         })
     }
@@ -245,7 +295,210 @@ impl Default for GltfSampler {
     }
 }
 
-fn parse_node(node_idx: usize, gltf: &gltf::json::Root, mapping: &mut DataMapping) -> GltfNode {
+impl Default for Accessor {
+    fn default() -> Self {
+        Accessor {
+            buffer: usize::MAX,
+            component_type: u32::MAX,
+            component_count: u32::MAX,
+            count: u32::MAX,
+            byte_offset: u32::MAX,
+            byte_stride: None,
+        }
+    }
+}
+
+impl Primitive {
+    fn is_subset_of(&self, other: &Primitive) -> bool {
+        if self.indices != other.indices || self.positions != other.positions {
+            return false;
+        }
+
+        if !match (self.normals, other.normals) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.tangents, other.tangents) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.colors, other.colors) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.uv0s, other.uv0s) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.uv1s, other.uv1s) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.uv2s, other.uv2s) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        if !match (self.uv3s, other.uv3s) {
+            (Some(l), Some(r)) => l == r,
+            (None, Some(_)) | (None, None) => true,
+            (Some(_), None) => false,
+        } {
+            return false;
+        }
+
+        true
+    }
+
+    /// Compare this primitive with another and does the following.
+    ///
+    /// - If the two primitives are exactly equal, does nothing and returns `false`.
+    /// - If the two primitives have any mismatching accessors, does nothing and returns `true`.
+    /// - If this primitive is a subset of the other primitive, does nothing and returns `false`.
+    /// - If this primtive is a superset of the other primitive, updates the other primitive with
+    ///   this primitives accessors and returns `false`.
+    fn compare_and_update_primitive(&mut self, other: &mut Primitive) -> bool {
+        // Check if they are exactly equal
+        let indices_comp = self.indices == other.indices;
+        let positions_comp = self.positions == other.positions;
+
+        if indices_comp
+            && positions_comp
+            && self.normals == other.normals
+            && self.tangents == other.tangents
+            && self.colors == other.colors
+            && self.uv0s == other.uv0s
+            && self.uv1s == other.uv1s
+            && self.uv2s == other.uv2s
+            && self.uv3s == other.uv3s
+        {
+            return false;
+        }
+
+        #[derive(Copy, Clone, PartialEq, Eq)]
+        enum AccessorComp {
+            // Accessors are unequal (both are some but with mismatching values).
+            Unequal,
+            // Accessors are exactly equal (both none or both are some with matching value)
+            Equal,
+            // We have some while the other has none.
+            WeHaveSome,
+            // The other has some while we have none.
+            TheyHaveSome,
+        }
+
+        fn compare_accessors(us: &Option<Accessor>, other: &Option<Accessor>) -> AccessorComp {
+            match (us, other) {
+                // Both have accessors, but are only equal if the accessors are equal
+                (Some(us), Some(other)) => {
+                    if us == other {
+                        AccessorComp::Equal
+                    } else {
+                        AccessorComp::Unequal
+                    }
+                }
+                (None, None) => AccessorComp::Equal,
+                (Some(_), None) => AccessorComp::WeHaveSome,
+                (None, Some(_)) => AccessorComp::TheyHaveSome,
+            }
+        }
+
+        // Compare indices and positions first since they are non-optional
+        if !indices_comp || !positions_comp {
+            return true;
+        }
+
+        // Now compare optional accessors
+        let normals = compare_accessors(&self.normals, &other.normals);
+        let tangents = compare_accessors(&self.tangents, &other.tangents);
+        let colors = compare_accessors(&self.colors, &other.colors);
+        let uv0s = compare_accessors(&self.uv0s, &other.uv0s);
+        let uv1s = compare_accessors(&self.uv1s, &other.uv1s);
+        let uv2s = compare_accessors(&self.uv2s, &other.uv2s);
+        let uv3s = compare_accessors(&self.uv3s, &other.uv3s);
+
+        // Check if we are exactly equal
+        if normals == AccessorComp::Equal
+            && tangents == AccessorComp::Equal
+            && colors == AccessorComp::Equal
+            && uv0s == AccessorComp::Equal
+            && uv1s == AccessorComp::Equal
+            && uv2s == AccessorComp::Equal
+            && uv3s == AccessorComp::Equal
+        {
+            return false;
+        }
+
+        // Check if we have any mismatching accessors
+        if normals == AccessorComp::Unequal
+            || tangents == AccessorComp::Unequal
+            || colors == AccessorComp::Unequal
+            || uv0s == AccessorComp::Unequal
+            || uv1s == AccessorComp::Unequal
+            || uv2s == AccessorComp::Unequal
+            || uv3s == AccessorComp::Unequal
+        {
+            return true;
+        }
+
+        // At this point, we know that we can take the union of both primitives and come out with
+        // "the same" mesh but better (more specialized accessors).
+        if normals == AccessorComp::WeHaveSome {
+            other.normals = self.normals;
+        }
+
+        if tangents == AccessorComp::WeHaveSome {
+            other.tangents = self.tangents;
+        }
+
+        if colors == AccessorComp::WeHaveSome {
+            other.colors = self.colors;
+        }
+
+        if uv0s == AccessorComp::WeHaveSome {
+            other.uv0s = self.uv0s;
+        }
+
+        if uv1s == AccessorComp::WeHaveSome {
+            other.uv1s = self.uv1s;
+        }
+
+        if uv2s == AccessorComp::WeHaveSome {
+            other.uv2s = self.uv2s;
+        }
+
+        if uv3s == AccessorComp::WeHaveSome {
+            other.uv3s = self.uv3s;
+        }
+
+        false
+    }
+}
+
+fn parse_node(node_idx: usize, gltf: &gltf::json::Root, mapping: &mut InvDataMapping) -> GltfNode {
     let node = &gltf.nodes[node_idx];
 
     // Either construct the model matrix or grab it from the file
@@ -277,6 +530,8 @@ fn parse_node(node_idx: usize, gltf: &gltf::json::Root, mapping: &mut DataMappin
                     gltf,
                     &mut mapping.textures,
                     &mut mapping.materials,
+                    &mut mapping.meshes,
+                    &mut mapping.mesh_count,
                 );
                 new_idx
             });
@@ -314,9 +569,44 @@ fn inspect_mesh_group(
     gltf: &gltf::json::Root,
     texture_map: &mut HashMap<usize, (usize, TextureUsage)>,
     material_map: &mut HashMap<usize, usize>,
+    mesh_map: &mut HashMap<Accessor, Vec<Primitive>>,
+    mesh_count: &mut usize,
 ) {
     let mesh_group = &gltf.meshes[mesh_group_idx];
     for primitive in &mesh_group.primitives {
+        // Construct the primitive ID and see if we've got it in the mapping
+        let mut prim_id = to_primitive_id(gltf, primitive);
+
+        if prim_id.indices.buffer == usize::MAX {
+            println!("WARNING: Primitive in mesh group {mesh_group_idx} has no indices.");
+            continue;
+        }
+
+        if prim_id.positions.buffer == usize::MAX {
+            println!("WARNING: Primtive in mesh group {mesh_group_idx} has no positions.");
+            continue;
+        }
+
+        // Compare with existing primitives associated with the same index accessor and see if we
+        // can merge accessors or have to create a new primitive type.
+        let primitives = mesh_map.entry(prim_id.indices).or_default();
+
+        let mut needs_new_primitive = true;
+        for primitive in primitives.iter_mut() {
+            // If "false" we were able to use this existing primitive, so we can stop searching
+            if !prim_id.compare_and_update_primitive(primitive) {
+                needs_new_primitive = false;
+                break;
+            }
+        }
+
+        if needs_new_primitive {
+            prim_id.mesh_idx = *mesh_count;
+            *mesh_count += 1;
+
+            primitives.push(prim_id);
+        }
+
         // Skip if we've seen the material before
         let material = match &primitive.material {
             Some(idx) => {
@@ -429,7 +719,7 @@ fn load_gltf_lights(gltf: &gltf::json::Root, mapping: &DataMapping) -> Vec<GltfL
 fn load_gltf_materials(
     gltf: &gltf::json::Root,
     mapping: &DataMapping,
-    inv_mapping: &DataMapping,
+    inv_mapping: &InvDataMapping,
 ) -> Vec<GltfMaterial> {
     use rayon::prelude::*;
 
@@ -589,11 +879,30 @@ fn load_gltf_textures(
         .collect()
 }
 
+fn load_gltf_meshes(
+    gltf: &gltf::json::Root,
+    mapping: &InvDataMapping,
+    bin: &[u8],
+) -> Vec<GltfMesh> {
+    // Sort by our index so we can get the correct mapping
+    let mut primitives: Vec<_> = mapping
+        .meshes
+        .clone()
+        .into_iter()
+        .flat_map(|(_, prim)| prim.into_iter())
+        .collect();
+    primitives.sort_by_key(|e| e.mesh_idx);
+
+    primitives
+        .par_iter()
+        .map(|primitive| load_gltf_primitive(gltf, primitive, bin))
+        .collect()
+}
+
 fn load_gltf_mesh_groups(
     gltf: &gltf::json::Root,
     mapping: &DataMapping,
-    inv_mapping: &DataMapping,
-    bin: &[u8],
+    inv_mapping: &InvDataMapping,
 ) -> Vec<GltfMeshGroup> {
     use rayon::prelude::*;
 
@@ -615,8 +924,22 @@ fn load_gltf_mesh_groups(
                         continue;
                     }
                 };
+
+                let prim_id = to_primitive_id(gltf, &primitive);
+
+                // Check each primitive from the associated index buffer and find which one we are
+                // a subset of
+                let mut mesh_idx = usize::MAX;
+                for primitive in inv_mapping.meshes.get(&prim_id.indices).unwrap() {
+                    if prim_id.is_subset_of(primitive) {
+                        mesh_idx = primitive.mesh_idx;
+                        break;
+                    }
+                }
+                assert!(mesh_idx != usize::MAX);
+
                 mesh_group.0.push(GltfMeshInstance {
-                    mesh: load_gltf_primitive(gltf, primitive, bin),
+                    mesh: mesh_idx,
                     material,
                 });
             }
@@ -626,159 +949,112 @@ fn load_gltf_mesh_groups(
         .collect()
 }
 
-fn load_gltf_primitive(
-    gltf: &gltf::json::Root,
-    primitive: &gltf::json::mesh::Primitive,
-    bin: &[u8],
-) -> GltfMesh {
-    let mut positions = Vec::default();
-    let mut normals = Vec::default();
-    let mut tangents = Vec::default();
-    let mut colors = Vec::default();
-    let mut uv0 = Vec::default();
-    let mut uv1 = Vec::default();
-    let mut uv2 = Vec::default();
-    let mut uv3 = Vec::default();
-
-    for (semantic, accessor_idx) in &primitive.attributes {
-        let gltf_accessor = &gltf.accessors[accessor_idx.value()];
-        match semantic.as_ref().unwrap() {
-            gltf::Semantic::Positions => {
-                // Copy data into a buffer
-                positions = match accessor_to_vec::<Vec4>(
-                    gltf,
-                    gltf_accessor,
-                    bin,
-                    gltf::accessor::DataType::F32,
-                ) {
-                    Some(res) => res,
-                    None => {
-                        println!("WARNING: Unable to load primitive.");
-                        return GltfMesh::default();
-                    }
-                };
-            }
-            gltf::Semantic::Normals => {
-                normals = match accessor_to_vec::<Vec4>(
-                    gltf,
-                    gltf_accessor,
-                    bin,
-                    gltf::accessor::DataType::F32,
-                ) {
-                    Some(res) => res,
-                    None => {
-                        println!("WARNING: Unable to load primitive.");
-                        return GltfMesh::default();
-                    }
-                };
-            }
-            gltf::Semantic::Tangents => {
-                tangents = match accessor_to_vec::<Vec4>(
-                    gltf,
-                    gltf_accessor,
-                    bin,
-                    gltf::accessor::DataType::F32,
-                ) {
-                    Some(res) => res,
-                    None => {
-                        println!("WARNING: Unable to load primitive.");
-                        return GltfMesh::default();
-                    }
-                };
-            }
-            gltf::Semantic::Colors(n) => {
-                if *n == 0 {
-                    colors = match accessor_to_vec::<Vec4>(
-                        gltf,
-                        gltf_accessor,
-                        bin,
-                        gltf::accessor::DataType::F32,
-                    ) {
-                        Some(res) => res,
-                        None => {
-                            println!("WARNING: Unable to load primitive.");
-                            return GltfMesh::default();
-                        }
-                    };
-                }
-            }
-            gltf::Semantic::TexCoords(n) => match n {
-                0 => {
-                    uv0 = match accessor_to_vec::<Vec2>(
-                        gltf,
-                        gltf_accessor,
-                        bin,
-                        gltf::accessor::DataType::F32,
-                    ) {
-                        Some(res) => res,
-                        None => {
-                            println!("WARNING: Unable to load primitive.");
-                            return GltfMesh::default();
-                        }
-                    };
-                }
-                1 => {
-                    uv1 = match accessor_to_vec::<Vec2>(
-                        gltf,
-                        gltf_accessor,
-                        bin,
-                        gltf::accessor::DataType::F32,
-                    ) {
-                        Some(res) => res,
-                        None => {
-                            println!("WARNING: Unable to load primitive.");
-                            return GltfMesh::default();
-                        }
-                    };
-                }
-                2 => {
-                    uv2 = match accessor_to_vec::<Vec2>(
-                        gltf,
-                        gltf_accessor,
-                        bin,
-                        gltf::accessor::DataType::F32,
-                    ) {
-                        Some(res) => res,
-                        None => {
-                            println!("WARNING: Unable to load primitive.");
-                            return GltfMesh::default();
-                        }
-                    };
-                }
-                3 => {
-                    uv3 = match accessor_to_vec::<Vec2>(
-                        gltf,
-                        gltf_accessor,
-                        bin,
-                        gltf::accessor::DataType::F32,
-                    ) {
-                        Some(res) => res,
-                        None => {
-                            println!("WARNING: Unable to load primitive.");
-                            return GltfMesh::default();
-                        }
-                    };
-                }
-                _ => continue,
-            },
-            _ => {
-                println!("WARNING: Weights and joints not supported..");
-                return GltfMesh::default();
-            }
-        }
-    }
-
-    // Load in the indices. They are required to be u32 by the GLTF spec
-    let indices_accessor = match &primitive.indices {
-        Some(accessor) => &gltf.accessors[accessor.value()],
+fn load_gltf_primitive(gltf: &gltf::json::Root, primitive: &Primitive, bin: &[u8]) -> GltfMesh {
+    let positions = match accessor_to_vec::<Vec4>(
+        gltf,
+        &primitive.positions,
+        bin,
+        gltf::accessor::DataType::F32,
+    ) {
+        Some(res) => res,
         None => {
-            println!("WARNING: Primitives must have indices.");
+            println!("WARNING: Unable to load primitive.");
             return GltfMesh::default();
         }
     };
 
-    let indices = match indices_accessor.component_type.unwrap().0 {
-        gltf::accessor::DataType::U16 => {
+    let normals = if let Some(accessor) = primitive.normals {
+        match accessor_to_vec::<Vec4>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let tangents = if let Some(accessor) = primitive.tangents {
+        match accessor_to_vec::<Vec4>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let colors = if let Some(accessor) = primitive.colors {
+        match accessor_to_vec::<Vec4>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let uv0 = if let Some(accessor) = primitive.uv0s {
+        match accessor_to_vec::<Vec2>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let uv1 = if let Some(accessor) = primitive.uv1s {
+        match accessor_to_vec::<Vec2>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let uv2 = if let Some(accessor) = primitive.uv2s {
+        match accessor_to_vec::<Vec2>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    let uv3 = if let Some(accessor) = primitive.uv3s {
+        match accessor_to_vec::<Vec2>(gltf, &accessor, bin, gltf::accessor::DataType::F32) {
+            Some(res) => res,
+            None => {
+                println!("WARNING: Unable to load primitive.");
+                return GltfMesh::default();
+            }
+        }
+    } else {
+        Vec::default()
+    };
+
+    // Load in the indices. They are required to be u32 by the GLTF spec
+    let indices_accessor = &primitive.indices;
+
+    const U16: u32 = gltf::accessor::DataType::U16 as u32;
+    const U32: u32 = gltf::accessor::DataType::U32 as u32;
+
+    let indices = match indices_accessor.component_type {
+        U16 => {
             let u16_indices = match accessor_to_vec::<u16>(
                 gltf,
                 indices_accessor,
@@ -798,7 +1074,7 @@ fn load_gltf_primitive(
 
             as_u32
         }
-        gltf::accessor::DataType::U32 => {
+        U32 => {
             match accessor_to_vec::<u32>(gltf, indices_accessor, bin, gltf::accessor::DataType::U32)
             {
                 Some(res) => res,
@@ -842,16 +1118,15 @@ fn load_gltf_primitive(
 /// Takes an accessor and turns the data referenced into a buffer of another type.
 fn accessor_to_vec<T: Pod + Zeroable + 'static>(
     gltf: &gltf::json::Root,
-    accessor: &gltf::json::Accessor,
+    accessor: &Accessor,
     raw: &[u8],
     expected_data_type: gltf::accessor::DataType,
 ) -> Option<Vec<T>> {
     // Don't support non-float data types
-    if accessor.component_type.unwrap().0 != expected_data_type {
+    if accessor.component_type != expected_data_type as u32 {
         println!(
             "WARNING: Expected `{:?}` accessor data type but got `{:?}`.",
-            expected_data_type,
-            accessor.component_type.unwrap().0
+            expected_data_type, accessor.component_type
         );
         return None;
     }
@@ -865,17 +1140,8 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
         gltf::accessor::DataType::F32 => std::mem::size_of::<f32>(),
     };
 
-    // Must have a view
-    let view = match &accessor.buffer_view {
-        Some(view) => &gltf.buffer_views[view.value()],
-        None => {
-            println!("WARNING: no support for sparse attributes.");
-            return None;
-        }
-    };
-
     // Ensure the buffer is from the binary blob and not a uri
-    if gltf.buffers[view.buffer.value()].uri.is_some() {
+    if gltf.buffers[accessor.buffer].uri.is_some() {
         println!("WARNING: No support for vertex data from URI.");
         return None;
     }
@@ -894,18 +1160,9 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
     points.resize(accessor.count as usize * std::mem::size_of::<T>(), 0);
 
     // Determine strides and sizes for copying data
-    let read_size = match accessor.type_.unwrap() {
-        gltf::accessor::Dimensions::Scalar => data_size,
-        gltf::accessor::Dimensions::Vec2 => 2 * data_size,
-        gltf::accessor::Dimensions::Vec3 => 3 * data_size,
-        gltf::accessor::Dimensions::Vec4 => 4 * data_size,
-        _ => {
-            println!("WARNING: No support for matrix types.");
-            return None;
-        }
-    };
+    let read_size = accessor.component_count as usize * data_size;
 
-    let read_stride = match view.byte_stride {
+    let read_stride = match accessor.byte_stride {
         Some(stride) => stride as usize,
         None => read_size,
     };
@@ -918,7 +1175,7 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
         return None;
     }
 
-    let mut read_offset = (accessor.byte_offset + view.byte_offset.unwrap_or(0)) as usize;
+    let mut read_offset = accessor.byte_offset as usize;
     let mut write_offset = 0;
 
     // If our read stride and write sizes are equal, we're lucky. We can just do a straight memcpy
@@ -946,6 +1203,78 @@ fn accessor_to_vec<T: Pod + Zeroable + 'static>(
             len / std::mem::size_of::<T>(),
             cap / std::mem::size_of::<T>(),
         ))
+    }
+}
+
+fn to_primitive_id(gltf: &gltf::json::Root, primitive: &gltf::json::mesh::Primitive) -> Primitive {
+    let mut prim_id = Primitive {
+        mesh_idx: usize::MAX,
+        indices: Accessor::default(),
+        positions: Accessor::default(),
+        normals: None,
+        tangents: None,
+        colors: None,
+        uv0s: None,
+        uv1s: None,
+        uv2s: None,
+        uv3s: None,
+    };
+
+    if let Some(id) = &primitive.indices {
+        prim_id.indices = to_primitive_accessor(gltf, &gltf.accessors[id.value()]);
+    }
+
+    for (attribute, id) in primitive.attributes.iter() {
+        match attribute.as_ref().unwrap() {
+            gltf::Semantic::Positions => {
+                prim_id.positions = to_primitive_accessor(gltf, &gltf.accessors[id.value()]);
+            }
+            gltf::Semantic::Normals => {
+                prim_id.normals = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()]));
+            }
+            gltf::Semantic::Tangents => {
+                prim_id.tangents = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()]));
+            }
+            gltf::Semantic::Colors(n) => {
+                if *n == 0 {
+                    prim_id.colors = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()]));
+                }
+            }
+            gltf::Semantic::TexCoords(n) => match n {
+                0 => prim_id.uv0s = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()])),
+                1 => prim_id.uv1s = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()])),
+                2 => prim_id.uv2s = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()])),
+                3 => prim_id.uv3s = Some(to_primitive_accessor(gltf, &gltf.accessors[id.value()])),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    prim_id
+}
+
+fn to_primitive_accessor(gltf: &gltf::json::Root, accessor: &gltf::json::Accessor) -> Accessor {
+    let view = match &accessor.buffer_view {
+        Some(view) => &gltf.buffer_views[view.value()],
+        None => {
+            panic!("ERROR: no support for sparse attributes.");
+        }
+    };
+
+    Accessor {
+        buffer: view.buffer.value(),
+        component_type: accessor.component_type.unwrap().0 as u32,
+        component_count: match accessor.type_.unwrap() {
+            gltf::accessor::Dimensions::Scalar => 1,
+            gltf::accessor::Dimensions::Vec2 => 2,
+            gltf::accessor::Dimensions::Vec3 => 3,
+            gltf::accessor::Dimensions::Vec4 => 4,
+            _ => 0,
+        },
+        count: accessor.count,
+        byte_offset: accessor.byte_offset + view.byte_offset.unwrap_or(0),
+        byte_stride: view.byte_stride,
     }
 }
 

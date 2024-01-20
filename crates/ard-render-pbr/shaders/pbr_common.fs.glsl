@@ -9,7 +9,7 @@
 
 layout(location = 0) in vec3 vs_Normal;
 layout(location = 1) flat in uint vs_TextureSlotsIdx;
-layout(location = 2) flat in uint vs_MaterialDataSlotIdx;
+layout(location = 2) flat in uint vs_MaterialSlotIdx;
 
 #if ARD_VS_HAS_UV0
 layout(location = 3) in vec2 vs_Uv;

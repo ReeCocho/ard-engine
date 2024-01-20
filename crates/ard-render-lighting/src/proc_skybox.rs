@@ -45,9 +45,9 @@ impl ProceduralSkyBox {
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,
-                    depth_test: false,
+                    depth_test: true,
                     depth_write: false,
-                    depth_compare: CompareOp::Always,
+                    depth_compare: CompareOp::Equal,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }),

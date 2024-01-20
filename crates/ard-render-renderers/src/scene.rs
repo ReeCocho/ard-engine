@@ -51,6 +51,7 @@ pub struct SceneRenderer {
 
 pub struct SceneRenderArgs<'a, 'b, const FIF: usize> {
     pub pass: &'b mut RenderPass<'a>,
+    pub static_dirty: bool,
     pub camera: &'a CameraUbo,
     pub global: &'a GlobalSets,
     pub mesh_factory: &'a MeshFactory,
@@ -239,6 +240,7 @@ impl SceneRenderer {
         self.bins.render_highz_bins(RenderArgs {
             pass_id: HIGH_Z_PASS_ID,
             frame,
+            skip_texture_verify: false,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -262,6 +264,7 @@ impl SceneRenderer {
         self.bins.render_non_transparent_bins(RenderArgs {
             pass_id: DEPTH_PREPASS_PASS_ID,
             frame,
+            skip_texture_verify: !args.static_dirty,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -284,6 +287,7 @@ impl SceneRenderer {
         self.bins.render_non_transparent_bins(RenderArgs {
             pass_id: OPAQUE_PASS_ID,
             frame,
+            skip_texture_verify: true,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -306,6 +310,7 @@ impl SceneRenderer {
         self.bins.render_transparent_bins(RenderArgs {
             pass_id: TRANSPARENT_PASS_ID,
             frame,
+            skip_texture_verify: true,
             camera: args.camera,
             global: args.global,
             pass: args.pass,

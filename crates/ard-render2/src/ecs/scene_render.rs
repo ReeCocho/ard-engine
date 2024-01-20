@@ -49,6 +49,9 @@ impl SceneRendererSetup {
         let mut shadow_renderer = res.get_mut::<SunShadowsRenderer>().unwrap();
         let mut lighting = res.get_mut::<Lighting>().unwrap();
 
+        let meshes = &factory.inner.meshes.lock().unwrap();
+        let materials = &factory.inner.materials.lock().unwrap();
+
         let main_camera = frame_data
             .active_cameras
             .main_camera()
@@ -56,20 +59,25 @@ impl SceneRendererSetup {
 
         let view_location = main_camera.model.position();
 
-        scene_renderer.upload(
-            frame_data.frame,
-            &frame_data.object_data,
-            &factory.inner.meshes.lock().unwrap(),
-            &factory.inner.materials.lock().unwrap(),
-            view_location,
-        );
-
-        shadow_renderer.upload(
-            frame_data.frame,
-            &frame_data.object_data,
-            &factory.inner.meshes.lock().unwrap(),
-            &factory.inner.materials.lock().unwrap(),
-            view_location,
+        rayon::join(
+            || {
+                scene_renderer.upload(
+                    frame_data.frame,
+                    &frame_data.object_data,
+                    &meshes,
+                    &materials,
+                    view_location,
+                );
+            },
+            || {
+                shadow_renderer.upload(
+                    frame_data.frame,
+                    &frame_data.object_data,
+                    &meshes,
+                    &materials,
+                    view_location,
+                );
+            },
         );
 
         lighting.update_set(frame_data.frame, &frame_data.lights);

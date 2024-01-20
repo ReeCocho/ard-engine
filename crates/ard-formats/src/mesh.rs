@@ -366,10 +366,29 @@ impl VertexDataBuilder {
         dst.chunks_exact_mut(4)
             .zip(src.iter())
             .for_each(|(dst, src)| {
-                let norm = src.xyz().normalize();
-                dst[0] = (norm.x * 127.0).round() as i8;
-                dst[1] = (norm.y * 127.0).round() as i8;
-                dst[2] = (norm.z * 127.0).round() as i8;
+                let norm = src.xyz().try_normalize().unwrap_or(Vec3::Z);
+
+                dst[0] = if norm.x >= 0.0 {
+                    (norm.x * 127.0) + 0.5
+                } else {
+                    (norm.x * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
+                dst[1] = if norm.y >= 0.0 {
+                    (norm.y * 127.0) + 0.5
+                } else {
+                    (norm.y * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
+                dst[2] = if norm.z >= 0.0 {
+                    (norm.z * 127.0) + 0.5
+                } else {
+                    (norm.z * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
                 dst[3] = 0;
             });
 
@@ -396,11 +415,40 @@ impl VertexDataBuilder {
         dst.chunks_exact_mut(4)
             .zip(src.iter())
             .for_each(|(dst, src)| {
-                let tang = src.xyz().normalize();
-                dst[0] = (tang.x * 127.0).round() as i8;
-                dst[1] = (tang.y * 127.0).round() as i8;
-                dst[2] = (tang.z * 127.0).round() as i8;
+                let tang = src.xyz().try_normalize().unwrap_or(Vec3::Z);
+
+                dst[0] = if tang.x >= 0.0 {
+                    (tang.x * 127.0) + 0.5
+                } else {
+                    (tang.x * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
+                dst[1] = if tang.y >= 0.0 {
+                    (tang.y * 127.0) + 0.5
+                } else {
+                    (tang.y * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
+                dst[2] = if tang.z >= 0.0 {
+                    (tang.z * 127.0) + 0.5
+                } else {
+                    (tang.z * 127.0) - 0.5
+                }
+                .clamp(-127.0, 127.0) as i8;
+
                 dst[3] = 0;
+
+                let out_tan = Vec3::new(
+                    dst[0] as f32 / 127.0,
+                    dst[1] as f32 / 127.0,
+                    dst[2] as f32 / 127.0,
+                );
+
+                if out_tan.length() < 0.5 {
+                    println!("Null tangent! Src: {src} Dst: {dst:?}");
+                }
             });
 
         self

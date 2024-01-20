@@ -362,7 +362,7 @@ impl ImageEffect for Tonemapping {
         }];
 
         let tonemapping_params = [GpuToneMappingPushConstants {
-            exposure: 0.25,
+            exposure: 0.12,
             gamma: 2.2,
         }];
 
