@@ -550,6 +550,7 @@ impl DispatcherBuilder {
         Dispatcher {
             systems,
             thread_pool: ThreadPoolBuilder::new()
+                .thread_name(|i| format!("Ard ECS Thread {i}"))
                 .num_threads(
                     self.thread_count
                         .unwrap_or_else(|| num_cpus::get().div(2).max(1)),

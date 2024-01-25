@@ -1,12 +1,14 @@
 pub mod allocator;
 pub mod vertex_buffers;
 
-use fxhash::FxHashMap;
+use ard_render_base::{ecs::Frame, resource::ResourceId};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use ard_formats::mesh::{IndexData, VertexAttribute, VertexLayout};
 use ard_pal::prelude::*;
+use ard_render_si::types::GpuMeshInfo;
 
 use self::{
     allocator::{BufferBlock, BufferBlockAllocator},
@@ -15,7 +17,8 @@ use self::{
 
 #[derive(Serialize, Deserialize)]
 pub struct MeshFactoryConfig {
-    /// Number of vertex elements held in the smallest block of the vertex buffer. Must be a power of 2.
+    /// Number of vertex elements held in the smallest block of the vertex buffer. Must be a power
+    /// of 2.
     pub base_vertex_block_len: usize,
     /// Number of indices held in the smallest block of the index buffer. Must be a power of 2.
     pub base_index_block_len: usize,
@@ -35,6 +38,10 @@ pub struct MeshFactory {
     vertex_allocators: FxHashMap<VertexLayout, VertexBuffers>,
     /// Allocator for index data.
     index_allocator: BufferBlockAllocator,
+    /// SSBO for mesh info.
+    mesh_info_buffer: Buffer,
+    /// Staging for mesh info upload. One list per frame in flight.
+    mesh_info_staging: Vec<Vec<(ResourceId, GpuMeshInfo)>>,
 }
 
 /// Data upload information for a mesh.
@@ -55,7 +62,12 @@ pub struct MeshBlock {
 }
 
 impl MeshFactory {
-    pub fn new(ctx: Context, config: MeshFactoryConfig) -> Self {
+    pub fn new(
+        ctx: Context,
+        config: MeshFactoryConfig,
+        max_mesh_count: usize,
+        frames_in_flight: usize,
+    ) -> Self {
         let index_allocator = BufferBlockAllocator::new(
             ctx.clone(),
             Some("index_buffer".into()),
@@ -70,17 +82,43 @@ impl MeshFactory {
             config,
             vertex_allocators: FxHashMap::default(),
             index_allocator,
+            mesh_info_buffer: Buffer::new(
+                ctx.clone(),
+                BufferCreateInfo {
+                    size: (std::mem::size_of::<GpuMeshInfo>() * max_mesh_count) as u64,
+                    array_elements: frames_in_flight,
+                    buffer_usage: BufferUsage::STORAGE_BUFFER,
+                    memory_usage: MemoryUsage::CpuToGpu,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("mesh_info".into()),
+                },
+            )
+            .unwrap(),
+            mesh_info_staging: (0..frames_in_flight).map(|_| Vec::default()).collect(),
         }
     }
 
     #[inline(always)]
-    pub fn get_index_buffer(&self) -> &Buffer {
+    pub fn mesh_info_buffer(&self) -> &Buffer {
+        &self.mesh_info_buffer
+    }
+
+    #[inline(always)]
+    pub fn index_buffer(&self) -> &Buffer {
         self.index_allocator.buffer()
     }
 
     #[inline(always)]
-    pub fn get_vertex_buffer(&self, layout: VertexLayout) -> Option<&VertexBuffers> {
+    pub fn vertex_buffer(&self, layout: VertexLayout) -> Option<&VertexBuffers> {
         self.vertex_allocators.get(&layout)
+    }
+
+    /// Set the info for a particular mesh.
+    pub fn set_mesh_info(&mut self, id: ResourceId, info: GpuMeshInfo) {
+        self.mesh_info_staging
+            .iter_mut()
+            .for_each(|list| list.push((id, info)));
     }
 
     /// Allocate a region for a mesh with the provided layout and sizes.
@@ -131,6 +169,17 @@ impl MeshFactory {
         if let Some(vbs) = self.vertex_allocators.get_mut(&block.layout) {
             vbs.free(block.vb);
         }
+    }
+
+    /// Flushes all mesh info to the GPU for a particular frame in flight.
+    pub fn flush_mesh_info(&mut self, frame: Frame) {
+        let staging = &mut self.mesh_info_staging[usize::from(frame)];
+
+        let mut view = self.mesh_info_buffer.write(usize::from(frame)).unwrap();
+
+        staging.drain(..).for_each(|(id, info)| {
+            view.set_as_array(info, usize::from(id));
+        });
     }
 
     /// Records a command to upload a mesh to the factory.

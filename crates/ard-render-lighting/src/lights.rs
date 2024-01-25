@@ -29,6 +29,7 @@ pub struct Lighting {
 
 pub struct Lights {
     global: Buffer,
+    buffer_expanded: u32,
     global_properties: GlobalLighting,
     lights: Buffer,
     count: usize,
@@ -54,7 +55,11 @@ impl Lighting {
 
         let sets = (0..frames_in_flight)
             .into_iter()
-            .map(|_| LightClusteringSet::new(ctx, layouts))
+            .map(|_| {
+                let mut set = LightClusteringSet::new(ctx, layouts);
+                set.bind_clusters(&clusters);
+                set
+            })
             .collect();
 
         Self {
@@ -71,7 +76,9 @@ impl Lighting {
 
     #[inline(always)]
     pub fn update_set(&mut self, frame: Frame, lights: &Lights) {
-        self.sets[usize::from(frame)].update(lights, &self.clusters);
+        if lights.buffer_expanded > 0 {
+            self.sets[usize::from(frame)].bind_lights(lights);
+        }
     }
 
     #[inline]
@@ -120,6 +127,7 @@ impl Lights {
             )
             .unwrap(),
             count: 0,
+            buffer_expanded: 2,
         }
     }
 
@@ -157,6 +165,9 @@ impl Lights {
         let req_cap = (std::mem::size_of::<GpuLight>() * lights.len()) as u64;
         if let Some(new_buffer) = Buffer::expand(&self.lights, req_cap, false) {
             self.lights = new_buffer;
+            self.buffer_expanded = 1;
+        } else {
+            self.buffer_expanded = self.buffer_expanded.saturating_sub(1);
         }
 
         let mut view = self.lights.write(0).unwrap();

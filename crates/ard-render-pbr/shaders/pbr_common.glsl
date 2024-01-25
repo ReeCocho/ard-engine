@@ -180,13 +180,14 @@ vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
 /// `z_receiver` - Z coordinate in light space for the shadow receiver.
 float sample_shadow_map(int layer, vec2 uv, float bias, vec2 filter_radius_uv, float z_receiver) {
     float shadow = 0.0;
-    vec3 jcoord = vec3((vs_WorldSpaceFragPos.xz + vec2(vs_WorldSpaceFragPos.yy)) * 100.0, 0.0);
-    vec2 sm_coord = uv;
-    vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
+    const vec3 jcoord = vec3((vs_WorldSpaceFragPos.xz + vec2(vs_WorldSpaceFragPos.yy)) * 100.0, 0.0);
+    const vec2 sm_coord = uv;
+    const vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
+    const float shadow_bias = z_receiver - bias;
 
     for (int i = 0; i < SHADOW_SAMPLE_COUNT; i++) {
         vec2 offset = filter_radius_uv * SHADOW_SAMPLE_POINTS[i] * 4.0;
-        shadow += texture(shadow_cascades[layer], vec3(uv + offset, z_receiver - bias)).r / float(SHADOW_SAMPLE_COUNT);
+        shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r / float(SHADOW_SAMPLE_COUNT);
     }
 
     return shadow;
@@ -322,11 +323,11 @@ ivec3 get_cluster_id(vec2 uv, float depth) {
 /// returned.
 vec4 sample_texture_default(uint slot, vec2 uv, vec4 def) {
     const uint tex = texture_slots[vs_TextureSlotsIdx][slot];
-    if (tex == EMPTY_TEXTURE_ID) {
-        return def;
-    } else {
-        return texture(textures[tex], uv);
-    }
+    return mix(
+        texture(textures[min(tex, MAX_TEXTURES)], uv), 
+        def, 
+        float(tex == EMPTY_TEXTURE_ID)
+    );
 }
 
 /// Samples a texture at a given slot. Will return `vec4(0)` if the texture is unbound.

@@ -6,7 +6,7 @@ use ard_pal::prelude::{
     GraphicsPipelineCreateInfo, RasterizationState, ShaderStages,
 };
 use ard_render_base::resource::{ResourceAllocator, ResourceHandle, ResourceId};
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{

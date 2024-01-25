@@ -6,7 +6,7 @@ use std::sync::{
 use ard_ecs::prelude::*;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashSet;
 
 pub type StaticGroup = u32;
 

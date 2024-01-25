@@ -32,6 +32,9 @@ pub(crate) struct RenderSystem {
     surface_window: WindowId,
 }
 
+#[derive(Debug, Event, Copy, Clone)]
+pub struct PostRender;
+
 enum RenderSystemMessage {
     Shutdown,
     RenderFrame(FrameData),
@@ -94,7 +97,7 @@ impl RenderSystem {
     fn tick(
         &mut self,
         _: Tick,
-        _: Commands,
+        commands: Commands,
         queries: Queries<(
             Entity,
             (
@@ -193,6 +196,9 @@ impl RenderSystem {
 
         // Send a message to the render thread to begin rendering the frame
         let _ = self.messages.send(RenderSystemMessage::RenderFrame(frame));
+
+        // Send a message to all other systems that rendering just finished
+        commands.events.submit(PostRender);
     }
 
     fn message_pump(

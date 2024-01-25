@@ -17,7 +17,7 @@ pub struct Texture {
     pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) _image_usage: TextureUsage,
     pub(crate) _memory_usage: MemoryUsage,
-    pub(crate) _array_elements: usize,
+    pub(crate) array_elements: usize,
     pub(crate) size: u64,
     pub(crate) ref_counter: TextureRefCounter,
     pub(crate) format: vk::Format,
@@ -170,7 +170,7 @@ impl Texture {
             block: ManuallyDrop::new(block),
             _image_usage: create_info.texture_usage,
             _memory_usage: create_info.memory_usage,
-            _array_elements: create_info.array_elements,
+            array_elements: create_info.array_elements,
             size: mem_reqs.size / create_info.array_elements as u64,
             on_drop,
             ref_counter: TextureRefCounter::default(),
@@ -190,6 +190,8 @@ impl Drop for Texture {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Texture {
             image: self.image,
+            array_elements: self.array_elements,
+            mips: self.mip_count as usize,
             views: std::mem::take(&mut self.views),
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),

@@ -5,5 +5,5 @@ edition.workspace = true
 
 [dependencies]
 ard-pal = { path = "../ard-pal" }
-fxhash.workspace = true
+rustc-hash.workspace = true
 allocator-api2.workspace = true

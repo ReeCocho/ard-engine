@@ -13,8 +13,8 @@ use ard_render_base::{
     resource::{ResourceAllocator, ResourceId},
 };
 use ard_render_si::{bindings::*, consts::*};
-use fxhash::FxHashSet;
 use ordered_float::NotNan;
+use rustc_hash::FxHashSet;
 
 use crate::texture::TextureResource;
 

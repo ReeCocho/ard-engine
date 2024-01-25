@@ -20,10 +20,9 @@
 
 void main() {
     const uint id = ard_ObjectId;
-    const mat4 model_mat = ard_ModelMatrix(id);
-    const mat3 normal_mat = mat3(ard_NormalMatrix(id));
+    const ObjectData obj_data = object_data[id];
 
-    const vec4 ws_frag_pos = model_mat * ard_Position;
+    const vec4 ws_frag_pos = obj_data.model * ard_Position;
     vs_WorldSpaceFragPos = ws_frag_pos.xyz;
 
     vec4 position = camera.vp * ws_frag_pos;
@@ -39,21 +38,21 @@ void main() {
     // Compute TBN if we have tangents and UVs (UVs are required as well because the TBN is only
     // used when doing normal mapping.
 #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
-    vec3 T = normalize(vec3(model_mat * ard_Tangent));
-    vec3 N = normalize(vec3(model_mat * ard_Normal));
+    vec3 T = normalize(vec3(obj_data.model * ard_Tangent));
+    vec3 N = normalize(vec3(obj_data.model * ard_Normal));
     T = normalize(T - dot(T, N) * N);
     vec3 B = cross(N, T);
     
     vs_TBN = mat3(T, B, N);
 #else
     // Output corrected normal
+    const mat3 normal_mat = mat3(obj_data.normal);
     vs_Normal = normalize(normal_mat * ard_Normal.xyz);
 #endif
     
 #if ARD_VS_HAS_UV0
-    vs_TextureSlotsIdx = ard_TextureSlot(id);
+    vs_TextureSlotsIdx = obj_data.textures;
     vs_Uv = ard_Uv0;
 #endif
-    vs_MaterialSlotIdx = ard_MaterialSlot(id);
-
+    vs_MaterialSlotIdx = obj_data.material;
 }

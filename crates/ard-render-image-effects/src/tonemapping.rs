@@ -161,7 +161,7 @@ impl Tonemapping {
                         vertex: vert_module.clone(),
                         fragment: Some(frag_module),
                     },
-                    layouts: vec![layouts.tonemapping.clone()],
+                    layouts: vec![layouts.tonemapping.clone(), layouts.camera.clone()],
                     vertex_input: VertexInputState {
                         attributes: Vec::default(),
                         bindings: Vec::default(),
@@ -312,7 +312,7 @@ impl ImageEffect for Tonemapping {
         ImageEffectTextureType::SDR
     }
 
-    fn bind_images(&mut self, frame: Frame, src: &Texture, _: ImageEffectDst, _: &Texture) {
+    fn bind_images(&mut self, frame: Frame, src: &Texture, _: ImageEffectDst, _depth: &Texture) {
         self.screen_size = (src.dims().0, src.dims().1);
 
         self.histogram_sets[usize::from(frame)].update(&[DescriptorSetUpdate {

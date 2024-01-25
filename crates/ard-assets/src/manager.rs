@@ -34,11 +34,11 @@ pub(crate) struct AssetsInner {
     /// Map of all assets. The index of the asset in this list corresponds to its id.
     pub(crate) assets: DashMap<u32, AssetData, BuildHasherDefault<FastIntHasher>>,
     /// Maps asset names to their id.
-    name_to_id: DashMap<AssetNameBuf, u32, fxhash::FxBuildHasher>,
+    name_to_id: DashMap<AssetNameBuf, u32>,
     /// Counter for unique asset ids.
     id_counter: AtomicU32,
     /// Map of asset extensions registered with the manager to the type of asset they represent.
-    extensions: DashMap<String, TypeId, fxhash::FxBuildHasher>,
+    extensions: DashMap<String, TypeId>,
     /// Loaders used to load assets. Maps from type ID of the asset to the loader.
     loaders: DashMap<TypeId, Arc<dyn AnyAssetLoader>, BuildHasherDefault<FastIntHasher>>,
     /// Map of default asset handles. The key is the type id of the asset type.

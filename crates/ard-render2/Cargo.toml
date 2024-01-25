@@ -30,5 +30,5 @@ crossbeam-channel.workspace = true
 thiserror.workspace = true
 raw-window-handle.workspace = true
 bytemuck.workspace = true
-fxhash.workspace = true
+rustc-hash.workspace = true
 rayon.workspace = true

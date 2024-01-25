@@ -90,26 +90,27 @@ impl LightClusteringSet {
         self.light_count
     }
 
-    pub fn update(&mut self, lights: &Lights, light_clusters: &Buffer) {
+    pub fn bind_clusters(&mut self, clusters: &Buffer) {
+        self.set.update(&[DescriptorSetUpdate {
+            binding: LIGHT_CLUSTERING_SET_LIGHT_CLUSTERS_BINDING,
+            array_element: 0,
+            value: DescriptorValue::StorageBuffer {
+                buffer: clusters,
+                array_element: 0,
+            },
+        }]);
+    }
+
+    pub fn bind_lights(&mut self, lights: &Lights) {
         self.light_count = lights.light_count();
 
-        self.set.update(&[
-            DescriptorSetUpdate {
-                binding: LIGHT_CLUSTERING_SET_LIGHTS_BINDING,
+        self.set.update(&[DescriptorSetUpdate {
+            binding: LIGHT_CLUSTERING_SET_LIGHTS_BINDING,
+            array_element: 0,
+            value: DescriptorValue::StorageBuffer {
+                buffer: lights.buffer(),
                 array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: lights.buffer(),
-                    array_element: 0,
-                },
             },
-            DescriptorSetUpdate {
-                binding: LIGHT_CLUSTERING_SET_LIGHT_CLUSTERS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageBuffer {
-                    buffer: light_clusters,
-                    array_element: 0,
-                },
-            },
-        ]);
+        }]);
     }
 }

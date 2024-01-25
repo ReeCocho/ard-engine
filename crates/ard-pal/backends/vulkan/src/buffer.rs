@@ -20,7 +20,7 @@ pub struct Buffer {
     pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) _buffer_usage: BufferUsage,
     pub(crate) _memory_usage: MemoryUsage,
-    pub(crate) _array_elements: usize,
+    pub(crate) array_elements: usize,
     /// This was the user requested size of each array element.
     pub(crate) size: u64,
     /// This is the per element size after alignment.
@@ -134,7 +134,7 @@ impl Buffer {
             block: ManuallyDrop::new(block),
             size: create_info.size,
             aligned_size,
-            _array_elements: create_info.array_elements,
+            array_elements: create_info.array_elements,
             _buffer_usage: create_info.buffer_usage,
             _memory_usage: create_info.memory_usage,
             on_drop,
@@ -159,7 +159,7 @@ impl Buffer {
         // usage to complete. This implies that no one is using this buffer anymore and thus no
         // waits are further needed.
         if let Some(old) = resc_state.register_buffer(
-            BufferRegion {
+            &BufferRegion {
                 buffer: self.buffer,
                 array_elem: idx as u32,
             },
@@ -185,6 +185,7 @@ impl Drop for Buffer {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Buffer {
             buffer: self.buffer,
+            array_elements: self.array_elements,
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),
         });

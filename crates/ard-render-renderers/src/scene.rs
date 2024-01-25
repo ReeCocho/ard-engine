@@ -21,6 +21,7 @@ use std::ops::DerefMut;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
+    calls::OutputDrawCalls,
     draw_gen::{DrawGenPipeline, DrawGenSets},
     global::{GlobalSetBindingUpdate, GlobalSets},
     highz::HzbImage,
@@ -41,6 +42,8 @@ pub struct SceneRenderer {
     output_ids: Buffer,
     /// Draw bins.
     bins: DrawBins,
+    /// Draw calls.
+    calls: OutputDrawCalls,
     /// Object information.
     set: RenderableSet,
     /// Set bindings for draw generation.
@@ -95,7 +98,8 @@ impl SceneRenderer {
                 },
             )
             .unwrap(),
-            bins: DrawBins::new(ctx, frames_in_flight, true),
+            bins: DrawBins::new(ctx, frames_in_flight),
+            calls: OutputDrawCalls::new(ctx, frames_in_flight),
             set: RenderableSet::default(),
             global: GlobalSets::new(ctx, layouts, frames_in_flight),
             draw_gen: DrawGenSets::new(draw_gen, true, frames_in_flight),
@@ -175,7 +179,8 @@ impl SceneRenderer {
             + self.set.dynamic_group_ranges().alpha_cutout.len();
 
         self.bins
-            .preallocate_draw_call_buffers(self.set.groups().len());
+            .preallocate_draw_group_buffers(self.set.groups().len());
+
         self.bins.gen_bins(
             frame,
             self.set.groups()[self.set.static_group_ranges().opaque.clone()].iter(),
@@ -184,6 +189,10 @@ impl SceneRenderer {
             meshes,
             materials,
         );
+
+        self.calls.preallocate(self.set.groups().len());
+        self.calls
+            .upload_counts(self.bins.bins(frame), frame, self.bins.use_alternate(frame));
     }
 
     pub fn update_bindings<const FIF: usize>(
@@ -195,6 +204,7 @@ impl SceneRenderer {
         lights: &Lights,
         hzb_image: &HzbImage<FIF>,
         ao_image: &AoImage<FIF>,
+        meshes: &MeshFactory,
     ) {
         self.global.update_object_bindings(GlobalSetBindingUpdate {
             frame,
@@ -218,13 +228,16 @@ impl SceneRenderer {
             self.set.non_transparent_object_count(),
             self.set.groups().len(),
             self.set.non_transparent_draw_count(),
-            self.bins.src_draw_call_buffer(frame).unwrap(),
-            self.bins.dst_draw_call_buffer(frame),
-            self.bins.draw_counts_buffer(frame),
+            self.bins.draw_groups_buffer(frame),
+            self.calls
+                .draw_call_buffer(frame, self.bins.use_alternate(frame)),
+            self.calls
+                .draw_counts_buffer(frame, self.bins.use_alternate(frame)),
             objects,
             Some(hzb_image),
             &self.input_ids,
             &self.output_ids,
+            meshes.mesh_info_buffer(),
         );
     }
 
@@ -234,7 +247,7 @@ impl SceneRenderer {
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
         args.pass
-            .bind_index_buffer(args.mesh_factory.get_index_buffer(), 0, 0, IndexData::TYPE);
+            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
         // Render opaque static geometry
         self.bins.render_highz_bins(RenderArgs {
@@ -244,6 +257,7 @@ impl SceneRenderer {
             camera: args.camera,
             global: args.global,
             pass: args.pass,
+            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -258,7 +272,7 @@ impl SceneRenderer {
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
         args.pass
-            .bind_index_buffer(args.mesh_factory.get_index_buffer(), 0, 0, IndexData::TYPE);
+            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
         // Render opaque and alpha cut objects
         self.bins.render_non_transparent_bins(RenderArgs {
@@ -268,6 +282,7 @@ impl SceneRenderer {
             camera: args.camera,
             global: args.global,
             pass: args.pass,
+            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -282,7 +297,7 @@ impl SceneRenderer {
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
         args.pass
-            .bind_index_buffer(args.mesh_factory.get_index_buffer(), 0, 0, IndexData::TYPE);
+            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
         self.bins.render_non_transparent_bins(RenderArgs {
             pass_id: OPAQUE_PASS_ID,
@@ -291,6 +306,7 @@ impl SceneRenderer {
             camera: args.camera,
             global: args.global,
             pass: args.pass,
+            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -305,7 +321,7 @@ impl SceneRenderer {
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
         args.pass
-            .bind_index_buffer(args.mesh_factory.get_index_buffer(), 0, 0, IndexData::TYPE);
+            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
         self.bins.render_transparent_bins(RenderArgs {
             pass_id: TRANSPARENT_PASS_ID,
@@ -314,6 +330,7 @@ impl SceneRenderer {
             camera: args.camera,
             global: args.global,
             pass: args.pass,
+            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,

@@ -88,6 +88,8 @@ impl Factory {
                     default_vertex_buffer_len: 65536,
                     default_index_buffer_len: 65536,
                 },
+                MAX_MESHES,
+                FRAMES_IN_FLIGHT,
             )),
             texture_factory: Mutex::new(TextureFactory::new(&ctx, layouts, FRAMES_IN_FLIGHT)),
             material_factory: Mutex::new(MaterialFactory::new(
@@ -152,13 +154,15 @@ impl Factory {
             }
         });
 
-        // Flush modified material data
+        // Flush modified material data and uploaded meshes
         material_factory.flush(
             frame,
             &material_instances,
             MATERIALS_SET_DATA_BINDING,
             MATERIALS_SET_TEXTURE_SLOTS_BINDING,
         );
+
+        mesh_factory.flush_mesh_info(frame);
 
         // Drop pending resources
         static_meshes.drop_pending(
@@ -271,11 +275,14 @@ impl FactoryInner {
         let mut mesh_factory = self.mesh_factory.lock().unwrap();
 
         // Create the mesh instance
-        let (mesh, upload) = MeshResource::new(create_info, &self.ctx, &mut mesh_factory)?;
+        let (mesh, upload, info) = MeshResource::new(create_info, &self.ctx, &mut mesh_factory)?;
 
         // Create the resource handle
         let layout = mesh.block.layout();
         let handle = static_meshes.insert(mesh);
+
+        // Upload info
+        mesh_factory.set_mesh_info(handle.id(), info);
 
         // Submit the upload request
         staging.add(StagingRequest::Mesh {

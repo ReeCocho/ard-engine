@@ -20,10 +20,10 @@ use ard_render_objects::{
 use ard_render_si::{bindings::Layouts, types::*};
 use ard_render_textures::factory::TextureFactory;
 use ordered_float::NotNan;
-use rayon::prelude::*;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
+    calls::OutputDrawCalls,
     draw_gen::{DrawGenPipeline, DrawGenSets},
     global::{GlobalSetBindingUpdate, GlobalSets},
     SHADOW_PASS_ID,
@@ -55,6 +55,7 @@ pub struct SunShadowsRenderer {
     set: RenderableSet,
     empty_shadow: Texture,
     ubo: Vec<SunShadowsUbo>,
+    bins: DrawBins,
     cascades: Vec<ShadowCascadeRenderData>,
 }
 
@@ -71,7 +72,7 @@ struct ShadowCascadeRenderData {
     image: Texture,
     output_ids: Buffer,
     camera: CameraUbo,
-    bins: DrawBins,
+    calls: OutputDrawCalls,
     draw_gen: DrawGenSets,
     global: GlobalSets,
 }
@@ -145,6 +146,7 @@ impl SunShadowsRenderer {
             ubo: (0..frames_in_flight)
                 .map(|_| SunShadowsUbo::new(ctx))
                 .collect(),
+            bins: DrawBins::new(ctx, frames_in_flight),
             cascades: (0..shadow_cascades)
                 .map(|_| ShadowCascadeRenderData::new(ctx, layouts, draw_gen, frames_in_flight))
                 .collect(),
@@ -217,7 +219,19 @@ impl SunShadowsRenderer {
             + self.set.dynamic_group_ranges().opaque.len()
             + self.set.dynamic_group_ranges().alpha_cutout.len();
 
-        self.cascades.par_iter_mut().for_each(|cascade| {
+        // Generate bins
+        self.bins
+            .preallocate_draw_group_buffers(self.set.groups().len());
+        self.bins.gen_bins(
+            frame,
+            self.set.groups()[self.set.static_group_ranges().opaque.clone()].iter(),
+            self.set.groups()[..non_transparent_count].iter(),
+            std::iter::empty(),
+            meshes,
+            materials,
+        );
+
+        self.cascades.iter_mut().for_each(|cascade| {
             // Expand output buffer if needed
             let output_id_buffer_size = (self.set.ids().len() * std::mem::size_of::<u32>()) as u64;
             if let Some(mut new_buffer) =
@@ -226,17 +240,12 @@ impl SunShadowsRenderer {
                 std::mem::swap(&mut cascade.output_ids, &mut new_buffer);
             }
 
-            // Generate bins
-            cascade
-                .bins
-                .preallocate_draw_call_buffers(self.set.groups().len());
-            cascade.bins.gen_bins(
+            // Generate calls
+            cascade.calls.preallocate(self.set.groups().len());
+            cascade.calls.upload_counts(
+                self.bins.bins(frame),
                 frame,
-                self.set.groups()[self.set.static_group_ranges().opaque.clone()].iter(),
-                self.set.groups()[..non_transparent_count].iter(),
-                std::iter::empty(),
-                meshes,
-                materials,
+                self.bins.use_alternate(frame),
             );
         });
     }
@@ -247,6 +256,7 @@ impl SunShadowsRenderer {
         lighting: &Lighting,
         objects: &RenderObjects,
         lights: &Lights,
+        meshes: &MeshFactory,
     ) {
         self.cascades.iter_mut().for_each(|cascade| {
             cascade
@@ -270,13 +280,18 @@ impl SunShadowsRenderer {
                 self.set.non_transparent_object_count(),
                 self.set.groups().len(),
                 self.set.non_transparent_draw_count(),
-                cascade.bins.src_draw_call_buffer(frame).unwrap(),
-                cascade.bins.dst_draw_call_buffer(frame),
-                cascade.bins.draw_counts_buffer(frame),
+                self.bins.draw_groups_buffer(frame),
+                cascade
+                    .calls
+                    .draw_call_buffer(frame, self.bins.use_alternate(frame)),
+                cascade
+                    .calls
+                    .draw_counts_buffer(frame, self.bins.use_alternate(frame)),
                 objects,
                 None,
                 &self.input_ids,
                 &cascade.output_ids,
+                meshes.mesh_info_buffer(),
             );
         });
     }
@@ -321,6 +336,7 @@ impl SunShadowsRenderer {
                 &cascade.draw_gen,
                 &cascade.camera,
                 Vec2::ONE,
+                true,
             )
         });
     }
@@ -346,21 +362,17 @@ impl SunShadowsRenderer {
                     depth_stencil_resolve_attachment: None,
                 },
                 |pass| {
-                    pass.bind_index_buffer(
-                        args.mesh_factory.get_index_buffer(),
-                        0,
-                        0,
-                        IndexData::TYPE,
-                    );
+                    pass.bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
                     // Render opaque and alpha cut objects
-                    cascade.bins.render_non_transparent_bins(RenderArgs {
+                    self.bins.render_non_transparent_bins(RenderArgs {
                         pass_id: SHADOW_PASS_ID,
                         frame,
                         skip_texture_verify: true,
                         camera: &cascade.camera,
                         global: &cascade.global,
                         pass,
+                        calls: &cascade.calls,
                         mesh_factory: args.mesh_factory,
                         material_factory: args.material_factory,
                         texture_factory: args.texture_factory,
@@ -414,7 +426,7 @@ impl ShadowCascadeRenderData {
             )
             .unwrap(),
             camera: CameraUbo::new(ctx, frames_in_flight, false, layouts),
-            bins: DrawBins::new(ctx, frames_in_flight, true),
+            calls: OutputDrawCalls::new(ctx, frames_in_flight),
             global: GlobalSets::new(ctx, layouts, frames_in_flight),
             draw_gen: DrawGenSets::new(draw_gen, false, frames_in_flight),
         }

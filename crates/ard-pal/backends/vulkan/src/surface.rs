@@ -420,7 +420,7 @@ impl Surface {
         // Layout is undefined after presenting, so if the
         // image is reaquired we must update its layout
         ctx.resource_state.write().unwrap().set_layout(
-            ImageRegion {
+            &ImageRegion {
                 image: self.images[image_idx].0,
                 array_elem: 0,
                 mip_level: 0,

@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::CString};
 use super::fast_int_hasher::FIHashMap;
 use api::descriptor_set::DescriptorSetLayoutCreateInfo;
 use ash::vk::{self, Handle};
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 /// Default number of sets per pool.
 const SETS_PER_POOL: usize = 16;

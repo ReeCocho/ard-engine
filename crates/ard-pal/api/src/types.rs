@@ -226,6 +226,7 @@ bitflags! {
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum SharingMode {
     /// The resource will be accessed by a single queue at a time.
     Exclusive,

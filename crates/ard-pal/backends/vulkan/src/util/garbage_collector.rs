@@ -12,12 +12,15 @@ use gpu_allocator::vulkan::{Allocation, Allocator};
 
 use crate::{
     buffer::BufferRefCounter,
-    descriptor_set::{Binding, BoundValue},
+    descriptor_set::{BoundValue, DescriptorSetBindings},
     texture::TextureRefCounter,
 };
 
 use super::{
-    descriptor_pool::DescriptorPools, fast_int_hasher::FIHashMap, pipeline_cache::PipelineCache,
+    descriptor_pool::DescriptorPools,
+    fast_int_hasher::FIHashMap,
+    pipeline_cache::PipelineCache,
+    usage::{BufferRegion, GlobalResourceUsage, ImageRegion},
 };
 
 pub(crate) struct GarbageCollector {
@@ -33,11 +36,14 @@ pub(crate) enum Garbage {
     Pipeline(vk::Pipeline),
     Buffer {
         buffer: vk::Buffer,
+        array_elements: usize,
         allocation: Allocation,
         ref_counter: BufferRefCounter,
     },
     Texture {
         image: vk::Image,
+        array_elements: usize,
+        mips: usize,
         views: Vec<vk::ImageView>,
         allocation: Allocation,
         ref_counter: TextureRefCounter,
@@ -45,7 +51,7 @@ pub(crate) enum Garbage {
     DescriptorSet {
         set: vk::DescriptorSet,
         layout: vk::DescriptorSetLayout,
-        bindings: Vec<Vec<Option<Binding>>>,
+        bindings: DescriptorSetBindings,
     },
 }
 
@@ -61,6 +67,7 @@ pub(crate) struct GarbageCleanupArgs<'a> {
     pub allocator: &'a mut Allocator,
     pub pools: &'a mut DescriptorPools,
     pub pipelines: &'a mut PipelineCache,
+    pub global_usage: &'a mut GlobalResourceUsage,
     pub current: TimelineValues,
     pub target: TimelineValues,
     pub override_ref_counter: bool,
@@ -146,15 +153,27 @@ impl GarbageCollector {
                     args.device.destroy_pipeline(pipeline, None);
                 }
                 Garbage::Buffer {
-                    buffer, allocation, ..
+                    buffer,
+                    allocation,
+                    array_elements,
+                    ..
                 } => {
                     args.device.destroy_buffer(buffer, None);
                     args.allocator.free(allocation).unwrap();
+
+                    for i in 0..array_elements {
+                        args.global_usage.remove_buffer(&BufferRegion {
+                            buffer,
+                            array_elem: i as u32,
+                        });
+                    }
                 }
                 Garbage::Texture {
                     image,
                     views,
                     allocation,
+                    array_elements,
+                    mips,
                     ..
                 } => {
                     args.device.destroy_image(image, None);
@@ -162,6 +181,16 @@ impl GarbageCollector {
                         args.device.destroy_image_view(view, None);
                     }
                     args.allocator.free(allocation).unwrap();
+
+                    for a in 0..array_elements {
+                        for m in 0..mips {
+                            args.global_usage.remove_image(&ImageRegion {
+                                image,
+                                array_elem: a as u32,
+                                mip_level: m as u32,
+                            });
+                        }
+                    }
                 }
                 Garbage::DescriptorSet {
                     set,

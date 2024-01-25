@@ -17,5 +17,5 @@ serde.workspace = true
 ron.workspace = true
 crossbeam-utils.workspace = true
 dashmap.workspace = true
-fxhash.workspace = true
+rustc-hash.workspace = true
 path-slash = "0.2"

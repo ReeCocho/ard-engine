@@ -4,10 +4,6 @@ use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 use bytemuck::{Pod, Zeroable};
 
-pub const MAX_MATERIAL_COUNT: usize = 1 << 24;
-pub const MAX_MESH_COUNT: usize = 1 << 16;
-pub const MAX_MATERIAL_INSTANCE_COUNT: usize = 1 << 16;
-
 /// A draw key is used to sort objects for optimal performance when rendering.
 ///
 /// The layout of a draw key is as follows.

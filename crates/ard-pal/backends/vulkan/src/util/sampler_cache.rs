@@ -3,7 +3,7 @@ use api::{
     types::{AnisotropyLevel, Filter},
 };
 use ash::vk;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 #[derive(Default)]
 pub(crate) struct SamplerCache {

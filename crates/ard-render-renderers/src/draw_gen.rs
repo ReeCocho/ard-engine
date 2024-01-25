@@ -119,6 +119,7 @@ impl DrawGenPipeline {
         sets: &'a DrawGenSets,
         camera: &'a CameraUbo,
         render_area: Vec2,
+        reset_counts: bool,
     ) {
         commands.compute_pass(|pass| {
             // Generate draw calls
@@ -152,6 +153,7 @@ impl DrawGenPipeline {
                 base_draw_call: 0,
                 draw_call_count: draw_count,
                 transparent_start: sets.non_transparent_draw_count as u32,
+                reset_group_counts: reset_counts,
             }];
 
             pass.push_constants(bytemuck::cast_slice(&constants));
@@ -224,13 +226,14 @@ impl DrawGenSets {
         non_transparent_object_count: usize,
         draw_count: usize,
         non_transparent_draw_count: usize,
-        src_draw_calls: (&Buffer, usize),
+        src_draw_groups: (&Buffer, usize),
         dst_draw_calls: (&Buffer, usize),
         draw_counts: (&Buffer, usize),
         objects: &RenderObjects,
         hzb: Option<&HzbImage<FIF>>,
         input_ids: &Buffer,
         output_ids: &Buffer,
+        mesh_info: &Buffer,
     ) {
         self.object_count = object_count;
         self.non_transparent_object_count = non_transparent_object_count;
@@ -240,11 +243,11 @@ impl DrawGenSets {
         if self.use_hzb {
             self.gen_sets[usize::from(frame)].update(&[
                 DescriptorSetUpdate {
-                    binding: DRAW_GEN_SET_DRAW_CALLS_BINDING,
+                    binding: DRAW_GEN_SET_DRAW_GROUPS_BINDING,
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
-                        buffer: src_draw_calls.0,
-                        array_element: src_draw_calls.1,
+                        buffer: src_draw_groups.0,
+                        array_element: src_draw_groups.1,
                     },
                 },
                 DescriptorSetUpdate {
@@ -272,6 +275,14 @@ impl DrawGenSets {
                     },
                 },
                 DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_MESH_INFO_LOOKUP_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: mesh_info,
+                        array_element: usize::from(frame),
+                    },
+                },
+                DescriptorSetUpdate {
                     binding: DRAW_GEN_SET_HZB_IMAGE_BINDING,
                     array_element: 0,
                     value: hzb.unwrap().descriptor_value(),
@@ -280,11 +291,11 @@ impl DrawGenSets {
         } else {
             self.gen_sets[usize::from(frame)].update(&[
                 DescriptorSetUpdate {
-                    binding: DRAW_GEN_NO_HZB_SET_DRAW_CALLS_BINDING,
+                    binding: DRAW_GEN_NO_HZB_SET_DRAW_GROUPS_BINDING,
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
-                        buffer: src_draw_calls.0,
-                        array_element: src_draw_calls.1,
+                        buffer: src_draw_groups.0,
+                        array_element: src_draw_groups.1,
                     },
                 },
                 DescriptorSetUpdate {
@@ -311,16 +322,24 @@ impl DrawGenSets {
                         array_element: 0,
                     },
                 },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_MESH_INFO_LOOKUP_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: mesh_info,
+                        array_element: usize::from(frame),
+                    },
+                },
             ]);
         }
 
         self.compact_sets[usize::from(frame)].update(&[
             DescriptorSetUpdate {
-                binding: DRAW_COMPACT_SET_DRAW_CALLS_SRC_BINDING,
+                binding: DRAW_COMPACT_SET_DRAW_GROUPS_SRC_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
-                    buffer: src_draw_calls.0,
-                    array_element: src_draw_calls.1,
+                    buffer: src_draw_groups.0,
+                    array_element: src_draw_groups.1,
                 },
             },
             DescriptorSetUpdate {
@@ -337,6 +356,14 @@ impl DrawGenSets {
                 value: DescriptorValue::StorageBuffer {
                     buffer: draw_counts.0,
                     array_element: draw_counts.1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: DRAW_COMPACT_SET_MESH_INFO_LOOKUP_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: mesh_info,
+                    array_element: usize::from(frame),
                 },
             },
         ]);

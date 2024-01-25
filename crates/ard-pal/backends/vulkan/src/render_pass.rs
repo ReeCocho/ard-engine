@@ -7,7 +7,7 @@ use api::{
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use dashmap::DashMap;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

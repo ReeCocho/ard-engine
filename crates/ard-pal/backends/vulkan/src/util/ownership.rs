@@ -1,6 +1,6 @@
 use api::types::{CubeFace, QueueType};
 use ash::vk;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{buffer::Buffer, cube_map::CubeMap, texture::Texture, QueueFamilyIndices};
 

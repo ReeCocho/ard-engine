@@ -77,10 +77,39 @@
         fields: [
             (name: "model", ty: Mat4),       // Object instance model matrix
             (name: "normal", ty: Mat4),      // inv(transpose(model))
+            (name: "mesh", ty: U32),     // Mesh ID
             (name: "material", ty: U32),     // Material ID for properties lookup
             (name: "textures", ty: U32),     // Texture table ID
             (name: "entity_id", ty: U32),    // ECS entity ID
             (name: "entity_ver", ty: U32),   // ECS entity version
+        ]
+    ),
+    // Draw group used by culling.
+    (
+        name: "DrawGroup",
+        no_mangle: false,
+        fields: [
+            // Mesh ID for objects within this group.
+            (name: "mesh", ty: U32),
+            // The "first instance" passed to the generated draw call.
+            (name: "first_instance", ty: U32),
+            // The number of instances in the group.
+            (name: "instance_count", ty: U32),
+            // The draw bin this group exists within.
+            (name: "draw_bin", ty: U32),
+            // The offset within the bin this group lives in.
+            (name: "bin_offset", ty: U32),
+        ]
+    ),
+    // Draw bin used for culling.
+    (
+        name: "DrawBinCount",
+        no_mangle: true,
+        fields: [
+            // Number of groups in the bin.
+            (name: "count", ty: U32),
+            // The offset within the groups buffer for the start of this bin.
+            (name: "start", ty: U32),
         ]
     ),
     // Indirect indexed draw call.
@@ -93,8 +122,16 @@
             (name: "first_index", ty: U32),
             (name: "vertex_offset", ty: I32),
             (name: "first_instance", ty: U32),
-            (name: "draw_bin", ty: U32),
-            (name: "bin_offset", ty: U32),
+        ]
+    ),
+    // Per mesh info.
+    (
+        name: "MeshInfo",
+        no_mangle: false,
+        fields: [
+            (name: "index_count", ty: U32),
+            (name: "first_index", ty: U32),
+            (name: "vertex_offset", ty: I32),
             (name: "bounds", ty: Struct("ObjectBounds")),
         ]
     ),
@@ -194,6 +231,7 @@
             (name: "base_draw_call", ty: U32),
             (name: "draw_call_count", ty: U32),
             (name: "transparent_start", ty: U32),
+            (name: "reset_group_counts", ty: Bool),
         ]
     ),
     // Push constants used for light binning/clustering.

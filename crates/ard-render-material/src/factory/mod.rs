@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use ard_pal::prelude::{Context, DescriptorSet, DescriptorSetLayout};
 use ard_render_base::ecs::Frame;
 use ard_render_base::resource::ResourceAllocator;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

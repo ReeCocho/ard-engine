@@ -51,7 +51,10 @@ use util::{
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
     tracking::TrackState,
-    usage::{GlobalResourceUsage, PipelineTracker, SubResource, SubResourceUsage, UsageScope},
+    usage::{
+        GlobalResourceUsage, PipelineTracker, PipelineTrackerScratchSpace, SubResource,
+        SubResourceUsage, UsageScope,
+    },
 };
 
 pub mod buffer;
@@ -109,6 +112,8 @@ pub struct VulkanBackend {
     pub(crate) pools: Mutex<DescriptorPools>,
     pub(crate) pipelines: Mutex<PipelineCache>,
     pub(crate) samplers: Mutex<SamplerCache>,
+    pub(crate) tracking_scratch_space: Mutex<Option<PipelineTrackerScratchSpace>>,
+    pub(crate) usage_scope: Mutex<UsageScope>,
 }
 
 #[derive(Default)]
@@ -239,6 +244,8 @@ impl Backend for VulkanBackend {
         let mut allocator = self.allocator.lock().unwrap();
         let mut pools = self.pools.lock().unwrap();
         let mut pipelines = self.pipelines.lock().unwrap();
+        let mut scratch = self.tracking_scratch_space.lock().unwrap();
+        let mut usage_scope = self.usage_scope.lock().unwrap();
         let mut main = self.main.write().unwrap();
         let mut transfer = self.transfer.write().unwrap();
         let mut compute = self.compute.write().unwrap();
@@ -262,6 +269,9 @@ impl Backend for VulkanBackend {
             &self.queue_family_indices,
             queue,
             next_target_value,
+            scratch
+                .take()
+                .unwrap_or_else(|| PipelineTrackerScratchSpace::default()),
         );
         let mut ownership_tracker =
             OwnershipTransferTracker::new(queue, &self.queue_family_indices);
@@ -298,6 +308,7 @@ impl Backend for VulkanBackend {
                 commands: &commands,
                 pipeline_tracker: &mut pipeline_tracker,
                 semaphores: &mut semaphore_tracker,
+                scope: &mut usage_scope,
             });
 
             // Perform command operations
@@ -949,24 +960,22 @@ impl Backend for VulkanBackend {
                         si.signal_draw();
 
                         // Transition layer
-                        let mut scope = UsageScope::default();
-                        scope.use_resource(
-                            SubResource::Texture {
+                        usage_scope.use_resource(
+                            &SubResource::Texture {
                                 texture: si.image(),
-                                queue_types: QueueTypes::all(),
                                 sharing: SharingMode::Concurrent,
                                 aspect_mask: vk::ImageAspectFlags::COLOR,
                                 array_elem: blit.dst_array_element as u32,
                                 mip_level: blit.dst_mip as u32,
                             },
-                            SubResourceUsage {
+                            &SubResourceUsage {
                                 access: vk::AccessFlags::MEMORY_READ
                                     | vk::AccessFlags::MEMORY_WRITE,
                                 stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                                 layout: vk::ImageLayout::PRESENT_SRC_KHR,
                             },
                         );
-                        if let Some(barrier) = pipeline_tracker.submit(scope) {
+                        if let Some(barrier) = pipeline_tracker.submit(&mut usage_scope) {
                             barrier.execute(&self.device, cb);
                         }
                     }
@@ -1083,6 +1092,9 @@ impl Backend for VulkanBackend {
             );
         }
 
+        // Store scratch space
+        *scratch = Some(pipeline_tracker.into_scratch_space());
+
         // Perform ownership transfers
         ownership_tracker.transfer_ownership(&resc_state, &self.device, cb);
 
@@ -1119,6 +1131,7 @@ impl Backend for VulkanBackend {
             allocator: &mut allocator,
             pools: &mut pools,
             pipelines: &mut pipelines,
+            global_usage: &mut resc_state,
             current: current_values,
             target: target_values,
             override_ref_counter: false,
@@ -1568,8 +1581,8 @@ impl VulkanBackend {
                     log_frees: false,
                     log_stack_traces: false,
                 },
-                // TODO: Look into this
-                buffer_device_address: false,
+                buffer_device_address: true,
+                allocation_sizes: Default::default(),
             })
             .expect("unable to create GPU memory allocator"),
         ));
@@ -1647,6 +1660,8 @@ impl VulkanBackend {
             pools: Mutex::new(DescriptorPools::default()),
             pipelines: Mutex::new(PipelineCache::default()),
             samplers: Mutex::new(SamplerCache::default()),
+            tracking_scratch_space: Mutex::new(None),
+            usage_scope: Mutex::new(UsageScope::default()),
         };
 
         Ok(ctx)
@@ -1661,6 +1676,7 @@ impl Drop for VulkanBackend {
             let transfer = self.transfer.get_mut().unwrap();
             let compute = self.compute.get_mut().unwrap();
 
+            let resc_state = self.resource_state.get_mut().unwrap();
             let mut allocator = self.allocator.lock().unwrap();
             let mut pools = self.pools.lock().unwrap();
             let mut pipelines = self.pipelines.lock().unwrap();
@@ -1684,6 +1700,7 @@ impl Drop for VulkanBackend {
                     allocator: &mut allocator,
                     pools: &mut pools,
                     pipelines: &mut pipelines,
+                    global_usage: resc_state,
                     current,
                     target,
                     override_ref_counter: true,

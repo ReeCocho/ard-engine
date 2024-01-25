@@ -58,7 +58,6 @@ dashmap = { version = "5" }
 egui = { version = "0.22", features = ["bytemuck"] }
 enum_dispatch = { version = "0.3" }
 futures = { version = "0.3" }
-fxhash = { version = "0.2" }
 gltf = { version = "1", features = ["KHR_lights_punctual"] }
 half = { version = "2.1.0", features = ["bytemuck"] }
 image = { version = "0.24" }
@@ -69,9 +68,10 @@ ordered-float = { version = "3" }
 raw-window-handle = { version = "0.5" }
 rayon = { version = "1" }
 ron = { version = "0.8" }
+rustc-hash = { version = "1.1" }
 serde = { version = "1", features = [ "derive" ] }
 serde_with = { version = "3" }
-smallvec = { version = "1", features = ["serde"] }
+smallvec = { version = "1", features = ["serde", "union"] }
 thiserror = { version = "1" }
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 tokio-stream = { version = "0.1" }

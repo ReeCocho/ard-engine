@@ -209,14 +209,14 @@
         name: "DrawGen",
         bindings: [
             (
-                name: "DrawCalls",
+                name: "DrawGroups",
                 stage: Compute,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadWrite,
                     inner: None,
-                    unbounded_array: Some((name: "draw_calls", ty: Struct("DrawCall"))),
+                    unbounded_array: Some((name: "draw_groups", ty: Struct("DrawGroup"))),
                 )
             ),
             (
@@ -250,6 +250,17 @@
                     access: WriteOnly,
                     inner: None,
                     unbounded_array: Some((name: "output_ids", ty: U32)),
+                )
+            ),
+            (
+                name: "MeshInfoLookup",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
                 )
             ),
             (
@@ -265,14 +276,14 @@
         name: "DrawGenNoHzb",
         bindings: [
             (
-                name: "DrawCalls",
+                name: "DrawGroups",
                 stage: Compute,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadWrite,
                     inner: None,
-                    unbounded_array: Some((name: "draw_calls", ty: Struct("DrawCall"))),
+                    unbounded_array: Some((name: "draw_groups", ty: Struct("DrawGroup"))),
                 )
             ),
             (
@@ -307,6 +318,17 @@
                     inner: None,
                     unbounded_array: Some((name: "output_ids", ty: U32)),
                 )
+            ),
+            (
+                name: "MeshInfoLookup",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
+                )
             )
         ]
     ),
@@ -315,14 +337,14 @@
         name: "DrawCompact",
         bindings: [
             (
-                name: "DrawCallsSrc",
+                name: "DrawGroupsSrc",
                 stage: Compute,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
-                    access: ReadOnly,
+                    access: ReadWrite,
                     inner: None,
-                    unbounded_array: Some((name: "draw_calls_src", ty: Struct("DrawCall"))),
+                    unbounded_array: Some((name: "draw_groups_src", ty: Struct("DrawGroup"))),
                 )
             ),
             (
@@ -345,6 +367,17 @@
                     access: ReadWrite,
                     inner: None,
                     unbounded_array: Some((name: "draw_counts", ty: U32)),
+                )
+            ),
+            (
+                name: "MeshInfoLookup",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
                 )
             )
         ],

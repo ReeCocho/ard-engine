@@ -12,7 +12,7 @@ use ard_pal::prelude::{
 };
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{keys::DrawKey, Model, RenderFlags, RenderingMode};
 use ard_render_si::types::GpuObjectData;
@@ -285,6 +285,7 @@ impl RenderObjects {
             normal: mdl.0.inverse().transpose(),
             entity_id: entity.id(),
             entity_ver: entity.ver(),
+            mesh: usize::from(mesh.id()) as u32,
             material: mat.data_slot().map(|slot| slot.into()).unwrap_or_default(),
             textures: mat.tex_slot().map(|slot| slot.into()).unwrap_or_default(),
         };

@@ -19,4 +19,4 @@ serde.workspace = true
 thiserror.workspace = true
 bytemuck.workspace = true
 crossbeam-channel.workspace = true
-fxhash.workspace = true
+rustc-hash.workspace = true

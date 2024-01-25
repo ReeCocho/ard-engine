@@ -1,10 +1,10 @@
-use ard_ecs::prelude::*;
 use ard_log::info;
-use ard_math::{Vec2, Vec4};
+use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::RenderPreprocessing, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::{
-    froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, CameraClearColor,
+    active::ActiveCamera, froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, Camera,
+    CameraClearColor,
 };
 use ard_render_image_effects::{
     ao::AmbientOcclusion,
@@ -15,6 +15,7 @@ use ard_render_image_effects::{
 use ard_render_lighting::{lights::Lighting, proc_skybox::ProceduralSkyBox};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
+use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
     draw_gen::DrawGenPipeline,
     highz::HzbRenderer,
@@ -25,26 +26,19 @@ use ard_render_si::bindings::Layouts;
 use ard_render_textures::factory::TextureFactory;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use crate::{
-    canvas::Canvas,
-    factory::Factory,
-    frame::{FrameData, FrameDataRes},
-    RenderPlugin, FRAMES_IN_FLIGHT,
-};
-
-use self::{
-    camera::CameraSetupSystem, factory::FactoryProcessingSystem, scene_render::SceneRendererSetup,
-};
+use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin, FRAMES_IN_FLIGHT};
 
 mod camera;
 mod factory;
 mod scene_render;
 
 pub(crate) struct RenderEcs {
-    world: World,
-    resources: Resources,
-    dispatcher: Dispatcher,
     _layouts: Layouts,
+    canvas: Canvas,
+    camera: CameraUbo,
+    scene_renderer: SceneRenderer,
+    sun_shadows_renderer: SunShadowsRenderer,
+    lighting: Lighting,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
     hzb_render: HzbRenderer,
@@ -56,6 +50,18 @@ pub(crate) struct RenderEcs {
     factory: Factory,
     ctx: Context,
 }
+
+const DEFAULT_ACTIVE_CAMERA: ActiveCamera = ActiveCamera {
+    camera: Camera {
+        near: 0.01,
+        far: 100.0,
+        fov: 1.571,
+        order: 0,
+        clear_color: CameraClearColor::None,
+        flags: RenderFlags::empty(),
+    },
+    model: Model(Mat4::IDENTITY),
+};
 
 impl RenderEcs {
     pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
@@ -103,40 +109,35 @@ impl RenderEcs {
         let ao = AmbientOcclusion::new(&ctx, &layouts);
         let draw_gen = DrawGenPipeline::new(&ctx, &layouts);
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
+        let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
+        let mut tonemapping = Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
-        // Define resources used in the render ECS
-        let mut resources = Resources::default();
-        resources.add(FrameDataRes::default());
-        resources.add(Canvas::new(
-            &ctx,
-            surface,
-            window_size,
-            plugin.settings.anti_aliasing,
-            plugin.settings.present_mode,
-            &hzb_render,
-            &ao,
-        ));
-        resources.add(CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts));
-        resources.add(layouts.clone());
-        resources.add(factory.clone());
-        resources.add(SceneRenderer::new(
-            &ctx,
-            &layouts,
-            &draw_gen,
-            FRAMES_IN_FLIGHT,
-        ));
-        resources.add(SunShadowsRenderer::new(
-            &ctx,
-            &layouts,
-            &draw_gen,
-            FRAMES_IN_FLIGHT,
-            4,
-        ));
-        resources.add(Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT));
+        for frame in 0..FRAMES_IN_FLIGHT {
+            tonemapping.bind_bloom(Frame::from(frame), bloom.image());
+        }
 
         (
             Self {
                 froxels: FroxelGenPipeline::new(&ctx, &layouts),
+                canvas: Canvas::new(
+                    &ctx,
+                    surface,
+                    window_size,
+                    plugin.settings.anti_aliasing,
+                    plugin.settings.present_mode,
+                    &hzb_render,
+                    &ao,
+                ),
+                camera: CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts),
+                scene_renderer: SceneRenderer::new(&ctx, &layouts, &draw_gen, FRAMES_IN_FLIGHT),
+                sun_shadows_renderer: SunShadowsRenderer::new(
+                    &ctx,
+                    &layouts,
+                    &draw_gen,
+                    FRAMES_IN_FLIGHT,
+                    4,
+                ),
+                lighting: Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT),
                 draw_gen,
                 hzb_render,
                 ao,
@@ -146,18 +147,9 @@ impl RenderEcs {
                     Format::Bgra8Unorm,
                     window_size,
                 ),
-                tonemapping: Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT),
-                bloom: Bloom::new(&ctx, &layouts, window_size, 6),
+                tonemapping,
+                bloom,
                 proc_skybox,
-                world: World::default(),
-                resources,
-                dispatcher: DispatcherBuilder::new()
-                    // TODO: Configurable thread count
-                    .thread_count(4)
-                    .add_system(FactoryProcessingSystem)
-                    .add_system(CameraSetupSystem)
-                    .add_system(SceneRendererSetup)
-                    .build(),
                 _layouts: layouts,
                 factory: factory.clone(),
                 ctx,
@@ -173,8 +165,7 @@ impl RenderEcs {
 
     pub fn render(&mut self, mut frame: FrameData) -> FrameData {
         // Update the canvas size and acquire a new swap chain image
-        let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
-        if canvas.resize(
+        if self.canvas.resize(
             &self.ctx,
             &self.hzb_render,
             &self.ao,
@@ -182,59 +173,107 @@ impl RenderEcs {
             frame.canvas_size,
         ) {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
+
+            for frame in 0..FRAMES_IN_FLIGHT {
+                self.tonemapping
+                    .bind_bloom(Frame::from(frame), self.bloom.image());
+            }
         }
 
-        self.tonemapping.bind_bloom(frame.frame, self.bloom.image());
+        self.canvas.acquire_image();
 
-        canvas.acquire_image();
+        // Upload factory resources
+        self.factory.process(frame.frame);
 
-        std::mem::drop(canvas);
+        // Update the camera
+        let main_camera = match frame.active_cameras.main_camera() {
+            Some(camera) => {
+                let (width, height) = self.canvas.size();
+                self.camera
+                    .update(frame.frame, &camera.camera, width, height, camera.model);
+                camera
+            }
+            None => &DEFAULT_ACTIVE_CAMERA,
+        };
 
-        // Perform preprocessing
-        self.world.process_entities();
-        self.dispatcher
-            .event_sender()
-            .submit(RenderPreprocessing(frame.frame));
-        self.resources
-            .get_mut::<FrameDataRes>()
-            .unwrap()
-            .insert(frame);
-        self.dispatcher.run(&mut self.world, &self.resources);
-        self.world.process_entities();
+        let view_location = main_camera.model.position();
+
+        let meshes = self.factory.inner.meshes.lock().unwrap();
+        let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
+        let materials = self.factory.inner.materials.lock().unwrap();
+        let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
+        let material_factory = self.factory.inner.material_factory.lock().unwrap();
+
+        // Upload object data to renderers
+        rayon::join(
+            || {
+                self.scene_renderer.upload(
+                    frame.frame,
+                    &frame.object_data,
+                    &meshes,
+                    &materials,
+                    view_location,
+                );
+            },
+            || {
+                self.sun_shadows_renderer.upload(
+                    frame.frame,
+                    &frame.object_data,
+                    &meshes,
+                    &materials,
+                    view_location,
+                );
+            },
+        );
+
+        // Update sets and bindings
+        self.lighting.update_set(frame.frame, &frame.lights);
+
+        self.scene_renderer.update_bindings(
+            frame.frame,
+            &self.sun_shadows_renderer,
+            &self.lighting,
+            &frame.object_data,
+            &frame.lights,
+            self.canvas.hzb(),
+            self.canvas.ao(),
+            &mesh_factory,
+        );
+
+        self.sun_shadows_renderer
+            .update_bindings::<FRAMES_IN_FLIGHT>(
+                frame.frame,
+                &self.lighting,
+                &frame.object_data,
+                &frame.lights,
+                &mesh_factory,
+            );
+
+        self.sun_shadows_renderer.update_cascade_views(
+            frame.frame,
+            &main_camera.camera,
+            main_camera.model,
+            self.canvas.size(),
+            frame.lights.global().sun_direction(),
+        );
 
         // Run the render graph to perform primary rendering
         let mut cb = self.ctx.main().command_buffer();
-
-        frame = self.resources.get_mut::<FrameDataRes>().unwrap().take();
-        let mut canvas = self.resources.get_mut::<Canvas>().unwrap();
 
         ImageEffectsBindImages::new(&self.effect_textures)
             .add(&mut self.bloom)
             .add(&mut self.tonemapping)
             .bind(
                 frame.frame,
-                canvas.render_target().color(),
-                canvas.render_target().depth(),
-                canvas.image(),
+                self.canvas.render_target().color(),
+                self.canvas.render_target().depth(),
+                self.canvas.image(),
             );
-
-        let meshes = self.factory.inner.meshes.lock().unwrap();
-        let materials = self.factory.inner.materials.lock().unwrap();
-        let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
-        let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
-        let material_factory = self.factory.inner.material_factory.lock().unwrap();
-        let scene_render = self.resources.get::<SceneRenderer>().unwrap();
-        let shadow_renderer = self.resources.get::<SunShadowsRenderer>().unwrap();
-        let camera = self.resources.get::<CameraUbo>().unwrap();
-        let lighting = self.resources.get::<Lighting>().unwrap();
 
         // Render the high-z depth image
         self.render_hzb(
             &mut cb,
             &frame,
-            &canvas,
-            &camera,
-            &scene_render,
             &materials,
             &meshes,
             &mesh_factory,
@@ -243,31 +282,24 @@ impl RenderEcs {
         );
 
         // Generate the high-z depth pyramid
-        self.generate_hzb(&mut cb, &frame, &canvas);
+        self.generate_hzb(&mut cb, &frame);
 
         // Regenerate froxels
-        self.generate_froxels(&mut cb, &frame, &camera);
+        self.generate_froxels(&mut cb, &frame);
 
         // Perform light clustering
-        self.cluster_lights(&mut cb, &frame, &lighting, &camera);
+        self.cluster_lights(&mut cb, &frame);
 
         // Generate draw calls
-        self.generate_draw_calls(
-            &mut cb,
-            &frame,
-            &canvas,
-            &scene_render,
-            &shadow_renderer,
-            &camera,
-        );
+        self.generate_draw_calls(&mut cb, &frame);
 
         // Perform the depth prepass
         Self::depth_prepass(
             &mut cb,
             &frame,
-            &canvas,
-            &camera,
-            &scene_render,
+            &self.canvas,
+            &self.camera,
+            &self.scene_renderer,
             &materials,
             &meshes,
             &mesh_factory,
@@ -279,7 +311,7 @@ impl RenderEcs {
         Self::render_shadows(
             &mut cb,
             &frame,
-            &shadow_renderer,
+            &self.sun_shadows_renderer,
             &materials,
             &meshes,
             &mesh_factory,
@@ -288,15 +320,15 @@ impl RenderEcs {
         );
 
         // Generate the AO image
-        Self::generate_ao_image(&mut cb, &frame, &canvas, &camera, &self.ao);
+        Self::generate_ao_image(&mut cb, &frame, &self.canvas, &self.camera, &self.ao);
 
         // Render opaque and alpha masked geometry
         Self::render_opaque(
             &mut cb,
             &frame,
-            &canvas,
-            &camera,
-            &scene_render,
+            &self.canvas,
+            &self.camera,
+            &self.scene_renderer,
             &self.proc_skybox,
             &materials,
             &meshes,
@@ -309,9 +341,9 @@ impl RenderEcs {
         Self::render_transparent(
             &mut cb,
             &frame,
-            &canvas,
-            &camera,
-            &scene_render,
+            &self.canvas,
+            &self.camera,
+            &self.scene_renderer,
             &materials,
             &meshes,
             &mesh_factory,
@@ -326,47 +358,45 @@ impl RenderEcs {
             .render(
                 frame.frame,
                 &mut cb,
-                canvas.render_target().color(),
-                canvas.image(),
+                self.canvas.render_target().color(),
+                self.canvas.image(),
             );
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));
 
         // Present the surface image
-        canvas.present(&self.ctx, frame.window_size);
+        self.canvas.present(&self.ctx, frame.window_size);
 
         frame
     }
 
     /// Renders the depth image used to generate the hierarchical-z buffer
     #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
     fn render_hzb<'a>(
         &'a self,
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
-        canvas: &'a Canvas,
-        camera: &'a CameraUbo,
-        scene_render: &'a SceneRenderer,
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
         material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
         texture_factory: &'a TextureFactory,
     ) {
-        commands.render_pass(canvas.render_target().hzb_pass(), |pass| {
+        commands.render_pass(self.canvas.render_target().hzb_pass(), |pass| {
             if frame_data.object_data.static_dirty() {
                 info!("Skipping HZB render because static objects are dirty.");
                 return;
             }
 
-            scene_render.render_hzb(
+            self.scene_renderer.render_hzb(
                 frame_data.frame,
                 SceneRenderArgs {
-                    camera,
+                    camera: &self.camera,
                     pass,
                     static_dirty: frame_data.object_data.static_dirty(),
-                    global: scene_render.global_sets(),
+                    global: self.scene_renderer.global_sets(),
                     mesh_factory,
                     material_factory,
                     texture_factory,
@@ -377,67 +407,51 @@ impl RenderEcs {
         });
     }
 
+    #[inline(never)]
     /// Generates the hierarchical-z buffer for use in draw call generation.
-    fn generate_hzb<'a>(
-        &'a self,
-        commands: &mut CommandBuffer<'a>,
-        frame_data: &FrameData,
-        canvas: &'a Canvas,
-    ) {
+    fn generate_hzb<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
         self.hzb_render
-            .generate(frame_data.frame, commands, canvas.hzb());
+            .generate(frame_data.frame, commands, self.canvas.hzb());
     }
 
+    #[inline(never)]
     /// Generates camera froxels for light clustering.
-    fn generate_froxels<'a>(
-        &'a self,
-        commands: &mut CommandBuffer<'a>,
-        frame_data: &FrameData,
-        camera: &'a CameraUbo,
-    ) {
-        if !camera.needs_froxel_regen() {
+    fn generate_froxels<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
+        if !self.camera.needs_froxel_regen() {
             return;
         }
 
         info!("Generating camera froxels.");
         commands.compute_pass(|pass| {
-            self.froxels.regen(frame_data.frame, pass, camera);
+            self.froxels.regen(frame_data.frame, pass, &self.camera);
         });
     }
 
+    #[inline(never)]
     // Perform light clustering
-    fn cluster_lights<'a>(
-        &'a self,
-        commands: &mut CommandBuffer<'a>,
-        frame_data: &FrameData,
-        lighting: &'a Lighting,
-        camera: &'a CameraUbo,
-    ) {
-        lighting.cluster(commands, frame_data.frame, camera);
+    fn cluster_lights<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
+        self.lighting
+            .cluster(commands, frame_data.frame, &self.camera);
     }
 
+    #[inline(never)]
     /// Generates draw calls.
-    fn generate_draw_calls<'a>(
-        &'a self,
-        commands: &mut CommandBuffer<'a>,
-        frame_data: &FrameData,
-        canvas: &'a Canvas,
-        scene_render: &'a SceneRenderer,
-        shadow_renderer: &'a SunShadowsRenderer,
-        camera: &'a CameraUbo,
-    ) {
-        let (width, height) = canvas.size();
+    fn generate_draw_calls<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
+        let (width, height) = self.canvas.size();
         self.draw_gen.generate(
             frame_data.frame,
             commands,
-            scene_render.draw_gen_sets(),
-            camera,
+            self.scene_renderer.draw_gen_sets(),
+            &self.camera,
             Vec2::new(width as f32, height as f32),
+            false,
         );
 
-        shadow_renderer.generate_draw_calls(frame_data.frame, commands, &self.draw_gen);
+        self.sun_shadows_renderer
+            .generate_draw_calls(frame_data.frame, commands, &self.draw_gen);
     }
 
+    #[inline(never)]
     /// Performs the entire depth prepass.
     #[allow(clippy::too_many_arguments)]
     fn depth_prepass<'a>(
@@ -470,6 +484,7 @@ impl RenderEcs {
         });
     }
 
+    #[inline(never)]
     fn generate_ao_image<'a>(
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
@@ -480,6 +495,7 @@ impl RenderEcs {
         ao.generate(frame_data.frame, commands, canvas.ao(), camera);
     }
 
+    #[inline(never)]
     /// Performs shadow rendering
     #[allow(clippy::too_many_arguments)]
     fn render_shadows<'a>(
@@ -505,6 +521,7 @@ impl RenderEcs {
         );
     }
 
+    #[inline(never)]
     /// Renders opaque and alpha cutout geometry
     #[allow(clippy::too_many_arguments)]
     fn render_opaque<'a>(
@@ -549,6 +566,7 @@ impl RenderEcs {
         );
     }
 
+    #[inline(never)]
     /// Renders transparent geometry
     #[allow(clippy::too_many_arguments)]
     fn render_transparent<'a>(

@@ -19,7 +19,7 @@ bytemuck.workspace = true
 serde.workspace = true
 bitflags.workspace = true
 ordered-float.workspace = true
-fxhash.workspace = true
+rustc-hash.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

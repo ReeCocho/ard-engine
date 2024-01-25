@@ -50,6 +50,7 @@ impl SceneRendererSetup {
         let mut lighting = res.get_mut::<Lighting>().unwrap();
 
         let meshes = &factory.inner.meshes.lock().unwrap();
+        let mesh_factory = &factory.inner.mesh_factory.lock().unwrap();
         let materials = &factory.inner.materials.lock().unwrap();
 
         let main_camera = frame_data
@@ -90,6 +91,7 @@ impl SceneRendererSetup {
             &frame_data.lights,
             canvas.hzb(),
             canvas.ao(),
+            mesh_factory,
         );
 
         shadow_renderer.update_bindings::<FRAMES_IN_FLIGHT>(
@@ -97,6 +99,7 @@ impl SceneRendererSetup {
             &lighting,
             &frame_data.object_data,
             &frame_data.lights,
+            mesh_factory,
         );
 
         shadow_renderer.update_cascade_views(

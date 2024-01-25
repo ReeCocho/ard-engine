@@ -2,6 +2,7 @@ use ard_render_material::factory::{MaterialFactory, PassDefinition, PassId};
 use ard_render_si::bindings::Layouts;
 
 pub mod bins;
+pub mod calls;
 pub mod draw_gen;
 pub mod global;
 pub mod highz;

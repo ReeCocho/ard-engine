@@ -2,6 +2,7 @@ use ard_ecs::prelude::Component;
 use ard_formats::mesh::{IndexSource, ObjectBounds, VertexLayout, VertexSource};
 use ard_pal::prelude::{BufferCreateError, Context, QueueType};
 use ard_render_base::resource::{ResourceHandle, ResourceId};
+use ard_render_si::types::{GpuMeshInfo, GpuObjectBounds};
 use thiserror::Error;
 
 use crate::factory::{MeshBlock, MeshFactory, MeshUpload};
@@ -63,7 +64,7 @@ impl MeshResource {
         create_info: MeshCreateInfo<V, I>,
         ctx: &Context,
         factory: &mut MeshFactory,
-    ) -> Result<(Self, MeshUpload), MeshCreateError<V, I>> {
+    ) -> Result<(Self, MeshUpload, GpuMeshInfo), MeshCreateError<V, I>> {
         if create_info.indices.index_count() == 0 {
             return Err(MeshCreateError::NoIndices);
         }
@@ -98,6 +99,9 @@ impl MeshResource {
         // Allocate a slot for the mesh in the factory
         let block = factory.allocate(vertex_data.layout(), vertex_data.len(), index_data.len());
 
+        let bounds = vertex_data.bounds();
+        let index_count = index_data.index_count() as u32;
+
         Ok((
             MeshResource {
                 block,
@@ -112,6 +116,15 @@ impl MeshResource {
                 index_staging,
                 vertex_count: vertex_data.len(),
                 block,
+            },
+            GpuMeshInfo {
+                bounds: GpuObjectBounds {
+                    center: bounds.center,
+                    half_extents: bounds.half_extents,
+                },
+                first_index: block.index_block().base(),
+                vertex_offset: block.vertex_block().base() as i32,
+                index_count,
             },
         ))
     }

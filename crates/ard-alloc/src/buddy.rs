@@ -1,4 +1,4 @@
-use fxhash::FxHashSet;
+use rustc_hash::FxHashSet;
 
 /// A simple resizable buddy block allocator.
 ///
