@@ -1,10 +1,14 @@
+use std::time::Instant;
+
 use ard_assets::prelude::{AssetName, Assets, AssetsPlugin};
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
-use ard_render2::{factory::Factory, AntiAliasingMode, RenderPlugin, RendererSettings};
+use ard_render2::{
+    factory::Factory, system::PostRender, AntiAliasingMode, RenderPlugin, RendererSettings,
+};
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
 use ard_render_lighting::Light;
@@ -14,8 +18,40 @@ use ard_render_pbr::PbrMaterialData;
 use ard_window::prelude::*;
 use ard_winit::prelude::*;
 
-//#[path = "./util.rs"]
-//mod util;
+#[derive(SystemState)]
+pub struct FrameRate {
+    frame_ctr: usize,
+    last_sec: Instant,
+}
+
+impl Default for FrameRate {
+    fn default() -> Self {
+        FrameRate {
+            frame_ctr: 0,
+            last_sec: Instant::now(),
+        }
+    }
+}
+
+impl FrameRate {
+    fn post_render(&mut self, _: PostRender, _: Commands, _: Queries<()>, _: Res<()>) {
+        let now = Instant::now();
+        self.frame_ctr += 1;
+        if now.duration_since(self.last_sec).as_secs_f32() >= 1.0 {
+            println!("Frame Rate: {}", self.frame_ctr);
+            self.last_sec = now;
+            self.frame_ctr = 0;
+        }
+    }
+}
+
+impl Into<System> for FrameRate {
+    fn into(self) -> System {
+        SystemBuilder::new(self)
+            .with_handler(FrameRate::post_render)
+            .build()
+    }
+}
 
 #[derive(SystemState)]
 pub struct CameraMover {
@@ -129,6 +165,7 @@ fn main() {
             debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
+        .add_system(FrameRate::default())
         .add_startup_function(setup)
         .run();
 }
