@@ -32,3 +32,4 @@ raw-window-handle.workspace = true
 bytemuck.workspace = true
 rustc-hash.workspace = true
 rayon.workspace = true
+puffin.workspace = true

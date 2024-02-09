@@ -47,6 +47,7 @@ ard-pal = { path = "./crates/ard-pal", optional = true }
 [workspace.dependencies]
 allocator-api2 = { version = "0.2" }
 anymap = { version = "0.12" }
+arrayvec = { version = "0.7.4" }
 async-trait = { version = "0.1" }
 bincode = { version = "1" }
 bitflags = { version = "2", features = [ "serde" ] }
@@ -65,6 +66,8 @@ itertools = { version = "0.11.0" }
 num_cpus = { version = "1" }
 paste = { version = "1" }
 ordered-float = { version = "3" }
+puffin = { version = "0.19" }
+puffin_http = { version = "0.16" }
 raw-window-handle = { version = "0.5" }
 rayon = { version = "1" }
 ron = { version = "0.8" }
@@ -80,6 +83,8 @@ winit = { version = "0.28" }
 static_assertions = { version = "1.1" }
 
 [dev-dependencies]
+puffin = { version = "0.19" }
+puffin_http = { version = "0.16" }
 bytemuck = "1.7"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 rand = "0.8"

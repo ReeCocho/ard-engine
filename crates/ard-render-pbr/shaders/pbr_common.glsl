@@ -214,7 +214,8 @@ float compute_shadow_factor(vec3 normal) {
         return 1.0;
     }
 
-    vec4 frag_pos_light_space = vs_LightSpacePositions[layer]; 
+    const vec4 frag_pos_light_space = 
+        sun_shadow_info.cascades[layer].vp * vec4(vs_WorldSpaceFragPos, 1.0);
 
     float NoL = dot(normal, global_lighting.sun_direction.xyz);
     float bias = max(
@@ -295,12 +296,12 @@ vec3 light_fragment(
 }
 
 /// Get the cluster ID for the given screen coordinate.
-ivec3 get_cluster_id(vec2 uv, float depth) {
-    return ivec3(
-        clamp(int(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
-        clamp(int(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
+uvec3 get_cluster_id(vec2 uv, float depth) {
+    return uvec3(
+        clamp(uint(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
+        clamp(uint(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
         clamp(
-            int(log(depth) * camera.cluster_scale_bias.x - camera.cluster_scale_bias.y), 
+            uint(log(depth) * camera.cluster_scale_bias.x - camera.cluster_scale_bias.y), 
             0,
             CAMERA_FROXELS_DEPTH - 1
         )
@@ -322,7 +323,7 @@ ivec3 get_cluster_id(vec2 uv, float depth) {
 /// Samples a texture at a given slot. If the texture is unbound, the provided default will be 
 /// returned.
 vec4 sample_texture_default(uint slot, vec2 uv, vec4 def) {
-    const uint tex = texture_slots[vs_TextureSlotsIdx][slot];
+    const uint tex = texture_slots[vs_Slots.x][slot];
     return mix(
         texture(textures[min(tex, MAX_TEXTURES)], uv), 
         def, 

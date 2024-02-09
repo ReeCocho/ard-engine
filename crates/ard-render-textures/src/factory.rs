@@ -313,6 +313,8 @@ impl TextureFactory {
             mip_width = width;
             mip_height = height;
         }
+
+        commands.set_texture_usage(texture, TextureUsage::SAMPLED, 0, 0, mip_count as usize);
     }
 
     /// Records a command to upload a lowest detail mip level of a texture.
@@ -344,6 +346,8 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+
+        commands.set_texture_usage(texture, TextureUsage::SAMPLED, 0, mip_level, 1);
 
         commands.transfer_texture_ownership(texture, 0, mip_level as usize, 1, QueueType::Main);
     }
@@ -377,6 +381,8 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+
+        commands.set_texture_usage(texture, TextureUsage::SAMPLED, 0, upload.mip_level, 1);
 
         commands.transfer_texture_ownership(
             texture,
@@ -431,6 +437,7 @@ impl TextureFactory {
                 texture_array_element: 0,
             },
         );
+        commands.set_texture_usage(&tex, TextureUsage::SAMPLED, 0, 0, 1);
         commands.transfer_texture_ownership(&tex, 0, 0, 1, QueueType::Main);
         ctx.transfer()
             .submit(Some("error_texture_upload"), commands);

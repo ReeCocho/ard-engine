@@ -8,7 +8,9 @@ use crate::{
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
     surface::SurfaceImage,
     texture::{Blit, Texture},
-    types::{CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode},
+    types::{
+        CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode, TextureUsage,
+    },
     Backend,
 };
 
@@ -215,6 +217,13 @@ pub enum Command<'a, B: Backend> {
         src: &'a Texture<B>,
         dst: &'a Texture<B>,
         resolve: TextureResolve,
+    },
+    SetTextureUsage {
+        tex: &'a Texture<B>,
+        new_usage: TextureUsage,
+        array_elem: usize,
+        base_mip: u32,
+        mip_count: usize,
     },
 }
 
@@ -574,5 +583,37 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
     ) {
         self.commands
             .push(Command::TextureResolve { src, dst, resolve });
+    }
+
+    /// Prepares a texture to be used in a particular way.
+    ///
+    /// # Arguments
+    /// - `tex` - The texture to prepare.
+    /// - `new_usage` - The way the texture will be prepared to use.
+    /// - `array_elem` - Array element to prepare.
+    /// - `base_mip` - Base mip level to prepare.
+    /// - `mip_count` - The number of mips to prepare.
+    ///
+    /// # Note
+    /// Texture usage transitions are performed automatically, so this is almost never needed. The
+    /// use case for this is if you're using unsafe commands and might need to manually transition
+    /// a usage. Or, you want to perform a usage transition on an asyncronous job.
+    #[inline(always)]
+    pub fn set_texture_usage(
+        &mut self,
+        tex: &'a Texture<B>,
+        new_usage: TextureUsage,
+        array_elem: usize,
+        base_mip: u32,
+        mip_count: usize,
+    ) {
+        assert!(new_usage.iter().count() == 1);
+        self.commands.push(Command::SetTextureUsage {
+            tex,
+            new_usage,
+            array_elem,
+            base_mip,
+            mip_count,
+        });
     }
 }

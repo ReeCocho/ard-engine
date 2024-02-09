@@ -22,15 +22,23 @@ shared uint shared_light_idx[SLICE_SIZE];
 shared uint shared_lights_count;
 
 void main() {
-    const uint total_lights = consts.total_lights;
-
-    const Froxel froxel = froxels.froxels
-        [gl_LocalInvocationID.x]
-        [gl_LocalInvocationID.y]
-        [gl_WorkGroupID.z];
-
     const uint local_inv_idx = 
         (gl_LocalInvocationID.y * gl_WorkGroupSize.x) + gl_LocalInvocationID.x;
+
+    const uint total_lights = consts.total_lights;
+
+    const vec4[4] froxel_planes = froxels.frustums[gl_LocalInvocationID.x][gl_LocalInvocationID.y];
+    const vec2 min_max_z = froxels.min_max_z[gl_WorkGroupID.z];
+
+    vec3 min_pt = vec3(
+        froxels.min_max_xy[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_WorkGroupID.z].xy, 
+        min_max_z.x
+    );
+    
+    vec3 max_pt = vec3(
+        froxels.min_max_xy[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_WorkGroupID.z].zw,
+        min_max_z.y
+    );
 
     // Offset within the primary lights list
     uint lights_offset = 0;
@@ -44,7 +52,6 @@ void main() {
             shared_lights_count = 0;
         }
         
-        memoryBarrierShared();
         barrier();
 
         // Read a batch of lights into shared memory
@@ -60,7 +67,6 @@ void main() {
             const vec3 position = (camera.view * light_pos_hmg).xyz;
 
             // Early discard based on Z slice since all clusters share the same Z.
-            const vec2 min_max_z = froxel.min_max_z.xy;
             const bool within_z_bounds =
                 position.z - light_radius <= min_max_z.y &&
                 position.z + light_radius >= min_max_z.x;
@@ -85,10 +91,9 @@ void main() {
             }
         }
 
-        memoryBarrierShared();
         barrier();
 
-        // Cull light
+        // Cull lights
         for (uint i = 0; i < shared_lights_count; ++i) {
             if (out_idx >= MAX_LIGHTS_PER_CLUSTER) {
                 break;
@@ -96,13 +101,24 @@ void main() {
 
             const vec4 light_pos_rng = shared_light_pos_rng[i];
 
-            // Check planes
-            if (
-                dot(light_pos_rng.xyz, froxel.planes[0].xyz) > light_pos_rng.w ||
-                dot(light_pos_rng.xyz, froxel.planes[1].xyz) > light_pos_rng.w ||
-                dot(light_pos_rng.xyz, froxel.planes[2].xyz) > light_pos_rng.w ||
-                dot(light_pos_rng.xyz, froxel.planes[3].xyz) > light_pos_rng.w
+            // If it's fully outside of one plane, it's not visible
+            if (dot(light_pos_rng.xyz, froxel_planes[0].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel_planes[1].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel_planes[2].xyz) > light_pos_rng.w ||
+                dot(light_pos_rng.xyz, froxel_planes[3].xyz) > light_pos_rng.w
             ) {
+                continue;
+            }
+
+            if (min_pt.x > max_pt.x || min_pt.y > max_pt.y) {
+                continue;
+            }
+
+            // Find closest point on AABB of frustum. This helps to mitigate a false positive when
+            // large lights are close to the camera/at a corner of the frustum.
+            const vec3 closest_pt = clamp(light_pos_rng.xyz, min_pt, max_pt);
+            const vec3 closest_dir = closest_pt - light_pos_rng.xyz;
+            if (dot(closest_dir, closest_dir) > light_pos_rng.w * light_pos_rng.w) {
                 continue;
             }
 
@@ -122,8 +138,9 @@ void main() {
     }
 
     // Set light count
-    light_table.counts
+    light_table.clusters
         [gl_WorkGroupID.z]
         [gl_LocalInvocationID.x]
-        [gl_LocalInvocationID.y] = out_idx;
+        [gl_LocalInvocationID.y]
+        [out_idx] = FINAL_LIGHT_SENTINEL;
 }

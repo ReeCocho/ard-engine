@@ -10,12 +10,17 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, 
 
 use crate::{
     texture::TextureRefCounter,
-    util::{cube_face_to_idx, garbage_collector::Garbage},
+    util::{
+        cube_face_to_idx,
+        garbage_collector::Garbage,
+        id_gen::{IdGenerator, ResourceId},
+    },
     QueueFamilyIndices,
 };
 
 pub struct CubeMap {
     pub(crate) image: vk::Image,
+    pub(crate) id: ResourceId,
     /// Image view for each array element and mip level. This array is flattened like so.
     /// A0M0 -> A0M1 -> A0M2 ... A1M0 -> A1M1 -> A1M2 -> ...
     pub(crate) views: Vec<vk::ImageView>,
@@ -26,7 +31,7 @@ pub struct CubeMap {
     pub(crate) ref_counter: TextureRefCounter,
     pub(crate) format: vk::Format,
     pub(crate) mip_count: u32,
-    pub(crate) array_elements: usize,
+    pub(crate) _array_elements: usize,
     pub(crate) aspect_flags: vk::ImageAspectFlags,
     pub(crate) size: u64,
     on_drop: Sender<Garbage>,
@@ -35,6 +40,7 @@ pub struct CubeMap {
 impl CubeMap {
     pub(crate) unsafe fn new(
         device: &ash::Device,
+        id_gen: &IdGenerator,
         qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
@@ -295,6 +301,7 @@ impl CubeMap {
 
         Ok(CubeMap {
             image,
+            id: id_gen.create(),
             views,
             face_views,
             block: ManuallyDrop::new(block),
@@ -302,7 +309,7 @@ impl CubeMap {
             ref_counter: TextureRefCounter::default(),
             format,
             mip_count: create_info.mip_levels as u32,
-            array_elements: create_info.array_elements,
+            _array_elements: create_info.array_elements,
             size: mem_reqs.size / create_info.array_elements as u64,
             aspect_flags,
         })
@@ -329,14 +336,13 @@ impl Drop for CubeMap {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Texture {
             image: self.image,
+            id: self.id,
             views: {
                 let face_views = std::mem::take(&mut self.face_views);
                 let mut views = std::mem::take(&mut self.views);
                 views.extend(face_views);
                 views
             },
-            array_elements: self.array_elements * 6,
-            mips: self.mip_count as usize,
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),
         });

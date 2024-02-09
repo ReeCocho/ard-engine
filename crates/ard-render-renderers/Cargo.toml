@@ -21,6 +21,7 @@ ard-render-image-effects = { path = "../ard-render-image-effects" }
 bytemuck.workspace = true
 ordered-float.workspace = true
 rayon.workspace = true
+puffin.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

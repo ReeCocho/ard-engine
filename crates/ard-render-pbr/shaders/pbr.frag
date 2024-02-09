@@ -25,7 +25,7 @@ layout(location = 0) out vec4 OUT_COLOR;
 ////////////////////
 
 void main() {
-    const PbrMaterial data = ard_MaterialData(vs_MaterialSlotIdx);
+    const PbrMaterial data = ard_MaterialData(vs_Slots.y);
 
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0
@@ -91,15 +91,11 @@ void main() {
     // Lighting from point lights
     const vec2 screen_uv = (vs_Position.xy / vs_Position.w) * vec2(0.5) + vec2(0.5);
     const float screen_depth = (vs_Position.w * camera.near_clip) / vs_Position.z;
+    const uvec3 cluster = get_cluster_id(screen_uv, screen_depth);
 
-    const ivec3 cluster = get_cluster_id(screen_uv, screen_depth);
-    const uint light_count = light_table.counts[cluster.z][cluster.x][cluster.y];
-    
-    // OUT_COLOR = light_count > 0 ? vec4(1) : vec4(0.5, 0.5, 0.5, 1.0);
-    // return;
-
-    for (int i = 0; i < light_count; i++) {
-        const uint light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][i];
+    int light_index = 0;
+    uint light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][light_index];
+    while (light_idx != FINAL_LIGHT_SENTINEL) {
         const Light light = lights[light_idx];
 
         vec3 frag_to_light = light.position_range.xyz - vs_WorldSpaceFragPos;
@@ -119,6 +115,9 @@ void main() {
                 N
             ), 0.0);
         }
+
+        light_index += 1;
+        light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][light_index];
     }
 
     // Ambient lighting

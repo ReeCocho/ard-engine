@@ -25,13 +25,13 @@ use crate::{
     bins::{DrawBins, RenderArgs},
     calls::OutputDrawCalls,
     draw_gen::{DrawGenPipeline, DrawGenSets},
-    global::{GlobalSetBindingUpdate, GlobalSets},
+    global::GlobalSets,
     SHADOW_PASS_ID,
 };
 
 pub const DEFAULT_INPUT_ID_CAP: usize = 1;
 pub const DEFAULT_OUTPUT_ID_CAP: usize = 1;
-pub const SHADOW_MAP_FORMAT: Format = Format::D32Sfloat;
+pub const SHADOW_MAP_FORMAT: Format = Format::D16Unorm;
 
 pub(crate) const SHADOW_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,
@@ -66,6 +66,7 @@ pub struct ShadowRenderArgs<'a, 'b, const FIF: usize> {
     pub texture_factory: &'a TextureFactory,
     pub meshes: &'a ResourceAllocator<MeshResource, FIF>,
     pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
+    pub cascade: usize,
 }
 
 struct ShadowCascadeRenderData {
@@ -82,6 +83,7 @@ impl SunShadowsRenderer {
         ctx: &Context,
         layouts: &Layouts,
         draw_gen: &DrawGenPipeline,
+        lighting: &Lighting,
         frames_in_flight: usize,
         shadow_cascades: usize,
     ) -> Self {
@@ -127,8 +129,34 @@ impl SunShadowsRenderer {
             .submit(Some("empty_shadow_prepare"), command_buffer)
             .wait_on(None);
 
+        let ubo: Vec<_> = (0..frames_in_flight)
+            .map(|_| SunShadowsUbo::new(ctx))
+            .collect();
+
+        let cascades = (0..shadow_cascades)
+            .map(|_| {
+                let mut cascade =
+                    ShadowCascadeRenderData::new(ctx, layouts, draw_gen, frames_in_flight);
+                for frame_idx in 0..frames_in_flight {
+                    let frame = Frame::from(frame_idx);
+
+                    cascade.global.update_ao_image_binding(frame, &empty_shadow);
+
+                    cascade.global.update_shadow_bindings(
+                        frame,
+                        ubo[frame_idx].buffer(),
+                        std::array::from_fn(|_| &empty_shadow),
+                    );
+
+                    cascade
+                        .global
+                        .update_light_clusters_binding(frame, lighting.clusters());
+                }
+                cascade
+            })
+            .collect();
+
         Self {
-            empty_shadow,
             input_ids: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
@@ -143,14 +171,16 @@ impl SunShadowsRenderer {
             )
             .unwrap(),
             set: RenderableSet::default(),
-            ubo: (0..frames_in_flight)
-                .map(|_| SunShadowsUbo::new(ctx))
-                .collect(),
+            ubo,
             bins: DrawBins::new(ctx, frames_in_flight),
-            cascades: (0..shadow_cascades)
-                .map(|_| ShadowCascadeRenderData::new(ctx, layouts, draw_gen, frames_in_flight))
-                .collect(),
+            cascades,
+            empty_shadow,
         }
+    }
+
+    #[inline]
+    pub fn cascade_count(&self) -> usize {
+        self.cascades.len()
     }
 
     #[inline]
@@ -176,6 +206,8 @@ impl SunShadowsRenderer {
         materials: &ResourceAllocator<MaterialResource, FIF>,
         view_location: Vec3A,
     ) {
+        puffin::profile_function!();
+
         // Update the set with all objects to render
         RenderableSetUpdate::new(&mut self.set)
             .with_opaque()
@@ -250,29 +282,26 @@ impl SunShadowsRenderer {
         });
     }
 
-    pub fn update_bindings<const FIF: usize>(
-        &mut self,
-        frame: Frame,
-        lighting: &Lighting,
-        objects: &RenderObjects,
-        lights: &Lights,
-        meshes: &MeshFactory,
-    ) {
+    pub fn update_cascade_lights(&mut self, frame: Frame, lights: &Lights) {
         self.cascades.iter_mut().for_each(|cascade| {
             cascade
                 .global
-                .update_object_bindings(GlobalSetBindingUpdate {
-                    frame,
-                    object_data: objects.object_data(),
-                    object_ids: &cascade.output_ids,
-                    global_lighting: lights.global_buffer(),
-                    lights: lights.buffer(),
-                    clusters: lighting.clusters(),
-                    sun_shadow_info: self.ubo[usize::from(frame)].buffer(),
-                    shadow_cascades: std::array::from_fn(|_| &self.empty_shadow),
-                    // AO image isn't actually read during the shadow pass, so what we bind doesn't matter.
-                    ao_image: &self.empty_shadow,
-                });
+                .update_lighting_binding(frame, lights.global_buffer(), lights.buffer())
+        });
+    }
+
+    pub fn update_bindings<const FIF: usize>(
+        &mut self,
+        frame: Frame,
+        objects: &RenderObjects,
+        meshes: &MeshFactory,
+    ) {
+        self.cascades.iter_mut().for_each(|cascade| {
+            cascade.global.update_object_data_bindings(
+                frame,
+                objects.object_data(),
+                &cascade.output_ids,
+            );
 
             cascade.draw_gen.update_bindings::<FIF>(
                 frame,
@@ -328,17 +357,17 @@ impl SunShadowsRenderer {
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
         pipeline: &DrawGenPipeline,
+        cascade: usize,
     ) {
-        self.cascades.iter().for_each(|cascade| {
-            pipeline.generate(
-                frame,
-                commands,
-                &cascade.draw_gen,
-                &cascade.camera,
-                Vec2::ONE,
-                true,
-            )
-        });
+        let cascade = &self.cascades[cascade];
+        pipeline.generate(
+            frame,
+            commands,
+            &cascade.draw_gen,
+            &cascade.camera,
+            Vec2::ONE,
+            true,
+        );
     }
 
     pub fn render<'a, const FIF: usize>(
@@ -346,42 +375,40 @@ impl SunShadowsRenderer {
         frame: Frame,
         args: ShadowRenderArgs<'a, '_, FIF>,
     ) {
-        self.cascades.iter().for_each(|cascade| {
-            args.commands.render_pass(
-                RenderPassDescriptor {
-                    color_attachments: Vec::default(),
-                    color_resolve_attachments: Vec::default(),
-                    depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &cascade.image,
-                        array_element: 0,
-                        mip_level: 0,
-                        load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
-                        store_op: StoreOp::Store,
-                        samples: MultiSamples::Count1,
-                    }),
-                    depth_stencil_resolve_attachment: None,
-                },
-                |pass| {
-                    pass.bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
+        let cascade = &self.cascades[args.cascade];
+        args.commands.render_pass(
+            RenderPassDescriptor {
+                color_attachments: Vec::default(),
+                color_resolve_attachments: Vec::default(),
+                depth_stencil_attachment: Some(DepthStencilAttachment {
+                    texture: &cascade.image,
+                    array_element: 0,
+                    mip_level: 0,
+                    load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
+                    store_op: StoreOp::Store,
+                    samples: MultiSamples::Count1,
+                }),
+                depth_stencil_resolve_attachment: None,
+            },
+            |pass| {
+                pass.bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
-                    // Render opaque and alpha cut objects
-                    self.bins.render_non_transparent_bins(RenderArgs {
-                        pass_id: SHADOW_PASS_ID,
-                        frame,
-                        skip_texture_verify: true,
-                        camera: &cascade.camera,
-                        global: &cascade.global,
-                        pass,
-                        calls: &cascade.calls,
-                        mesh_factory: args.mesh_factory,
-                        material_factory: args.material_factory,
-                        texture_factory: args.texture_factory,
-                        meshes: args.meshes,
-                        materials: args.materials,
-                    });
-                },
-            );
-        });
+                // Render opaque and alpha cut objects
+                self.bins.render_non_transparent_bins(RenderArgs {
+                    pass_id: SHADOW_PASS_ID,
+                    frame,
+                    camera: &cascade.camera,
+                    global: &cascade.global,
+                    pass,
+                    calls: &cascade.calls,
+                    mesh_factory: args.mesh_factory,
+                    material_factory: args.material_factory,
+                    texture_factory: args.texture_factory,
+                    meshes: args.meshes,
+                    materials: args.materials,
+                });
+            },
+        );
     }
 }
 

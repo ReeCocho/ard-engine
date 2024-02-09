@@ -138,6 +138,10 @@ impl From<CameraMover> for System {
 }
 
 fn main() {
+    let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
+    let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
+    puffin::set_scopes_on(true);
+
     AppBuilder::new(ard_log::LevelFilter::Info)
         .add_plugin(ArdCorePlugin)
         .add_plugin(WindowPlugin {
@@ -157,7 +161,7 @@ fn main() {
             settings: RendererSettings {
                 render_scene: true,
                 render_time: None,
-                present_mode: PresentMode::Mailbox,
+                present_mode: PresentMode::Fifo,
                 anti_aliasing: AntiAliasingMode::MSAA(MultiSamples::Count8),
                 render_scale: 1.0,
                 canvas_size: None,
@@ -192,6 +196,56 @@ fn setup(app: &mut App) {
         ),
         &mut [],
     );
+
+    /*
+    app.world.entities().commands().create(
+        (
+            vec![Static(0); instance.meshes.meshes.len()],
+            instance.meshes.meshes.clone(),
+            instance.meshes.materials.clone(),
+            instance.meshes.models.clone().into_iter().map(|src| Model(Mat4::from_translation(Vec3::new(-150.0, 0.0, 0.0)) * src.0)).collect(),
+            instance.meshes.rendering_mode.clone(),
+            instance.meshes.flags.clone(),
+        ),
+        &mut [],
+    );
+
+    app.world.entities().commands().create(
+        (
+            vec![Static(0); instance.meshes.meshes.len()],
+            instance.meshes.meshes.clone(),
+            instance.meshes.materials.clone(),
+            instance.meshes.models.clone().into_iter().map(|src| Model(Mat4::from_translation(Vec3::new(150.0, 0.0, 0.0)) * src.0)).collect(),
+            instance.meshes.rendering_mode.clone(),
+            instance.meshes.flags.clone(),
+        ),
+        &mut [],
+    );
+
+    app.world.entities().commands().create(
+        (
+            vec![Static(0); instance.meshes.meshes.len()],
+            instance.meshes.meshes.clone(),
+            instance.meshes.materials.clone(),
+            instance.meshes.models.clone().into_iter().map(|src| Model(Mat4::from_translation(Vec3::new(0.0, 0.0, 200.0)) * src.0)).collect(),
+            instance.meshes.rendering_mode.clone(),
+            instance.meshes.flags.clone(),
+        ),
+        &mut [],
+    );
+
+    app.world.entities().commands().create(
+        (
+            vec![Static(0); instance.meshes.meshes.len()],
+            instance.meshes.meshes.clone(),
+            instance.meshes.materials.clone(),
+            instance.meshes.models.clone().into_iter().map(|src| Model(Mat4::from_translation(Vec3::new(0.0, 0.0, -200.0)) * src.0)).collect(),
+            instance.meshes.rendering_mode.clone(),
+            instance.meshes.flags.clone(),
+        ),
+        &mut [],
+    );
+    */
 
     // Create a mesh
     let mesh = factory
@@ -341,18 +395,37 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
-    // Gimmie a light
-    app.world.entities().commands().create(
-        (
-            vec![Light::Point {
-                color: Vec3::new(1.0, 0.0, 0.0),
-                range: 8.0,
-                intensity: 32.0,
-            }],
-            vec![Model(Mat4::from_translation(Vec3::new(8.0, 8.0, 8.0)))],
-        ),
-        &mut [],
+    // Gimmie a ton of light
+    use rand::prelude::*;
+
+    const LIGHT_COUNT: usize = 200;
+    const LIGHT_AREA_MIN: Vec3 = Vec3::new(-20.0, 0.0, -25.0);
+    const LIGHT_AREA_MAX: Vec3 = Vec3::new(20.0, 30.0, 25.0);
+    let mut rng = rand::thread_rng();
+    let mut lights = (
+        Vec::with_capacity(LIGHT_COUNT),
+        Vec::with_capacity(LIGHT_COUNT),
     );
+
+    for _ in 0..LIGHT_COUNT {
+        lights.0.push(Light::Point {
+            color: Vec3::new(
+                (rng.gen::<f32>() * 0.5) + 0.5,
+                (rng.gen::<f32>() * 0.5) + 0.5,
+                (rng.gen::<f32>() * 0.5) + 0.5,
+            ),
+            range: 1.0,
+            intensity: 64.0,
+        });
+
+        lights.1.push(Model(Mat4::from_translation(Vec3::new(
+            rng.gen_range(LIGHT_AREA_MIN.x..LIGHT_AREA_MAX.x),
+            rng.gen_range(LIGHT_AREA_MIN.y..LIGHT_AREA_MAX.y),
+            rng.gen_range(LIGHT_AREA_MIN.z..LIGHT_AREA_MAX.z),
+        ))));
+    }
+
+    app.world.entities().commands().create(lights, &mut []);
 
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(0);
     app.resources.get_mut::<DirtyStatic>().unwrap().signal(1);

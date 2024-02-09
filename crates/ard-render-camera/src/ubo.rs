@@ -55,7 +55,7 @@ impl CameraUbo {
                     1
                 },
                 array_elements: 1,
-                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
                 sharing_mode: SharingMode::Exclusive,

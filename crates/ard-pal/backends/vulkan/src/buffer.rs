@@ -11,16 +11,21 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, 
 
 use crate::{
     job::Job,
-    util::{garbage_collector::Garbage, usage::BufferRegion},
+    util::{
+        garbage_collector::Garbage,
+        id_gen::{IdGenerator, ResourceId},
+        usage::BufferRegion,
+    },
     QueueFamilyIndices, VulkanBackend,
 };
 
 pub struct Buffer {
     pub(crate) buffer: vk::Buffer,
+    pub(crate) id: ResourceId,
     pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) _buffer_usage: BufferUsage,
     pub(crate) _memory_usage: MemoryUsage,
-    pub(crate) array_elements: usize,
+    pub(crate) _array_elements: usize,
     /// This was the user requested size of each array element.
     pub(crate) size: u64,
     /// This is the per element size after alignment.
@@ -38,6 +43,7 @@ impl Buffer {
         qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
+        id_gen: &IdGenerator,
         allocator: &mut Allocator,
         limits: &vk::PhysicalDeviceLimits,
         create_info: BufferCreateInfo,
@@ -131,10 +137,11 @@ impl Buffer {
 
         Ok(Buffer {
             buffer,
+            id: id_gen.create(),
             block: ManuallyDrop::new(block),
             size: create_info.size,
             aligned_size,
-            array_elements: create_info.array_elements,
+            _array_elements: create_info.array_elements,
             _buffer_usage: create_info.buffer_usage,
             _memory_usage: create_info.memory_usage,
             on_drop,
@@ -160,7 +167,7 @@ impl Buffer {
         // waits are further needed.
         if let Some(old) = resc_state.register_buffer(
             &BufferRegion {
-                buffer: self.buffer,
+                id: self.id,
                 array_elem: idx as u32,
             },
             None,
@@ -185,7 +192,7 @@ impl Drop for Buffer {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Buffer {
             buffer: self.buffer,
-            array_elements: self.array_elements,
+            id: self.id,
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),
         });

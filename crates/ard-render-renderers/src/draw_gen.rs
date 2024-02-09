@@ -8,8 +8,8 @@ use ard_render_si::{bindings::*, types::*};
 use crate::highz::HzbImage;
 
 /// Number of objects processed per workgroup.
-const DRAW_GEN_WORKGROUP_SIZE: u32 = 64;
-const DRAW_COMPACT_WORKGROUP_SIZE: u32 = 64;
+const DRAW_GEN_WORKGROUP_SIZE: u32 = 64 * 2;
+const DRAW_COMPACT_WORKGROUP_SIZE: u32 = 64 * 2;
 
 /// Pipeline for generating draw calls.
 pub struct DrawGenPipeline {

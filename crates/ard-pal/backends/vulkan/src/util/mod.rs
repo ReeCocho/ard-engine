@@ -5,12 +5,12 @@ use gpu_allocator::MemoryLocation;
 pub mod descriptor_pool;
 pub mod fast_int_hasher;
 pub mod garbage_collector;
+pub mod id_gen;
 pub mod ownership;
 pub mod pipeline_cache;
 pub mod sampler_cache;
 pub mod semaphores;
 pub mod tracking;
-
 pub mod usage;
 
 #[inline(always)]

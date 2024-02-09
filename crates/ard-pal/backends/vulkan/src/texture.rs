@@ -1,6 +1,12 @@
 use std::{ffi::CString, mem::ManuallyDrop, sync::Arc};
 
-use crate::{util::garbage_collector::Garbage, QueueFamilyIndices};
+use crate::{
+    util::{
+        garbage_collector::Garbage,
+        id_gen::{IdGenerator, ResourceId},
+    },
+    QueueFamilyIndices,
+};
 use api::{
     texture::{TextureCreateError, TextureCreateInfo},
     types::*,
@@ -11,13 +17,14 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, 
 
 pub struct Texture {
     pub(crate) image: vk::Image,
+    pub(crate) id: ResourceId,
     /// Image view for each array element and mip level. This array is flattened like so.
     /// A0M0 -> A0M1 -> A0M2 ... A1M0 -> A1M1 -> A1M2 -> ...
     pub(crate) views: Vec<vk::ImageView>,
     pub(crate) block: ManuallyDrop<Allocation>,
     pub(crate) _image_usage: TextureUsage,
     pub(crate) _memory_usage: MemoryUsage,
-    pub(crate) array_elements: usize,
+    pub(crate) _array_elements: usize,
     pub(crate) size: u64,
     pub(crate) ref_counter: TextureRefCounter,
     pub(crate) format: vk::Format,
@@ -32,6 +39,7 @@ pub(crate) struct TextureRefCounter(Arc<()>);
 impl Texture {
     pub(crate) unsafe fn new(
         device: &ash::Device,
+        id_gen: &IdGenerator,
         qfi: &QueueFamilyIndices,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         on_drop: Sender<Garbage>,
@@ -166,11 +174,12 @@ impl Texture {
 
         Ok(Texture {
             image,
+            id: id_gen.create(),
             views,
             block: ManuallyDrop::new(block),
             _image_usage: create_info.texture_usage,
             _memory_usage: create_info.memory_usage,
-            array_elements: create_info.array_elements,
+            _array_elements: create_info.array_elements,
             size: mem_reqs.size / create_info.array_elements as u64,
             on_drop,
             ref_counter: TextureRefCounter::default(),
@@ -190,8 +199,7 @@ impl Drop for Texture {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::Texture {
             image: self.image,
-            array_elements: self.array_elements,
-            mips: self.mip_count as usize,
+            id: self.id,
             views: std::mem::take(&mut self.views),
             allocation: unsafe { ManuallyDrop::take(&mut self.block) },
             ref_counter: self.ref_counter.clone(),

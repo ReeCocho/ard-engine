@@ -34,6 +34,8 @@ pub struct RenderObjects {
     any_dirty_static: bool,
     /// Groups which were marked as dirty.
     dirty_static_groups: FxHashMap<StaticObjectGroup, bool>,
+    /// Counter for determining if `object_data` has expanded.
+    buffer_expanded: u32,
 }
 
 /// An object set represents a logical group of objects, with a list for each rendering mode.
@@ -121,7 +123,13 @@ impl RenderObjects {
                 groups
             },
             any_dirty_static: true,
+            buffer_expanded: 2,
         }
+    }
+
+    #[inline(always)]
+    pub fn buffer_expanded(&self) -> bool {
+        self.buffer_expanded > 0
     }
 
     #[inline(always)]
@@ -166,6 +174,7 @@ impl RenderObjects {
         static_dirty: &DirtyStaticListener,
     ) {
         // Update dirty flags
+        self.buffer_expanded = self.buffer_expanded.saturating_sub(1);
         self.any_dirty_static = false;
         self.dirty_static_groups
             .values_mut()
@@ -234,10 +243,11 @@ impl RenderObjects {
                 .iter()
                 .filter(|(_, is_dirty)| **is_dirty)
                 .for_each(|(group, _)| {
-                    self.static_objects
-                        .get_mut(group)
-                        .unwrap()
-                        .flush_to_buffer(&mut view, &mut self.alloc);
+                    self.static_objects.get_mut(group).unwrap().flush_to_buffer(
+                        &mut view,
+                        &mut self.alloc,
+                        &mut self.buffer_expanded,
+                    );
                 });
         }
 
@@ -252,7 +262,7 @@ impl RenderObjects {
         }
 
         self.dynamic_objects
-            .flush_to_buffer(&mut view, &mut self.alloc);
+            .flush_to_buffer(&mut view, &mut self.alloc, &mut self.buffer_expanded);
     }
 
     #[inline(always)]
@@ -380,7 +390,12 @@ impl ObjectSet {
         self.data.push(data);
     }
 
-    pub fn flush_to_buffer(&mut self, view: &mut BufferWriteView, alloc: &mut BuddyAllocator) {
+    pub fn flush_to_buffer(
+        &mut self,
+        view: &mut BufferWriteView,
+        alloc: &mut BuddyAllocator,
+        buffer_expanded: &mut u32,
+    ) {
         // First, we must ensure the allocation has enough capacity for our objects
         if (self.block.len() as usize) < self.data.len() {
             // Free the old block
@@ -389,11 +404,15 @@ impl ObjectSet {
             // Allocation expansion required
             info!("Expanding object data block.");
             alloc.reserve_for(self.data.len());
-            view.expand(
-                (alloc.block_count() * std::mem::size_of::<GpuObjectData>()) as u64,
-                true,
-            )
-            .unwrap();
+            if view
+                .expand(
+                    (alloc.block_count() * std::mem::size_of::<GpuObjectData>()) as u64,
+                    true,
+                )
+                .unwrap()
+            {
+                *buffer_expanded = 1;
+            }
 
             // Allocate the new block. Guaranteed to succeed now since we reserved space
             self.block = alloc.allocate(self.data.len()).unwrap();

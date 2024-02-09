@@ -47,16 +47,8 @@ impl SemaphoreTracker {
     #[inline(always)]
     pub fn finish(self) -> OutSemaphores {
         OutSemaphores {
-            waits: self
-                .wait_semaphores
-                .into_iter()
-                .map(|(k, v)| (k, v))
-                .collect(),
-            signals: self
-                .signal_semaphores
-                .into_iter()
-                .map(|(k, v)| (k, v))
-                .collect(),
+            waits: self.wait_semaphores.into_iter().collect(),
+            signals: self.signal_semaphores.into_iter().collect(),
         }
     }
 }

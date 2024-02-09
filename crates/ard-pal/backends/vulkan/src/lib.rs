@@ -46,6 +46,7 @@ use thiserror::Error;
 use util::{
     descriptor_pool::DescriptorPools,
     garbage_collector::{GarbageCleanupArgs, GarbageCollector, TimelineValues},
+    id_gen::IdGenerator,
     ownership::OwnershipTransferTracker,
     pipeline_cache::PipelineCache,
     sampler_cache::SamplerCache,
@@ -108,6 +109,9 @@ pub struct VulkanBackend {
     pub(crate) render_passes: RenderPassCache,
     pub(crate) framebuffers: FramebufferCache,
     pub(crate) garbage: GarbageCollector,
+    pub(crate) buffer_ids: IdGenerator,
+    pub(crate) image_ids: IdGenerator,
+    pub(crate) set_ids: IdGenerator,
     pub(crate) resource_state: ShardedLock<GlobalResourceUsage>,
     pub(crate) pools: Mutex<DescriptorPools>,
     pub(crate) pipelines: Mutex<PipelineCache>,
@@ -157,14 +161,23 @@ impl Backend for VulkanBackend {
         &self,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError> {
-        Surface::new(self, create_info)
+        Surface::new(
+            self,
+            create_info,
+            &self.image_ids,
+            &mut self.resource_state.write().unwrap(),
+        )
     }
 
     #[inline(always)]
     unsafe fn destroy_surface(&self, surface: &mut Self::Surface) {
         // This shouldn't happen often, so we'll wait for all work to complete
         self.device.device_wait_idle().unwrap();
-        surface.release(self);
+        surface.release(
+            self,
+            &self.image_ids,
+            &mut self.resource_state.write().unwrap(),
+        );
         self.surface_loader.destroy_surface(surface.surface, None);
     }
 
@@ -177,12 +190,17 @@ impl Backend for VulkanBackend {
         self.device.device_wait_idle().unwrap();
 
         // Signal that the views are about to be destroyed
-        for (_, view) in &surface.images {
+        for (_, _, view) in &surface.images {
             self.framebuffers.view_destroyed(&self.device, *view);
         }
 
         // Then update the config
-        surface.update_config(self, config)
+        surface.update_config(
+            self,
+            config,
+            &self.image_ids,
+            &mut self.resource_state.write().unwrap(),
+        )
     }
 
     #[inline(always)]
@@ -239,6 +257,8 @@ impl Backend for VulkanBackend {
         debug_name: Option<&str>,
         commands: Vec<Command<'_, Self>>,
     ) -> Job {
+        puffin::profile_function!();
+
         // Lock down all neccesary objects
         let mut resc_state = self.resource_state.write().unwrap();
         let mut allocator = self.allocator.lock().unwrap();
@@ -271,7 +291,7 @@ impl Backend for VulkanBackend {
             next_target_value,
             scratch
                 .take()
-                .unwrap_or_else(|| PipelineTrackerScratchSpace::default()),
+                .unwrap_or_else(PipelineTrackerScratchSpace::default),
         );
         let mut ownership_tracker =
             OwnershipTransferTracker::new(queue, &self.queue_family_indices);
@@ -963,10 +983,12 @@ impl Backend for VulkanBackend {
                         usage_scope.use_resource(
                             &SubResource::Texture {
                                 texture: si.image(),
+                                id: si.id(),
                                 sharing: SharingMode::Concurrent,
                                 aspect_mask: vk::ImageAspectFlags::COLOR,
                                 array_elem: blit.dst_array_element as u32,
-                                mip_level: blit.dst_mip as u32,
+                                base_mip_level: blit.dst_mip as u32,
+                                mip_count: 1,
                             },
                             &SubResourceUsage {
                                 access: vk::AccessFlags::MEMORY_READ
@@ -1072,6 +1094,8 @@ impl Backend for VulkanBackend {
                             .build()],
                     );
                 }
+                // Transition handled in tracking.
+                Command::SetTextureUsage { .. } => {}
             }
         }
 
@@ -1106,6 +1130,7 @@ impl Backend for VulkanBackend {
         }
 
         self.device.end_command_buffer(cb).unwrap();
+
         match queue {
             QueueType::Main => &mut main,
             QueueType::Transfer => &mut transfer,
@@ -1126,8 +1151,12 @@ impl Backend for VulkanBackend {
             transfer: transfer.target_timeline_value(),
             compute: compute.target_timeline_value(),
         };
+
         self.garbage.cleanup(GarbageCleanupArgs {
             device: &self.device,
+            buffer_ids: &self.buffer_ids,
+            image_ids: &self.image_ids,
+            set_ids: &self.set_ids,
             allocator: &mut allocator,
             pools: &mut pools,
             pipelines: &mut pipelines,
@@ -1144,13 +1173,20 @@ impl Backend for VulkanBackend {
     }
 
     unsafe fn wait_on(&self, job: &Self::Job, timeout: Option<std::time::Duration>) -> JobStatus {
-        let semaphore = [match job.ty {
-            QueueType::Main => self.main.read().unwrap(),
-            QueueType::Transfer => self.transfer.read().unwrap(),
-            QueueType::Compute => self.compute.read().unwrap(),
-            QueueType::Present => self.present.read().unwrap(),
+        let mut queue = match job.ty {
+            QueueType::Main => self.main.write().unwrap(),
+            QueueType::Transfer => self.transfer.write().unwrap(),
+            QueueType::Compute => self.compute.write().unwrap(),
+            QueueType::Present => self.present.write().unwrap(),
+        };
+
+        // See if we've already synced to this value
+        if queue.cpu_sync_value() >= job.target_value {
+            return JobStatus::Complete;
         }
-        .semaphore()];
+
+        // Otherwise we have to wait
+        let semaphore = [queue.semaphore()];
         let value = [job.target_value];
         let wait = vk::SemaphoreWaitInfo::builder()
             .semaphores(&semaphore)
@@ -1164,7 +1200,10 @@ impl Backend for VulkanBackend {
                 None => u64::MAX,
             },
         ) {
-            Ok(_) => JobStatus::Complete,
+            Ok(_) => {
+                queue.set_cpu_sync_value(job.target_value);
+                JobStatus::Complete
+            }
             Err(_) => JobStatus::Running,
         }
     }
@@ -1194,6 +1233,7 @@ impl Backend for VulkanBackend {
             &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
+            &self.buffer_ids,
             &mut self.allocator.lock().unwrap(),
             &self.properties.limits,
             create_info,
@@ -1207,6 +1247,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::Texture, TextureCreateError> {
         Texture::new(
             &self.device,
+            &self.image_ids,
             &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
@@ -1222,6 +1263,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::CubeMap, CubeMapCreateError> {
         CubeMap::new(
             &self.device,
+            &self.image_ids,
             &self.queue_family_indices,
             self.debug.as_ref().map(|(utils, _)| utils),
             self.garbage.sender(),
@@ -1278,6 +1320,7 @@ impl Backend for VulkanBackend {
             self.garbage.sender(),
             self.debug.as_ref().map(|(utils, _)| utils),
             create_info,
+            &self.set_ids,
         )
     }
 
@@ -1513,7 +1556,7 @@ impl VulkanBackend {
 
             if pd_query.queue_family_indices.transfer == *q {
                 queue_indices.1 = cur_priorities.len();
-                cur_priorities.push(1.0);
+                cur_priorities.push(0.5);
             }
 
             if pd_query.queue_family_indices.present == *q {
@@ -1523,7 +1566,7 @@ impl VulkanBackend {
 
             if pd_query.queue_family_indices.compute == *q {
                 queue_indices.3 = cur_priorities.len();
-                cur_priorities.push(1.0);
+                cur_priorities.push(0.5);
             }
 
             queue_infos.push(
@@ -1662,6 +1705,9 @@ impl VulkanBackend {
             samplers: Mutex::new(SamplerCache::default()),
             tracking_scratch_space: Mutex::new(None),
             usage_scope: Mutex::new(UsageScope::default()),
+            buffer_ids: IdGenerator::default(),
+            image_ids: IdGenerator::default(),
+            set_ids: IdGenerator::default(),
         };
 
         Ok(ctx)
@@ -1697,6 +1743,9 @@ impl Drop for VulkanBackend {
 
                 self.garbage.cleanup(GarbageCleanupArgs {
                     device: &self.device,
+                    buffer_ids: &self.buffer_ids,
+                    image_ids: &self.image_ids,
+                    set_ids: &self.set_ids,
                     allocator: &mut allocator,
                     pools: &mut pools,
                     pipelines: &mut pipelines,

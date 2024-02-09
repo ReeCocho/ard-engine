@@ -138,6 +138,8 @@ impl Canvas {
     /// Presents the currently active surface image and optionally resizes the surface to meet the
     /// window size if needed.
     pub fn present(&mut self, ctx: &Context, window_size: (u32, u32)) {
+        puffin::profile_function!();
+
         let image = match self.image.take() {
             Some(image) => image,
             None => return,

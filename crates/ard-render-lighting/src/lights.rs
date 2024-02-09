@@ -132,6 +132,11 @@ impl Lights {
     }
 
     #[inline(always)]
+    pub fn buffer_expanded(&self) -> bool {
+        self.buffer_expanded > 0
+    }
+
+    #[inline(always)]
     pub fn global_buffer(&self) -> &Buffer {
         &self.global
     }

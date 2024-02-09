@@ -13,7 +13,13 @@ use api::{
 use ash::vk::{self, Handle};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use crate::{util::usage::ImageRegion, VulkanBackend};
+use crate::{
+    util::{
+        id_gen::{IdGenerator, ResourceId},
+        usage::{GlobalResourceUsage, ImageRegion},
+    },
+    VulkanBackend,
+};
 
 pub struct SurfaceId(pub(crate) usize);
 
@@ -22,7 +28,7 @@ pub struct Surface {
     pub(crate) swapchain: vk::SwapchainKHR,
     pub(crate) format: vk::SurfaceFormatKHR,
     pub(crate) resolution: vk::Extent2D,
-    pub(crate) images: Vec<(vk::Image, vk::ImageView)>,
+    pub(crate) images: Vec<(vk::Image, ResourceId, vk::ImageView)>,
     /// Semaphores for image availability.
     pub(crate) semaphores: Vec<SurfaceImageSemaphores>,
     /// Rolling index for the next available image.
@@ -45,6 +51,8 @@ pub struct SurfaceImage {
     format: vk::Format,
     /// Index of the surface image acquired.
     image_idx: usize,
+    /// ID of the image for tracking.
+    id: ResourceId,
     /// Semaphore to wait for availability on.
     semaphores: SurfaceImageSemaphores,
     /// Indicates that the surface image has been used and is available for present.
@@ -63,6 +71,8 @@ impl Surface {
     pub(crate) unsafe fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
         ctx: &VulkanBackend,
         create_info: SurfaceCreateInfo<'_, W>,
+        image_ids: &IdGenerator,
+        global_usage: &mut GlobalResourceUsage,
     ) -> Result<Self, SurfaceCreateError> {
         // Create and name the surface
         let surface = match ash_window::create_surface(
@@ -104,7 +114,7 @@ impl Surface {
         };
 
         // Update the surface with the provided configuration
-        if let Err(err) = surface.update_config(ctx, create_info.config) {
+        if let Err(err) = surface.update_config(ctx, create_info.config, image_ids, global_usage) {
             return Err(SurfaceCreateError::BadConfig(err));
         }
 
@@ -151,6 +161,8 @@ impl Surface {
         &mut self,
         ctx: &VulkanBackend,
         config: SurfaceConfiguration,
+        image_ids: &IdGenerator,
+        global_usage: &mut GlobalResourceUsage,
     ) -> Result<(u32, u32), SurfaceUpdateError> {
         assert!(config.width != 0, "width was 0");
         assert!(config.height != 0, "height was 0");
@@ -158,7 +170,7 @@ impl Surface {
             return Err(SurfaceUpdateError::ImagePending);
         }
 
-        self.release(ctx);
+        self.release(ctx, image_ids, global_usage);
 
         let surface_capabilities = match ctx
             .surface_loader
@@ -311,7 +323,7 @@ impl Surface {
 
                     let view = ctx.device.create_image_view(&create_info, None).unwrap();
 
-                    (image, view)
+                    (image, image_ids.create(), view)
                 })
                 .collect(),
             Err(err) => return Err(SurfaceUpdateError::Other(err.to_string())),
@@ -347,7 +359,7 @@ impl Surface {
                     .set_debug_utils_object_name(ctx.device.handle(), &swapchain_name_info)
                     .unwrap();
 
-                for (i, (image, view)) in self.images.iter().enumerate() {
+                for (i, (image, _, view)) in self.images.iter().enumerate() {
                     let image_name = CString::new(format!("{name}_image_{i}")).unwrap();
                     let view_name = CString::new(format!("{name}_view_{i}")).unwrap();
                     let image_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
@@ -421,7 +433,7 @@ impl Surface {
         // image is reaquired we must update its layout
         ctx.resource_state.write().unwrap().set_layout(
             &ImageRegion {
-                image: self.images[image_idx].0,
+                id: self.images[image_idx].1,
                 array_elem: 0,
                 mip_level: 0,
             },
@@ -432,7 +444,8 @@ impl Surface {
             surface: self.surface,
             dims: (self.resolution.width, self.resolution.height),
             image: self.images[image_idx].0,
-            view: self.images[image_idx].1,
+            id: self.images[image_idx].1,
+            view: self.images[image_idx].2,
             format: self.format.format,
             image_idx,
             semaphores,
@@ -440,13 +453,20 @@ impl Surface {
         })
     }
 
-    pub(crate) unsafe fn release(&mut self, ctx: &VulkanBackend) {
+    pub(crate) unsafe fn release(
+        &mut self,
+        ctx: &VulkanBackend,
+        image_ids: &IdGenerator,
+        global_usage: &mut GlobalResourceUsage,
+    ) {
         for semaphores in self.semaphores.drain(..) {
             ctx.device.destroy_semaphore(semaphores.available, None);
             ctx.device.destroy_semaphore(semaphores.presentable, None);
         }
 
-        for (_, view) in self.images.drain(..) {
+        for (_, id, view) in self.images.drain(..) {
+            image_ids.free(id);
+            global_usage.remove_image(id);
             ctx.device.destroy_image_view(view, None);
         }
 
@@ -460,6 +480,11 @@ impl SurfaceImage {
     #[inline(always)]
     pub(crate) fn image(&self) -> vk::Image {
         self.image
+    }
+
+    #[inline(always)]
+    pub(crate) fn id(&self) -> ResourceId {
+        self.id
     }
 
     #[inline(always)]

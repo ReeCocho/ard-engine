@@ -29,7 +29,7 @@ impl<'a> OwnershipTransferTracker<'a> {
     pub fn register_buffer(&mut self, buffer: &Buffer, array_elem: usize, new_queue: QueueType) {
         self.buffers.insert(
             BufferRegion {
-                buffer: buffer.buffer,
+                id: buffer.id,
                 array_elem: array_elem as u32,
             },
             vk::BufferMemoryBarrier::builder()
@@ -56,7 +56,7 @@ impl<'a> OwnershipTransferTracker<'a> {
         for mip_level in base_mip..(base_mip + mip_count) {
             self.images.insert(
                 ImageRegion {
-                    image: texture.image,
+                    id: texture.id,
                     array_elem: array_elem as u32,
                     mip_level,
                 },
@@ -95,7 +95,7 @@ impl<'a> OwnershipTransferTracker<'a> {
         for mip_level in base_mip..(base_mip + mip_count) {
             self.images.insert(
                 ImageRegion {
-                    image: cube_map.image,
+                    id: cube_map.id,
                     array_elem: array_elem as u32,
                     mip_level,
                 },

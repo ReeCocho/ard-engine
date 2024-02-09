@@ -54,7 +54,6 @@ pub struct BinGenOutput {
 pub struct RenderArgs<'a, 'b, const FIF: usize> {
     pub pass_id: PassId,
     pub frame: Frame,
-    pub skip_texture_verify: bool,
     pub pass: &'b mut RenderPass<'a>,
     pub camera: &'a CameraUbo,
     pub global: &'a GlobalSets,
@@ -489,28 +488,20 @@ impl DrawBins {
 
 impl<'a, 'b, const FIF: usize> RenderArgs<'a, 'b, FIF> {
     fn bind_global(&mut self) {
-        if self.skip_texture_verify {
-            self.pass.bind_sets(
-                0,
-                vec![
-                    self.global.get_set(self.frame),
-                    self.camera.get_set(self.frame),
-                ],
-            );
+        self.pass.bind_sets(
+            0,
+            vec![
+                self.global.get_set(self.frame),
+                self.camera.get_set(self.frame),
+            ],
+        );
 
-            unsafe {
-                self.pass
-                    .bind_sets_unchecked(2, vec![self.texture_factory.get_set(self.frame)]);
-            }
-        } else {
-            self.pass.bind_sets(
-                0,
-                vec![
-                    self.global.get_set(self.frame),
-                    self.camera.get_set(self.frame),
-                    self.texture_factory.get_set(self.frame),
-                ],
-            );
+        // SAFETY: This is safe as long as:
+        // 1. We transition to SAMPLED usage in the factory during texture mip upload.
+        // 2. We don't write to the texture after it's been uploaded.
+        unsafe {
+            self.pass
+                .bind_sets_unchecked(2, vec![self.texture_factory.get_set(self.frame)]);
         }
     }
 }

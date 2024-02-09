@@ -18,6 +18,8 @@ pub(crate) struct VkQueue {
     semaphore: vk::Semaphore,
     /// The timeline semaphore value this queue will set when work is complete.
     target_value: u64,
+    /// The last timeline value this queue was synced on the CPU to.
+    cpu_sync_value: u64,
 }
 
 struct ActiveCommandBuffer {
@@ -114,6 +116,7 @@ impl VkQueue {
             free: VecDeque::default(),
             command_buffer_count: 0,
             target_value: 0,
+            cpu_sync_value: 0,
         })
     }
 
@@ -125,6 +128,16 @@ impl VkQueue {
     #[inline(always)]
     pub fn target_timeline_value(&self) -> u64 {
         self.target_value
+    }
+
+    #[inline(always)]
+    pub fn cpu_sync_value(&self) -> u64 {
+        self.cpu_sync_value
+    }
+
+    #[inline(always)]
+    pub fn set_cpu_sync_value(&mut self, value: u64) {
+        self.cpu_sync_value = value;
     }
 
     #[inline(always)]

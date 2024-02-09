@@ -7,8 +7,6 @@ use ard_pal::prelude::{
 };
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
-use ard_render_image_effects::ao::AoImage;
-use ard_render_lighting::lights::{Lighting, Lights};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{
@@ -23,9 +21,8 @@ use crate::{
     bins::{DrawBins, RenderArgs},
     calls::OutputDrawCalls,
     draw_gen::{DrawGenPipeline, DrawGenSets},
-    global::{GlobalSetBindingUpdate, GlobalSets},
+    global::GlobalSets,
     highz::HzbImage,
-    shadow::SunShadowsRenderer,
     DEPTH_PREPASS_PASS_ID, HIGH_Z_PASS_ID, OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 
@@ -116,6 +113,11 @@ impl SceneRenderer {
         &self.global
     }
 
+    #[inline(always)]
+    pub fn global_sets_mut(&mut self) -> &mut GlobalSets {
+        &mut self.global
+    }
+
     pub fn upload<const FIF: usize>(
         &mut self,
         frame: Frame,
@@ -124,6 +126,8 @@ impl SceneRenderer {
         materials: &ResourceAllocator<MaterialResource, FIF>,
         view_location: Vec3A,
     ) {
+        puffin::profile_function!();
+
         // Update the set with all objects to render
         RenderableSetUpdate::new(&mut self.set)
             .with_opaque()
@@ -198,29 +202,12 @@ impl SceneRenderer {
     pub fn update_bindings<const FIF: usize>(
         &mut self,
         frame: Frame,
-        sun_shadows: &SunShadowsRenderer,
-        lighting: &Lighting,
         objects: &RenderObjects,
-        lights: &Lights,
         hzb_image: &HzbImage<FIF>,
-        ao_image: &AoImage<FIF>,
         meshes: &MeshFactory,
     ) {
-        self.global.update_object_bindings(GlobalSetBindingUpdate {
-            frame,
-            object_data: objects.object_data(),
-            object_ids: &self.output_ids,
-            global_lighting: lights.global_buffer(),
-            lights: lights.buffer(),
-            clusters: lighting.clusters(),
-            sun_shadow_info: sun_shadows.sun_shadow_info(frame),
-            shadow_cascades: std::array::from_fn(|i| {
-                sun_shadows
-                    .shadow_cascade(i)
-                    .unwrap_or_else(|| sun_shadows.empty_shadow())
-            }),
-            ao_image: ao_image.texture(),
-        });
+        self.global
+            .update_object_data_bindings(frame, objects.object_data(), &self.output_ids);
 
         self.draw_gen.update_bindings(
             frame,
@@ -253,7 +240,6 @@ impl SceneRenderer {
         self.bins.render_highz_bins(RenderArgs {
             pass_id: HIGH_Z_PASS_ID,
             frame,
-            skip_texture_verify: false,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -278,7 +264,6 @@ impl SceneRenderer {
         self.bins.render_non_transparent_bins(RenderArgs {
             pass_id: DEPTH_PREPASS_PASS_ID,
             frame,
-            skip_texture_verify: !args.static_dirty,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -302,7 +287,6 @@ impl SceneRenderer {
         self.bins.render_non_transparent_bins(RenderArgs {
             pass_id: OPAQUE_PASS_ID,
             frame,
-            skip_texture_verify: true,
             camera: args.camera,
             global: args.global,
             pass: args.pass,
@@ -326,7 +310,6 @@ impl SceneRenderer {
         self.bins.render_transparent_bins(RenderArgs {
             pass_id: TRANSPARENT_PASS_ID,
             frame,
-            skip_texture_verify: true,
             camera: args.camera,
             global: args.global,
             pass: args.pass,

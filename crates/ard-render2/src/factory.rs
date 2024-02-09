@@ -121,6 +121,8 @@ impl Factory {
     }
 
     pub(crate) fn process(&self, frame: Frame) {
+        puffin::profile_function!();
+
         let mut staging = self.inner.staging.lock().unwrap();
         let mut static_meshes = self.inner.meshes.lock().unwrap();
         let mut textures = self.inner.textures.lock().unwrap();

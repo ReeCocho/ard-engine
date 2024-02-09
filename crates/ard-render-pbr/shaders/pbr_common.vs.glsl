@@ -66,20 +66,23 @@ layout(location = 1) in vec4 ard_Normal;
 //////////////////
 
 layout(location = 0) out vec3 vs_Normal;
-layout(location = 1) flat out uint vs_TextureSlotsIdx;
-layout(location = 2) flat out uint vs_MaterialSlotIdx;
+layout(location = 1) flat out uvec2 vs_Slots;
 
 #if ARD_VS_HAS_UV0
-layout(location = 3) out vec2 vs_Uv;
+layout(location = 2) out vec2 vs_Uv;
 #endif
 
 #if ARD_VS_HAS_TANGENT
-layout(location = 4) out mat3 vs_TBN;
+layout(location = 3) out mat3 vs_TBN;
 #endif
 
-layout(location = 8) out vec4 vs_Position;
-layout(location = 9) out vec3 vs_WorldSpaceFragPos;
-layout(location = 10) out vec4 vs_ViewSpacePosition;
-layout(location = 11) out vec4 vs_LightSpacePositions[MAX_SHADOW_CASCADES];
+// Proj * View * Model * Position;
+layout(location = 6) out vec4 vs_Position;
+
+// Model * Position;
+layout(location = 7) out vec3 vs_WorldSpaceFragPos;
+
+// View * Model * Position;
+layout(location = 8) out vec4 vs_ViewSpacePosition;
 
 #endif

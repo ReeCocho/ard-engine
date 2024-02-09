@@ -15,14 +15,21 @@ use crate::{
     buffer::BufferRefCounter,
     job::Job,
     texture::TextureRefCounter,
-    util::{descriptor_pool::DescriptorPools, garbage_collector::Garbage},
+    util::{
+        descriptor_pool::DescriptorPools,
+        garbage_collector::Garbage,
+        id_gen::{IdGenerator, ResourceId},
+        usage::{SubResource, SubResourceUsage},
+    },
     VulkanBackend,
 };
 
 pub struct DescriptorSet {
     pub(crate) set: vk::DescriptorSet,
+    pub(crate) id: ResourceId,
     pub(crate) layout: vk::DescriptorSetLayout,
     pub(crate) bound: DescriptorSetBindings,
+    pub(crate) resource_usage: Vec<(SubResource, SubResourceUsage)>,
     pub(crate) on_drop: Sender<Garbage>,
 }
 
@@ -43,6 +50,7 @@ pub(crate) enum BoundValue {
     UniformBuffer {
         _ref_counter: BufferRefCounter,
         buffer: vk::Buffer,
+        id: ResourceId,
         sharing_mode: SharingMode,
         array_element: usize,
         aligned_size: usize,
@@ -50,6 +58,7 @@ pub(crate) enum BoundValue {
     StorageBuffer {
         _ref_counter: BufferRefCounter,
         buffer: vk::Buffer,
+        id: ResourceId,
         sharing_mode: SharingMode,
         array_element: usize,
         aligned_size: usize,
@@ -57,6 +66,7 @@ pub(crate) enum BoundValue {
     StorageImage {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
+        id: ResourceId,
         view: vk::ImageView,
         sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
@@ -66,6 +76,7 @@ pub(crate) enum BoundValue {
     Texture {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
+        id: ResourceId,
         view: vk::ImageView,
         sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
@@ -76,6 +87,7 @@ pub(crate) enum BoundValue {
     CubeMap {
         _ref_counter: TextureRefCounter,
         image: vk::Image,
+        id: ResourceId,
         view: vk::ImageView,
         sharing_mode: SharingMode,
         aspect_mask: vk::ImageAspectFlags,
@@ -115,6 +127,7 @@ impl DescriptorSet {
         garbage: Sender<Garbage>,
         debug: Option<&ash::extensions::ext::DebugUtils>,
         create_info: DescriptorSetCreateInfo<crate::VulkanBackend>,
+        set_ids: &IdGenerator,
     ) -> Result<Self, DescriptorSetCreateError> {
         let mut bound =
             SmallVec::with_capacity(create_info.layout.internal().descriptor.bindings.len());
@@ -128,9 +141,11 @@ impl DescriptorSet {
         let set = pool.allocate(device, debug, create_info.debug_name);
         Ok(DescriptorSet {
             set,
+            id: set_ids.create(),
             layout: pool.layout(),
             on_drop: garbage,
             bound,
+            resource_usage: Vec::default(),
         })
     }
 
@@ -149,7 +164,7 @@ impl DescriptorSet {
         // NOTE: The reason we set the usage to `None` is because we have to wait for the previous
         // usage to complete. This implies that no one is using this set anymore and thus no
         // waits are further needed.
-        if let Some(old) = resc_state.register_set(self.set, None) {
+        if let Some(old) = resc_state.register_set(self.id, None) {
             ctx.wait_on(
                 &Job {
                     ty: old.queue,
@@ -249,6 +264,7 @@ impl DescriptorSet {
                             value: BoundValue::UniformBuffer {
                                 _ref_counter: buffer.ref_counter.clone(),
                                 buffer: buffer.buffer,
+                                id: buffer.id,
                                 sharing_mode,
                                 array_element: *array_element,
                                 aligned_size: buffer.aligned_size as usize,
@@ -286,6 +302,7 @@ impl DescriptorSet {
                             value: BoundValue::StorageBuffer {
                                 _ref_counter: buffer.ref_counter.clone(),
                                 buffer: buffer.buffer,
+                                id: buffer.id,
                                 sharing_mode,
                                 array_element: *array_element,
                                 aligned_size: buffer.aligned_size as usize,
@@ -348,6 +365,7 @@ impl DescriptorSet {
                             value: BoundValue::Texture {
                                 _ref_counter: texture.ref_counter.clone(),
                                 image: texture.image,
+                                id: texture.id,
                                 sharing_mode,
                                 view,
                                 aspect_mask: texture.aspect_flags,
@@ -410,6 +428,7 @@ impl DescriptorSet {
                             value: BoundValue::StorageImage {
                                 _ref_counter: texture.ref_counter.clone(),
                                 image: texture.image,
+                                id: texture.id,
                                 view,
                                 sharing_mode,
                                 aspect_mask: texture.aspect_flags,
@@ -474,6 +493,7 @@ impl DescriptorSet {
                             value: BoundValue::CubeMap {
                                 _ref_counter: cube_map.ref_counter.clone(),
                                 image: cube_map.image,
+                                id: cube_map.id,
                                 view,
                                 sharing_mode,
                                 aspect_mask: cube_map.aspect_flags,
@@ -488,6 +508,142 @@ impl DescriptorSet {
         }
 
         ctx.device.update_descriptor_sets(&writes, &[]);
+        self.update_resource_usages();
+    }
+
+    fn update_resource_usages(&mut self) {
+        self.resource_usage.clear();
+
+        self.bound
+            .iter()
+            .flat_map(|binding| binding.iter().flatten())
+            .for_each(|elem| match &elem.value {
+                BoundValue::UniformBuffer {
+                    buffer,
+                    id,
+                    array_element,
+                    sharing_mode,
+                    aligned_size,
+                    ..
+                } => self.resource_usage.push((
+                    SubResource::Buffer {
+                        buffer: *buffer,
+                        id: *id,
+                        sharing: *sharing_mode,
+                        array_elem: *array_element as u32,
+                        aligned_size: *aligned_size,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::UNDEFINED,
+                    },
+                )),
+                BoundValue::StorageBuffer {
+                    buffer,
+                    id,
+                    array_element,
+                    sharing_mode,
+                    aligned_size,
+                    ..
+                } => self.resource_usage.push((
+                    SubResource::Buffer {
+                        buffer: *buffer,
+                        id: *id,
+                        sharing: *sharing_mode,
+                        array_elem: *array_element as u32,
+                        aligned_size: *aligned_size,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::UNDEFINED,
+                    },
+                )),
+                // Textures require that you register each mip individually
+                BoundValue::Texture {
+                    _ref_counter,
+                    image,
+                    id,
+                    array_element,
+                    aspect_mask,
+                    mip_count,
+                    base_mip,
+                    sharing_mode,
+                    ..
+                } => {
+                    self.resource_usage.push((
+                        SubResource::Texture {
+                            texture: *image,
+                            id: *id,
+                            aspect_mask: *aspect_mask,
+                            array_elem: *array_element as u32,
+                            sharing: *sharing_mode,
+                            base_mip_level: *base_mip,
+                            mip_count: *mip_count,
+                        },
+                        SubResourceUsage {
+                            access: elem.access,
+                            stage: elem.stage,
+                            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        },
+                    ));
+                }
+                BoundValue::StorageImage {
+                    _ref_counter,
+                    image,
+                    id,
+                    aspect_mask,
+                    mip,
+                    array_element,
+                    sharing_mode,
+                    ..
+                } => self.resource_usage.push((
+                    SubResource::Texture {
+                        texture: *image,
+                        id: *id,
+                        aspect_mask: *aspect_mask,
+                        array_elem: *array_element as u32,
+                        base_mip_level: *mip,
+                        mip_count: 1,
+                        sharing: *sharing_mode,
+                    },
+                    SubResourceUsage {
+                        access: elem.access,
+                        stage: elem.stage,
+                        layout: vk::ImageLayout::GENERAL,
+                    },
+                )),
+                // Cube maps require that you register each mip individually
+                BoundValue::CubeMap {
+                    image,
+                    id,
+                    aspect_mask,
+                    mip_count,
+                    base_mip,
+                    array_element,
+                    sharing_mode,
+                    ..
+                } => {
+                    for i in 0..*mip_count {
+                        self.resource_usage.push((
+                            SubResource::CubeMap {
+                                cube_map: *image,
+                                id: *id,
+                                aspect_mask: *aspect_mask,
+                                array_elem: *array_element as u32,
+                                sharing: *sharing_mode,
+                                mip_level: base_mip + i,
+                            },
+                            SubResourceUsage {
+                                access: elem.access,
+                                stage: elem.stage,
+                                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            },
+                        ))
+                    }
+                }
+            });
     }
 }
 
@@ -495,6 +651,7 @@ impl Drop for DescriptorSet {
     fn drop(&mut self) {
         let _ = self.on_drop.send(Garbage::DescriptorSet {
             set: self.set,
+            id: self.id,
             layout: self.layout,
             bindings: std::mem::take(&mut self.bound),
         });

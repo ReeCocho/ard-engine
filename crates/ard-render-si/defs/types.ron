@@ -43,7 +43,9 @@
         name: "Froxels",
         no_mangle: false,
         fields: [
-            (name: "froxels", ty: Array(ty: Array(ty: Array(ty: Struct("Froxel"), len: "CAMERA_FROXELS_DEPTH"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH")),
+            (name: "frustums", ty: Array(len: "CAMERA_FROXELS_WIDTH", ty: Array(len: "CAMERA_FROXELS_HEIGHT", ty: Array(len: "4", ty: Vec4)))),
+            (name: "min_max_z", ty: Array(len: "CAMERA_FROXELS_DEPTH", ty: Vec2)),
+            (name: "min_max_xy", ty: Array(len: "CAMERA_FROXELS_WIDTH", ty: Array(len: "CAMERA_FROXELS_HEIGHT", ty: Array(len: "CAMERA_FROXELS_DEPTH", ty: Vec4)))),
         ]
     ),
     (
@@ -145,7 +147,7 @@
             /// XYZ = Position    W = Range
             (name: "position_range", ty: Vec4),
             /// XYZ = Direction   W = Cosine of the half angle of the light
-            /// If radius is negative, the light is a point light.
+            /// If W is negative, the light is a point light.
             (name: "direction_angle", ty: Vec4),
         ]
     ),
@@ -154,8 +156,7 @@
         name: "LightTable",
         no_mangle: false,
         fields: [
-            (name: "counts", ty: Array(ty: Array(ty: Array(ty: U32, len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
-            (name: "clusters", ty: Array(ty: Array(ty: Array(ty: Array(ty: U32, len: "MAX_LIGHTS_PER_CLUSTER"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
+            (name: "clusters", ty: Array(ty: Array(ty: Array(ty: Array(ty: U32, len: "MAX_LIGHTS_PER_CLUSTER + 1"), len: "CAMERA_FROXELS_HEIGHT"), len: "CAMERA_FROXELS_WIDTH"), len: "CAMERA_FROXELS_DEPTH")),
         ]
     ),
     // Global lighting data.
