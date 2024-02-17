@@ -2,7 +2,7 @@ use std::{ffi::CString, mem::ManuallyDrop, ptr::NonNull, sync::Arc};
 
 use api::{
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
-    types::{BufferUsage, MemoryUsage},
+    types::{BufferUsage, MemoryUsage, SharingMode},
     Backend,
 };
 use ash::vk::{self, Handle};
@@ -14,7 +14,7 @@ use crate::{
     util::{
         garbage_collector::Garbage,
         id_gen::{IdGenerator, ResourceId},
-        usage::BufferRegion,
+        usage2::{BufferRegion, GlobalBufferUsage},
     },
     QueueFamilyIndices, VulkanBackend,
 };
@@ -23,6 +23,7 @@ pub struct Buffer {
     pub(crate) buffer: vk::Buffer,
     pub(crate) id: ResourceId,
     pub(crate) block: ManuallyDrop<Allocation>,
+    pub(crate) sharing_mode: SharingMode,
     pub(crate) _buffer_usage: BufferUsage,
     pub(crate) _memory_usage: MemoryUsage,
     pub(crate) _array_elements: usize,
@@ -141,6 +142,7 @@ impl Buffer {
             block: ManuallyDrop::new(block),
             size: create_info.size,
             aligned_size,
+            sharing_mode: create_info.sharing_mode,
             _array_elements: create_info.array_elements,
             _buffer_usage: create_info.buffer_usage,
             _memory_usage: create_info.memory_usage,
@@ -160,18 +162,15 @@ impl Buffer {
         idx: usize,
     ) -> Result<(NonNull<u8>, u64), BufferViewError> {
         // Wait until the last queue that the buffer was used in has finished it's work
-        let mut resc_state = ctx.resource_state.write().unwrap();
+        let resc_state = ctx.resource_state.write().unwrap();
 
         // NOTE: The reason we set the usage to `None` is because we have to wait for the previous
         // usage to complete. This implies that no one is using this buffer anymore and thus no
         // waits are further needed.
-        if let Some(old) = resc_state.register_buffer(
-            &BufferRegion {
-                id: self.id,
-                array_elem: idx as u32,
-            },
-            None,
-        ) {
+        if let Some(old) = resc_state.get_buffer_queue_usage(&BufferRegion {
+            id: self.id,
+            array_elem: idx as u32,
+        }) {
             ctx.wait_on(
                 &Job {
                     ty: old.queue,

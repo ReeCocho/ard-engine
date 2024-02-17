@@ -176,7 +176,7 @@ impl GraphicsPipeline {
         let depth_stencil = match &self.descriptor.depth_stencil {
             Some(depth_stencil) => vk::PipelineDepthStencilStateCreateInfo::builder()
                 .depth_test_enable(depth_stencil.depth_test)
-                .depth_write_enable(depth_stencil.depth_write)
+                .depth_write_enable(depth_stencil.depth_write && !render_pass.read_only_depth)
                 .depth_compare_op(crate::util::to_vk_compare_op(depth_stencil.depth_compare))
                 .min_depth_bounds(depth_stencil.min_depth)
                 .max_depth_bounds(depth_stencil.max_depth)

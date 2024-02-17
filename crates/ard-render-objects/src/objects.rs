@@ -92,7 +92,7 @@ impl RenderObjects {
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                    sharing_mode: SharingMode::Exclusive,
+                    sharing_mode: SharingMode::Concurrent,
                     debug_name: Some("object_data".into()),
                 },
             )

@@ -296,6 +296,7 @@ fn main() {
                         depth_stencil_attachment: None,
                         depth_stencil_resolve_attachment: None,
                     },
+                    None,
                     |pass| {
                         // Bind our graphics pipeline
                         pass.bind_pipeline(pipeline.clone());

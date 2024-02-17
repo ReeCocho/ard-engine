@@ -46,6 +46,7 @@ pub(crate) struct Framebuffers {
 pub(crate) struct VkRenderPass {
     pub pass: vk::RenderPass,
     pub samples: vk::SampleCountFlags,
+    pub read_only_depth: bool,
 }
 
 #[derive(Default, Hash, PartialEq, Eq)]
@@ -83,7 +84,7 @@ impl RenderPassCache {
                 pass.color_attachments.len() + pass.color_resolve_attachments.len(),
             );
             for attachment in &pass.color_attachments {
-                let layout = match &attachment.source {
+                let final_layout = match &attachment.source {
                     ColorAttachmentSource::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
                     ColorAttachmentSource::Texture { .. } => {
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
@@ -93,16 +94,18 @@ impl RenderPassCache {
                     }
                 };
 
+                let initial_layout = match attachment.load_op {
+                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                    LoadOp::Load => final_layout,
+                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                };
+
                 sample_count = crate::util::to_vk_sample_count(attachment.samples);
 
                 attachments.push(
                     vk::AttachmentDescription2::builder()
-                        .initial_layout(match attachment.load_op {
-                            LoadOp::Load => layout,
-                            LoadOp::DontCare => layout,
-                            LoadOp::Clear(_) => layout,
-                        })
-                        .final_layout(layout)
+                        .initial_layout(initial_layout)
+                        .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(match &attachment.source {
@@ -120,7 +123,7 @@ impl RenderPassCache {
             }
 
             for attachment in &pass.color_resolve_attachments {
-                let layout = match &attachment.dst {
+                let final_layout = match &attachment.dst {
                     ColorAttachmentSource::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
                     ColorAttachmentSource::Texture { .. } => {
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
@@ -130,14 +133,16 @@ impl RenderPassCache {
                     }
                 };
 
+                let initial_layout = match attachment.load_op {
+                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                    LoadOp::Load => final_layout,
+                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                };
+
                 attachments.push(
                     vk::AttachmentDescription2::builder()
-                        .initial_layout(match attachment.load_op {
-                            LoadOp::Load => layout,
-                            LoadOp::DontCare => layout,
-                            LoadOp::Clear(_) => layout,
-                        })
-                        .final_layout(layout)
+                        .initial_layout(initial_layout)
+                        .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(match &attachment.dst {
@@ -154,17 +159,27 @@ impl RenderPassCache {
                 );
             }
 
+            let mut read_only_depth = true;
+
             if let Some(attachment) = &pass.depth_stencil_attachment {
                 sample_count = crate::util::to_vk_sample_count(attachment.samples);
 
+                let final_layout = crate::util::depth_store_op_to_layout(attachment.store_op);
+
+                let initial_layout = match attachment.load_op {
+                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                    LoadOp::Load => final_layout,
+                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                };
+
+                if final_layout != vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL {
+                    read_only_depth = false;
+                }
+
                 attachments.push(
                     vk::AttachmentDescription2::builder()
-                        .initial_layout(match attachment.load_op {
-                            LoadOp::Load => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                            LoadOp::DontCare => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                            LoadOp::Clear(_) => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        })
-                        .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                        .initial_layout(initial_layout)
+                        .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(attachment.texture.internal().format)
@@ -174,14 +189,22 @@ impl RenderPassCache {
             }
 
             if let Some(attachment) = &pass.depth_stencil_resolve_attachment {
+                let final_layout = crate::util::depth_store_op_to_layout(attachment.store_op);
+
+                let initial_layout = match attachment.load_op {
+                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                    LoadOp::Load => final_layout,
+                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                };
+
+                if final_layout != vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL {
+                    read_only_depth = false;
+                }
+
                 attachments.push(
                     vk::AttachmentDescription2::builder()
-                        .initial_layout(match attachment.load_op {
-                            LoadOp::Load => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                            LoadOp::DontCare => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                            LoadOp::Clear(_) => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        })
-                        .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                        .initial_layout(initial_layout)
+                        .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(attachment.dst.internal().format)
@@ -227,13 +250,13 @@ impl RenderPassCache {
                 .color_attachments(&attachment_refs)
                 .resolve_attachments(&resolve_attachment_refs);
 
-            let subpass = if pass.depth_stencil_attachment.is_some() {
+            let subpass = if let Some(attachment) = &pass.depth_stencil_attachment {
                 depth_attachment = vk::AttachmentReference2::builder()
                     .attachment(
                         (pass.color_attachments.len() + pass.color_resolve_attachments.len())
                             as u32,
                     )
-                    .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .layout(crate::util::depth_store_op_to_layout(attachment.store_op))
                     .build();
                 subpass.depth_stencil_attachment(&depth_attachment)
             } else {
@@ -246,7 +269,7 @@ impl RenderPassCache {
                         (pass.color_attachments.len() + pass.color_resolve_attachments.len() + 1)
                             as u32,
                     )
-                    .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .layout(crate::util::depth_store_op_to_layout(resolve.store_op))
                     .build();
 
                 depth_resolve = vk::SubpassDescriptionDepthStencilResolve::builder()
@@ -272,6 +295,7 @@ impl RenderPassCache {
                 VkRenderPass {
                     pass: device.create_render_pass2(&create_info, None).unwrap(),
                     samples: sample_count,
+                    read_only_depth,
                 }
             }
         })
@@ -397,6 +421,10 @@ impl VkRenderPassDescriptor {
         descriptor: &RenderPassDescriptor<crate::VulkanBackend>,
     ) -> VkRenderPassDescriptor {
         let mut out = VkRenderPassDescriptor::default();
+        out.color_attachments = Vec::with_capacity(descriptor.color_attachments.len());
+        out.color_resolve_attachments =
+            Vec::with_capacity(descriptor.color_resolve_attachments.len());
+
         for attachment in &descriptor.color_attachments {
             let (image_format, initial_layout, final_layout) = match &attachment.source {
                 ColorAttachmentSource::SurfaceImage(image) => (
@@ -411,18 +439,18 @@ impl VkRenderPassDescriptor {
                 ColorAttachmentSource::Texture { texture, .. } => (
                     texture.internal().format,
                     match &attachment.load_op {
-                        LoadOp::DontCare => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                         LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
                 ColorAttachmentSource::CubeMap { cube_map, .. } => (
                     cube_map.internal().format,
                     match &attachment.load_op {
-                        LoadOp::DontCare => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                         LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
@@ -452,18 +480,18 @@ impl VkRenderPassDescriptor {
                 ColorAttachmentSource::Texture { texture, .. } => (
                     texture.internal().format,
                     match &attachment.load_op {
-                        LoadOp::DontCare => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                         LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
                 ColorAttachmentSource::CubeMap { cube_map, .. } => (
                     cube_map.internal().format,
                     match &attachment.load_op {
-                        LoadOp::DontCare => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                         LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
@@ -481,9 +509,9 @@ impl VkRenderPassDescriptor {
 
         if let Some(attachment) = &descriptor.depth_stencil_attachment {
             let initial_layout = match &attachment.load_op {
-                LoadOp::DontCare => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                 LoadOp::Load => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                LoadOp::Clear(_) => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
             };
 
             out.depth_stencil_attachment = Some(VkAttachment {
@@ -498,9 +526,9 @@ impl VkRenderPassDescriptor {
 
         if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
             let initial_layout = match &attachment.load_op {
-                LoadOp::DontCare => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                 LoadOp::Load => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                LoadOp::Clear(_) => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
             };
 
             out.depth_stencil_resolve_attachment = Some(VkAttachment {

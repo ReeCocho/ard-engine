@@ -240,6 +240,8 @@ pub enum StoreOp {
     DontCare,
     /// The contents of the image should be stored after the pass.
     Store,
+    /// The contents of the image are not written to during a render pass.
+    None,
 }
 
 #[derive(Debug, Copy, Clone)]

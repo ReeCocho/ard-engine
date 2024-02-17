@@ -23,16 +23,15 @@ void main() {
     // Grab the draw call
     const uint draw_index = gl_GlobalInvocationID.x + consts.base_draw_call;
     const DrawGroup group = draw_groups_src[draw_index];
+    const uint instance_count = instance_counts[draw_index];
     const MeshInfo mi = mesh_info[group.mesh];
 
-    // Reset if requested
-    if (consts.reset_group_counts > 0) {
-        draw_groups_src[draw_index].instance_count = 0;
-    }
+    // Reset instance counts for this draw for next frame
+    instance_counts[draw_index] = 0;
 
     DrawCall call;
     call.first_instance = group.first_instance;
-    call.instance_count = group.instance_count;
+    call.instance_count = instance_count;
     call.index_count = mi.index_count;
     call.first_index = mi.first_index;
     call.vertex_offset = mi.vertex_offset;
@@ -40,6 +39,8 @@ void main() {
     // If this call is transparent, we want to preserve ordering, so we just insert into the
     // bin like so (even if the instance count is 0)
     if (gl_GlobalInvocationID.x >= consts.transparent_start) {
+        call.instance_count = group.instance_count;
+
         const uint bin_base = draw_counts[(group.draw_bin * 2) + 1];
         atomicAdd(draw_counts[group.draw_bin * 2], 1);
         draw_calls_dst[bin_base + group.bin_offset] = call;

@@ -214,9 +214,20 @@
                 count: "1",
                 data: Ssbo(
                     restrict: true,
-                    access: ReadWrite,
+                    access: ReadOnly,
                     inner: None,
                     unbounded_array: Some((name: "draw_groups", ty: Struct("DrawGroup"))),
+                )
+            ),
+            (
+                name: "InstanceCounts",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "instance_counts", ty: U32)),
                 )
             ),
             (
@@ -287,6 +298,17 @@
                 )
             ),
             (
+                name: "InstanceCounts",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "instance_counts", ty: U32)),
+                )
+            ),
+            (
                 name: "Objects",
                 stage: Compute,
                 count: "1",
@@ -342,9 +364,20 @@
                 count: "1",
                 data: Ssbo(
                     restrict: true,
-                    access: ReadWrite,
+                    access: ReadOnly,
                     inner: None,
                     unbounded_array: Some((name: "draw_groups_src", ty: Struct("DrawGroup"))),
+                )
+            ),
+            (
+                name: "InstanceCountsSrc",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "instance_counts", ty: U32)),
                 )
             ),
             (

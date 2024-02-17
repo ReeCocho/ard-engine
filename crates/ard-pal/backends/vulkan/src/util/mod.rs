@@ -2,16 +2,18 @@ use api::{descriptor_set::DescriptorType, types::*};
 use ash::vk;
 use gpu_allocator::MemoryLocation;
 
+pub mod command_sort;
 pub mod descriptor_pool;
 pub mod fast_int_hasher;
 pub mod garbage_collector;
 pub mod id_gen;
-pub mod ownership;
+// pub mod ownership;
 pub mod pipeline_cache;
 pub mod sampler_cache;
 pub mod semaphores;
-pub mod tracking;
-pub mod usage;
+// pub mod tracking;
+// pub mod usage;
+pub mod usage2;
 
 #[inline(always)]
 pub(crate) const fn rank_pipeline_stage(stage: vk::PipelineStageFlags) -> u32 {
@@ -123,6 +125,7 @@ pub(crate) const fn to_vk_store_op(store_op: StoreOp) -> vk::AttachmentStoreOp {
     match store_op {
         StoreOp::DontCare => vk::AttachmentStoreOp::DONT_CARE,
         StoreOp::Store => vk::AttachmentStoreOp::STORE,
+        StoreOp::None => vk::AttachmentStoreOp::NONE,
     }
 }
 
@@ -406,5 +409,65 @@ pub(crate) const fn to_gpu_allocator_memory_location(mu: MemoryUsage) -> MemoryL
         MemoryUsage::GpuOnly => MemoryLocation::GpuOnly,
         MemoryUsage::CpuToGpu => MemoryLocation::CpuToGpu,
         MemoryUsage::GpuToCpu => MemoryLocation::GpuToCpu,
+    }
+}
+
+#[inline(always)]
+pub fn texture_usage_to_stage_access(
+    usage: TextureUsage,
+) -> Option<(vk::AccessFlags2, vk::PipelineStageFlags2)> {
+    let mut access = vk::AccessFlags2::empty();
+    let mut stage = vk::PipelineStageFlags2::empty();
+
+    if usage.contains(TextureUsage::COLOR_ATTACHMENT) {
+        access |=
+            vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE;
+        stage |= vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT;
+    }
+
+    if usage.contains(TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
+        access |= vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+            | vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        stage |= vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS
+            | vk::PipelineStageFlags2::LATE_FRAGMENT_TESTS;
+    }
+
+    if usage.contains(TextureUsage::SAMPLED) {
+        access |= vk::AccessFlags2::SHADER_SAMPLED_READ;
+        stage |= vk::PipelineStageFlags2::VERTEX_SHADER
+            | vk::PipelineStageFlags2::FRAGMENT_SHADER
+            | vk::PipelineStageFlags2::COMPUTE_SHADER;
+    }
+
+    if usage.contains(TextureUsage::STORAGE) {
+        access |= vk::AccessFlags2::SHADER_STORAGE_READ | vk::AccessFlags2::SHADER_STORAGE_WRITE;
+        stage |= vk::PipelineStageFlags2::VERTEX_SHADER
+            | vk::PipelineStageFlags2::FRAGMENT_SHADER
+            | vk::PipelineStageFlags2::COMPUTE_SHADER;
+    }
+
+    if usage.contains(TextureUsage::TRANSFER_DST) {
+        access |= vk::AccessFlags2::TRANSFER_WRITE;
+        stage |= vk::PipelineStageFlags2::TRANSFER;
+    }
+
+    if usage.contains(TextureUsage::TRANSFER_SRC) {
+        access |= vk::AccessFlags2::TRANSFER_READ;
+        stage |= vk::PipelineStageFlags2::TRANSFER;
+    }
+
+    if access == vk::AccessFlags2::empty() || stage == vk::PipelineStageFlags2::empty() {
+        None
+    } else {
+        Some((access, stage))
+    }
+}
+
+#[inline(always)]
+pub fn depth_store_op_to_layout(store_op: StoreOp) -> vk::ImageLayout {
+    match store_op {
+        StoreOp::DontCare => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        StoreOp::Store => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        StoreOp::None => vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
     }
 }

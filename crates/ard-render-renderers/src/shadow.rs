@@ -123,6 +123,7 @@ impl SunShadowsRenderer {
                 }),
                 depth_stencil_resolve_attachment: None,
             },
+            None,
             |_| {},
         );
         ctx.main()
@@ -164,7 +165,7 @@ impl SunShadowsRenderer {
                     array_elements: frames_in_flight,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
-                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                    queue_types: QueueTypes::COMPUTE,
                     sharing_mode: SharingMode::Exclusive,
                     debug_name: Some("sun_shadow_input_ids".to_owned()),
                 },
@@ -312,6 +313,9 @@ impl SunShadowsRenderer {
                 self.bins.draw_groups_buffer(frame),
                 cascade
                     .calls
+                    .instance_count_buffer(frame, self.bins.use_alternate(frame)),
+                cascade
+                    .calls
                     .draw_call_buffer(frame, self.bins.use_alternate(frame)),
                 cascade
                     .calls
@@ -366,8 +370,18 @@ impl SunShadowsRenderer {
             &cascade.draw_gen,
             &cascade.camera,
             Vec2::ONE,
-            true,
         );
+    }
+
+    pub fn compact_draw_calls<'a>(
+        &'a self,
+        frame: Frame,
+        commands: &mut CommandBuffer<'a>,
+        pipeline: &DrawGenPipeline,
+        cascade: usize,
+    ) {
+        let cascade = &self.cascades[cascade];
+        pipeline.compact(frame, commands, &cascade.draw_gen);
     }
 
     pub fn render<'a, const FIF: usize>(
@@ -390,6 +404,7 @@ impl SunShadowsRenderer {
                 }),
                 depth_stencil_resolve_attachment: None,
             },
+            Some("render_shadows"),
             |pass| {
                 pass.bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
@@ -409,6 +424,30 @@ impl SunShadowsRenderer {
                 });
             },
         );
+    }
+
+    pub fn transfer_ownership<'a>(
+        &'a self,
+        frame: Frame,
+        commands: &mut CommandBuffer<'a>,
+        cascade: usize,
+        new_queue: QueueType,
+    ) {
+        let cascade = &self.cascades[cascade];
+
+        // Don't transfer ownership unless we have valid draw calls to render, because if we don't
+        // then the buffers are never actually acquired, and we'll end up with duplicate releases.
+        if !self.bins.has_valid_draws(frame) {
+            return;
+        }
+
+        cascade.calls.transfer_ownership(
+            commands,
+            frame,
+            self.bins.use_alternate(frame),
+            new_queue,
+        );
+        commands.transfer_buffer_ownership(&cascade.output_ids, 0, new_queue, None);
     }
 }
 

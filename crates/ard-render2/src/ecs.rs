@@ -276,9 +276,6 @@ impl RenderEcs {
             frame.lights.global().sun_direction(),
         );
 
-        // Run the render graph to perform primary rendering
-        let mut cb = self.ctx.main().command_buffer();
-
         ImageEffectsBindImages::new(&self.effect_textures)
             .add(&mut self.bloom)
             .add(&mut self.tonemapping)
@@ -289,9 +286,15 @@ impl RenderEcs {
                 self.canvas.image(),
             );
 
+        // Phase 1:
+        //      Main: Render the HZB.
+        //      Comp: Bin lights, generate shadow draw calls.
+        let mut main_cb = self.ctx.main().command_buffer();
+        // let mut compute_cb = self.ctx.main().command_buffer();
+
         // Render the high-z depth image
         self.render_hzb(
-            &mut cb,
+            &mut main_cb,
             &frame,
             &materials,
             &meshes,
@@ -300,17 +303,44 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        // Generate the high-z depth pyramid
-        self.generate_hzb(&mut cb, &frame);
+        Self::generate_shadow_draw_calls(
+            &mut main_cb,
+            &frame,
+            &self.sun_shadows_renderer,
+            &self.draw_gen,
+        );
 
-        // Regenerate froxels
-        self.generate_froxels(&mut cb, &frame);
+        self.ctx().main().submit(Some("Phase 1"), main_cb);
 
-        // Perform light clustering
-        self.cluster_lights(&mut cb, &frame);
+        // Phase 2:
+        //      Main: Render shadows.
+        //      Comp: Generate HZB, generate main draw calls.
+        let mut main_cb = self.ctx.main().command_buffer();
+        let mut compute_cb = self.ctx.main().command_buffer();
 
-        // Generate draw calls
-        self.generate_draw_calls(&mut cb, &frame);
+        Self::render_shadows(
+            &mut main_cb,
+            &frame,
+            &self.sun_shadows_renderer,
+            &materials,
+            &meshes,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+        );
+
+        self.generate_hzb(&mut compute_cb, &frame);
+        self.generate_draw_calls(&mut compute_cb, &frame);
+        self.generate_froxels(&mut compute_cb, &frame);
+        self.cluster_lights(&mut compute_cb, &frame);
+
+        self.ctx()
+            .main()
+            .submit_with_async_compute(Some("Phase 2"), main_cb, compute_cb);
+
+        // Phase 3:
+        // Everything else.
+        let mut cb = self.ctx.main().command_buffer();
 
         // Perform the depth prepass
         Self::depth_prepass(
@@ -319,19 +349,6 @@ impl RenderEcs {
             &self.canvas,
             &self.camera,
             &self.scene_renderer,
-            &materials,
-            &meshes,
-            &mesh_factory,
-            &material_factory,
-            &texture_factory,
-        );
-
-        // Render shadows
-        Self::render_shadows(
-            &mut cb,
-            &frame,
-            &self.sun_shadows_renderer,
-            &self.draw_gen,
             &materials,
             &meshes,
             &mesh_factory,
@@ -406,27 +423,41 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
-        commands.render_pass(self.canvas.render_target().hzb_pass(), |pass| {
-            if frame_data.object_data.static_dirty() {
-                info!("Skipping HZB render because static objects are dirty.");
-                return;
-            }
+        commands.render_pass(
+            self.canvas.render_target().hzb_pass(),
+            Some("render_hzb"),
+            |pass| {
+                if frame_data.object_data.static_dirty() {
+                    info!("Skipping HZB render because static objects are dirty.");
+                    return;
+                }
 
-            self.scene_renderer.render_hzb(
-                frame_data.frame,
-                SceneRenderArgs {
-                    camera: &self.camera,
-                    pass,
-                    static_dirty: frame_data.object_data.static_dirty(),
-                    global: self.scene_renderer.global_sets(),
-                    mesh_factory,
-                    material_factory,
-                    texture_factory,
-                    meshes,
-                    materials,
-                },
-            );
-        });
+                self.scene_renderer.render_hzb(
+                    frame_data.frame,
+                    SceneRenderArgs {
+                        camera: &self.camera,
+                        pass,
+                        static_dirty: frame_data.object_data.static_dirty(),
+                        global: self.scene_renderer.global_sets(),
+                        mesh_factory,
+                        material_factory,
+                        texture_factory,
+                        meshes,
+                        materials,
+                    },
+                );
+            },
+        );
+
+        let depth = self.canvas.render_target().depth();
+        commands.transfer_texture_ownership(
+            depth,
+            0,
+            0,
+            depth.mip_count(),
+            QueueType::Compute,
+            None,
+        );
     }
 
     #[inline(never)]
@@ -436,6 +467,9 @@ impl RenderEcs {
 
         self.hzb_render
             .generate(frame_data.frame, commands, self.canvas.hzb());
+
+        let depth = self.canvas.render_target().depth();
+        commands.transfer_texture_ownership(depth, 0, 0, depth.mip_count(), QueueType::Main, None);
     }
 
     #[inline(never)]
@@ -448,9 +482,7 @@ impl RenderEcs {
         }
 
         info!("Generating camera froxels.");
-        commands.compute_pass(|pass| {
-            self.froxels.regen(frame_data.frame, pass, &self.camera);
-        });
+        self.froxels.regen(frame_data.frame, commands, &self.camera);
     }
 
     #[inline(never)]
@@ -474,8 +506,16 @@ impl RenderEcs {
             self.scene_renderer.draw_gen_sets(),
             &self.camera,
             Vec2::new(width as f32, height as f32),
-            false,
         );
+
+        self.draw_gen.compact(
+            frame_data.frame,
+            commands,
+            self.scene_renderer.draw_gen_sets(),
+        );
+
+        self.scene_renderer
+            .transfer_ownership(frame_data.frame, commands, QueueType::Main);
     }
 
     #[inline(never)]
@@ -495,22 +535,26 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
-        commands.render_pass(canvas.render_target().depth_prepass(), |pass| {
-            scene_render.render_depth_prepass(
-                frame_data.frame,
-                SceneRenderArgs {
-                    pass,
-                    camera,
-                    static_dirty: frame_data.object_data.static_dirty(),
-                    global: scene_render.global_sets(),
-                    mesh_factory,
-                    material_factory,
-                    texture_factory,
-                    meshes,
-                    materials,
-                },
-            );
-        });
+        commands.render_pass(
+            canvas.render_target().depth_prepass(),
+            Some("depth_prepass"),
+            |pass| {
+                scene_render.render_depth_prepass(
+                    frame_data.frame,
+                    SceneRenderArgs {
+                        pass,
+                        camera,
+                        static_dirty: frame_data.object_data.static_dirty(),
+                        global: scene_render.global_sets(),
+                        mesh_factory,
+                        material_factory,
+                        texture_factory,
+                        meshes,
+                        materials,
+                    },
+                );
+            },
+        );
     }
 
     #[inline(never)]
@@ -527,13 +571,39 @@ impl RenderEcs {
     }
 
     #[inline(never)]
+    fn generate_shadow_draw_calls<'a>(
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        shadow_renderer: &'a SunShadowsRenderer,
+        draw_gen: &'a DrawGenPipeline,
+    ) {
+        puffin::profile_function!();
+
+        for cascade in 0..shadow_renderer.cascade_count() {
+            shadow_renderer.generate_draw_calls(frame_data.frame, commands, draw_gen, cascade);
+        }
+
+        for cascade in 0..shadow_renderer.cascade_count() {
+            shadow_renderer.compact_draw_calls(frame_data.frame, commands, draw_gen, cascade);
+        }
+
+        // for cascade in 0..shadow_renderer.cascade_count() {
+        //     shadow_renderer.transfer_ownership(
+        //         frame_data.frame,
+        //         commands,
+        //         cascade,
+        //         QueueType::Main,
+        //     );
+        // }
+    }
+
+    #[inline(never)]
     /// Performs shadow rendering
     #[allow(clippy::too_many_arguments)]
     fn render_shadows<'a>(
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
         shadow_renderer: &'a SunShadowsRenderer,
-        draw_gen: &'a DrawGenPipeline,
         materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
         meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
         mesh_factory: &'a MeshFactory,
@@ -543,8 +613,6 @@ impl RenderEcs {
         puffin::profile_function!();
 
         for cascade in 0..shadow_renderer.cascade_count() {
-            shadow_renderer.generate_draw_calls(frame_data.frame, commands, draw_gen, cascade);
-
             shadow_renderer.render(
                 frame_data.frame,
                 ShadowRenderArgs {
@@ -558,6 +626,15 @@ impl RenderEcs {
                 },
             );
         }
+
+        // for cascade in 0..shadow_renderer.cascade_count() {
+        //     shadow_renderer.transfer_ownership(
+        //         frame_data.frame,
+        //         commands,
+        //         cascade,
+        //         QueueType::Compute,
+        //     );
+        // }
     }
 
     #[inline(never)]
@@ -582,6 +659,7 @@ impl RenderEcs {
             canvas
                 .render_target()
                 .opaque_pass(CameraClearColor::Color(Vec4::ZERO)),
+            Some("opaque_pass"),
             |pass| {
                 scene_render.render_opaque(
                     frame_data.frame,
@@ -624,21 +702,27 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
-        commands.render_pass(canvas.render_target().transparent_pass(), |pass| {
-            scene_render.render_transparent(
-                frame_data.frame,
-                SceneRenderArgs {
-                    pass,
-                    camera,
-                    static_dirty: frame_data.object_data.static_dirty(),
-                    global: scene_render.global_sets(),
-                    mesh_factory,
-                    material_factory,
-                    texture_factory,
-                    meshes,
-                    materials,
-                },
-            );
-        });
+        commands.render_pass(
+            canvas.render_target().transparent_pass(),
+            Some("transparent_pass"),
+            |pass| {
+                scene_render.render_transparent(
+                    frame_data.frame,
+                    SceneRenderArgs {
+                        pass,
+                        camera,
+                        static_dirty: frame_data.object_data.static_dirty(),
+                        global: scene_render.global_sets(),
+                        mesh_factory,
+                        material_factory,
+                        texture_factory,
+                        meshes,
+                        materials,
+                    },
+                );
+            },
+        );
+
+        scene_render.transfer_ownership(frame_data.frame, commands, QueueType::Compute);
     }
 }

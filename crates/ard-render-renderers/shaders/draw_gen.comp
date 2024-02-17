@@ -153,7 +153,10 @@ void main() {
 #endif
 
     // Insert the object into the output list and notify the associated call of the object
-    uint model_offset = atomicAdd(draw_groups[draw_idx].instance_count, 1);
+    uint model_offset = min(
+        atomicAdd(instance_counts[draw_idx], 1), 
+        draw_groups[draw_idx].instance_count - 1
+    );
     uint instance_index = draw_groups[draw_idx].first_instance + model_offset;
     output_ids[instance_index] = obj.data_idx;
 }

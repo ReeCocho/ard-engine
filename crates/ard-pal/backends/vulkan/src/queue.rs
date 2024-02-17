@@ -248,7 +248,7 @@ impl VkQueue {
         for (semaphore, info) in &semaphores.waits {
             waits.push(*semaphore);
             wait_values.push(info.value.unwrap_or_default());
-            wait_stages.push(info.stage);
+            wait_stages.push(vk::PipelineStageFlags::TOP_OF_PIPE);
         }
 
         for (semaphore, value) in &semaphores.signals {

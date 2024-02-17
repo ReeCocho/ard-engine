@@ -333,6 +333,7 @@ impl<const FIF: usize> ImageEffect for Bloom<FIF> {
                         color_resolve_attachments: Vec::default(),
                         depth_stencil_resolve_attachment: None,
                     },
+                    Some("bloom_downscale"),
                     |pass| {
                         pass.bind_pipeline(self.downscale.clone());
                         pass.bind_sets(0, vec![set]);
@@ -363,6 +364,7 @@ impl<const FIF: usize> ImageEffect for Bloom<FIF> {
                         color_resolve_attachments: Vec::default(),
                         depth_stencil_resolve_attachment: None,
                     },
+                    Some("bloom_upscale"),
                     |pass| {
                         pass.bind_pipeline(self.upscale.clone());
                         pass.bind_sets(0, vec![set]);

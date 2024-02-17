@@ -21,7 +21,7 @@ pub struct CameraUbo {
     /// The actual UBO.
     ubo: Buffer,
     /// Froxels for light binning.
-    _froxels: Buffer,
+    froxels: Buffer,
     /// Descriptor set for the camera UBO for each frame in flight.
     sets: Vec<DescriptorSet>,
     /// Descriptor sets for froxel regeneration.
@@ -40,7 +40,7 @@ impl CameraUbo {
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
                 queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                sharing_mode: SharingMode::Exclusive,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: Some("camera_ubo".to_owned()),
             },
         )
@@ -58,7 +58,7 @@ impl CameraUbo {
                 buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                sharing_mode: SharingMode::Exclusive,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: Some("camera_froxels".to_owned()),
             },
         )
@@ -143,11 +143,21 @@ impl CameraUbo {
             },
             last_dims: (0, 0),
             ubo,
-            _froxels: froxels,
+            froxels,
             sets,
             froxel_regen: true,
             froxel_regen_sets,
         }
+    }
+
+    #[inline(always)]
+    pub fn ubo(&self) -> &Buffer {
+        &self.ubo
+    }
+
+    #[inline(always)]
+    pub fn froxels(&self) -> &Buffer {
+        &self.froxels
     }
 
     #[inline(always)]

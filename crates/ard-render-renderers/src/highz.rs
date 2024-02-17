@@ -69,12 +69,8 @@ impl HzbRenderer {
         commands: &mut CommandBuffer<'a>,
         image: &'a HzbImage<FIF>,
     ) {
-        commands.compute_pass(|pass| {
-            // Bind the pipeline for hzb gen
-            pass.bind_pipeline(self.pipeline.clone());
-
-            // Perform a dispatch for each mip level
-            for (i, set) in image.sets[usize::from(frame)].iter().enumerate() {
+        for (i, set) in image.sets[usize::from(frame)].iter().enumerate() {
+            commands.compute_pass(&self.pipeline, Some("hzb_gen"), |pass| {
                 // Determine the size of this mip level
                 let (mut src_width, mut src_height, _) = image.src_dims;
                 let dst_width = (src_width >> (i + 1)).max(1);
@@ -92,13 +88,13 @@ impl HzbRenderer {
                 // Send constants and dispatch
                 pass.bind_sets(0, vec![set]);
                 pass.push_constants(bytemuck::cast_slice(&constants));
-                pass.dispatch(
+                (
                     dst_width.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
                     dst_height.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
                     1,
-                );
-            }
-        });
+                )
+            });
+        }
     }
 }
 
@@ -118,7 +114,7 @@ impl<const FIF: usize> HzbImage<FIF> {
                 sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                queue_types: QueueTypes::COMPUTE,
                 sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("hzb_image")),
             },

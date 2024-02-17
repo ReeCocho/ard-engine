@@ -229,18 +229,16 @@ impl AmbientOcclusion {
         image: &'a AoImage<FIF>,
         camera: &'a CameraUbo,
     ) {
-        commands.compute_pass(|pass| {
-            let (width, height, _) = image.image.dims();
-            let constants = [GpuAoConstructPushConstants {
-                render_area: Vec2::new(width as f32, height as f32),
-                inv_render_area: Vec2::new(1.0 / width as f32, 1.0 / height as f32),
-                noise_scale: Vec2::new(width as f32, height as f32) / 4.0,
-                radius: 0.5,
-                bias: 0.025,
-            }];
+        let (width, height, _) = image.image.dims();
+        let constants = [GpuAoConstructPushConstants {
+            render_area: Vec2::new(width as f32, height as f32),
+            inv_render_area: Vec2::new(1.0 / width as f32, 1.0 / height as f32),
+            noise_scale: Vec2::new(width as f32, height as f32) / 4.0,
+            radius: 0.5,
+            bias: 0.025,
+        }];
 
-            // Generate the image
-            pass.bind_pipeline(self.gen.clone());
+        commands.compute_pass(&self.gen, Some("ao_gen"), |pass| {
             pass.bind_sets(
                 0,
                 vec![&image.gen_sets[usize::from(frame)], camera.get_set(frame)],
@@ -249,17 +247,17 @@ impl AmbientOcclusion {
 
             let dispatch_x = (width as f32 / 8.0).ceil() as u32;
             let dispatch_y = (height as f32 / 8.0).ceil() as u32;
-            pass.dispatch(dispatch_x, dispatch_y, 1);
+            (dispatch_x, dispatch_y, 1)
+        });
 
-            // Blur the image
-            pass.bind_pipeline(self.blur.clone());
+        commands.compute_pass(&self.blur, Some("ao_blur"), |pass| {
             pass.bind_sets(0, vec![&image.blur_sets[usize::from(frame)]]);
             pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(
+            (
                 (width as f32 / 8.0).ceil() as u32,
                 (height as f32 / 8.0).ceil() as u32,
                 1,
-            );
+            )
         });
     }
 }

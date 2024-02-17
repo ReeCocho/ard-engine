@@ -2,8 +2,8 @@ use ard_ecs::prelude::*;
 use ard_formats::mesh::IndexData;
 use ard_math::Vec3A;
 use ard_pal::prelude::{
-    Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, RenderPass,
-    SharingMode,
+    Buffer, BufferCreateInfo, BufferUsage, CommandBuffer, Context, MemoryUsage, QueueType,
+    QueueTypes, RenderPass, SharingMode,
 };
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
@@ -76,7 +76,7 @@ impl SceneRenderer {
                     array_elements: frames_in_flight,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
-                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                    queue_types: QueueTypes::COMPUTE,
                     sharing_mode: SharingMode::Exclusive,
                     debug_name: Some("input_ids".to_owned()),
                 },
@@ -116,6 +116,23 @@ impl SceneRenderer {
     #[inline(always)]
     pub fn global_sets_mut(&mut self) -> &mut GlobalSets {
         &mut self.global
+    }
+
+    pub fn transfer_ownership<'a>(
+        &'a self,
+        frame: Frame,
+        commands: &mut CommandBuffer<'a>,
+        new_queue: QueueType,
+    ) {
+        // Don't transfer ownership unless we have valid draw calls to render, because if we don't
+        // then the buffers are never actually acquired, and we'll end up with duplicate releases.
+        if !self.bins.has_valid_draws(frame) {
+            return;
+        }
+
+        self.calls
+            .transfer_ownership(commands, frame, self.bins.use_alternate(frame), new_queue);
+        commands.transfer_buffer_ownership(&self.output_ids, 0, new_queue, None);
     }
 
     pub fn upload<const FIF: usize>(
@@ -216,6 +233,8 @@ impl SceneRenderer {
             self.set.groups().len(),
             self.set.non_transparent_draw_count(),
             self.bins.draw_groups_buffer(frame),
+            self.calls
+                .instance_count_buffer(frame, self.bins.use_alternate(frame)),
             self.calls
                 .draw_call_buffer(frame, self.bins.use_alternate(frame)),
             self.calls

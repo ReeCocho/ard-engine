@@ -44,19 +44,17 @@ use surface::{Surface, SurfaceImage};
 use texture::Texture;
 use thiserror::Error;
 use util::{
+    command_sort::CommandSorting,
     descriptor_pool::DescriptorPools,
     garbage_collector::{GarbageCleanupArgs, GarbageCollector, TimelineValues},
     id_gen::IdGenerator,
-    ownership::OwnershipTransferTracker,
     pipeline_cache::PipelineCache,
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
-    tracking::TrackState,
-    usage::{
-        GlobalResourceUsage, PipelineTracker, PipelineTrackerScratchSpace, SubResource,
-        SubResourceUsage, UsageScope,
-    },
+    usage2::GlobalResourceUsage,
 };
+
+use crate::util::command_sort::CommandSortingInfo;
 
 pub mod buffer;
 pub mod compute_pipeline;
@@ -113,11 +111,10 @@ pub struct VulkanBackend {
     pub(crate) image_ids: IdGenerator,
     pub(crate) set_ids: IdGenerator,
     pub(crate) resource_state: ShardedLock<GlobalResourceUsage>,
+    pub(crate) cmd_sort: Mutex<CommandSorting>,
     pub(crate) pools: Mutex<DescriptorPools>,
     pub(crate) pipelines: Mutex<PipelineCache>,
     pub(crate) samplers: Mutex<SamplerCache>,
-    pub(crate) tracking_scratch_space: Mutex<Option<PipelineTrackerScratchSpace>>,
-    pub(crate) usage_scope: Mutex<UsageScope>,
 }
 
 #[derive(Default)]
@@ -256,920 +253,35 @@ impl Backend for VulkanBackend {
         queue: QueueType,
         debug_name: Option<&str>,
         commands: Vec<Command<'_, Self>>,
+        is_async: bool,
     ) -> Job {
         puffin::profile_function!();
+        self.submit_commands_inner(queue, debug_name, commands, is_async, None)
+    }
 
-        // Lock down all neccesary objects
-        let mut resc_state = self.resource_state.write().unwrap();
-        let mut allocator = self.allocator.lock().unwrap();
-        let mut pools = self.pools.lock().unwrap();
-        let mut pipelines = self.pipelines.lock().unwrap();
-        let mut scratch = self.tracking_scratch_space.lock().unwrap();
-        let mut usage_scope = self.usage_scope.lock().unwrap();
-        let mut main = self.main.write().unwrap();
-        let mut transfer = self.transfer.write().unwrap();
-        let mut compute = self.compute.write().unwrap();
-        let mut present = self.present.write().unwrap();
+    unsafe fn submit_commands_async_compute(
+        &self,
+        queue: QueueType,
+        debug_name: Option<&str>,
+        commands: Vec<Command<'_, Self>>,
+        compute_commands: Vec<Command<'_, Self>>,
+    ) -> (Self::Job, Self::Job) {
+        puffin::profile_function!();
 
-        // State
-        let next_target_value = match queue {
-            QueueType::Main => &main,
-            QueueType::Transfer => &transfer,
-            QueueType::Compute => &compute,
-            QueueType::Present => &present,
-        }
-        .target_timeline_value()
-            + 1;
+        // Submit to the primary queue first
+        let prim_job = self.submit_commands_inner(queue, debug_name, commands, false, None);
 
-        let mut semaphore_tracker = SemaphoreTracker::default();
-        let mut active_render_pass = VkRenderPass::default();
-        let mut active_layout = vk::PipelineLayout::null();
-        let mut pipeline_tracker = PipelineTracker::new(
-            &mut resc_state,
-            &self.queue_family_indices,
-            queue,
-            next_target_value,
-            scratch
-                .take()
-                .unwrap_or_else(PipelineTrackerScratchSpace::default),
+        // Then submit the async compute job
+        let comp_debug_name = debug_name.map(|name| format!("{name} (Async Compute)"));
+        let comp_job = self.submit_commands_inner(
+            QueueType::Compute,
+            comp_debug_name.as_ref().map(|n| n.as_str()),
+            compute_commands,
+            false,
+            Some(&prim_job),
         );
-        let mut ownership_tracker =
-            OwnershipTransferTracker::new(queue, &self.queue_family_indices);
 
-        // Acquire a command buffer from the queue
-        let cb = match queue {
-            QueueType::Main => &mut main,
-            QueueType::Transfer => &mut transfer,
-            QueueType::Compute => &mut compute,
-            QueueType::Present => &mut present,
-        }
-        .allocate_command_buffer(&self.device, self.debug.as_ref().map(|(utils, _)| utils));
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-            .build();
-        self.device.begin_command_buffer(cb, &begin_info).unwrap();
-
-        // Insert debug name
-        if let Some(name) = debug_name {
-            if let Some((debug, _)) = &self.debug {
-                let name = CString::new(name).unwrap();
-                let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
-                debug.cmd_begin_debug_utils_label(cb, &label);
-            }
-        }
-
-        // Interpret commands
-        for (i, command) in commands.iter().enumerate() {
-            // Track resource state for the command
-            crate::util::tracking::track_resources(TrackState {
-                device: &self.device,
-                command_buffer: cb,
-                index: i,
-                commands: &commands,
-                pipeline_tracker: &mut pipeline_tracker,
-                semaphores: &mut semaphore_tracker,
-                scope: &mut usage_scope,
-            });
-
-            // Perform command operations
-            match command {
-                Command::BeginRenderPass(descriptor) => {
-                    // Get the render pass described
-                    active_render_pass = self.render_passes.get(&self.device, descriptor);
-
-                    // Find the render pass
-                    let mut dims = (0, 0);
-                    let mut views = Vec::with_capacity(
-                        descriptor.color_attachments.len()
-                            + descriptor.color_resolve_attachments.len(),
-                    );
-                    for attachment in &descriptor.color_attachments {
-                        views.push(match &attachment.source {
-                            ColorAttachmentSource::SurfaceImage(image) => {
-                                // Indicate that the surface image has been drawn to
-                                image.internal().signal_draw();
-                                dims = image.internal().dims();
-                                image.internal().view()
-                            }
-                            ColorAttachmentSource::Texture {
-                                texture,
-                                array_element,
-                                mip_level,
-                            } => {
-                                dims = (
-                                    texture.dims().0.shr(mip_level).max(1),
-                                    texture.dims().1.shr(mip_level).max(1),
-                                );
-                                texture.internal().get_view(*array_element, *mip_level)
-                            }
-                            ColorAttachmentSource::CubeMap {
-                                cube_map,
-                                array_element,
-                                face,
-                                mip_level,
-                            } => {
-                                dims = (
-                                    cube_map.dim().shr(mip_level).max(1),
-                                    cube_map.dim().shr(mip_level).max(1),
-                                );
-                                cube_map
-                                    .internal()
-                                    .get_face_view(*array_element, *mip_level, *face)
-                            }
-                        });
-                    }
-
-                    for attachment in &descriptor.color_resolve_attachments {
-                        views.push(match &attachment.dst {
-                            ColorAttachmentSource::SurfaceImage(image) => {
-                                // Indicate that the surface image has been drawn to
-                                image.internal().signal_draw();
-                                dims = image.internal().dims();
-                                image.internal().view()
-                            }
-                            ColorAttachmentSource::Texture {
-                                texture,
-                                array_element,
-                                mip_level,
-                            } => {
-                                dims = (
-                                    texture.dims().0.shr(mip_level).max(1),
-                                    texture.dims().1.shr(mip_level).max(1),
-                                );
-                                texture.internal().get_view(*array_element, *mip_level)
-                            }
-                            ColorAttachmentSource::CubeMap {
-                                cube_map,
-                                array_element,
-                                face,
-                                mip_level,
-                            } => {
-                                dims = (
-                                    cube_map.dim().shr(mip_level).max(1),
-                                    cube_map.dim().shr(mip_level).max(1),
-                                );
-                                cube_map
-                                    .internal()
-                                    .get_face_view(*array_element, *mip_level, *face)
-                            }
-                        });
-                    }
-
-                    if let Some(attachment) = &descriptor.depth_stencil_attachment {
-                        let (width, height, _) = attachment.texture.dims();
-                        let texture = attachment.texture.internal();
-                        dims = (width, height);
-                        views
-                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
-                    }
-
-                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
-                        let (width, height, _) = attachment.dst.dims();
-                        let texture = attachment.dst.internal();
-                        dims = (width, height);
-                        views
-                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
-                    }
-
-                    // Find the framebuffer
-                    let framebuffer = self.framebuffers.get(
-                        &self.device,
-                        active_render_pass.pass,
-                        views,
-                        vk::Extent2D {
-                            width: dims.0,
-                            height: dims.1,
-                        },
-                    );
-
-                    // Find clear values
-                    let mut clear_values = Vec::with_capacity(descriptor.color_attachments.len());
-                    for attachment in &descriptor.color_attachments {
-                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
-                            let color = match clear_color {
-                                ClearColor::RgbaF32(r, g, b, a) => vk::ClearColorValue {
-                                    float32: [*r, *g, *b, *a],
-                                },
-                                ClearColor::RU32(r) => vk::ClearColorValue {
-                                    uint32: [*r, 0, 0, 0],
-                                },
-                                ClearColor::D32S32(_, _) => {
-                                    panic!("invalid color clear color type")
-                                }
-                            };
-                            clear_values.push(vk::ClearValue { color });
-                        }
-                    }
-
-                    for attachment in &descriptor.color_resolve_attachments {
-                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
-                            let color = match clear_color {
-                                ClearColor::RgbaF32(r, g, b, a) => vk::ClearColorValue {
-                                    float32: [*r, *g, *b, *a],
-                                },
-                                ClearColor::RU32(r) => vk::ClearColorValue {
-                                    uint32: [*r, 0, 0, 0],
-                                },
-                                ClearColor::D32S32(_, _) => {
-                                    panic!("invalid color clear color type")
-                                }
-                            };
-                            clear_values.push(vk::ClearValue { color });
-                        }
-                    }
-
-                    if let Some(attachment) = &descriptor.depth_stencil_attachment {
-                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
-                            let depth_stencil = match clear_color {
-                                ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
-                                    depth: *d,
-                                    stencil: *s,
-                                },
-                                _ => panic!("invalid depth clear color"),
-                            };
-                            clear_values.push(vk::ClearValue { depth_stencil })
-                        }
-                    }
-
-                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
-                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
-                            let depth_stencil = match clear_color {
-                                ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
-                                    depth: *d,
-                                    stencil: *s,
-                                },
-                                _ => panic!("invalid depth clear color"),
-                            };
-                            clear_values.push(vk::ClearValue { depth_stencil })
-                        }
-                    }
-
-                    // Initial viewport configuration
-                    // NOTE: Viewport is flipped to account for Vulkan coordinate system
-                    let viewport = [vk::Viewport {
-                        width: dims.0 as f32,
-                        height: -(dims.1 as f32),
-                        x: 0.0,
-                        y: dims.1 as f32,
-                        min_depth: 0.0,
-                        max_depth: 1.0,
-                    }];
-
-                    let scissor = [vk::Rect2D {
-                        extent: vk::Extent2D {
-                            width: dims.0,
-                            height: dims.1,
-                        },
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                    }];
-
-                    self.device.cmd_set_viewport(cb, 0, &viewport);
-                    self.device.cmd_set_scissor(cb, 0, &scissor);
-
-                    // Begin the render pass
-                    let begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(active_render_pass.pass)
-                        .clear_values(&clear_values)
-                        .framebuffer(framebuffer)
-                        .render_area(vk::Rect2D {
-                            offset: vk::Offset2D { x: 0, y: 0 },
-                            extent: vk::Extent2D {
-                                width: dims.0,
-                                height: dims.1,
-                            },
-                        })
-                        .build();
-
-                    let subpass_info = vk::SubpassBeginInfo::builder()
-                        .contents(vk::SubpassContents::INLINE)
-                        .build();
-
-                    self.device
-                        .cmd_begin_render_pass2(cb, &begin_info, &subpass_info);
-                }
-                Command::EndRenderPass => self.device.cmd_end_render_pass(cb),
-                Command::BeginComputePass => {}
-                Command::EndComputePass => {}
-                Command::BindComputePipeline(pipeline) => {
-                    active_layout = pipeline.internal().layout;
-                    self.device.cmd_bind_pipeline(
-                        cb,
-                        vk::PipelineBindPoint::COMPUTE,
-                        pipeline.internal().pipeline,
-                    );
-                }
-                Command::Dispatch(x, y, z) => {
-                    self.device.cmd_dispatch(cb, *x, *y, *z);
-                }
-                Command::BindGraphicsPipeline(pipeline) => {
-                    active_layout = pipeline.internal().layout();
-                    let pipeline = pipeline.internal().get(
-                        &self.device,
-                        &mut pipelines,
-                        self.debug.as_ref().map(|(utils, _)| utils),
-                        active_render_pass,
-                    );
-                    self.device
-                        .cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
-                }
-                Command::BindDescriptorSets { sets, first, stage } => {
-                    let mut vk_sets = Vec::with_capacity(sets.len());
-                    for set in sets {
-                        vk_sets.push(set.internal().set);
-                    }
-
-                    self.device.cmd_bind_descriptor_sets(
-                        cb,
-                        match *stage {
-                            ShaderStage::Compute => vk::PipelineBindPoint::COMPUTE,
-                            _ => vk::PipelineBindPoint::GRAPHICS,
-                        },
-                        active_layout,
-                        *first as u32,
-                        &vk_sets,
-                        &[],
-                    );
-                }
-                Command::BindDescriptorSetsUnchecked { sets, first, stage } => {
-                    let mut vk_sets = Vec::with_capacity(sets.len());
-                    for set in sets {
-                        vk_sets.push(set.internal().set);
-                    }
-
-                    self.device.cmd_bind_descriptor_sets(
-                        cb,
-                        match *stage {
-                            ShaderStage::Compute => vk::PipelineBindPoint::COMPUTE,
-                            _ => vk::PipelineBindPoint::GRAPHICS,
-                        },
-                        active_layout,
-                        *first as u32,
-                        &vk_sets,
-                        &[],
-                    );
-                }
-                Command::BindVertexBuffers { first, binds } => {
-                    let mut buffers = Vec::with_capacity(binds.len());
-                    let mut offsets = Vec::with_capacity(binds.len());
-                    for bind in binds {
-                        let buffer = bind.buffer.internal();
-                        buffers.push(buffer.buffer);
-                        offsets.push(buffer.offset(bind.array_element) + bind.offset);
-                    }
-                    self.device
-                        .cmd_bind_vertex_buffers(cb, *first as u32, &buffers, &offsets);
-                }
-                Command::BindIndexBuffer {
-                    buffer,
-                    array_element,
-                    offset,
-                    ty,
-                } => {
-                    let buffer = buffer.internal();
-                    self.device.cmd_bind_index_buffer(
-                        cb,
-                        buffer.buffer,
-                        buffer.offset(*array_element) + offset,
-                        crate::util::to_vk_index_type(*ty),
-                    );
-                }
-                Command::Scissor {
-                    attachment,
-                    scissor,
-                } => {
-                    self.device.cmd_set_scissor(
-                        cb,
-                        *attachment as u32,
-                        &[vk::Rect2D {
-                            offset: vk::Offset2D {
-                                x: scissor.x,
-                                y: scissor.y,
-                            },
-                            extent: vk::Extent2D {
-                                width: scissor.width,
-                                height: scissor.height,
-                            },
-                        }],
-                    );
-                }
-                Command::Draw {
-                    vertex_count,
-                    instance_count,
-                    first_vertex,
-                    first_instance,
-                } => {
-                    self.device.cmd_draw(
-                        cb,
-                        *vertex_count as u32,
-                        *instance_count as u32,
-                        *first_vertex as u32,
-                        *first_instance as u32,
-                    );
-                }
-                Command::DrawIndexed {
-                    index_count,
-                    instance_count,
-                    first_index,
-                    vertex_offset,
-                    first_instance,
-                } => {
-                    self.device.cmd_draw_indexed(
-                        cb,
-                        *index_count as u32,
-                        *instance_count as u32,
-                        *first_index as u32,
-                        *vertex_offset as i32,
-                        *first_instance as u32,
-                    );
-                }
-                Command::DrawIndexedIndirect {
-                    buffer,
-                    array_element,
-                    offset,
-                    draw_count,
-                    stride,
-                } => {
-                    self.device.cmd_draw_indexed_indirect(
-                        cb,
-                        buffer.internal().buffer,
-                        buffer.internal().offset(*array_element) + *offset,
-                        *draw_count as u32,
-                        *stride as u32,
-                    );
-                }
-                Command::DrawIndexedIndirectCount {
-                    draw_buffer,
-                    draw_array_element,
-                    draw_offset,
-                    draw_stride,
-                    count_buffer,
-                    count_array_element,
-                    count_offset,
-                    max_draw_count,
-                } => {
-                    self.device.cmd_draw_indexed_indirect_count(
-                        cb,
-                        draw_buffer.internal().buffer,
-                        draw_buffer.internal().offset(*draw_array_element) + *draw_offset,
-                        count_buffer.internal().buffer,
-                        count_buffer.internal().offset(*count_array_element) + *count_offset,
-                        *max_draw_count as u32,
-                        *draw_stride as u32,
-                    );
-                }
-                Command::CopyBufferToBuffer(copy) => {
-                    let src = copy.src.internal();
-                    let dst = copy.dst.internal();
-                    let region = [vk::BufferCopy::builder()
-                        .dst_offset(dst.offset(copy.dst_array_element) + copy.dst_offset)
-                        .src_offset(src.offset(copy.src_array_element) + copy.src_offset)
-                        .size(copy.len)
-                        .build()];
-                    self.device
-                        .cmd_copy_buffer(cb, src.buffer, dst.buffer, &region);
-                }
-                Command::CopyBufferToTexture {
-                    buffer,
-                    texture,
-                    copy,
-                } => {
-                    let src = buffer.internal();
-                    let dst = texture.internal();
-                    let copy = [vk::BufferImageCopy::builder()
-                        .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
-                        .buffer_row_length(copy.buffer_row_length)
-                        .buffer_image_height(copy.buffer_image_height)
-                        .image_subresource(vk::ImageSubresourceLayers {
-                            aspect_mask: dst.aspect_flags,
-                            mip_level: copy.texture_mip_level as u32,
-                            base_array_layer: copy.texture_array_element as u32,
-                            layer_count: 1,
-                        })
-                        .image_offset(vk::Offset3D {
-                            x: copy.texture_offset.0 as i32,
-                            y: copy.texture_offset.1 as i32,
-                            z: copy.texture_offset.2 as i32,
-                        })
-                        .image_extent(vk::Extent3D {
-                            width: copy.texture_extent.0,
-                            height: copy.texture_extent.1,
-                            depth: copy.texture_extent.2,
-                        })
-                        .build()];
-                    self.device.cmd_copy_buffer_to_image(
-                        cb,
-                        src.buffer,
-                        dst.image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &copy,
-                    );
-                }
-                Command::CopyTextureToBuffer {
-                    buffer,
-                    texture,
-                    copy,
-                } => {
-                    let src = texture.internal();
-                    let dst = buffer.internal();
-                    let copy = [vk::BufferImageCopy::builder()
-                        .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
-                        .buffer_row_length(copy.buffer_row_length)
-                        .buffer_image_height(copy.buffer_image_height)
-                        .image_subresource(vk::ImageSubresourceLayers {
-                            aspect_mask: src.aspect_flags,
-                            mip_level: copy.texture_mip_level as u32,
-                            base_array_layer: copy.texture_array_element as u32,
-                            layer_count: 1,
-                        })
-                        .image_offset(vk::Offset3D {
-                            x: copy.texture_offset.0 as i32,
-                            y: copy.texture_offset.1 as i32,
-                            z: copy.texture_offset.2 as i32,
-                        })
-                        .image_extent(vk::Extent3D {
-                            width: copy.texture_extent.0,
-                            height: copy.texture_extent.1,
-                            depth: copy.texture_extent.2,
-                        })
-                        .build()];
-                    self.device.cmd_copy_image_to_buffer(
-                        cb,
-                        src.image,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        dst.buffer,
-                        &copy,
-                    );
-                }
-                Command::CopyBufferToCubeMap {
-                    buffer,
-                    cube_map,
-                    copy,
-                } => {
-                    let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
-                    let dst = cube_map.internal();
-                    let src = buffer.internal();
-                    let copy = [vk::BufferImageCopy::builder()
-                        .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
-                        .buffer_row_length(0)
-                        .buffer_image_height(0)
-                        .image_subresource(vk::ImageSubresourceLayers {
-                            aspect_mask: dst.aspect_flags,
-                            mip_level: copy.cube_map_mip_level as u32,
-                            base_array_layer: copy.cube_map_array_element as u32 * 6,
-                            layer_count: 6,
-                        })
-                        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                        .image_extent(vk::Extent3D {
-                            width: size,
-                            height: size,
-                            depth: 1,
-                        })
-                        .build()];
-                    self.device.cmd_copy_buffer_to_image(
-                        cb,
-                        src.buffer,
-                        dst.image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &copy,
-                    );
-                }
-                Command::CopyCubeMapToBuffer {
-                    buffer,
-                    cube_map,
-                    copy,
-                } => {
-                    let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
-                    let src = cube_map.internal();
-                    let dst = buffer.internal();
-                    let copy = [vk::BufferImageCopy::builder()
-                        .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
-                        .buffer_row_length(0)
-                        .buffer_image_height(0)
-                        .image_subresource(vk::ImageSubresourceLayers {
-                            aspect_mask: src.aspect_flags,
-                            mip_level: copy.cube_map_mip_level as u32,
-                            base_array_layer: copy.cube_map_array_element as u32 * 6,
-                            layer_count: 6,
-                        })
-                        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                        .image_extent(vk::Extent3D {
-                            width: size,
-                            height: size,
-                            depth: 1,
-                        })
-                        .build()];
-                    self.device.cmd_copy_image_to_buffer(
-                        cb,
-                        src.image,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        dst.buffer,
-                        &copy,
-                    );
-                }
-                Command::Blit {
-                    src,
-                    dst,
-                    blit,
-                    filter,
-                } => {
-                    let (src_img, src_array_elem, src_aspect_flags) = match src {
-                        BlitSource::Texture(tex) => {
-                            let internal = tex.internal();
-                            (
-                                internal.image,
-                                blit.src_array_element,
-                                internal.aspect_flags,
-                            )
-                        }
-                        BlitSource::CubeMap { cube_map, face } => {
-                            let internal = cube_map.internal();
-                            (
-                                internal.image,
-                                CubeMap::to_array_elem(blit.src_array_element, *face),
-                                internal.aspect_flags,
-                            )
-                        }
-                    };
-
-                    let (dst_img, dst_array_elem, dst_aspect_flags, is_si) = match dst {
-                        BlitDestination::Texture(tex) => {
-                            let internal = tex.internal();
-                            (
-                                internal.image,
-                                blit.dst_array_element,
-                                internal.aspect_flags,
-                                false,
-                            )
-                        }
-                        BlitDestination::CubeMap { cube_map, face } => {
-                            let internal = cube_map.internal();
-                            (
-                                internal.image,
-                                CubeMap::to_array_elem(blit.dst_array_element, *face),
-                                internal.aspect_flags,
-                                false,
-                            )
-                        }
-                        BlitDestination::SurfaceImage(si) => {
-                            let internal = si.internal();
-                            (internal.image(), 0, vk::ImageAspectFlags::COLOR, true)
-                        }
-                    };
-
-                    let vk_blit = [vk::ImageBlit::builder()
-                        .src_offsets([
-                            vk::Offset3D {
-                                x: blit.src_min.0 as i32,
-                                y: blit.src_min.1 as i32,
-                                z: blit.src_min.2 as i32,
-                            },
-                            vk::Offset3D {
-                                x: blit.src_max.0 as i32,
-                                y: blit.src_max.1 as i32,
-                                z: blit.src_max.2 as i32,
-                            },
-                        ])
-                        .src_subresource(
-                            vk::ImageSubresourceLayers::builder()
-                                .aspect_mask(src_aspect_flags)
-                                .mip_level(blit.src_mip as u32)
-                                .base_array_layer(src_array_elem as u32)
-                                .layer_count(1)
-                                .build(),
-                        )
-                        .dst_offsets([
-                            vk::Offset3D {
-                                x: blit.dst_min.0 as i32,
-                                y: blit.dst_min.1 as i32,
-                                z: blit.dst_min.2 as i32,
-                            },
-                            vk::Offset3D {
-                                x: blit.dst_max.0 as i32,
-                                y: blit.dst_max.1 as i32,
-                                z: blit.dst_max.2 as i32,
-                            },
-                        ])
-                        .dst_subresource(
-                            vk::ImageSubresourceLayers::builder()
-                                .aspect_mask(dst_aspect_flags)
-                                .mip_level(blit.dst_mip as u32)
-                                .base_array_layer(dst_array_elem as u32)
-                                .layer_count(1)
-                                .build(),
-                        )
-                        .build()];
-
-                    self.device.cmd_blit_image(
-                        cb,
-                        src_img,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        dst_img,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &vk_blit,
-                        crate::util::to_vk_filter(*filter),
-                    );
-
-                    // If the dst image is a surface image, we must transition it back into a
-                    // presentable format and mark it as presentable
-                    if is_si {
-                        // Grab internal surface image and signal it was "drawn to"
-                        let si = match dst {
-                            BlitDestination::SurfaceImage(si) => si.internal(),
-                            _ => unreachable!(),
-                        };
-                        si.signal_draw();
-
-                        // Transition layer
-                        usage_scope.use_resource(
-                            &SubResource::Texture {
-                                texture: si.image(),
-                                id: si.id(),
-                                sharing: SharingMode::Concurrent,
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                array_elem: blit.dst_array_element as u32,
-                                base_mip_level: blit.dst_mip as u32,
-                                mip_count: 1,
-                            },
-                            &SubResourceUsage {
-                                access: vk::AccessFlags::MEMORY_READ
-                                    | vk::AccessFlags::MEMORY_WRITE,
-                                stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                                layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                            },
-                        );
-                        if let Some(barrier) = pipeline_tracker.submit(&mut usage_scope) {
-                            barrier.execute(&self.device, cb);
-                        }
-                    }
-                }
-                Command::PushConstants { data, stage } => self.device.cmd_push_constants(
-                    cb,
-                    active_layout,
-                    crate::util::to_vk_shader_stage(*stage),
-                    0,
-                    data,
-                ),
-                Command::TransferBufferOwnership {
-                    buffer,
-                    array_element,
-                    new_queue,
-                } => {
-                    ownership_tracker.register_buffer(
-                        buffer.internal(),
-                        *array_element,
-                        *new_queue,
-                    );
-                }
-                Command::TransferTextureOwnership {
-                    texture,
-                    array_element,
-                    base_mip,
-                    mip_count,
-                    new_queue,
-                } => {
-                    ownership_tracker.register_texture(
-                        texture.internal(),
-                        *array_element,
-                        *base_mip as u32,
-                        *mip_count as u32,
-                        *new_queue,
-                    );
-                }
-                Command::TransferCubeMapOwnership {
-                    cube_map,
-                    array_element,
-                    base_mip,
-                    mip_count,
-                    face,
-                    new_queue,
-                } => {
-                    ownership_tracker.register_cube_map(
-                        cube_map.internal(),
-                        *array_element,
-                        *base_mip as u32,
-                        *mip_count as u32,
-                        *face,
-                        *new_queue,
-                    );
-                }
-                Command::TextureResolve { src, dst, resolve } => {
-                    self.device.cmd_resolve_image(
-                        cb,
-                        src.internal().image,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        dst.internal().image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &[vk::ImageResolve::builder()
-                            .src_subresource(
-                                vk::ImageSubresourceLayers::builder()
-                                    .aspect_mask(src.internal().aspect_flags)
-                                    .mip_level(resolve.src_mip as u32)
-                                    .base_array_layer(resolve.src_array_element as u32)
-                                    .layer_count(1)
-                                    .build(),
-                            )
-                            .src_offset(vk::Offset3D {
-                                x: resolve.src_offset.0,
-                                y: resolve.src_offset.1,
-                                z: resolve.src_offset.2,
-                            })
-                            .dst_subresource(
-                                vk::ImageSubresourceLayers::builder()
-                                    .aspect_mask(dst.internal().aspect_flags)
-                                    .mip_level(resolve.dst_mip as u32)
-                                    .base_array_layer(resolve.dst_array_element as u32)
-                                    .layer_count(1)
-                                    .build(),
-                            )
-                            .dst_offset(vk::Offset3D {
-                                x: resolve.dst_offset.0,
-                                y: resolve.dst_offset.1,
-                                z: resolve.dst_offset.2,
-                            })
-                            .extent(vk::Extent3D {
-                                width: resolve.extent.0,
-                                height: resolve.extent.1,
-                                depth: resolve.extent.2,
-                            })
-                            .build()],
-                    );
-                }
-                // Transition handled in tracking.
-                Command::SetTextureUsage { .. } => {}
-            }
-        }
-
-        // Grab detected semaphores
-        for (queue, stage) in pipeline_tracker.wait_queues() {
-            let (semaphore, value) = match *queue {
-                QueueType::Main => (main.semaphore(), main.target_timeline_value()),
-                QueueType::Transfer => (transfer.semaphore(), transfer.target_timeline_value()),
-                QueueType::Compute => (compute.semaphore(), compute.target_timeline_value()),
-                QueueType::Present => unreachable!(),
-            };
-            semaphore_tracker.register_wait(
-                semaphore,
-                WaitInfo {
-                    value: Some(value),
-                    stage: *stage,
-                },
-            );
-        }
-
-        // Store scratch space
-        *scratch = Some(pipeline_tracker.into_scratch_space());
-
-        // Perform ownership transfers
-        ownership_tracker.transfer_ownership(&resc_state, &self.device, cb);
-
-        // Submit to the queue
-        if debug_name.is_some() {
-            if let Some((debug, _)) = &self.debug {
-                debug.cmd_end_debug_utils_label(cb);
-            }
-        }
-
-        self.device.end_command_buffer(cb).unwrap();
-
-        match queue {
-            QueueType::Main => &mut main,
-            QueueType::Transfer => &mut transfer,
-            QueueType::Compute => &mut compute,
-            QueueType::Present => &mut present,
-        }
-        .submit(&self.device, cb, semaphore_tracker)
-        .unwrap();
-
-        // Perform garbage collection
-        let current_values = TimelineValues {
-            main: main.current_timeline_value(&self.device),
-            transfer: transfer.current_timeline_value(&self.device),
-            compute: compute.current_timeline_value(&self.device),
-        };
-        let target_values = TimelineValues {
-            main: main.target_timeline_value(),
-            transfer: transfer.target_timeline_value(),
-            compute: compute.target_timeline_value(),
-        };
-
-        self.garbage.cleanup(GarbageCleanupArgs {
-            device: &self.device,
-            buffer_ids: &self.buffer_ids,
-            image_ids: &self.image_ids,
-            set_ids: &self.set_ids,
-            allocator: &mut allocator,
-            pools: &mut pools,
-            pipelines: &mut pipelines,
-            global_usage: &mut resc_state,
-            current: current_values,
-            target: target_values,
-            override_ref_counter: false,
-        });
-
-        Job {
-            ty: queue,
-            target_value: next_target_value,
-        }
+        (prim_job, comp_job)
     }
 
     unsafe fn wait_on(&self, job: &Self::Job, timeout: Option<std::time::Duration>) -> JobStatus {
@@ -1430,7 +542,7 @@ impl VulkanBackend {
         create_info: VulkanBackendCreateInfo<W>,
     ) -> Result<Self, VulkanBackendCreateError> {
         let app_name = CString::new(create_info.app_name).unwrap();
-        let vk_version = vk::API_VERSION_1_2;
+        let vk_version = vk::API_VERSION_1_3;
 
         // Get required instance layers
         let layer_names = if create_info.debug {
@@ -1467,8 +579,6 @@ impl VulkanBackend {
         let device_extensions = {
             let mut extensions = vec![ash::extensions::khr::Swapchain::name()];
             if create_info.debug {
-                extensions
-                    .push(CStr::from_bytes_with_nul(b"VK_KHR_shader_non_semantic_info\0").unwrap());
                 extensions.push(CStr::from_bytes_with_nul(b"VK_EXT_robustness2\0").unwrap());
             }
             extensions
@@ -1596,10 +706,16 @@ impl VulkanBackend {
             .draw_indirect_count(true)
             .build();
 
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
+            .synchronization2(true)
+            .maintenance4(true)
+            .build();
+
         let create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_infos)
             .enabled_extension_names(&device_extensions)
             .push_next(&mut features12)
+            .push_next(&mut features13)
             .enabled_features(&features);
 
         let create_info = create_info.build();
@@ -1703,14 +819,1005 @@ impl VulkanBackend {
             pools: Mutex::new(DescriptorPools::default()),
             pipelines: Mutex::new(PipelineCache::default()),
             samplers: Mutex::new(SamplerCache::default()),
-            tracking_scratch_space: Mutex::new(None),
-            usage_scope: Mutex::new(UsageScope::default()),
+            cmd_sort: Mutex::new(CommandSorting::default()),
             buffer_ids: IdGenerator::default(),
             image_ids: IdGenerator::default(),
             set_ids: IdGenerator::default(),
         };
 
         Ok(ctx)
+    }
+
+    unsafe fn submit_commands_inner<'a>(
+        &self,
+        queue: QueueType,
+        debug_name: Option<&str>,
+        commands: Vec<Command<'_, Self>>,
+        is_async: bool,
+        async_with: Option<&Job>,
+    ) -> Job {
+        // Lock down all neccesary objects
+        let mut resc_state = self.resource_state.write().unwrap();
+        let mut allocator = self.allocator.lock().unwrap();
+        let mut pools = self.pools.lock().unwrap();
+        let mut pipelines = self.pipelines.lock().unwrap();
+        let mut main = self.main.write().unwrap();
+        let mut transfer = self.transfer.write().unwrap();
+        let mut compute = self.compute.write().unwrap();
+        let mut present = self.present.write().unwrap();
+        let mut sorting = self.cmd_sort.lock().unwrap();
+
+        // State
+        let next_target_value = match queue {
+            QueueType::Main => &main,
+            QueueType::Transfer => &transfer,
+            QueueType::Compute => &compute,
+            QueueType::Present => &present,
+        }
+        .target_timeline_value()
+            + 1;
+
+        let mut semaphore_tracker = SemaphoreTracker::default();
+
+        // Acquire a command buffer from the queue
+        let cb = match queue {
+            QueueType::Main => &mut main,
+            QueueType::Transfer => &mut transfer,
+            QueueType::Compute => &mut compute,
+            QueueType::Present => &mut present,
+        }
+        .allocate_command_buffer(&self.device, self.debug.as_ref().map(|(utils, _)| utils));
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+            .build();
+        self.device.begin_command_buffer(cb, &begin_info).unwrap();
+
+        // Insert debug name
+        if let Some(name) = debug_name {
+            if let Some((debug, _)) = &self.debug {
+                let name = CString::new(name).unwrap();
+                let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
+                debug.cmd_begin_debug_utils_label(cb, &label);
+            }
+        }
+
+        // Generate a DAG for the submitted commands
+        let mut sort_info = CommandSortingInfo {
+            global: &mut resc_state,
+            semaphores: &mut semaphore_tracker,
+            commands: &commands,
+            queue_families: &self.queue_family_indices,
+            queue,
+            timeline_value: next_target_value,
+            wait_queues: [None; 4],
+            is_async,
+        };
+        sorting.create_dag(&mut sort_info);
+
+        // Execute all commands
+        sorting.execute_commands(
+            &self.device,
+            cb,
+            &commands,
+            |cb, device, idx, commands| unsafe {
+                VulkanBackend::execute_command(
+                    cb,
+                    device,
+                    idx,
+                    commands,
+                    &self.render_passes,
+                    &self.framebuffers,
+                    &mut pipelines,
+                    self.debug.as_ref(),
+                );
+            },
+        );
+
+        // Grab detected semaphores
+        for (i, timeline_value) in sort_info.wait_queues.iter().enumerate() {
+            let timeline_value = match *timeline_value {
+                Some(value) => value,
+                None => continue,
+            };
+
+            let detected_qt = match i {
+                0 => QueueType::Main,
+                1 => QueueType::Transfer,
+                2 => QueueType::Compute,
+                3 => QueueType::Present,
+                _ => unreachable!(),
+            };
+
+            if queue == detected_qt {
+                continue;
+            }
+
+            let semaphore = match detected_qt {
+                QueueType::Main => main.semaphore(),
+                QueueType::Transfer => transfer.semaphore(),
+                QueueType::Compute => compute.semaphore(),
+                QueueType::Present => present.semaphore(),
+            };
+
+            // If we were asked to run async with the detected command, and the timeline values
+            // match up, we run with the previous timeline value instead
+            let timeline_value = match async_with {
+                Some(job) => {
+                    if job.ty == detected_qt && job.target_value == timeline_value {
+                        timeline_value.checked_sub(1)
+                    } else {
+                        Some(timeline_value)
+                    }
+                }
+                None => Some(timeline_value),
+            };
+
+            if let Some(value) = timeline_value {
+                semaphore_tracker.register_wait(
+                    semaphore,
+                    WaitInfo {
+                        value: Some(value),
+                        stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                    },
+                );
+            }
+        }
+
+        // Submit to the queue
+        if debug_name.is_some() {
+            if let Some((debug, _)) = &self.debug {
+                debug.cmd_end_debug_utils_label(cb);
+            }
+        }
+
+        self.device.end_command_buffer(cb).unwrap();
+
+        match queue {
+            QueueType::Main => &mut main,
+            QueueType::Transfer => &mut transfer,
+            QueueType::Compute => &mut compute,
+            QueueType::Present => &mut present,
+        }
+        .submit(&self.device, cb, semaphore_tracker)
+        .unwrap();
+
+        // Perform garbage collection
+        let current_values = TimelineValues {
+            main: main.current_timeline_value(&self.device),
+            transfer: transfer.current_timeline_value(&self.device),
+            compute: compute.current_timeline_value(&self.device),
+        };
+        let target_values = TimelineValues {
+            main: main.target_timeline_value(),
+            transfer: transfer.target_timeline_value(),
+            compute: compute.target_timeline_value(),
+        };
+
+        self.garbage.cleanup(GarbageCleanupArgs {
+            device: &self.device,
+            buffer_ids: &self.buffer_ids,
+            image_ids: &self.image_ids,
+            set_ids: &self.set_ids,
+            allocator: &mut allocator,
+            pools: &mut pools,
+            pipelines: &mut pipelines,
+            global_usage: &mut resc_state,
+            current: current_values,
+            target: target_values,
+            override_ref_counter: false,
+        });
+
+        Job {
+            ty: queue,
+            target_value: next_target_value,
+        }
+    }
+
+    unsafe fn execute_command<'a>(
+        cb: vk::CommandBuffer,
+        device: &ash::Device,
+        command_idx: usize,
+        commands: &[Command<'a, crate::VulkanBackend>],
+        render_passes: &RenderPassCache,
+        framebuffers: &FramebufferCache,
+        pipelines: &mut PipelineCache,
+        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    ) {
+        match &commands[command_idx] {
+            Command::BeginRenderPass(_, _) => Self::execute_render_pass(
+                cb,
+                device,
+                command_idx,
+                commands,
+                render_passes,
+                framebuffers,
+                pipelines,
+                debug,
+            ),
+            Command::BeginComputePass(_, _) => {
+                Self::execute_compute_pass(cb, device, command_idx, commands, debug)
+            }
+            Command::CopyBufferToBuffer(copy) => {
+                let src = copy.src.internal();
+                let dst = copy.dst.internal();
+                let region = [vk::BufferCopy::builder()
+                    .dst_offset(dst.offset(copy.dst_array_element) + copy.dst_offset)
+                    .src_offset(src.offset(copy.src_array_element) + copy.src_offset)
+                    .size(copy.len)
+                    .build()];
+                device.cmd_copy_buffer(cb, src.buffer, dst.buffer, &region);
+            }
+            Command::CopyBufferToTexture {
+                buffer,
+                texture,
+                copy,
+            } => {
+                let src = buffer.internal();
+                let dst = texture.internal();
+                let copy = [vk::BufferImageCopy::builder()
+                    .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
+                    .buffer_row_length(copy.buffer_row_length)
+                    .buffer_image_height(copy.buffer_image_height)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: dst.aspect_flags,
+                        mip_level: copy.texture_mip_level as u32,
+                        base_array_layer: copy.texture_array_element as u32,
+                        layer_count: 1,
+                    })
+                    .image_offset(vk::Offset3D {
+                        x: copy.texture_offset.0 as i32,
+                        y: copy.texture_offset.1 as i32,
+                        z: copy.texture_offset.2 as i32,
+                    })
+                    .image_extent(vk::Extent3D {
+                        width: copy.texture_extent.0,
+                        height: copy.texture_extent.1,
+                        depth: copy.texture_extent.2,
+                    })
+                    .build()];
+                device.cmd_copy_buffer_to_image(
+                    cb,
+                    src.buffer,
+                    dst.image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &copy,
+                );
+            }
+            Command::CopyTextureToBuffer {
+                buffer,
+                texture,
+                copy,
+            } => {
+                let src = texture.internal();
+                let dst = buffer.internal();
+                let copy = [vk::BufferImageCopy::builder()
+                    .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
+                    .buffer_row_length(copy.buffer_row_length)
+                    .buffer_image_height(copy.buffer_image_height)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: src.aspect_flags,
+                        mip_level: copy.texture_mip_level as u32,
+                        base_array_layer: copy.texture_array_element as u32,
+                        layer_count: 1,
+                    })
+                    .image_offset(vk::Offset3D {
+                        x: copy.texture_offset.0 as i32,
+                        y: copy.texture_offset.1 as i32,
+                        z: copy.texture_offset.2 as i32,
+                    })
+                    .image_extent(vk::Extent3D {
+                        width: copy.texture_extent.0,
+                        height: copy.texture_extent.1,
+                        depth: copy.texture_extent.2,
+                    })
+                    .build()];
+                device.cmd_copy_image_to_buffer(
+                    cb,
+                    src.image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    dst.buffer,
+                    &copy,
+                );
+            }
+            Command::CopyBufferToCubeMap {
+                buffer,
+                cube_map,
+                copy,
+            } => {
+                let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
+                let dst = cube_map.internal();
+                let src = buffer.internal();
+                let copy = [vk::BufferImageCopy::builder()
+                    .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: dst.aspect_flags,
+                        mip_level: copy.cube_map_mip_level as u32,
+                        base_array_layer: copy.cube_map_array_element as u32 * 6,
+                        layer_count: 6,
+                    })
+                    .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                    .image_extent(vk::Extent3D {
+                        width: size,
+                        height: size,
+                        depth: 1,
+                    })
+                    .build()];
+                device.cmd_copy_buffer_to_image(
+                    cb,
+                    src.buffer,
+                    dst.image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &copy,
+                );
+            }
+            Command::CopyCubeMapToBuffer {
+                cube_map,
+                buffer,
+                copy,
+            } => {
+                let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
+                let src = cube_map.internal();
+                let dst = buffer.internal();
+                let copy = [vk::BufferImageCopy::builder()
+                    .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: src.aspect_flags,
+                        mip_level: copy.cube_map_mip_level as u32,
+                        base_array_layer: copy.cube_map_array_element as u32 * 6,
+                        layer_count: 6,
+                    })
+                    .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                    .image_extent(vk::Extent3D {
+                        width: size,
+                        height: size,
+                        depth: 1,
+                    })
+                    .build()];
+                device.cmd_copy_image_to_buffer(
+                    cb,
+                    src.image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    dst.buffer,
+                    &copy,
+                );
+            }
+            Command::Blit {
+                src,
+                dst,
+                blit,
+                filter,
+            } => {
+                let (src_img, src_array_elem, src_aspect_flags) = match src {
+                    BlitSource::Texture(tex) => {
+                        let internal = tex.internal();
+                        (
+                            internal.image,
+                            blit.src_array_element,
+                            internal.aspect_flags,
+                        )
+                    }
+                    BlitSource::CubeMap { cube_map, face } => {
+                        let internal = cube_map.internal();
+                        (
+                            internal.image,
+                            CubeMap::to_array_elem(blit.src_array_element, *face),
+                            internal.aspect_flags,
+                        )
+                    }
+                };
+
+                let (dst_img, dst_array_elem, dst_aspect_flags, is_si) = match dst {
+                    BlitDestination::Texture(tex) => {
+                        let internal = tex.internal();
+                        (
+                            internal.image,
+                            blit.dst_array_element,
+                            internal.aspect_flags,
+                            false,
+                        )
+                    }
+                    BlitDestination::CubeMap { cube_map, face } => {
+                        let internal = cube_map.internal();
+                        (
+                            internal.image,
+                            CubeMap::to_array_elem(blit.dst_array_element, *face),
+                            internal.aspect_flags,
+                            false,
+                        )
+                    }
+                    BlitDestination::SurfaceImage(si) => {
+                        let internal = si.internal();
+                        (internal.image(), 0, vk::ImageAspectFlags::COLOR, true)
+                    }
+                };
+
+                let vk_blit = [vk::ImageBlit::builder()
+                    .src_offsets([
+                        vk::Offset3D {
+                            x: blit.src_min.0 as i32,
+                            y: blit.src_min.1 as i32,
+                            z: blit.src_min.2 as i32,
+                        },
+                        vk::Offset3D {
+                            x: blit.src_max.0 as i32,
+                            y: blit.src_max.1 as i32,
+                            z: blit.src_max.2 as i32,
+                        },
+                    ])
+                    .src_subresource(
+                        vk::ImageSubresourceLayers::builder()
+                            .aspect_mask(src_aspect_flags)
+                            .mip_level(blit.src_mip as u32)
+                            .base_array_layer(src_array_elem as u32)
+                            .layer_count(1)
+                            .build(),
+                    )
+                    .dst_offsets([
+                        vk::Offset3D {
+                            x: blit.dst_min.0 as i32,
+                            y: blit.dst_min.1 as i32,
+                            z: blit.dst_min.2 as i32,
+                        },
+                        vk::Offset3D {
+                            x: blit.dst_max.0 as i32,
+                            y: blit.dst_max.1 as i32,
+                            z: blit.dst_max.2 as i32,
+                        },
+                    ])
+                    .dst_subresource(
+                        vk::ImageSubresourceLayers::builder()
+                            .aspect_mask(dst_aspect_flags)
+                            .mip_level(blit.dst_mip as u32)
+                            .base_array_layer(dst_array_elem as u32)
+                            .layer_count(1)
+                            .build(),
+                    )
+                    .build()];
+
+                device.cmd_blit_image(
+                    cb,
+                    src_img,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    dst_img,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &vk_blit,
+                    crate::util::to_vk_filter(*filter),
+                );
+
+                // If the dst image is a surface image, we must transition it back into a
+                // presentable format and mark it as presentable
+                if is_si {
+                    // Grab internal surface image and signal it was "drawn to"
+                    let si = match dst {
+                        BlitDestination::SurfaceImage(si) => si.internal(),
+                        _ => unreachable!(),
+                    };
+                    si.signal_draw();
+
+                    // // Transition layer
+                    // usage_scope.use_resource(
+                    //     &SubResource::Texture {
+                    //         texture: si.image(),
+                    //         id: si.id(),
+                    //         sharing: SharingMode::Concurrent,
+                    //         aspect_mask: vk::ImageAspectFlags::COLOR,
+                    //         array_elem: blit.dst_array_element as u32,
+                    //         base_mip_level: blit.dst_mip as u32,
+                    //         mip_count: 1,
+                    //     },
+                    //     &SubResourceUsage {
+                    //         access: vk::AccessFlags::MEMORY_READ
+                    //             | vk::AccessFlags::MEMORY_WRITE,
+                    //         stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                    //         layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                    //     },
+                    // );
+                    // if let Some(barrier) = pipeline_tracker.submit(&mut usage_scope) {
+                    //     barrier.execute(&self.device, cb);
+                    // }
+                }
+            }
+            Command::TransferBufferOwnership { .. } => {
+                // Handled in barrier
+            }
+            Command::TransferTextureOwnership { .. } => {
+                // Handled in barrier
+            }
+            Command::TransferCubeMapOwnership { .. } => {
+                // Handled in barrier
+            }
+            Command::SetTextureUsage { .. } => {
+                // Handled in barrier
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn execute_render_pass<'a>(
+        cb: vk::CommandBuffer,
+        device: &ash::Device,
+        command_idx: usize,
+        commands: &[Command<'a, crate::VulkanBackend>],
+        render_passes: &RenderPassCache,
+        framebuffers: &FramebufferCache,
+        pipelines: &mut PipelineCache,
+        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    ) {
+        let mut active_layout = vk::PipelineLayout::default();
+        let mut active_render_pass = VkRenderPass::default();
+
+        for command in &commands[command_idx..] {
+            match command {
+                Command::BeginRenderPass(descriptor, debug_name) => {
+                    if let Some(name) = *debug_name {
+                        if let Some((debug, _)) = debug {
+                            let name = CString::new(name).unwrap();
+                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
+                            debug.cmd_begin_debug_utils_label(cb, &label);
+                        }
+                    }
+
+                    // Get the render pass described
+                    active_render_pass = render_passes.get(device, descriptor);
+
+                    // Find the render pass
+                    let mut dims = (0, 0);
+                    let mut views = Vec::with_capacity(
+                        descriptor.color_attachments.len()
+                            + descriptor.color_resolve_attachments.len(),
+                    );
+                    for attachment in &descriptor.color_attachments {
+                        views.push(match &attachment.source {
+                            ColorAttachmentSource::SurfaceImage(image) => {
+                                // Indicate that the surface image has been drawn to
+                                image.internal().signal_draw();
+                                dims = image.internal().dims();
+                                image.internal().view()
+                            }
+                            ColorAttachmentSource::Texture {
+                                texture,
+                                array_element,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    texture.dims().0.shr(mip_level).max(1),
+                                    texture.dims().1.shr(mip_level).max(1),
+                                );
+                                texture.internal().get_view(*array_element, *mip_level)
+                            }
+                            ColorAttachmentSource::CubeMap {
+                                cube_map,
+                                array_element,
+                                face,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map
+                                    .internal()
+                                    .get_face_view(*array_element, *mip_level, *face)
+                            }
+                        });
+                    }
+
+                    for attachment in &descriptor.color_resolve_attachments {
+                        views.push(match &attachment.dst {
+                            ColorAttachmentSource::SurfaceImage(image) => {
+                                // Indicate that the surface image has been drawn to
+                                image.internal().signal_draw();
+                                dims = image.internal().dims();
+                                image.internal().view()
+                            }
+                            ColorAttachmentSource::Texture {
+                                texture,
+                                array_element,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    texture.dims().0.shr(mip_level).max(1),
+                                    texture.dims().1.shr(mip_level).max(1),
+                                );
+                                texture.internal().get_view(*array_element, *mip_level)
+                            }
+                            ColorAttachmentSource::CubeMap {
+                                cube_map,
+                                array_element,
+                                face,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map
+                                    .internal()
+                                    .get_face_view(*array_element, *mip_level, *face)
+                            }
+                        });
+                    }
+
+                    if let Some(attachment) = &descriptor.depth_stencil_attachment {
+                        let (width, height, _) = attachment.texture.dims();
+                        let texture = attachment.texture.internal();
+                        dims = (width, height);
+                        views
+                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
+                    }
+
+                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
+                        let (width, height, _) = attachment.dst.dims();
+                        let texture = attachment.dst.internal();
+                        dims = (width, height);
+                        views
+                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
+                    }
+
+                    // Find the framebuffer
+                    let framebuffer = framebuffers.get(
+                        device,
+                        active_render_pass.pass,
+                        views,
+                        vk::Extent2D {
+                            width: dims.0,
+                            height: dims.1,
+                        },
+                    );
+
+                    // Find clear values
+                    let mut clear_values = Vec::with_capacity(descriptor.color_attachments.len());
+                    for attachment in &descriptor.color_attachments {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let color = match clear_color {
+                                ClearColor::RgbaF32(r, g, b, a) => vk::ClearColorValue {
+                                    float32: [*r, *g, *b, *a],
+                                },
+                                ClearColor::RU32(r) => vk::ClearColorValue {
+                                    uint32: [*r, 0, 0, 0],
+                                },
+                                ClearColor::D32S32(_, _) => {
+                                    panic!("invalid color clear color type")
+                                }
+                            };
+                            clear_values.push(vk::ClearValue { color });
+                        }
+                    }
+
+                    for attachment in &descriptor.color_resolve_attachments {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let color = match clear_color {
+                                ClearColor::RgbaF32(r, g, b, a) => vk::ClearColorValue {
+                                    float32: [*r, *g, *b, *a],
+                                },
+                                ClearColor::RU32(r) => vk::ClearColorValue {
+                                    uint32: [*r, 0, 0, 0],
+                                },
+                                ClearColor::D32S32(_, _) => {
+                                    panic!("invalid color clear color type")
+                                }
+                            };
+                            clear_values.push(vk::ClearValue { color });
+                        }
+                    }
+
+                    if let Some(attachment) = &descriptor.depth_stencil_attachment {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let depth_stencil = match clear_color {
+                                ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
+                                    depth: *d,
+                                    stencil: *s,
+                                },
+                                _ => panic!("invalid depth clear color"),
+                            };
+                            clear_values.push(vk::ClearValue { depth_stencil })
+                        }
+                    }
+
+                    if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
+                        if let LoadOp::Clear(clear_color) = &attachment.load_op {
+                            let depth_stencil = match clear_color {
+                                ClearColor::D32S32(d, s) => vk::ClearDepthStencilValue {
+                                    depth: *d,
+                                    stencil: *s,
+                                },
+                                _ => panic!("invalid depth clear color"),
+                            };
+                            clear_values.push(vk::ClearValue { depth_stencil })
+                        }
+                    }
+
+                    // Initial viewport configuration
+                    // NOTE: Viewport is flipped to account for Vulkan coordinate system
+                    let viewport = [vk::Viewport {
+                        width: dims.0 as f32,
+                        height: -(dims.1 as f32),
+                        x: 0.0,
+                        y: dims.1 as f32,
+                        min_depth: 0.0,
+                        max_depth: 1.0,
+                    }];
+
+                    let scissor = [vk::Rect2D {
+                        extent: vk::Extent2D {
+                            width: dims.0,
+                            height: dims.1,
+                        },
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                    }];
+
+                    device.cmd_set_viewport(cb, 0, &viewport);
+                    device.cmd_set_scissor(cb, 0, &scissor);
+
+                    // Begin the render pass
+                    let begin_info = vk::RenderPassBeginInfo::builder()
+                        .render_pass(active_render_pass.pass)
+                        .clear_values(&clear_values)
+                        .framebuffer(framebuffer)
+                        .render_area(vk::Rect2D {
+                            offset: vk::Offset2D { x: 0, y: 0 },
+                            extent: vk::Extent2D {
+                                width: dims.0,
+                                height: dims.1,
+                            },
+                        })
+                        .build();
+
+                    let subpass_info = vk::SubpassBeginInfo::builder()
+                        .contents(vk::SubpassContents::INLINE)
+                        .build();
+
+                    device.cmd_begin_render_pass2(cb, &begin_info, &subpass_info);
+                }
+                Command::EndRenderPass(debug_name) => {
+                    device.cmd_end_render_pass(cb);
+                    if debug_name.is_some() {
+                        if let Some((debug, _)) = debug {
+                            debug.cmd_end_debug_utils_label(cb);
+                        }
+                    }
+                    break;
+                }
+                Command::BindGraphicsPipeline(pipeline) => {
+                    active_layout = pipeline.internal().layout();
+                    let pipeline = pipeline.internal().get(
+                        device,
+                        pipelines,
+                        debug.as_ref().map(|(utils, _)| utils),
+                        active_render_pass,
+                    );
+                    device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
+                }
+                Command::PushConstants { stage, data } => device.cmd_push_constants(
+                    cb,
+                    active_layout,
+                    crate::util::to_vk_shader_stage(*stage),
+                    0,
+                    data,
+                ),
+                Command::BindDescriptorSets { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                Command::BindDescriptorSetsUnchecked { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                Command::BindVertexBuffers { first, binds } => {
+                    let mut buffers = Vec::with_capacity(binds.len());
+                    let mut offsets = Vec::with_capacity(binds.len());
+                    for bind in binds {
+                        let buffer = bind.buffer.internal();
+                        buffers.push(buffer.buffer);
+                        offsets.push(buffer.offset(bind.array_element) + bind.offset);
+                    }
+                    device.cmd_bind_vertex_buffers(cb, *first as u32, &buffers, &offsets);
+                }
+                Command::BindIndexBuffer {
+                    buffer,
+                    array_element,
+                    offset,
+                    ty,
+                } => {
+                    let buffer = buffer.internal();
+                    device.cmd_bind_index_buffer(
+                        cb,
+                        buffer.buffer,
+                        buffer.offset(*array_element) + offset,
+                        crate::util::to_vk_index_type(*ty),
+                    );
+                }
+                Command::Scissor {
+                    attachment,
+                    scissor,
+                } => {
+                    device.cmd_set_scissor(
+                        cb,
+                        *attachment as u32,
+                        &[vk::Rect2D {
+                            offset: vk::Offset2D {
+                                x: scissor.x,
+                                y: scissor.y,
+                            },
+                            extent: vk::Extent2D {
+                                width: scissor.width,
+                                height: scissor.height,
+                            },
+                        }],
+                    );
+                }
+                Command::Draw {
+                    vertex_count,
+                    instance_count,
+                    first_vertex,
+                    first_instance,
+                } => {
+                    device.cmd_draw(
+                        cb,
+                        *vertex_count as u32,
+                        *instance_count as u32,
+                        *first_vertex as u32,
+                        *first_instance as u32,
+                    );
+                }
+                Command::DrawIndexed {
+                    index_count,
+                    instance_count,
+                    first_index,
+                    vertex_offset,
+                    first_instance,
+                } => {
+                    device.cmd_draw_indexed(
+                        cb,
+                        *index_count as u32,
+                        *instance_count as u32,
+                        *first_index as u32,
+                        *vertex_offset as i32,
+                        *first_instance as u32,
+                    );
+                }
+                Command::DrawIndexedIndirect {
+                    buffer,
+                    array_element,
+                    offset,
+                    draw_count,
+                    stride,
+                } => {
+                    device.cmd_draw_indexed_indirect(
+                        cb,
+                        buffer.internal().buffer,
+                        buffer.internal().offset(*array_element) + *offset,
+                        *draw_count as u32,
+                        *stride as u32,
+                    );
+                }
+                Command::DrawIndexedIndirectCount {
+                    draw_buffer,
+                    draw_array_element,
+                    draw_offset,
+                    draw_stride,
+                    count_buffer,
+                    count_array_element,
+                    count_offset,
+                    max_draw_count,
+                } => {
+                    device.cmd_draw_indexed_indirect_count(
+                        cb,
+                        draw_buffer.internal().buffer,
+                        draw_buffer.internal().offset(*draw_array_element) + *draw_offset,
+                        count_buffer.internal().buffer,
+                        count_buffer.internal().offset(*count_array_element) + *count_offset,
+                        *max_draw_count as u32,
+                        *draw_stride as u32,
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    unsafe fn execute_compute_pass<'a>(
+        cb: vk::CommandBuffer,
+        device: &ash::Device,
+        command_idx: usize,
+        commands: &[Command<'a, crate::VulkanBackend>],
+        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    ) {
+        let mut active_layout = vk::PipelineLayout::default();
+
+        for command in &commands[command_idx..] {
+            match command {
+                Command::BeginComputePass(pipeline, debug_name) => {
+                    if let Some(name) = debug_name {
+                        if let Some((debug, _)) = debug {
+                            let name = CString::new(*name).unwrap();
+                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
+                            debug.cmd_begin_debug_utils_label(cb, &label);
+                        }
+                    }
+
+                    active_layout = pipeline.internal().layout;
+                    device.cmd_bind_pipeline(
+                        cb,
+                        vk::PipelineBindPoint::COMPUTE,
+                        pipeline.internal().pipeline,
+                    );
+                }
+                Command::EndComputePass(x, y, z, debug_name) => {
+                    device.cmd_dispatch(cb, *x, *y, *z);
+                    if debug_name.is_some() {
+                        if let Some((debug, _)) = debug {
+                            debug.cmd_end_debug_utils_label(cb);
+                        }
+                    }
+                    break;
+                }
+                Command::PushConstants { stage, data } => device.cmd_push_constants(
+                    cb,
+                    active_layout,
+                    crate::util::to_vk_shader_stage(*stage),
+                    0,
+                    data,
+                ),
+                Command::BindDescriptorSets { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::COMPUTE,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                Command::BindDescriptorSetsUnchecked { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::COMPUTE,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 }
 
@@ -2030,10 +2137,13 @@ unsafe extern "system" fn vulkan_debug_callback(
     let callback_data = *p_callback_data;
     let message_id_number = callback_data.message_id_number;
 
-    // Ignore `OutputNotConsumed` warnings
-    if message_id_number == 101294395 {
-        return vk::FALSE;
-    }
+    match message_id_number {
+        // Ignore `OutputNotConsumed` warnings
+        101294395 => return vk::FALSE,
+        // Ignore false positive from depth ms resolve
+        -2069901625 => return vk::FALSE,
+        _ => {}
+    };
 
     let message_id_name = if callback_data.p_message_id_name.is_null() {
         Cow::from("")

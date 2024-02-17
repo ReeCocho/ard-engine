@@ -367,23 +367,29 @@ impl ImageEffect for Tonemapping {
         }];
 
         // Adaptive luminance
-        commands.compute_pass(|pass| {
-            // Generate the histogram
-            pass.bind_pipeline(self.histogram_gen_pipeline.clone());
-            pass.bind_sets(0, vec![&self.histogram_sets[usize::from(frame)]]);
-            pass.push_constants(bytemuck::cast_slice(&histogram_params));
-            pass.dispatch(
-                self.screen_size.0.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
-                self.screen_size.1.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
-                1,
-            );
+        commands.compute_pass(
+            &self.histogram_gen_pipeline,
+            Some("adaptive_lum_histogram_gen"),
+            |pass| {
+                pass.bind_sets(0, vec![&self.histogram_sets[usize::from(frame)]]);
+                pass.push_constants(bytemuck::cast_slice(&histogram_params));
+                (
+                    self.screen_size.0.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
+                    self.screen_size.1.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
+                    1,
+                )
+            },
+        );
 
-            // Compute luminance
-            pass.bind_pipeline(self.luminance_comp_pipeline.clone());
-            pass.bind_sets(0, vec![&self.luminance_set]);
-            pass.push_constants(bytemuck::cast_slice(&lum_params));
-            pass.dispatch(1, 1, 1);
-        });
+        commands.compute_pass(
+            &self.luminance_comp_pipeline,
+            Some("adaptive_lum_compute"),
+            |pass| {
+                pass.bind_sets(0, vec![&self.luminance_set]);
+                pass.push_constants(bytemuck::cast_slice(&lum_params));
+                (1, 1, 1)
+            },
+        );
 
         // Tonemapping pass
         commands.render_pass(
@@ -398,6 +404,7 @@ impl ImageEffect for Tonemapping {
                 depth_stencil_attachment: None,
                 depth_stencil_resolve_attachment: None,
             },
+            Some("tonemapping"),
             |pass| {
                 pass.bind_pipeline(self.tonemapping_pipeline.clone());
                 pass.bind_sets(0, vec![&self.tonemapping_sets[usize::from(frame)]]);

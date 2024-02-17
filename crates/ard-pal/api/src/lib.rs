@@ -81,7 +81,15 @@ pub trait Backend: Sized + 'static {
         queue: QueueType,
         debug_name: Option<&str>,
         commands: Vec<Command<'_, Self>>,
+        is_async: bool,
     ) -> Self::Job;
+    unsafe fn submit_commands_async_compute(
+        &self,
+        queue: QueueType,
+        debug_name: Option<&str>,
+        commands: Vec<Command<'_, Self>>,
+        compute_commands: Vec<Command<'_, Self>>,
+    ) -> (Self::Job, Self::Job);
     unsafe fn present_image(
         &self,
         surface: &Self::Surface,

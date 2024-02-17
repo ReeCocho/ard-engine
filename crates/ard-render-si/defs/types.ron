@@ -232,7 +232,6 @@
             (name: "base_draw_call", ty: U32),
             (name: "draw_call_count", ty: U32),
             (name: "transparent_start", ty: U32),
-            (name: "reset_group_counts", ty: Bool),
         ]
     ),
     // Push constants used for light binning/clustering.

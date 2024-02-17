@@ -174,10 +174,9 @@ fn pal_test1(pal: &Context, buffers: &[Buffer]) -> Duration {
     .unwrap();
 
     let mut command_buffer = pal.compute().command_buffer();
-    command_buffer.compute_pass(|pass| {
-        pass.bind_pipeline(pipeline.clone());
+    command_buffer.compute_pass(&pipeline, None, |pass| {
         pass.bind_sets(0, vec![&set]);
-        pass.dispatch(1, 1, 1);
+        (1, 1, 1)
     });
     pal.compute().submit(None, command_buffer);
 

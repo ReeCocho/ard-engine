@@ -25,11 +25,11 @@ layout(location = 0) out vec4 OUT_COLOR;
 ////////////////////
 
 void main() {
-    const PbrMaterial data = ard_MaterialData(vs_Slots.y);
+    const PbrMaterial data = ard_MaterialData(vs_Slots.w);
 
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0
-    const vec4 color = sample_texture_default(0, vs_Uv, vec4(1)) * data.color;
+    const vec4 color = sample_texture_default(vs_Slots.x, vs_Uv, vec4(1)) * data.color;
 // Or just use the material color if we have no UVs
 #else
     const vec4 color = data.color;
@@ -42,10 +42,16 @@ void main() {
 
 // We only need to compute final color if we're not depth-only
 #ifndef DEPTH_ONLY
+    // Prefetch textures
+    #if ARD_VS_HAS_UV0
+        const vec4 mr_map = sample_texture_default(vs_Slots.y, vs_Uv, vec4(0.0, 1.0, 0.0, 0.0));
+    #endif
+    #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
+        vec3 N = sample_texture_default(vs_Slots.z, vs_Uv, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
+    #endif
 
     // Apply material properties from texture
     #if ARD_VS_HAS_UV0
-        const vec4 mr_map = sample_texture_default(2, vs_Uv, vec4(0.0, 1.0, 0.0, 0.0));
         const float metallic = clamp(data.metallic * mr_map.b, 0.0, 1.0);
         const float roughness = clamp(data.roughness * mr_map.g, 0.0, 1.0);
     #else
@@ -55,7 +61,6 @@ void main() {
 
     // If we have tangents and uvs, we can support normal mapping
     #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
-        vec3 N = sample_texture_default(1, vs_Uv, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
         N = N * 2.0 - 1.0;
         N = normalize(vs_TBN * N);
     // Otherwise, we just use the vertex shader supplied normal

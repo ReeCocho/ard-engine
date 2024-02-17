@@ -52,15 +52,14 @@ impl LightClusteringPipeline {
         set: &'a LightClusteringSet,
         camera_set: &'a DescriptorSet,
     ) {
-        commands.compute_pass(|pass| {
-            pass.bind_pipeline(self.pipeline.clone());
+        commands.compute_pass(&self.pipeline, Some("light_clustering"), |pass| {
             pass.bind_sets(0, vec![camera_set, set.get()]);
 
             let constants = [GpuLightClusteringPushConstants {
                 total_lights: set.light_count() as u32,
             }];
             pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(1, 1, CAMERA_FROXELS_DEPTH as u32);
+            (1, 1, CAMERA_FROXELS_DEPTH as u32)
         });
     }
 }

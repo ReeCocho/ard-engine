@@ -119,31 +119,41 @@ impl DrawGenPipeline {
         sets: &'a DrawGenSets,
         camera: &'a CameraUbo,
         render_area: Vec2,
-        reset_counts: bool,
     ) {
-        commands.compute_pass(|pass| {
-            // Generate draw calls
-            pass.bind_pipeline(if sets.use_hzb {
-                self.gen_pipeline.clone()
+        // Generate draw calls
+        commands.compute_pass(
+            if sets.use_hzb {
+                &self.gen_pipeline
             } else {
-                self.gen_no_hzb_pipeline.clone()
-            });
-            pass.bind_sets(0, vec![sets.get_gen(frame), camera.get_set(frame)]);
+                &self.gen_no_hzb_pipeline
+            },
+            Some("generate_draw_calls"),
+            |pass| {
+                pass.bind_sets(0, vec![sets.get_gen(frame), camera.get_set(frame)]);
 
-            let object_count = sets.object_count as u32;
-            let group_count = object_count.div_ceil(DRAW_COMPACT_WORKGROUP_SIZE).max(1);
+                let object_count = sets.object_count as u32;
+                let group_count = object_count.div_ceil(DRAW_COMPACT_WORKGROUP_SIZE).max(1);
 
-            let constants = [GpuDrawGenPushConstants {
-                object_count,
-                render_area,
-                transparent_start: sets.non_transparent_object_count as u32,
-            }];
+                let constants = [GpuDrawGenPushConstants {
+                    object_count,
+                    render_area,
+                    transparent_start: sets.non_transparent_object_count as u32,
+                }];
 
-            pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(group_count, 1, 1);
+                pass.push_constants(bytemuck::cast_slice(&constants));
+                (group_count, 1, 1)
+            },
+        );
+    }
 
-            // Compact non-transparent draw calls
-            pass.bind_pipeline(self.compact_pipeline.clone());
+    pub fn compact<'a>(
+        &self,
+        frame: Frame,
+        commands: &mut CommandBuffer<'a>,
+        sets: &'a DrawGenSets,
+    ) {
+        // Compact non-transparent draw calls
+        commands.compute_pass(&self.compact_pipeline, Some("compact_draw_calls"), |pass| {
             pass.bind_sets(0, vec![sets.get_compact(frame)]);
 
             let draw_count = sets.draw_count as u32;
@@ -153,11 +163,10 @@ impl DrawGenPipeline {
                 base_draw_call: 0,
                 draw_call_count: draw_count,
                 transparent_start: sets.non_transparent_draw_count as u32,
-                reset_group_counts: reset_counts,
             }];
 
             pass.push_constants(bytemuck::cast_slice(&constants));
-            pass.dispatch(group_count, 1, 1);
+            (group_count, 1, 1)
         });
     }
 }
@@ -227,6 +236,7 @@ impl DrawGenSets {
         draw_count: usize,
         non_transparent_draw_count: usize,
         src_draw_groups: (&Buffer, usize),
+        instance_counts: (&Buffer, usize),
         dst_draw_calls: (&Buffer, usize),
         draw_counts: (&Buffer, usize),
         objects: &RenderObjects,
@@ -248,6 +258,14 @@ impl DrawGenSets {
                     value: DescriptorValue::StorageBuffer {
                         buffer: src_draw_groups.0,
                         array_element: src_draw_groups.1,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: DRAW_GEN_SET_INSTANCE_COUNTS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: instance_counts.0,
+                        array_element: instance_counts.1,
                     },
                 },
                 DescriptorSetUpdate {
@@ -299,6 +317,14 @@ impl DrawGenSets {
                     },
                 },
                 DescriptorSetUpdate {
+                    binding: DRAW_GEN_NO_HZB_SET_INSTANCE_COUNTS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: instance_counts.0,
+                        array_element: instance_counts.1,
+                    },
+                },
+                DescriptorSetUpdate {
                     binding: DRAW_GEN_NO_HZB_SET_OBJECTS_BINDING,
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
@@ -340,6 +366,14 @@ impl DrawGenSets {
                 value: DescriptorValue::StorageBuffer {
                     buffer: src_draw_groups.0,
                     array_element: src_draw_groups.1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: DRAW_COMPACT_SET_INSTANCE_COUNTS_SRC_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: instance_counts.0,
+                    array_element: instance_counts.1,
                 },
             },
             DescriptorSetUpdate {

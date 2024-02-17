@@ -19,7 +19,6 @@ use crate::{
         descriptor_pool::DescriptorPools,
         garbage_collector::Garbage,
         id_gen::{IdGenerator, ResourceId},
-        usage::{SubResource, SubResourceUsage},
     },
     VulkanBackend,
 };
@@ -29,7 +28,6 @@ pub struct DescriptorSet {
     pub(crate) id: ResourceId,
     pub(crate) layout: vk::DescriptorSetLayout,
     pub(crate) bound: DescriptorSetBindings,
-    pub(crate) resource_usage: Vec<(SubResource, SubResourceUsage)>,
     pub(crate) on_drop: Sender<Garbage>,
 }
 
@@ -42,8 +40,8 @@ pub(crate) type DescriptorSetBindings = SmallVec<[SmallVec<[Option<Binding>; 1]>
 
 pub(crate) struct Binding {
     pub value: BoundValue,
-    pub stage: vk::PipelineStageFlags,
-    pub access: vk::AccessFlags,
+    pub stage: vk::PipelineStageFlags2,
+    pub access: vk::AccessFlags2,
 }
 
 pub(crate) enum BoundValue {
@@ -145,7 +143,6 @@ impl DescriptorSet {
             layout: pool.layout(),
             on_drop: garbage,
             bound,
-            resource_usage: Vec::default(),
         })
     }
 
@@ -155,16 +152,18 @@ impl DescriptorSet {
         layout: &DescriptorSetLayout,
         updates: &[DescriptorSetUpdate<crate::VulkanBackend>],
     ) {
-        let sampleable_aspects = vk::ImageAspectFlags::COLOR | vk::ImageAspectFlags::DEPTH;
+        const SAMPLEABLE_ASPECTS: vk::ImageAspectFlags = vk::ImageAspectFlags::from_raw(
+            vk::ImageAspectFlags::COLOR.as_raw() | vk::ImageAspectFlags::DEPTH.as_raw(),
+        );
 
         // Wait until the last queue that the buffer was used in has finished it's work
-        let mut resc_state = ctx.resource_state.write().unwrap();
+        let resc_state = ctx.resource_state.write().unwrap();
         let mut sampler_cache = ctx.samplers.lock().unwrap();
 
         // NOTE: The reason we set the usage to `None` is because we have to wait for the previous
         // usage to complete. This implies that no one is using this set anymore and thus no
         // waits are further needed.
-        if let Some(old) = resc_state.register_set(self.id, None) {
+        if let Some(old) = resc_state.get_set_queue_usage(self.id) {
             ctx.wait_on(
                 &Job {
                     ty: old.queue,
@@ -183,7 +182,7 @@ impl DescriptorSet {
             if let Some(old) = self.bound[update.binding as usize][update.array_element].take() {
                 match old.value {
                     // It's safe to destroy the image view now because we guarantee the set is not
-                    // being used by
+                    // being used by any queues
                     BoundValue::Texture { view, .. } => {
                         ctx.device.destroy_image_view(view, None);
                     }
@@ -201,34 +200,36 @@ impl DescriptorSet {
             self.bound[update.binding as usize][update.array_element] = Some({
                 let binding = layout.get_binding(update.binding).unwrap();
                 let access = match binding.ty {
-                    DescriptorType::Texture => vk::AccessFlags::SHADER_READ,
-                    DescriptorType::UniformBuffer => vk::AccessFlags::UNIFORM_READ,
+                    DescriptorType::Texture => vk::AccessFlags2::SHADER_READ,
+                    DescriptorType::UniformBuffer => vk::AccessFlags2::UNIFORM_READ,
                     DescriptorType::StorageBuffer(ty) => match ty {
-                        AccessType::Read => vk::AccessFlags::SHADER_READ,
+                        AccessType::Read => vk::AccessFlags2::SHADER_STORAGE_READ,
                         AccessType::ReadWrite => {
-                            vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE
+                            vk::AccessFlags2::SHADER_STORAGE_READ
+                                | vk::AccessFlags2::SHADER_STORAGE_WRITE
                         }
                     },
                     DescriptorType::StorageImage(ty) => match ty {
-                        AccessType::Read => vk::AccessFlags::SHADER_READ,
+                        AccessType::Read => vk::AccessFlags2::SHADER_STORAGE_READ,
                         AccessType::ReadWrite => {
-                            vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE
+                            vk::AccessFlags2::SHADER_STORAGE_READ
+                                | vk::AccessFlags2::SHADER_STORAGE_WRITE
                         }
                     },
-                    DescriptorType::CubeMap => vk::AccessFlags::SHADER_READ,
+                    DescriptorType::CubeMap => vk::AccessFlags2::SHADER_READ,
                 };
                 let stage = match binding.stage {
-                    ShaderStage::Vertex => vk::PipelineStageFlags::VERTEX_SHADER,
-                    ShaderStage::Fragment => vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    ShaderStage::Compute => vk::PipelineStageFlags::COMPUTE_SHADER,
+                    ShaderStage::Vertex => vk::PipelineStageFlags2::VERTEX_SHADER,
+                    ShaderStage::Fragment => vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                    ShaderStage::Compute => vk::PipelineStageFlags2::COMPUTE_SHADER,
                     ShaderStage::AllStages => {
-                        vk::PipelineStageFlags::VERTEX_SHADER
-                            | vk::PipelineStageFlags::FRAGMENT_SHADER
-                            | vk::PipelineStageFlags::COMPUTE_SHADER
+                        vk::PipelineStageFlags2::VERTEX_SHADER
+                            | vk::PipelineStageFlags2::FRAGMENT_SHADER
+                            | vk::PipelineStageFlags2::COMPUTE_SHADER
                     }
                     ShaderStage::AllGraphics => {
-                        vk::PipelineStageFlags::VERTEX_SHADER
-                            | vk::PipelineStageFlags::FRAGMENT_SHADER
+                        vk::PipelineStageFlags2::VERTEX_SHADER
+                            | vk::PipelineStageFlags2::FRAGMENT_SHADER
                     }
                 };
 
@@ -324,7 +325,7 @@ impl DescriptorSet {
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: texture.aspect_flags & sampleable_aspects,
+                                aspect_mask: texture.aspect_flags & SAMPLEABLE_ASPECTS,
                                 base_mip_level: *base_mip as u32,
                                 level_count: *mip_count as u32,
                                 base_array_layer: *array_element as u32,
@@ -388,7 +389,7 @@ impl DescriptorSet {
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: texture.aspect_flags & sampleable_aspects,
+                                aspect_mask: texture.aspect_flags & SAMPLEABLE_ASPECTS,
                                 base_mip_level: *mip as u32,
                                 level_count: 1,
                                 base_array_layer: *array_element as u32,
@@ -452,7 +453,7 @@ impl DescriptorSet {
                             .format(cube_map.format)
                             .view_type(vk::ImageViewType::CUBE)
                             .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: cube_map.aspect_flags & sampleable_aspects,
+                                aspect_mask: cube_map.aspect_flags & SAMPLEABLE_ASPECTS,
                                 base_mip_level: *base_mip as u32,
                                 level_count: *mip_count as u32,
                                 base_array_layer: 6 * *array_element as u32,
@@ -508,142 +509,6 @@ impl DescriptorSet {
         }
 
         ctx.device.update_descriptor_sets(&writes, &[]);
-        self.update_resource_usages();
-    }
-
-    fn update_resource_usages(&mut self) {
-        self.resource_usage.clear();
-
-        self.bound
-            .iter()
-            .flat_map(|binding| binding.iter().flatten())
-            .for_each(|elem| match &elem.value {
-                BoundValue::UniformBuffer {
-                    buffer,
-                    id,
-                    array_element,
-                    sharing_mode,
-                    aligned_size,
-                    ..
-                } => self.resource_usage.push((
-                    SubResource::Buffer {
-                        buffer: *buffer,
-                        id: *id,
-                        sharing: *sharing_mode,
-                        array_elem: *array_element as u32,
-                        aligned_size: *aligned_size,
-                    },
-                    SubResourceUsage {
-                        access: elem.access,
-                        stage: elem.stage,
-                        layout: vk::ImageLayout::UNDEFINED,
-                    },
-                )),
-                BoundValue::StorageBuffer {
-                    buffer,
-                    id,
-                    array_element,
-                    sharing_mode,
-                    aligned_size,
-                    ..
-                } => self.resource_usage.push((
-                    SubResource::Buffer {
-                        buffer: *buffer,
-                        id: *id,
-                        sharing: *sharing_mode,
-                        array_elem: *array_element as u32,
-                        aligned_size: *aligned_size,
-                    },
-                    SubResourceUsage {
-                        access: elem.access,
-                        stage: elem.stage,
-                        layout: vk::ImageLayout::UNDEFINED,
-                    },
-                )),
-                // Textures require that you register each mip individually
-                BoundValue::Texture {
-                    _ref_counter,
-                    image,
-                    id,
-                    array_element,
-                    aspect_mask,
-                    mip_count,
-                    base_mip,
-                    sharing_mode,
-                    ..
-                } => {
-                    self.resource_usage.push((
-                        SubResource::Texture {
-                            texture: *image,
-                            id: *id,
-                            aspect_mask: *aspect_mask,
-                            array_elem: *array_element as u32,
-                            sharing: *sharing_mode,
-                            base_mip_level: *base_mip,
-                            mip_count: *mip_count,
-                        },
-                        SubResourceUsage {
-                            access: elem.access,
-                            stage: elem.stage,
-                            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        },
-                    ));
-                }
-                BoundValue::StorageImage {
-                    _ref_counter,
-                    image,
-                    id,
-                    aspect_mask,
-                    mip,
-                    array_element,
-                    sharing_mode,
-                    ..
-                } => self.resource_usage.push((
-                    SubResource::Texture {
-                        texture: *image,
-                        id: *id,
-                        aspect_mask: *aspect_mask,
-                        array_elem: *array_element as u32,
-                        base_mip_level: *mip,
-                        mip_count: 1,
-                        sharing: *sharing_mode,
-                    },
-                    SubResourceUsage {
-                        access: elem.access,
-                        stage: elem.stage,
-                        layout: vk::ImageLayout::GENERAL,
-                    },
-                )),
-                // Cube maps require that you register each mip individually
-                BoundValue::CubeMap {
-                    image,
-                    id,
-                    aspect_mask,
-                    mip_count,
-                    base_mip,
-                    array_element,
-                    sharing_mode,
-                    ..
-                } => {
-                    for i in 0..*mip_count {
-                        self.resource_usage.push((
-                            SubResource::CubeMap {
-                                cube_map: *image,
-                                id: *id,
-                                aspect_mask: *aspect_mask,
-                                array_elem: *array_element as u32,
-                                sharing: *sharing_mode,
-                                mip_level: base_mip + i,
-                            },
-                            SubResourceUsage {
-                                access: elem.access,
-                                stage: elem.stage,
-                                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            },
-                        ))
-                    }
-                }
-            });
     }
 }
 

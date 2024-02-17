@@ -35,8 +35,8 @@ pub fn compile_shader(
         .arg(&shader_path)
         .args(&inc_paths)
         .args(&def_args)
-        .arg("--target-env=vulkan1.2")
-        .arg("--target-spv=spv1.4")
+        .arg("--target-env=vulkan1.3")
+        .arg("--target-spv=spv1.6")
         .arg("-g") // Enable for shader source debugging
         .arg("-o")
         .arg(output_path)

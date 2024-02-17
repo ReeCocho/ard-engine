@@ -10,7 +10,7 @@ use ard_render_textures::{
 };
 
 // TODO: Make this configurable.
-const MAX_UPLOAD_COUNT: usize = 64;
+const UPLOAD_BUDGET: u64 = 4 * 1024 * 1024;
 
 pub(crate) struct Staging {
     ctx: Context,
@@ -117,13 +117,17 @@ impl Staging {
         let mut commands = UploadCommands::new(self.ctx.clone());
 
         let mut upload_count = 0;
+        let mut upload_size = 0;
+
         for request in &self.pending {
             // TODO: This is needed to prevent stalling the GPU with massive requests. It should be
             // modified to take into account upload sizes since that's really what the killer is.
-            if upload_count >= MAX_UPLOAD_COUNT {
+            if upload_count != 0 && upload_size >= UPLOAD_BUDGET {
                 break;
             }
+
             upload_count += 1;
+            upload_size += request.upload_size();
 
             let resc = match request {
                 StagingRequest::Mesh { id, upload } => {
@@ -209,11 +213,24 @@ impl<'a> UploadCommands<'a> {
             transfer_job: self
                 .ctx
                 .transfer()
-                .submit(Some("transfer_staging"), self.transfer),
+                .submit_async(Some("transfer_staging"), self.transfer),
             main_job: self
                 .main
                 .map(|cb| self.ctx.main().submit(Some("main_staging"), cb)),
             resources: self.resources,
+        }
+    }
+}
+
+impl StagingRequest {
+    #[inline(always)]
+    pub fn upload_size(&self) -> u64 {
+        match self {
+            StagingRequest::Mesh { upload, .. } => {
+                upload.index_staging.size() + upload.vertex_staging.size()
+            }
+            StagingRequest::Texture { upload, .. } => upload.staging.size(),
+            StagingRequest::TextureMip { upload, .. } => upload.staging.size(),
         }
     }
 }

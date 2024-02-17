@@ -15,74 +15,8 @@
 
 const float PI = 3.14159265359;
 
-const int SHADOW_SAMPLE_COUNT = 16;
-
-const vec2 SHADOW_SAMPLE_POINTS[64] = vec2[64](
-    vec2(0.2146, -0.0948),
-    vec2(0.0990, 0.3579),
-    vec2(-0.0035, 0.2658),
-    vec2(0.1762, -0.5591),
-    vec2(-0.0004, 0.0009),
-    vec2(0.6321, -0.6937),
-    vec2(0.9553, 0.1622),
-    vec2(-0.6298, 0.2715),
-    vec2(0.1512, -0.0202),
-    vec2(0.0000, 0.0000),
-    vec2(-0.2233, 0.4659),
-    vec2(-0.6553, 0.5411),
-    vec2(0.0163, -0.7383),
-    vec2(0.0017, -0.0059),
-    vec2(-0.0180, 0.0081),
-    vec2(-0.0599, -0.0180),
-    vec2(-0.0022, 0.0003),
-    vec2(0.0084, -0.0025),
-    vec2(0.3367, 0.1045),
-    vec2(0.0339, -0.2171),
-    vec2(0.0001, -0.0295),
-    vec2(-0.0688, -0.1093),
-    vec2(0.2506, -0.3755),
-    vec2(0.0090, 0.0079),
-    vec2(0.4726, 0.0084),
-    vec2(-0.1536, -0.1363),
-    vec2(-0.0405, -0.3138),
-    vec2(-0.1842, 0.0519),
-    vec2(0.2597, 0.4207),
-    vec2(0.1068, 0.1259),
-    vec2(-0.2395, 0.1493),
-    vec2(-0.4052, -0.0651),
-    vec2(0.0979, 0.8154),
-    vec2(-0.2605, 0.2911),
-    vec2(-0.8371, -0.2679),
-    vec2(-0.0023, 0.0155),
-    vec2(0.0297, -0.0189),
-    vec2(0.0374, 0.0173),
-    vec2(-0.1076, 0.6513),
-    vec2(-0.0205, -0.0133),
-    vec2(-0.2703, -0.1281),
-    vec2(-0.0590, 0.0901),
-    vec2(0.6532, -0.3993),
-    vec2(-0.2345, -0.8777),
-    vec2(0.0065, 0.0474),
-    vec2(0.0399, 0.0892),
-    vec2(-0.0417, 0.0357),
-    vec2(0.0001, 0.0002),
-    vec2(0.7138, 0.3460),
-    vec2(0.0597, -0.1273),
-    vec2(0.0871, 0.0132),
-    vec2(0.5890, -0.1601),
-    vec2(-0.0520, 0.1702),
-    vec2(0.2086, 0.1379),
-    vec2(-0.0026, -0.0030),
-    vec2(-0.3601, -0.4321),
-    vec2(0.4713, 0.4256),
-    vec2(-0.5904, -0.3978),
-    vec2(0.0522, -0.0594),
-    vec2(-0.0194, -0.0678),
-    vec2(-0.1182, -0.0010),
-    vec2(-0.5352, 0.0666),
-    vec2(0.2558, -0.2151),
-    vec2(-0.1723, -0.3947)
-);
+const int SHADOW_KERNEL_SIZE = 2;
+const int SHADOW_SAMPLE_COUNT = (1 + (2 * SHADOW_KERNEL_SIZE)) * (1 + (2 * SHADOW_KERNEL_SIZE));
 
 // Intensity of lighting attenuation we consider to be "close enough" to 0.
 const float ATTENUATION_EPSILON = 0.001;
@@ -171,6 +105,7 @@ vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+#ifndef DEPTH_ONLY
 /// Samples the shadow cascade at a given UV.
 ///
 /// `cascade` - Index of the shadow cascade to sample.
@@ -185,12 +120,14 @@ float sample_shadow_map(int layer, vec2 uv, float bias, vec2 filter_radius_uv, f
     const vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
     const float shadow_bias = z_receiver - bias;
 
-    for (int i = 0; i < SHADOW_SAMPLE_COUNT; i++) {
-        vec2 offset = filter_radius_uv * SHADOW_SAMPLE_POINTS[i] * 4.0;
-        shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r / float(SHADOW_SAMPLE_COUNT);
+    for (int x = -SHADOW_KERNEL_SIZE; x <= SHADOW_KERNEL_SIZE; x++) {
+        for (int y = -SHADOW_KERNEL_SIZE; y <= SHADOW_KERNEL_SIZE; y++) {
+            vec2 offset = filter_radius_uv * (vec2(x, y) * vec2(1.0 / float(SHADOW_KERNEL_SIZE))) * 1.5;
+            shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r;
+        }
     }
 
-    return shadow;
+    return shadow / float(SHADOW_SAMPLE_COUNT);
 }
 
 /// Calculates the shadowing factor of the fragment with the given surface normal.
@@ -238,6 +175,7 @@ float compute_shadow_factor(vec3 normal) {
         proj_coords.z
     );
 }
+#endif
 
 /// Computes lighting from a generic source.
 ///
@@ -320,14 +258,13 @@ uvec3 get_cluster_id(vec2 uv, float depth) {
 /// Bindless texture sampling.
 #ifdef ARD_TEXTURE_COUNT
 
-/// Samples a texture at a given slot. If the texture is unbound, the provided default will be 
-/// returned.
-vec4 sample_texture_default(uint slot, vec2 uv, vec4 def) {
-    const uint tex = texture_slots[vs_Slots.x][slot];
+/// Samples a texture at a given texture ID. If the texture is unbound, the provided default will 
+/// be returned.
+vec4 sample_texture_default(uint id, vec2 uv, vec4 def) {
     return mix(
-        texture(textures[min(tex, MAX_TEXTURES)], uv), 
+        texture(textures[min(id, MAX_TEXTURES - 1)], uv), 
         def, 
-        float(tex == EMPTY_TEXTURE_ID)
+        float(id == EMPTY_TEXTURE_ID)
     );
 }
 

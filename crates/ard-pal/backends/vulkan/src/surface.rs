@@ -16,7 +16,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use crate::{
     util::{
         id_gen::{IdGenerator, ResourceId},
-        usage::{GlobalResourceUsage, ImageRegion},
+        usage2::{GlobalResourceUsage, ImageRegion},
     },
     VulkanBackend,
 };
@@ -431,11 +431,12 @@ impl Surface {
 
         // Layout is undefined after presenting, so if the
         // image is reaquired we must update its layout
-        ctx.resource_state.write().unwrap().set_layout(
+        ctx.resource_state.write().unwrap().set_image_layout(
             &ImageRegion {
                 id: self.images[image_idx].1,
                 array_elem: 0,
-                mip_level: 0,
+                base_mip_level: 0,
+                mip_count: 1,
             },
             vk::ImageLayout::UNDEFINED,
         );

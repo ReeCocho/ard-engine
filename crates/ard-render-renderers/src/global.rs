@@ -26,12 +26,12 @@ pub struct GlobalSetBindingUpdate<'a> {
 impl GlobalSets {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let sets = (0..frames_in_flight)
-            .map(|_| {
+            .map(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
                         layout: layouts.global.clone(),
-                        debug_name: Some("global_set_{frame_idx}".into()),
+                        debug_name: Some(format!("global_set_{frame_idx}")),
                     },
                 )
                 .unwrap()

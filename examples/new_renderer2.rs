@@ -161,12 +161,12 @@ fn main() {
             settings: RendererSettings {
                 render_scene: true,
                 render_time: None,
-                present_mode: PresentMode::Fifo,
+                present_mode: PresentMode::Mailbox,
                 anti_aliasing: AntiAliasingMode::MSAA(MultiSamples::Count8),
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())

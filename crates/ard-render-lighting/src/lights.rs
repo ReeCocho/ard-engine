@@ -45,7 +45,7 @@ impl Lighting {
                 buffer_usage: BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
-                sharing_mode: SharingMode::Exclusive,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: Some("light_clusters".into()),
             },
         )
@@ -107,7 +107,7 @@ impl Lights {
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN,
-                    sharing_mode: SharingMode::Exclusive,
+                    sharing_mode: SharingMode::Concurrent,
                     debug_name: Some("lights".into()),
                 },
             )
@@ -121,7 +121,7 @@ impl Lights {
                     buffer_usage: BufferUsage::UNIFORM_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN,
-                    sharing_mode: SharingMode::Exclusive,
+                    sharing_mode: SharingMode::Concurrent,
                     debug_name: Some("global_lighting".into()),
                 },
             )

@@ -1,24 +1,10 @@
-use crate::{
-    command_buffer::Command, compute_pipeline::ComputePipeline, descriptor_set::DescriptorSet,
-    types::ShaderStage, Backend,
-};
+use crate::{command_buffer::Command, descriptor_set::DescriptorSet, types::ShaderStage, Backend};
 
 pub struct ComputePass<'a, B: Backend> {
-    pub(crate) bound_pipeline: bool,
     pub(crate) commands: Vec<Command<'a, B>>,
 }
 
 impl<'a, B: Backend> ComputePass<'a, B> {
-    /// Binds a compute pipeline to the scope.
-    ///
-    /// # Arguments
-    /// - `pipeline` - The compute pipeline to bind.
-    #[inline]
-    pub fn bind_pipeline(&mut self, pipeline: ComputePipeline<B>) {
-        self.bound_pipeline = true;
-        self.commands.push(Command::BindComputePipeline(pipeline));
-    }
-
     #[inline]
     pub fn push_constants(&mut self, data: &[u8]) {
         self.commands.push(Command::PushConstants {
@@ -48,20 +34,5 @@ impl<'a, B: Backend> ComputePass<'a, B> {
             first,
             stage: ShaderStage::Compute,
         });
-    }
-
-    /// Dispatches `x * y * z` local workgroups.
-    ///
-    /// # Arguments
-    /// - `x` - Number of local workgroups in the X dimension.
-    /// - `y` - Number of local workgroups in the Y dimension.
-    /// - `z` - Number of local workgroups in the Z dimension.
-    ///
-    /// # Panics
-    /// - If there is no bound compute pipeline.
-    #[inline]
-    pub fn dispatch(&mut self, x: u32, y: u32, z: u32) {
-        assert!(self.bound_pipeline, "no bound compute pipeline");
-        self.commands.push(Command::Dispatch(x, y, z));
     }
 }

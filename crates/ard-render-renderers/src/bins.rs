@@ -36,6 +36,7 @@ pub struct DrawBins {
 #[derive(Default)]
 struct DrawBinSet {
     bins: Vec<DrawBin>,
+    has_valid_draws: bool,
     highz_rng: Range<usize>,
     non_transparent_rng: Range<usize>,
     transparent_rng: Range<usize>,
@@ -110,6 +111,12 @@ impl DrawBins {
     }
 
     #[inline(always)]
+    pub fn has_valid_draws(&self, frame: Frame) -> bool {
+        let draw_call_idx = self.draw_call_buffer_idx(frame);
+        self.bins[draw_call_idx].has_valid_draws
+    }
+
+    #[inline(always)]
     pub fn use_alternate(&self, frame: Frame) -> bool {
         self.use_alternate_draw_buffer[usize::from(frame)]
     }
@@ -155,6 +162,7 @@ impl DrawBins {
         // Grab bin set and reset
         let bin_set = &mut self.bins[draw_call_idx];
         bin_set.bins.clear();
+        bin_set.has_valid_draws = false;
 
         // Generate high-z bins first
         bin_set.highz_rng.start = 0;
@@ -166,6 +174,7 @@ impl DrawBins {
             materials,
             0,
             0,
+            &mut bin_set.has_valid_draws,
         );
         bin_set.highz_rng.end = highz_res.bin_count;
 
@@ -180,6 +189,7 @@ impl DrawBins {
             materials,
             highz_res.draw_count,
             highz_res.object_count,
+            &mut bin_set.has_valid_draws,
         );
         bin_set.non_transparent_rng.end = highz_res.bin_count + nt_res.bin_count;
 
@@ -197,6 +207,7 @@ impl DrawBins {
             materials,
             highz_res.draw_count + nt_res.draw_count,
             highz_res.object_count + nt_res.object_count,
+            &mut bin_set.has_valid_draws,
         );
         bin_set.transparent_rng.end = bin_set.transparent_rng.start + t_res.bin_count;
     }
@@ -209,6 +220,7 @@ impl DrawBins {
         materials: &ResourceAllocator<MaterialResource, FIF>,
         mut draw_call_offset: usize,
         mut object_id_offset: usize,
+        has_valid_draws: &mut bool,
     ) -> BinGenOutput {
         let mut out = BinGenOutput {
             draw_count: 0,
@@ -247,6 +259,10 @@ impl DrawBins {
                     data_size: delta.new_data_size,
                 });
 
+                if !delta.skip {
+                    *has_valid_draws = true;
+                }
+
                 draw_call_offset += draw_count;
                 out.bin_count += 1;
                 draw_count = 0;
@@ -262,7 +278,7 @@ impl DrawBins {
             *draw_call = match meshes.get(separated_key.mesh_id) {
                 Some(_) => GpuDrawGroup {
                     mesh: usize::from(separated_key.mesh_id) as u32,
-                    instance_count: 0,
+                    instance_count: group.len as u32,
                     first_instance,
                     draw_bin: bins.len() as u32,
                     bin_offset: draw_count as u32,

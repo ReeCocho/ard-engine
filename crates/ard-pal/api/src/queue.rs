@@ -68,7 +68,67 @@ impl<B: Backend> Queue<B> {
         let id = unsafe {
             self.ctx
                 .0
-                .submit_commands(self.ty, debug_name, commands.commands)
+                .submit_commands(self.ty, debug_name, commands.commands, false)
+        };
+
+        Job {
+            id,
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    /// Submits a command to the command buffer with an additional async compute command buffer.
+    ///
+    /// The first job returned is for the primary command buffer and the second is for compute.
+    ///
+    /// # Arguments
+    /// - `debug_name` - The backend *should* use the provided debug name for easy identification.
+    /// - `commands` - The primary command buffer to submit.
+    /// - `compute_commands` - The command buffer to submit to the async compute queue.
+    ///
+    /// # Panics
+    /// - If the primary command buffer is also being submitted to the compute queue.
+    #[inline(always)]
+    pub fn submit_with_async_compute(
+        &self,
+        debug_name: Option<&str>,
+        commands: CommandBuffer<B>,
+        compute_commands: CommandBuffer<B>,
+    ) -> (Job<B>, Job<B>) {
+        assert_ne!(self.ty, QueueType::Compute);
+
+        let (prim_id, comp_id) = unsafe {
+            self.ctx.0.submit_commands_async_compute(
+                self.ty,
+                debug_name,
+                commands.commands,
+                compute_commands.commands,
+            )
+        };
+
+        (
+            Job {
+                id: prim_id,
+                ctx: self.ctx.clone(),
+            },
+            Job {
+                id: comp_id,
+                ctx: self.ctx.clone(),
+            },
+        )
+    }
+
+    /// Submits a command buffer for async execution.
+    ///
+    /// # Arguments
+    /// - `debug_name` - The backend *should* use the provided debug name for easy identification.
+    /// - `commands` - The command buffers to submit.
+    #[inline(always)]
+    pub fn submit_async(&self, debug_name: Option<&str>, commands: CommandBuffer<B>) -> Job<B> {
+        let id = unsafe {
+            self.ctx
+                .0
+                .submit_commands(self.ty, debug_name, commands.commands, true)
         };
 
         Job {

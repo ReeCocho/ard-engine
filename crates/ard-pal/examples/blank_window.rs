@@ -85,6 +85,7 @@ fn main() {
                         depth_stencil_attachment: None,
                         depth_stencil_resolve_attachment: None,
                     },
+                    None,
                     |_pass| {
                         // Here is where you would put rendering commands if you wanted to draw
                         // objects to the screen. We aren't doing that here. If you'd like an

@@ -21,7 +21,7 @@ use super::{
     fast_int_hasher::FIHashMap,
     id_gen::{IdGenerator, ResourceId},
     pipeline_cache::PipelineCache,
-    usage::GlobalResourceUsage,
+    usage2::GlobalResourceUsage,
 };
 
 pub(crate) struct GarbageCollector {

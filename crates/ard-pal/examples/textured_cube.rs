@@ -448,6 +448,7 @@ fn main() {
                         depth_stencil_attachment: None,
                         depth_stencil_resolve_attachment: None,
                     },
+                    None,
                     |pass| {
                         pass.bind_pipeline(triangle_pipeline.clone());
                         pass.bind_index_buffer(&triangle_index_buffer, 0, 0, IndexType::U16);
@@ -483,6 +484,7 @@ fn main() {
                         }),
                         depth_stencil_resolve_attachment: None,
                     },
+                    None,
                     |pass| {
                         pass.bind_pipeline(cube_pipeline.clone());
                         pass.bind_sets(0, vec![&cube_set]);

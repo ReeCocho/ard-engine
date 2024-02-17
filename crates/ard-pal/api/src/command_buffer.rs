@@ -9,7 +9,8 @@ use crate::{
     surface::SurfaceImage,
     texture::{Blit, Texture},
     types::{
-        CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode, TextureUsage,
+        BufferUsage, CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode,
+        TextureUsage,
     },
     Backend,
 };
@@ -101,13 +102,11 @@ pub struct TextureResolve {
 }
 
 pub enum Command<'a, B: Backend> {
-    BeginRenderPass(RenderPassDescriptor<'a, B>),
-    EndRenderPass,
-    BeginComputePass,
-    EndComputePass,
+    BeginRenderPass(RenderPassDescriptor<'a, B>, Option<&'a str>),
+    EndRenderPass(Option<&'a str>),
+    BeginComputePass(ComputePipeline<B>, Option<&'a str>),
+    EndComputePass(u32, u32, u32, Option<&'a str>),
     BindGraphicsPipeline(GraphicsPipeline<B>),
-    BindComputePipeline(ComputePipeline<B>),
-    Dispatch(u32, u32, u32),
     PushConstants {
         stage: ShaderStage,
         data: Vec<u8>,
@@ -116,6 +115,7 @@ pub enum Command<'a, B: Backend> {
         buffer: &'a Buffer<B>,
         array_element: usize,
         new_queue: QueueType,
+        usage_hint: Option<BufferUsage>,
     },
     TransferTextureOwnership {
         texture: &'a Texture<B>,
@@ -123,6 +123,7 @@ pub enum Command<'a, B: Backend> {
         base_mip: usize,
         mip_count: usize,
         new_queue: QueueType,
+        usage_hint: Option<TextureUsage>,
     },
     TransferCubeMapOwnership {
         cube_map: &'a CubeMap<B>,
@@ -131,6 +132,7 @@ pub enum Command<'a, B: Backend> {
         mip_count: usize,
         face: CubeFace,
         new_queue: QueueType,
+        usage_hint: Option<TextureUsage>,
     },
     BindDescriptorSets {
         sets: Vec<&'a DescriptorSet<B>>,
@@ -213,11 +215,6 @@ pub enum Command<'a, B: Backend> {
         blit: Blit,
         filter: Filter,
     },
-    TextureResolve {
-        src: &'a Texture<B>,
-        dst: &'a Texture<B>,
-        resolve: TextureResolve,
-    },
     SetTextureUsage {
         tex: &'a Texture<B>,
         new_usage: TextureUsage,
@@ -247,6 +244,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
     pub fn render_pass(
         &mut self,
         descriptor: RenderPassDescriptor<'a, B>,
+        debug_name: Option<&'a str>,
         pass: impl FnOnce(&mut RenderPass<'a, B>),
     ) {
         assert_eq!(
@@ -256,38 +254,50 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             self.queue_ty
         );
 
-        self.commands.push(Command::BeginRenderPass(descriptor));
+        self.commands
+            .push(Command::BeginRenderPass(descriptor, debug_name));
         let mut render_pass = RenderPass {
             bound_pipeline: false,
             commands: Vec::default(),
         };
         pass(&mut render_pass);
         self.commands.extend(render_pass.commands);
-        self.commands.push(Command::EndRenderPass);
+        self.commands.push(Command::EndRenderPass(debug_name));
     }
 
     /// Begins a compute pass scope.
     ///
     /// # Arguments
-    /// - `pass` - A function that records compute commands.
+    /// - `pipeline` - The pipeline used for this compute pass.
+    /// - `pass` - A function that records compute commands. Returns the work groups for dispatch.
     ///
     /// # Panics
     /// - If the queue type this command buffer was created with does not support compute commands.
-    pub fn compute_pass(&mut self, pass: impl FnOnce(&mut ComputePass<'a, B>)) {
+    pub fn compute_pass(
+        &mut self,
+        pipeline: &ComputePipeline<B>,
+        debug_name: Option<&'a str>,
+        pass: impl FnOnce(&mut ComputePass<'a, B>) -> (u32, u32, u32),
+    ) {
         assert!(
             self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
             "queue `{:?}` does not support compute passes",
             self.queue_ty
         );
 
-        self.commands.push(Command::BeginComputePass);
+        self.commands
+            .push(Command::BeginComputePass(pipeline.clone(), debug_name));
         let mut compute_pass = ComputePass {
             commands: Vec::default(),
-            bound_pipeline: false,
         };
-        pass(&mut compute_pass);
+        let workgroups = pass(&mut compute_pass);
         self.commands.extend(compute_pass.commands);
-        self.commands.push(Command::EndComputePass);
+        self.commands.push(Command::EndComputePass(
+            workgroups.0,
+            workgroups.1,
+            workgroups.2,
+            debug_name,
+        ));
     }
 
     /// Relinquishes ownership of a buffer by the current queue for another queue type.
@@ -305,6 +315,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         buffer: &'a Buffer<B>,
         array_element: usize,
         new_queue: QueueType,
+        usage_hint: Option<BufferUsage>,
     ) {
         assert!(
             buffer.sharing_mode() == SharingMode::Exclusive
@@ -314,6 +325,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             buffer,
             array_element,
             new_queue,
+            usage_hint,
         });
     }
 
@@ -336,6 +348,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         base_mip: usize,
         mip_count: usize,
         new_queue: QueueType,
+        usage_hint: Option<TextureUsage>,
     ) {
         assert!(
             texture.sharing_mode() == SharingMode::Exclusive
@@ -347,6 +360,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             base_mip,
             mip_count,
             new_queue,
+            usage_hint,
         });
     }
 
@@ -371,6 +385,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         mip_count: usize,
         face: CubeFace,
         new_queue: QueueType,
+        usage_hint: Option<TextureUsage>,
     ) {
         assert!(
             cube_map.sharing_mode() == SharingMode::Exclusive
@@ -383,6 +398,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             mip_count,
             face,
             new_queue,
+            usage_hint,
         });
     }
 
@@ -566,23 +582,6 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             blit,
             filter,
         });
-    }
-
-    /// Resolves a multi-sampled texture.
-    ///
-    /// # Arguments
-    /// - `src` - The source multi-sampled textre.
-    /// - `dst` - The texture to resolve values to.
-    /// - `resolve` - Resolution arguments.
-    #[inline(always)]
-    pub fn resolve_texture(
-        &mut self,
-        src: &'a Texture<B>,
-        dst: &'a Texture<B>,
-        resolve: TextureResolve,
-    ) {
-        self.commands
-            .push(Command::TextureResolve { src, dst, resolve });
     }
 
     /// Prepares a texture to be used in a particular way.

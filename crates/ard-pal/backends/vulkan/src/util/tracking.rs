@@ -66,9 +66,6 @@ pub(crate) unsafe fn track_resources(mut state: TrackState) {
             copy,
         } => track_cube_map_to_buffer_copy(&mut state, cube_map, buffer, copy),
         Command::Blit { src, dst, blit, .. } => track_blit(&mut state, src, dst, blit),
-        Command::TextureResolve { src, dst, resolve } => {
-            track_texture_resolve(&mut state, src, dst, resolve)
-        }
         Command::SetTextureUsage {
             tex,
             new_usage,

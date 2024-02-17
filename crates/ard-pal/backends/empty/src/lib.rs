@@ -56,7 +56,18 @@ impl Backend for EmptyBackend {
         _queue: api::types::QueueType,
         _debug_name: Option<&str>,
         _commands: Vec<api::command_buffer::Command<'_, Self>>,
+        _is_async: bool,
     ) -> Self::Job {
+    }
+
+    unsafe fn submit_commands_async_compute(
+        &self,
+        _queue: api::types::QueueType,
+        _debug_name: Option<&str>,
+        _commands: Vec<api::command_buffer::Command<'_, Self>>,
+        _compute_commands: Vec<api::command_buffer::Command<'_, Self>>,
+    ) -> (Self::Job, Self::Job) {
+        ((), ())
     }
 
     unsafe fn present_image(

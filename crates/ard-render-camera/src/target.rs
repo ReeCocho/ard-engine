@@ -60,7 +60,7 @@ impl RenderTarget {
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
-                    store_op: StoreOp::Store,
+                    store_op: StoreOp::DontCare,
                     samples: self.samples,
                 }),
                 // Store and resolve depth for image effects
@@ -82,6 +82,8 @@ impl RenderTarget {
                     texture: &self.depth,
                     array_element: 0,
                     mip_level: 0,
+                    // NOTE: We load here in the no MSAA path here because we can use the depth
+                    // buffer generated during HZB render.
                     load_op: LoadOp::Load,
                     store_op: StoreOp::Store,
                     samples: self.samples,
@@ -100,7 +102,7 @@ impl RenderTarget {
                     mip_level: 0,
                 },
                 load_op: match clear_op {
-                    CameraClearColor::None => LoadOp::Load,
+                    CameraClearColor::None => LoadOp::DontCare,
                     CameraClearColor::Color(color) => {
                         LoadOp::Clear(ClearColor::RgbaF32(color.x, color.y, color.z, color.w))
                     }
@@ -114,7 +116,7 @@ impl RenderTarget {
                 array_element: 0,
                 mip_level: 0,
                 load_op: LoadOp::Load,
-                store_op: StoreOp::Store,
+                store_op: StoreOp::None,
                 samples: self.samples,
             }),
             depth_stencil_resolve_attachment: None,
@@ -131,7 +133,7 @@ impl RenderTarget {
                         mip_level: 0,
                     },
                     load_op: LoadOp::Load,
-                    store_op: StoreOp::Store,
+                    store_op: StoreOp::DontCare,
                     samples: self.samples,
                 }],
                 color_resolve_attachments: vec![ColorResolveAttachment {
@@ -149,7 +151,7 @@ impl RenderTarget {
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::Load,
-                    store_op: StoreOp::DontCare,
+                    store_op: StoreOp::None,
                     samples: self.samples,
                 }),
                 depth_stencil_resolve_attachment: None,
@@ -172,7 +174,7 @@ impl RenderTarget {
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::Load,
-                    store_op: StoreOp::DontCare,
+                    store_op: StoreOp::None,
                     samples: self.samples,
                 }),
                 depth_stencil_resolve_attachment: None,
@@ -256,7 +258,11 @@ impl RenderTarget {
                     TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::TRANSFER_SRC
                 },
                 memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN,
+                queue_types: if samples == MultiSamples::Count1 {
+                    QueueTypes::MAIN | QueueTypes::COMPUTE
+                } else {
+                    QueueTypes::MAIN
+                },
                 sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("depth_target".to_owned()),
             },
@@ -308,7 +314,7 @@ impl RenderTarget {
                             | TextureUsage::SAMPLED
                             | TextureUsage::TRANSFER_DST,
                         memory_usage: MemoryUsage::GpuOnly,
-                        queue_types: QueueTypes::MAIN,
+                        queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
                         sharing_mode: SharingMode::Exclusive,
                         debug_name: Some("depth_resolve_target".to_owned()),
                     },

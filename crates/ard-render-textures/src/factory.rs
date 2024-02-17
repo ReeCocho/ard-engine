@@ -349,7 +349,14 @@ impl TextureFactory {
 
         commands.set_texture_usage(texture, TextureUsage::SAMPLED, 0, mip_level, 1);
 
-        commands.transfer_texture_ownership(texture, 0, mip_level as usize, 1, QueueType::Main);
+        commands.transfer_texture_ownership(
+            texture,
+            0,
+            mip_level as usize,
+            1,
+            QueueType::Main,
+            Some(TextureUsage::SAMPLED),
+        );
     }
 
     /// Records a command to upload a texture mip level.
@@ -390,6 +397,7 @@ impl TextureFactory {
             upload.mip_level as usize,
             1,
             QueueType::Main,
+            Some(TextureUsage::SAMPLED),
         );
     }
 
@@ -438,7 +446,14 @@ impl TextureFactory {
             },
         );
         commands.set_texture_usage(&tex, TextureUsage::SAMPLED, 0, 0, 1);
-        commands.transfer_texture_ownership(&tex, 0, 0, 1, QueueType::Main);
+        commands.transfer_texture_ownership(
+            &tex,
+            0,
+            0,
+            1,
+            QueueType::Main,
+            Some(TextureUsage::SAMPLED),
+        );
         ctx.transfer()
             .submit(Some("error_texture_upload"), commands);
 

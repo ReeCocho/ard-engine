@@ -65,24 +65,28 @@ layout(location = 1) in vec4 ard_Normal;
 /// VS OUTPUTS ///
 //////////////////
 
-layout(location = 0) out vec3 vs_Normal;
-layout(location = 1) flat out uvec2 vs_Slots;
+// X = Color, Y = Metallic/Roughness, Z = Normal, W = Material
+layout(location = 0) flat out uvec4 vs_Slots;
 
 #if ARD_VS_HAS_UV0
-layout(location = 2) out vec2 vs_Uv;
+layout(location = 1) out vec2 vs_Uv;
 #endif
 
-#if ARD_VS_HAS_TANGENT
-layout(location = 3) out mat3 vs_TBN;
+#ifndef DEPTH_ONLY
+    layout(location = 2) out vec3 vs_Normal;
+
+    // Proj * View * Model * Position;
+    layout(location = 3) out vec4 vs_Position;
+
+    // Model * Position;
+    layout(location = 4) out vec3 vs_WorldSpaceFragPos;
+
+    // View * Model * Position;
+    layout(location = 5) out vec4 vs_ViewSpacePosition;
+
+    #if ARD_VS_HAS_TANGENT
+    layout(location = 6) out mat3 vs_TBN;
+    #endif
 #endif
-
-// Proj * View * Model * Position;
-layout(location = 6) out vec4 vs_Position;
-
-// Model * Position;
-layout(location = 7) out vec3 vs_WorldSpaceFragPos;
-
-// View * Model * Position;
-layout(location = 8) out vec4 vs_ViewSpacePosition;
 
 #endif

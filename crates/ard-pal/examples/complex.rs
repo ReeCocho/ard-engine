@@ -325,7 +325,12 @@ fn main() {
 
                 // Since the vertex buffer was marked as having an `Exclusive` usage, we must
                 // release control of the buffer to the `Compute` queue explicitly.
-                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Compute);
+                command_buffer.transfer_buffer_ownership(
+                    &vertex_buffer,
+                    0,
+                    QueueType::Compute,
+                    Some(BufferUsage::STORAGE_BUFFER),
+                );
 
                 context
                     .transfer()
@@ -336,15 +341,19 @@ fn main() {
                 // buffer is done being written to).
                 let mut command_buffer = context.compute().command_buffer();
 
-                command_buffer.compute_pass(|pass| {
-                    pass.bind_pipeline(vertex_compute_pipeline.clone());
+                command_buffer.compute_pass(&vertex_compute_pipeline, None, |pass| {
                     pass.bind_sets(0, vec![&vertex_compute_set]);
-                    pass.dispatch(1, 1, 1);
+                    (1, 1, 1)
                 });
 
                 // Since the vertex buffer was marked as having an `Exclusive` usage, we must
                 // release control of the buffer to the `Main` queue explicitly.
-                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Main);
+                command_buffer.transfer_buffer_ownership(
+                    &vertex_buffer,
+                    0,
+                    QueueType::Main,
+                    Some(BufferUsage::VERTEX_BUFFER),
+                );
 
                 context
                     .compute()
@@ -361,10 +370,9 @@ fn main() {
                 let mut command_buffer = context.main().command_buffer();
 
                 // 1. Generate indices
-                command_buffer.compute_pass(|pass| {
-                    pass.bind_pipeline(index_compute_pipeline.clone());
+                command_buffer.compute_pass(&index_compute_pipeline, None, |pass| {
                     pass.bind_sets(0, vec![&index_compute_set]);
-                    pass.dispatch(1, 1, 1);
+                    (1, 1, 1)
                 });
 
                 // 2. Copy indices
@@ -391,6 +399,7 @@ fn main() {
                         depth_stencil_attachment: None,
                         depth_stencil_resolve_attachment: None,
                     },
+                    None,
                     |pass| {
                         pass.bind_pipeline(graphics_pipeline.clone());
                         pass.bind_vertex_buffers(
@@ -407,8 +416,13 @@ fn main() {
                 );
 
                 // Since the vertex buffer was marked as having an `Exclusive` usage, we must
-                // release control of the buffer to the `Main` queue explicitly.
-                command_buffer.transfer_buffer_ownership(&vertex_buffer, 0, QueueType::Transfer);
+                // release control of the buffer to the `Transfer` queue explicitly.
+                command_buffer.transfer_buffer_ownership(
+                    &vertex_buffer,
+                    0,
+                    QueueType::Transfer,
+                    Some(BufferUsage::TRANSFER_DST),
+                );
 
                 context.main().submit(Some("main_pass"), command_buffer);
 
