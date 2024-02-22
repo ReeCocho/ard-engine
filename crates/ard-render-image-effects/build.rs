@@ -35,6 +35,41 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/sun_shafts.comp",
+        PathBuf::from(&out_dir).join("sun_shafts.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/sun_shafts/shafts_gen_lines.comp",
+        PathBuf::from(&out_dir).join("shafts_gen_lines.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/sun_shafts/shafts_interpolate.comp",
+        PathBuf::from(&out_dir).join("shafts_interpolate.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/sun_shafts/shafts_refine.comp",
+        PathBuf::from(&out_dir).join("shafts_refine.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/sun_shafts/shafts_sample.comp",
+        PathBuf::from(&out_dir).join("shafts_sample.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/graphics_effect.vert",
         PathBuf::from(&out_dir).join("graphics_effect.vert.spv"),
         &["./shaders/"],
@@ -44,6 +79,13 @@ fn main() {
     ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/tonemapping.frag",
         PathBuf::from(&out_dir).join("tonemapping.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/fxaa.frag",
+        PathBuf::from(&out_dir).join("fxaa.frag.spv"),
         &["./shaders/"],
         &[],
     );

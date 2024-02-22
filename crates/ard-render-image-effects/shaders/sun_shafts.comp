@@ -1,0 +1,105 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_SUN_SHAFTS 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SunShaftsPushConstants consts;
+};
+
+float rand_float(uint x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return float(x) / float(0xffffffffU);
+}
+
+void main() {
+    if (gl_GlobalInvocationID.x > consts.output_dims.x || 
+        gl_GlobalInvocationID.y > consts.output_dims.y
+    ) {
+        return;
+    }
+
+    ivec2 depth_dims = textureSize(depth_tex, 0);
+    const vec2 UV = clamp(vec2(
+        float(gl_GlobalInvocationID.x) / float(consts.output_dims.x),
+        float(gl_GlobalInvocationID.y) / float(consts.output_dims.y)
+    ), 0.0, 1.0);
+
+    // Convert sample to world space
+    float depth = camera.near_clip / texture(depth_tex, UV).r;
+    depth = clamp(depth, 0.0, camera.far_clip);
+    depth = camera.near_clip / depth;
+    vec4 world_space_pos = camera.vp_inv * vec4(
+        (UV.x - 0.5) * 2.0,
+        ((1.0 - UV.y) - 0.5) * 2.0,
+        depth,
+        1.0
+    );
+    world_space_pos /= world_space_pos.w;
+
+    // Ray march from the camera to the sample point
+    const uint SAMPLE_COUNT = 64;
+    const uint RAND_BASE = 
+        (gl_GlobalInvocationID.y * uint(consts.output_dims.x) * SAMPLE_COUNT * 3) 
+        + (gl_GlobalInvocationID.x * SAMPLE_COUNT * 3);
+    const vec3 ray = world_space_pos.xyz - camera.position.xyz;
+
+    float sum = 0.0;
+    uint layer = 0;
+
+    for (uint i = 0; i < SAMPLE_COUNT; i++) {
+        // World space position of the ray
+        const float t = float(i) / float(SAMPLE_COUNT - 1);
+        vec3 pos = camera.position.xyz + (ray * t);
+
+        // Random jitter
+        pos += (vec3(
+            rand_float(RAND_BASE + (i * 3)),
+            rand_float(RAND_BASE + (i * 3) + 1),
+            rand_float(RAND_BASE + (i * 3) + 2)
+        ) - vec3(0.5)) * 0.005;
+
+        const float dist = length(pos - camera.position.xyz);
+
+        if(dist > sun_shadow_info.cascades[layer].far_plane) {
+            layer = clamp(layer + 1, 0, sun_shadow_info.count - 1);
+        }
+
+        // Convert to light space
+        const vec4 ls_pos = sun_shadow_info.cascades[layer].vp * vec4(pos, 1.0);
+        vec3 shadow_uv = ls_pos.xyz / ls_pos.w;
+        shadow_uv.xy = shadow_uv.xy * 0.5 + 0.5;
+        shadow_uv.y = 1.0 - shadow_uv.y;
+
+        // Sample shadow
+        const float shadow_depth = texture(shadow_cascades[layer], shadow_uv).r;
+        sum += shadow_depth;
+    }
+    
+    // Mie Scattering
+    const float g = 0.7;
+    const vec3 view_dir = normalize(ray);
+    float cosTheta = dot(global_lighting.sun_direction.xyz, -view_dir);
+    float scattering = 1.0 / (4*3.14)* (1 - g*g)/ pow(1 + g*g -2*g * cosTheta , 1.5);
+    sum *= scattering;
+    sum /= float(SAMPLE_COUNT);
+
+    imageStore(
+        output_tex,
+        ivec2(gl_GlobalInvocationID.xy),
+        vec4(vec3(sum) * global_lighting.sun_color_intensity.rgb, 1.0)
+    );
+}

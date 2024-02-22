@@ -16,7 +16,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use crate::{
     util::{
         id_gen::{IdGenerator, ResourceId},
-        usage2::{GlobalResourceUsage, ImageRegion},
+        usage::{GlobalResourceUsage, ImageRegion},
     },
     VulkanBackend,
 };

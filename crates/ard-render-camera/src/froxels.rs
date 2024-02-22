@@ -1,5 +1,5 @@
 use ard_pal::prelude::{
-    CommandBuffer, ComputePass, ComputePipeline, ComputePipelineCreateInfo, Context, QueueType,
+    CommandBuffer, ComputePassDispatch, ComputePipeline, ComputePipelineCreateInfo, Context,
     Shader, ShaderCreateInfo,
 };
 use ard_render_base::ecs::Frame;
@@ -43,7 +43,7 @@ impl FroxelGenPipeline {
     pub fn regen<'a>(&self, frame: Frame, commands: &mut CommandBuffer<'a>, camera: &'a CameraUbo) {
         commands.compute_pass(&self.pipeline, Some("froxel_gen"), |pass| {
             pass.bind_sets(0, vec![camera.froxel_regen_set(frame)]);
-            (1, 1, 1)
+            ComputePassDispatch::Inline(1, 1, 1)
         });
     }
 }

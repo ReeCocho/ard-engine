@@ -1,6 +1,7 @@
 use api::{
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
     command_buffer::{BlitDestination, BlitSource, Command},
+    compute_pass::ComputePassDispatch,
     compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo},
     cube_map::{CubeMapCreateError, CubeMapCreateInfo},
     descriptor_set::{
@@ -21,7 +22,7 @@ use api::{
 };
 use ash::vk::{self, DebugUtilsMessageSeverityFlagsEXT};
 use buffer::Buffer;
-use compute_pipeline::ComputePipeline;
+use compute_pipeline::{ComputePipeline, DispatchIndirect};
 use crossbeam_utils::sync::ShardedLock;
 use cube_map::CubeMap;
 use descriptor_set::{DescriptorSet, DescriptorSetLayout};
@@ -51,7 +52,7 @@ use util::{
     pipeline_cache::PipelineCache,
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
-    usage2::GlobalResourceUsage,
+    usage::GlobalResourceUsage,
 };
 
 use crate::util::command_sort::CommandSortingInfo;
@@ -152,6 +153,7 @@ impl Backend for VulkanBackend {
     type DescriptorSet = DescriptorSet;
     type Job = Job;
     type DrawIndexedIndirect = DrawIndexedIndirect;
+    type DispatchIndirect = DispatchIndirect;
 
     #[inline(always)]
     unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
@@ -1297,28 +1299,6 @@ impl VulkanBackend {
                         _ => unreachable!(),
                     };
                     si.signal_draw();
-
-                    // // Transition layer
-                    // usage_scope.use_resource(
-                    //     &SubResource::Texture {
-                    //         texture: si.image(),
-                    //         id: si.id(),
-                    //         sharing: SharingMode::Concurrent,
-                    //         aspect_mask: vk::ImageAspectFlags::COLOR,
-                    //         array_elem: blit.dst_array_element as u32,
-                    //         base_mip_level: blit.dst_mip as u32,
-                    //         mip_count: 1,
-                    //     },
-                    //     &SubResourceUsage {
-                    //         access: vk::AccessFlags::MEMORY_READ
-                    //             | vk::AccessFlags::MEMORY_WRITE,
-                    //         stage: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                    //         layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                    //     },
-                    // );
-                    // if let Some(barrier) = pipeline_tracker.submit(&mut usage_scope) {
-                    //     barrier.execute(&self.device, cb);
-                    // }
                 }
             }
             Command::TransferBufferOwnership { .. } => {
@@ -1769,8 +1749,24 @@ impl VulkanBackend {
                         pipeline.internal().pipeline,
                     );
                 }
-                Command::EndComputePass(x, y, z, debug_name) => {
-                    device.cmd_dispatch(cb, *x, *y, *z);
+                Command::EndComputePass(dispatch, debug_name) => {
+                    match dispatch {
+                        ComputePassDispatch::Inline(x, y, z) => {
+                            device.cmd_dispatch(cb, *x, *y, *z);
+                        }
+                        ComputePassDispatch::Indirect {
+                            buffer,
+                            array_element,
+                            offset,
+                        } => {
+                            device.cmd_dispatch_indirect(
+                                cb,
+                                buffer.internal().buffer,
+                                buffer.internal().offset(*array_element) + *offset,
+                            );
+                        }
+                    }
+
                     if debug_name.is_some() {
                         if let Some((debug, _)) = debug {
                             debug.cmd_end_debug_utils_label(cb);

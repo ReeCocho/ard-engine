@@ -11,7 +11,7 @@ pub struct RenderTarget {
     color: Texture,
     color_resolve: Option<Texture>,
     depth: Texture,
-    depth_resolve: Option<Texture>,
+    depth_resolve: Texture,
 }
 
 impl RenderTarget {
@@ -51,7 +51,7 @@ impl RenderTarget {
     }
 
     pub fn depth_prepass(&self) -> RenderPassDescriptor {
-        if let Some(resolve_dst) = &self.depth_resolve {
+        if self.samples != MultiSamples::Count1 {
             RenderPassDescriptor {
                 color_attachments: Vec::default(),
                 color_resolve_attachments: Vec::default(),
@@ -65,7 +65,7 @@ impl RenderTarget {
                 }),
                 // Store and resolve depth for image effects
                 depth_stencil_resolve_attachment: Some(DepthStencilResolveAttachment {
-                    dst: resolve_dst,
+                    dst: &self.depth_resolve,
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::DontCare,
@@ -151,7 +151,7 @@ impl RenderTarget {
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::Load,
-                    store_op: StoreOp::None,
+                    store_op: StoreOp::DontCare,
                     samples: self.samples,
                 }),
                 depth_stencil_resolve_attachment: None,
@@ -174,7 +174,7 @@ impl RenderTarget {
                     array_element: 0,
                     mip_level: 0,
                     load_op: LoadOp::Load,
-                    store_op: StoreOp::None,
+                    store_op: StoreOp::DontCare,
                     samples: self.samples,
                 }),
                 depth_stencil_resolve_attachment: None,
@@ -194,7 +194,7 @@ impl RenderTarget {
 
     #[inline(always)]
     pub fn depth(&self) -> &Texture {
-        self.depth_resolve.as_ref().unwrap_or(&self.depth)
+        &self.depth_resolve
     }
 
     pub fn resize(&mut self, dims: (u32, u32), samples: MultiSamples) {
@@ -216,7 +216,7 @@ impl RenderTarget {
         ctx: &Context,
         dims: (u32, u32),
         samples: MultiSamples,
-    ) -> (Texture, Option<Texture>, Texture, Option<Texture>) {
+    ) -> (Texture, Option<Texture>, Texture, Texture) {
         let color = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
@@ -297,33 +297,27 @@ impl RenderTarget {
             None
         };
 
-        let depth_resolve = if samples != MultiSamples::Count1 {
-            Some(
-                Texture::new(
-                    ctx.clone(),
-                    TextureCreateInfo {
-                        format: Self::DEPTH_FORMAT,
-                        ty: TextureType::Type2D,
-                        width: dims.0,
-                        height: dims.1,
-                        depth: 1,
-                        array_elements: 1,
-                        mip_levels: 1,
-                        sample_count: MultiSamples::Count1,
-                        texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::TRANSFER_DST,
-                        memory_usage: MemoryUsage::GpuOnly,
-                        queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                        sharing_mode: SharingMode::Exclusive,
-                        debug_name: Some("depth_resolve_target".to_owned()),
-                    },
-                )
-                .unwrap(),
-            )
-        } else {
-            None
-        };
+        let depth_resolve = Texture::new(
+            ctx.clone(),
+            TextureCreateInfo {
+                format: Self::DEPTH_FORMAT,
+                ty: TextureType::Type2D,
+                width: dims.0,
+                height: dims.1,
+                depth: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                sample_count: MultiSamples::Count1,
+                texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT
+                    | TextureUsage::SAMPLED
+                    | TextureUsage::TRANSFER_DST,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("depth_resolve_target".to_owned()),
+            },
+        )
+        .unwrap();
 
         (color, color_resolve, depth, depth_resolve)
     }

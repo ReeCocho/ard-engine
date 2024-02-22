@@ -141,7 +141,7 @@ impl DrawGenPipeline {
                 }];
 
                 pass.push_constants(bytemuck::cast_slice(&constants));
-                (group_count, 1, 1)
+                ComputePassDispatch::Inline(group_count, 1, 1)
             },
         );
     }
@@ -166,7 +166,7 @@ impl DrawGenPipeline {
             }];
 
             pass.push_constants(bytemuck::cast_slice(&constants));
-            (group_count, 1, 1)
+            ComputePassDispatch::Inline(group_count, 1, 1)
         });
     }
 }

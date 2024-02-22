@@ -6,7 +6,7 @@
             // All objects.
             (
                 name: "GlobalObjectData",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -18,7 +18,7 @@
             // Instance to object ID mapping.
             (
                 name: "ObjectIds",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -30,7 +30,7 @@
             // Global lighting data (sun).
             (
                 name: "GlobalLightingInfo",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ubo((
                     name: "global_lighting",
@@ -40,14 +40,14 @@
             // Shadow cascades
             (
                 name: "ShadowCascades",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "MAX_SHADOW_CASCADES",
                 data: ShadowTextureArray("shadow_cascades")
             ),
             // Sun shadowing info
             (
                 name: "SunShadowInfo",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ubo((
                     name: "sun_shadow_info",
@@ -57,14 +57,14 @@
             // Ambient occlusion image.
             (
                 name: "AoImage",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Texture("ao_image")
             ),
             // Global light buffer.
             (
                 name: "Lights",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -76,7 +76,7 @@
             // Clusters of indices of lights.
             (
                 name: "LightClusters",
-                stage: AllGraphics,
+                stage: AllStages,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -566,10 +566,22 @@
                 data: Texture("screen_tex")
             ),
             (
+                name: "SourceDepth",
+                stage: Fragment,
+                count: "1",
+                data: Texture("depth_tex")
+            ),
+            (
                 name: "BloomImage",
                 stage: Fragment,
                 count: "1",
                 data: Texture("bloom_image")
+            ),
+            (
+                name: "SunShaftsImage",
+                stage: Fragment,
+                count: "1",
+                data: Texture("sun_shafts_image")
             ),
             (
                 name: "Luminance",
@@ -590,6 +602,256 @@
         bindings: [
             (
                 name: "SourceImage",
+                stage: Fragment,
+                count: "1",
+                data: Texture("screen_tex")
+            )
+        ]
+    ),
+    // Sun shafts.
+    (
+        name: "SunShafts",
+        bindings: [
+            (
+                name: "SourceDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex")
+            ),
+            (
+                name: "OutputTex",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "output_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba16F,
+                )
+            ),
+            // Global lighting data (sun).
+            (
+                name: "GlobalLightingInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            // Shadow cascades
+            (
+                name: "ShadowCascades",
+                stage: Compute,
+                count: "MAX_SHADOW_CASCADES",
+                data: ShadowTextureArray("shadow_cascades")
+            ),
+            // Sun shadowing info
+            (
+                name: "SunShadowInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "sun_shadow_info",
+                    ty: Struct("SunShadows"),
+                ))
+            )
+        ]
+    ),
+    // Sun shaft epipolar line setup.
+    (
+        name: "SunShaftLineSetup",
+        bindings: [
+            (
+                name: "SourceDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex")
+            ),
+            (
+                name: "EpipolarLines",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "epipolar_lines", ty: Struct("SunShaftSample"))),
+                )
+            ),
+            (
+                name: "EpipolarSamples",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "sample_count", ty: U32)),
+                    unbounded_array: Some((name: "sample_indices", ty: U32)),
+                )
+            ),
+            (
+                name: "GlobalLightingInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "SunShaftIndirectDispatch",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "indirect_dispatch", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            ),
+        ]
+    ),
+    // Sun shaft refinement.
+    (
+        name: "SunShaftRefine",
+        bindings: [
+            (
+                name: "EpipolarLines",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "epipolar_lines", ty: Struct("SunShaftSample"))),
+                )
+            ),
+            (
+                name: "EpipolarSamples",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "sample_count", ty: U32)),
+                    unbounded_array: Some((name: "sample_indices", ty: U32)),
+                )
+            ),
+            (
+                name: "SunShaftIndirectDispatch",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "indirect_dispatch", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            ),
+        ]
+    ),
+    // Sun shaft sampling.
+    (
+        name: "SunShaftSample",
+        bindings: [
+            (
+                name: "EpipolarLines",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "epipolar_lines", ty: Struct("SunShaftSample"))),
+                )
+            ),
+            (
+                name: "EpipolarSamples",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "sample_count", ty: U32)),
+                    unbounded_array: Some((name: "sample_indices", ty: U32)),
+                )
+            ),
+            (
+                name: "GlobalLightingInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "ShadowCascades",
+                stage: Compute,
+                count: "MAX_SHADOW_CASCADES",
+                data: ShadowTextureArray("shadow_cascades")
+            ),
+            (
+                name: "SunShadowInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "sun_shadow_info",
+                    ty: Struct("SunShadows"),
+                ))
+            )
+        ]
+    ),
+    // Sun shaft interpolation.
+    (
+        name: "SunShaftInterpolation",
+        bindings: [
+            (
+                name: "EpipolarLines",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "epipolar_lines", ty: Struct("SunShaftSample"))),
+                )
+            ),
+            (
+                name: "GlobalLightingInfo",
+                stage: Compute,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "SourceDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex")
+            ),
+            (
+                name: "OutputTex",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "output_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba16F,
+                )
+            ),
+        ]
+    ),
+    // FXAA
+    (
+        name: "FXAA",
+        bindings: [
+            (
+                name: "InputTexture",
                 stage: Fragment,
                 count: "1",
                 data: Texture("screen_tex")

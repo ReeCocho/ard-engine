@@ -13,7 +13,7 @@ pub mod sampler_cache;
 pub mod semaphores;
 // pub mod tracking;
 // pub mod usage;
-pub mod usage2;
+pub mod usage;
 
 #[inline(always)]
 pub(crate) const fn rank_pipeline_stage(stage: vk::PipelineStageFlags) -> u32 {

@@ -166,7 +166,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())

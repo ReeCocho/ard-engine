@@ -120,7 +120,7 @@ impl Lights {
                     array_elements: 1,
                     buffer_usage: BufferUsage::UNIFORM_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
-                    queue_types: QueueTypes::MAIN,
+                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
                     sharing_mode: SharingMode::Concurrent,
                     debug_name: Some("global_lighting".into()),
                 },

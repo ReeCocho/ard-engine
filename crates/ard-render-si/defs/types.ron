@@ -34,6 +34,8 @@
             (name: "vp_inv", ty: Mat4),
             (name: "frustum", ty: Struct("Frustum")),
             (name: "position", ty: Vec4),
+            (name: "forward", ty: Vec4),
+            (name: "aspect_ratio", ty: F32),
             (name: "near_clip", ty: F32),
             (name: "far_clip", ty: F32),
             (name: "cluster_scale_bias", ty: Vec2),
@@ -126,6 +128,16 @@
             (name: "first_instance", ty: U32),
         ]
     ),
+    // Indirect dispatch.
+    (
+        name: "IndirectDispatch",
+        no_mangle: true,
+        fields: [
+            (name: "x", ty: U32),
+            (name: "y", ty: U32),
+            (name: "z", ty: U32),
+        ]
+    ),
     // Per mesh info.
     (
         name: "MeshInfo",
@@ -202,6 +214,17 @@
             (name: "metallic", ty: F32),
             (name: "roughness", ty: F32),
             (name: "alpha_cutoff", ty: F32),
+        ]
+    ),
+    // Sun shaft sample.
+    (
+        name: "SunShaftSample",
+        no_mangle: false,
+        fields: [
+            (name: "low", ty : U32),
+            (name: "high", ty : U32),
+            (name: "initial", ty : U32),
+            (name: "value", ty: Vec4),
         ]
     ),
     // Push constants for HZB generation.
@@ -282,5 +305,28 @@
             (name: "exposure", ty: F32),
             (name: "gamma", ty: F32),
         ]
-    )
+    ),
+    // Push constants used for sun shafts.
+    (
+        name: "SunShaftsPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "output_dims", ty: IVec2),
+        ]
+    ),
+    // Push constants for sun shaft generation setup.
+    (
+        name: "SunShaftGenPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "line_count", ty: U32),
+            (name: "sample_count_per_line", ty: U32),
+            (name: "initial_sample_count", ty: U32),
+            (name: "samples_per_work_group", ty: U32),
+            (name: "low_sample_minimum", ty: U32),
+            (name: "steps_per_sample", ty: U32),
+            (name: "depth_threshold", ty: F32),
+            (name: "output_dims", ty: IVec2),
+        ]
+    ),
 ]

@@ -58,6 +58,7 @@ pub trait Backend: Sized + 'static {
     type DescriptorSet;
     type Job;
     type DrawIndexedIndirect: Copy + Clone;
+    type DispatchIndirect: Copy + Clone;
 
     unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
         &self,

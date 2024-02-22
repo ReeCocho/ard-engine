@@ -2,7 +2,7 @@ use std::{ffi::CString, mem::ManuallyDrop};
 
 use api::{
     cube_map::{CubeMapCreateError, CubeMapCreateInfo},
-    types::CubeFace,
+    types::{CubeFace, SharingMode},
 };
 use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
@@ -33,6 +33,7 @@ pub struct CubeMap {
     pub(crate) mip_count: u32,
     pub(crate) _array_elements: usize,
     pub(crate) aspect_flags: vk::ImageAspectFlags,
+    pub(crate) sharing_mode: SharingMode,
     pub(crate) size: u64,
     on_drop: Sender<Garbage>,
 }
@@ -305,6 +306,7 @@ impl CubeMap {
             views,
             face_views,
             block: ManuallyDrop::new(block),
+            sharing_mode: create_info.sharing_mode,
             on_drop,
             ref_counter: TextureRefCounter::default(),
             format,

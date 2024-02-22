@@ -3,13 +3,10 @@ use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::{
-    active::ActiveCamera, froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, Camera,
-    CameraClearColor,
+    active::ActiveCamera, froxels::FroxelGenPipeline, ubo::CameraUbo, Camera, CameraClearColor,
 };
 use ard_render_image_effects::{
-    ao::AmbientOcclusion,
-    bloom::Bloom,
-    effects::{ImageEffectTextures, ImageEffectsBindImages, ImageEffectsRender},
+    ao::AmbientOcclusion, bloom::Bloom, fxaa::Fxaa, sun_shafts2::SunShafts,
     tonemapping::Tonemapping,
 };
 use ard_render_lighting::{lights::Lighting, proc_skybox::ProceduralSkyBox};
@@ -37,9 +34,10 @@ pub(crate) struct RenderEcs {
     lighting: Lighting,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
+    fxaa: Fxaa,
     hzb_render: HzbRenderer,
-    effect_textures: ImageEffectTextures,
     bloom: Bloom<FRAMES_IN_FLIGHT>,
+    sun_shafts: SunShafts,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
     proc_skybox: ProceduralSkyBox,
@@ -99,6 +97,7 @@ impl RenderEcs {
         let factory = Factory::new(ctx.clone(), &layouts);
         let draw_gen = DrawGenPipeline::new(&ctx, &layouts);
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
+        let fxaa = Fxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
         let lighting = Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
@@ -118,12 +117,14 @@ impl RenderEcs {
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
+        let sun_shafts = SunShafts::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
         let mut tonemapping = Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         for frame in 0..FRAMES_IN_FLIGHT {
             let frame = Frame::from(frame);
 
             tonemapping.bind_bloom(frame, bloom.image());
+            tonemapping.bind_sun_shafts(frame, sun_shafts.image());
 
             scene_renderer.global_sets_mut().update_shadow_bindings(
                 frame,
@@ -154,13 +155,9 @@ impl RenderEcs {
                 lighting,
                 draw_gen,
                 hzb_render,
+                fxaa,
+                sun_shafts,
                 ao,
-                effect_textures: ImageEffectTextures::new(
-                    &ctx,
-                    RenderTarget::COLOR_FORMAT,
-                    Format::Bgra8Unorm,
-                    window_size,
-                ),
                 tonemapping,
                 bloom,
                 proc_skybox,
@@ -182,18 +179,18 @@ impl RenderEcs {
         puffin::profile_function!();
 
         // Update the canvas size and acquire a new swap chain image
-        if self.canvas.resize(
-            &self.ctx,
-            &self.hzb_render,
-            &self.ao,
-            &mut self.effect_textures,
-            frame.canvas_size,
-        ) {
+        if self
+            .canvas
+            .resize(&self.ctx, &self.hzb_render, &self.ao, frame.canvas_size)
+        {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
+            self.sun_shafts.resize(&self.ctx, frame.canvas_size);
 
             for frame in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(frame);
                 self.tonemapping.bind_bloom(frame, self.bloom.image());
+                self.tonemapping
+                    .bind_sun_shafts(frame, self.sun_shafts.image());
                 self.scene_renderer
                     .global_sets_mut()
                     .update_ao_image_binding(frame, self.canvas.ao().texture());
@@ -213,6 +210,18 @@ impl RenderEcs {
             self.sun_shadows_renderer
                 .update_cascade_lights(frame.frame, &frame.lights);
         }
+
+        self.sun_shafts.update_binds(
+            frame.frame,
+            frame.lights.global_buffer(),
+            self.sun_shadows_renderer.sun_shadow_info(frame.frame),
+            std::array::from_fn(|i| {
+                self.sun_shadows_renderer
+                    .shadow_cascade(i)
+                    .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
+            }),
+            self.canvas.render_target().depth(),
+        );
 
         self.canvas.acquire_image();
 
@@ -276,15 +285,13 @@ impl RenderEcs {
             frame.lights.global().sun_direction(),
         );
 
-        ImageEffectsBindImages::new(&self.effect_textures)
-            .add(&mut self.bloom)
-            .add(&mut self.tonemapping)
-            .bind(
-                frame.frame,
-                self.canvas.render_target().color(),
-                self.canvas.render_target().depth(),
-                self.canvas.image(),
-            );
+        self.bloom
+            .bind_images(frame.frame, self.canvas.render_target().color());
+        self.tonemapping.bind_images(
+            frame.frame,
+            self.canvas.render_target().color(),
+            self.canvas.render_target().depth(),
+        );
 
         // Phase 1:
         //      Main: Render the HZB.
@@ -339,7 +346,7 @@ impl RenderEcs {
             .submit_with_async_compute(Some("Phase 2"), main_cb, compute_cb);
 
         // Phase 3:
-        // Everything else.
+        // Depth prepass and AO gen.
         let mut cb = self.ctx.main().command_buffer();
 
         // Perform the depth prepass
@@ -359,9 +366,21 @@ impl RenderEcs {
         // Generate the AO image
         Self::generate_ao_image(&mut cb, &frame, &self.canvas, &self.camera, &self.ao);
 
+        // Hand off sun shafts for async compute
+        self.sun_shafts
+            .transfer_image_ownership(&mut cb, QueueType::Compute);
+
+        self.ctx.main().submit(Some("Phase 3"), cb);
+
+        // Phase 4:
+        //      Main: Opaque and transparent passes.
+        //      Comp: Generate sun shafts.
+        let mut main_cb = self.ctx.main().command_buffer();
+        let mut compute_cb = self.ctx.main().command_buffer();
+
         // Render opaque and alpha masked geometry
         Self::render_opaque(
-            &mut cb,
+            &mut main_cb,
             &frame,
             &self.canvas,
             &self.camera,
@@ -376,7 +395,7 @@ impl RenderEcs {
 
         // Render transparent geometry
         Self::render_transparent(
-            &mut cb,
+            &mut main_cb,
             &frame,
             &self.canvas,
             &self.camera,
@@ -388,16 +407,31 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        // Run image effects and blit to surface
-        ImageEffectsRender::new(&self.effect_textures)
-            .add(&self.bloom)
-            .add(&self.tonemapping)
-            .render(
-                frame.frame,
-                &mut cb,
-                self.canvas.render_target().color(),
-                self.canvas.image(),
-            );
+        // Render sun shafts in async compute. Hand back depth target after rendering.
+        self.sun_shafts
+            .render(frame.frame, &mut compute_cb, &self.camera);
+        self.sun_shafts
+            .transfer_image_ownership(&mut compute_cb, QueueType::Main);
+        compute_cb.transfer_texture_ownership(
+            self.canvas.render_target().depth(),
+            0,
+            0,
+            1,
+            QueueType::Main,
+            None,
+        );
+
+        self.ctx()
+            .main()
+            .submit_with_async_compute(Some("Phase 4"), main_cb, compute_cb);
+
+        // Phase 5:
+        // Image effects/tonemapping and final output.
+        let mut cb = self.ctx.main().command_buffer();
+
+        self.bloom.render(frame.frame, &mut cb);
+        self.tonemapping
+            .render(frame.frame, &mut cb, &self.camera, self.canvas.image());
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));
@@ -568,6 +602,16 @@ impl RenderEcs {
         puffin::profile_function!();
 
         ao.generate(frame_data.frame, commands, canvas.ao(), camera);
+
+        // Hand off depth resolve image to compute for sun shafts
+        commands.transfer_texture_ownership(
+            canvas.render_target().depth(),
+            0,
+            0,
+            1,
+            QueueType::Compute,
+            None,
+        );
     }
 
     #[inline(never)]

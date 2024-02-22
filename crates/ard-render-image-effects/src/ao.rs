@@ -247,17 +247,13 @@ impl AmbientOcclusion {
 
             let dispatch_x = (width as f32 / 8.0).ceil() as u32;
             let dispatch_y = (height as f32 / 8.0).ceil() as u32;
-            (dispatch_x, dispatch_y, 1)
+            ComputePassDispatch::Inline(dispatch_x, dispatch_y, 1)
         });
 
         commands.compute_pass(&self.blur, Some("ao_blur"), |pass| {
             pass.bind_sets(0, vec![&image.blur_sets[usize::from(frame)]]);
             pass.push_constants(bytemuck::cast_slice(&constants));
-            (
-                (width as f32 / 8.0).ceil() as u32,
-                (height as f32 / 8.0).ceil() as u32,
-                1,
-            )
+            ComputePassDispatch::Inline(width.div_ceil(8).max(1), height.div_ceil(8).max(1), 1)
         });
     }
 }

@@ -100,8 +100,8 @@ impl SunShadowsRenderer {
                 sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN,
-                sharing_mode: SharingMode::Exclusive,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Concurrent,
                 debug_name: Some("empty_shadow_map".into()),
             },
         )
@@ -472,8 +472,8 @@ impl ShadowCascadeRenderData {
                     sample_count: MultiSamples::Count1,
                     texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
                     memory_usage: MemoryUsage::GpuOnly,
-                    queue_types: QueueTypes::MAIN,
-                    sharing_mode: SharingMode::Exclusive,
+                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                    sharing_mode: SharingMode::Concurrent,
                     debug_name: Some("shadow_cascade".into()),
                 },
             )

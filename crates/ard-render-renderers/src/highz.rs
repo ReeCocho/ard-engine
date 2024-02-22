@@ -88,7 +88,7 @@ impl HzbRenderer {
                 // Send constants and dispatch
                 pass.bind_sets(0, vec![set]);
                 pass.push_constants(bytemuck::cast_slice(&constants));
-                (
+                ComputePassDispatch::Inline(
                     dst_width.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
                     dst_height.div_ceil(HZB_GEN_KERNEL_SIZE as u32 / 2).max(1),
                     1,

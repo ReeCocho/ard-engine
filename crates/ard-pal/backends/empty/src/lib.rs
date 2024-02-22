@@ -16,6 +16,7 @@ impl Backend for EmptyBackend {
     type DescriptorSet = ();
     type Job = ();
     type DrawIndexedIndirect = ();
+    type DispatchIndirect = ();
 
     unsafe fn create_surface<W: HasRawWindowHandle>(
         &self,

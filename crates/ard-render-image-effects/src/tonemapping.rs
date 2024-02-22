@@ -1,12 +1,10 @@
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
+use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;
 
-use crate::{
-    bloom::BLOOM_SAMPLE_FILTER,
-    effects::{ImageEffect, ImageEffectDst, ImageEffectTextureType},
-};
+use crate::bloom::BLOOM_SAMPLE_FILTER;
 
 const HISTOGRAM_GEN_BLOCK_SIZE: u32 = 16;
 
@@ -297,22 +295,22 @@ impl Tonemapping {
             },
         }]);
     }
-}
 
-impl ImageEffect for Tonemapping {
-    fn has_output(&self) -> bool {
-        true
+    pub fn bind_sun_shafts(&mut self, frame: Frame, sun_shafts_image: &Texture) {
+        self.tonemapping_sets[usize::from(frame)].update(&[DescriptorSetUpdate {
+            binding: TONEMAPPING_SET_SUN_SHAFTS_IMAGE_BINDING,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: sun_shafts_image,
+                array_element: 0,
+                sampler: BLOOM_SAMPLE_FILTER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }]);
     }
 
-    fn src_texture_type(&self) -> ImageEffectTextureType {
-        ImageEffectTextureType::HDR
-    }
-
-    fn dst_texture_type(&self) -> ImageEffectTextureType {
-        ImageEffectTextureType::SDR
-    }
-
-    fn bind_images(&mut self, frame: Frame, src: &Texture, _: ImageEffectDst, _depth: &Texture) {
+    pub fn bind_images(&mut self, frame: Frame, src: &Texture, depth: &Texture) {
         self.screen_size = (src.dims().0, src.dims().1);
 
         self.histogram_sets[usize::from(frame)].update(&[DescriptorSetUpdate {
@@ -327,24 +325,38 @@ impl ImageEffect for Tonemapping {
             },
         }]);
 
-        self.tonemapping_sets[usize::from(frame)].update(&[DescriptorSetUpdate {
-            binding: TONEMAPPING_SET_SOURCE_IMAGE_BINDING,
-            array_element: 0,
-            value: DescriptorValue::Texture {
-                texture: src,
+        self.tonemapping_sets[usize::from(frame)].update(&[
+            DescriptorSetUpdate {
+                binding: TONEMAPPING_SET_SOURCE_IMAGE_BINDING,
                 array_element: 0,
-                sampler: TONEMAPPING_SRC_IMAGE_SAMPLER,
-                base_mip: 0,
-                mip_count: 1,
+                value: DescriptorValue::Texture {
+                    texture: src,
+                    array_element: 0,
+                    sampler: TONEMAPPING_SRC_IMAGE_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
             },
-        }]);
+            DescriptorSetUpdate {
+                binding: TONEMAPPING_SET_SOURCE_DEPTH_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: depth,
+                    array_element: 0,
+                    sampler: TONEMAPPING_SRC_IMAGE_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+        ]);
     }
 
-    fn render<'a>(
+    pub fn render<'a>(
         &'a self,
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
-        dst: ImageEffectDst<'a>,
+        camera: &'a CameraUbo,
+        surface_image: &'a SurfaceImage,
     ) {
         const MIN_LOG_LUM: f32 = -120.0;
         const MAX_LOG_LUM: f32 = 100.0;
@@ -373,7 +385,7 @@ impl ImageEffect for Tonemapping {
             |pass| {
                 pass.bind_sets(0, vec![&self.histogram_sets[usize::from(frame)]]);
                 pass.push_constants(bytemuck::cast_slice(&histogram_params));
-                (
+                ComputePassDispatch::Inline(
                     self.screen_size.0.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
                     self.screen_size.1.div_ceil(HISTOGRAM_GEN_BLOCK_SIZE),
                     1,
@@ -387,7 +399,7 @@ impl ImageEffect for Tonemapping {
             |pass| {
                 pass.bind_sets(0, vec![&self.luminance_set]);
                 pass.push_constants(bytemuck::cast_slice(&lum_params));
-                (1, 1, 1)
+                ComputePassDispatch::Inline(1, 1, 1)
             },
         );
 
@@ -395,7 +407,7 @@ impl ImageEffect for Tonemapping {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: dst.into_attachment_source(),
+                    source: ColorAttachmentSource::SurfaceImage(surface_image),
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,
@@ -407,7 +419,13 @@ impl ImageEffect for Tonemapping {
             Some("tonemapping"),
             |pass| {
                 pass.bind_pipeline(self.tonemapping_pipeline.clone());
-                pass.bind_sets(0, vec![&self.tonemapping_sets[usize::from(frame)]]);
+                pass.bind_sets(
+                    0,
+                    vec![
+                        &self.tonemapping_sets[usize::from(frame)],
+                        camera.get_set(frame),
+                    ],
+                );
                 pass.push_constants(bytemuck::cast_slice(&tonemapping_params));
                 pass.draw(3, 1, 0, 0);
             },

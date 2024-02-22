@@ -1,0 +1,66 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_SUN_SHAFT_LINE_SETUP 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SunShaftGenPushConstants consts;
+};
+
+#define HAS_GLOBAL_LIGHTING
+#include "sun_shafts/common.glsl"
+
+void main() {
+    const uint sample_idx = gl_GlobalInvocationID.x;
+    const uint line_idx = gl_GlobalInvocationID.y;
+
+    // Reset indirect dispatch
+    if (gl_GlobalInvocationID == uvec3(0)) {
+        sample_count = 0;
+        indirect_dispatch.x = 0;
+        indirect_dispatch.y = 1;
+        indirect_dispatch.z = 1;
+    }
+
+    // Early out if we're OOB
+    if (sample_idx >= consts.sample_count_per_line || line_idx >= consts.line_count) {
+        return;
+    }
+
+    // Linearize the index for the given sample
+    const uint lin_sample_idx = epipolar_line_sample(gl_GlobalInvocationID.y, gl_GlobalInvocationID.x);
+
+    // Check if the line is OOB for the current sun position
+    const vec2 line_pos = epipolar_line_edge_uv(line_idx);
+    const vec2 sun_uv = get_sun_uv();
+    SunShaftSample s;
+    s.value = vec4(0.0, 0.0, 0.0, uintBitsToFloat(0x7F800000));
+    s.initial = LINE_IS_OOB;
+
+    // Check if the line is valid
+    if (
+        !(line_pos.x == 0.0 && sun_uv.x < 0.0) &&
+        !(line_pos.x == 1.0 && sun_uv.x > 1.0) &&
+        !(line_pos.y == 0.0 && sun_uv.y < 0.0) &&
+        !(line_pos.y == 1.0 && sun_uv.y > 1.0)
+    ) {
+        // Get location of the sample in UV coordinates
+        vec2 sample_uv = sample_to_uv(line_idx, sample_idx, sun_uv);
+        sample_uv.y = 1.0 - sample_uv.y;
+        sample_uv += 0.5 / vec2(consts.output_dims);
+
+        // Store sample with depth and initial sample mark
+        s.value = vec4(0.0, 0.0, 0.0, camera.near_clip / texture(depth_tex, sample_uv).r);
+        s.initial = is_initial_sample(gl_GlobalInvocationID.y, gl_GlobalInvocationID.x) ? 1 : 0;
+    }
+
+    epipolar_lines[lin_sample_idx] = s;
+}

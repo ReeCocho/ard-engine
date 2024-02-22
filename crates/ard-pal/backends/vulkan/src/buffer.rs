@@ -14,7 +14,7 @@ use crate::{
     util::{
         garbage_collector::Garbage,
         id_gen::{IdGenerator, ResourceId},
-        usage2::{BufferRegion, GlobalBufferUsage},
+        usage::BufferRegion,
     },
     QueueFamilyIndices, VulkanBackend,
 };

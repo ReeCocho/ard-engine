@@ -25,6 +25,10 @@ pub mod prelude {
         SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo, SurfacePresentSuccess,
     };
 
+    // Compute pass
+    pub type DispatchIndirect = <crate::Backend as api::Backend>::DispatchIndirect;
+    pub type ComputePassDispatch<'a> = api::compute_pass::ComputePassDispatch<'a, crate::Backend>;
+
     // Render pass
     pub type DrawIndexedIndirect = <crate::Backend as api::Backend>::DrawIndexedIndirect;
     pub type RenderPass<'a> = api::render_pass::RenderPass<'a, crate::Backend>;

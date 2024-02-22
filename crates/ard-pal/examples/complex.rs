@@ -343,7 +343,7 @@ fn main() {
 
                 command_buffer.compute_pass(&vertex_compute_pipeline, None, |pass| {
                     pass.bind_sets(0, vec![&vertex_compute_set]);
-                    (1, 1, 1)
+                    ComputePassDispatch::Inline(1, 1, 1)
                 });
 
                 // Since the vertex buffer was marked as having an `Exclusive` usage, we must
@@ -372,7 +372,7 @@ fn main() {
                 // 1. Generate indices
                 command_buffer.compute_pass(&index_compute_pipeline, None, |pass| {
                     pass.bind_sets(0, vec![&index_compute_set]);
-                    (1, 1, 1)
+                    ComputePassDispatch::Inline(1, 1, 1)
                 });
 
                 // 2. Copy indices

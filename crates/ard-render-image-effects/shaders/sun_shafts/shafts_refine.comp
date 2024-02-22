@@ -1,0 +1,93 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_SUN_SHAFT_REFINE 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SunShaftGenPushConstants consts;
+};
+
+#include "sun_shafts/common.glsl"
+
+void main() {
+    const uint sample_idx = gl_GlobalInvocationID.x;
+    const uint line_idx = gl_GlobalInvocationID.y;
+
+    // Early out if we're OOB
+    if (sample_idx >= consts.sample_count_per_line || line_idx >= consts.line_count) {
+        return;
+    }
+
+    // Linearly search for depth discontinuities and initial sample points
+    const uint line_base_idx = epipolar_line_base(line_idx);
+    const uint lin_sample_idx = line_base_idx + sample_idx;
+
+    // Ignore if the line is OOB
+    if (epipolar_lines[lin_sample_idx].initial == LINE_IS_OOB) {
+        return;
+    }
+
+    uint low = sample_idx;
+    uint high = sample_idx;
+
+    while (low > 0) {
+        const uint cur_idx = line_base_idx + low;
+        const uint next_idx = line_base_idx + low - 1;
+
+        const float cur_depth = epipolar_lines[cur_idx].value.w;
+        const float next_depth = epipolar_lines[next_idx].value.w;
+        const float depth_dif = cur_depth - next_depth;
+
+        if (abs(depth_dif) > consts.depth_threshold) {
+            break;
+        }
+
+        if (bool(epipolar_lines[cur_idx].initial)) {
+            break;
+        }
+
+        low--;
+    }
+
+    while (high < consts.sample_count_per_line - 1) {
+        const uint cur_idx = line_base_idx + high;
+        const uint next_idx = line_base_idx + high + 1;
+        
+        const float cur_depth = epipolar_lines[cur_idx].value.w;
+        const float next_depth = epipolar_lines[next_idx].value.w;
+        const float depth_dif = cur_depth - next_depth;
+
+        if (abs(depth_dif) > consts.depth_threshold) {
+            break;
+        }
+
+        if (bool(epipolar_lines[cur_idx].initial)) {
+            break;
+        }
+
+        high++;
+    }
+
+    // Store low and high interpolation sources
+    low += line_base_idx;
+    high += line_base_idx;
+    epipolar_lines[lin_sample_idx].low = low;
+    epipolar_lines[lin_sample_idx].high = high;
+
+    // If low == high, then this is a point that needs sampling
+    if (low == lin_sample_idx || high == lin_sample_idx) {
+        uint old_count = atomicAdd(sample_count, 1);
+        sample_indices[old_count] = lin_sample_idx;
+        if (old_count % consts.samples_per_work_group == 0) {
+            atomicAdd(indirect_dispatch.x, 1);
+        }
+    }
+}

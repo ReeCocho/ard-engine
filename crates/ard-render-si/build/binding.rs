@@ -47,6 +47,7 @@ pub enum GpuSsboAccessType {
 pub enum GpuStorageImageFormat {
     R16F,
     R32F,
+    Rgba16F,
 }
 
 pub struct GpuSetBuilder {
@@ -95,6 +96,7 @@ impl GpuStorageImageFormat {
         match self {
             GpuStorageImageFormat::R16F => "r16f",
             GpuStorageImageFormat::R32F => "r32f",
+            GpuStorageImageFormat::Rgba16F => "rgba16f",
         }
     }
 }

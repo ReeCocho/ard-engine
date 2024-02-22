@@ -69,7 +69,8 @@ impl Camera {
             (position + Vec3A::from(forward)).into(),
             up,
         );
-        let projection = Mat4::perspective_infinite_reverse_lh(self.fov, width / height, self.near);
+        let aspect_ratio = width / height;
+        let projection = Mat4::perspective_infinite_reverse_lh(self.fov, aspect_ratio, self.near);
         let vp = projection * view;
 
         GpuCamera {
@@ -81,6 +82,8 @@ impl Camera {
             vp_inv: vp.inverse(),
             frustum: vp.into(),
             position: Vec4::new(position.x, position.y, position.z, 1.0),
+            forward: Vec4::new(forward.x, forward.y, forward.z, 0.0),
+            aspect_ratio,
             near_clip: self.near,
             far_clip: self.far,
             cluster_scale_bias: Vec2::new(

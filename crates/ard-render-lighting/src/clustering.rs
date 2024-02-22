@@ -59,7 +59,7 @@ impl LightClusteringPipeline {
                 total_lights: set.light_count() as u32,
             }];
             pass.push_constants(bytemuck::cast_slice(&constants));
-            (1, 1, CAMERA_FROXELS_DEPTH as u32)
+            ComputePassDispatch::Inline(1, 1, CAMERA_FROXELS_DEPTH as u32)
         });
     }
 }

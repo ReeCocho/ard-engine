@@ -1,0 +1,90 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+// #extension GL_EXT_debug_printf : enable
+
+#define ARD_SET_SUN_SHAFT_SAMPLE 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SunShaftGenPushConstants consts;
+};
+
+#define HAS_GLOBAL_LIGHTING
+#include "sun_shafts/common.glsl"
+
+vec4 accumulate_light(vec2 sample_uv, float sample_depth) {
+    // Convert sample to world space
+    float depth = clamp(sample_depth, 0.0, camera.far_clip);
+    depth = camera.near_clip / depth;
+    vec4 world_space_pos = camera.vp_inv * vec4(
+        (sample_uv.x - 0.5) * 2.0,
+        (sample_uv.y - 0.5) * 2.0,
+        depth,
+        1.0
+    );
+    world_space_pos /= world_space_pos.w;
+
+    // Ray march from the camera to the sample point
+    const uint SAMPLE_COUNT = consts.steps_per_sample;
+    const vec3 ray = world_space_pos.xyz - camera.position.xyz;
+
+    float sum = 0.0;
+    uint layer = 0;
+
+    for (uint i = 0; i < SAMPLE_COUNT; i++) {
+        // World space position of the ray
+        const float t = float(i) / float(SAMPLE_COUNT - 1);
+        vec3 pos = camera.position.xyz + (ray * t);
+
+        const float dist = length(pos - camera.position.xyz);
+
+        if(dist > sun_shadow_info.cascades[layer].far_plane) {
+            layer = clamp(layer + 1, 0, sun_shadow_info.count - 1);
+        }
+
+        // Convert to light space
+        const vec4 ls_pos = sun_shadow_info.cascades[layer].vp * vec4(pos, 1.0);
+        vec3 shadow_uv = ls_pos.xyz / ls_pos.w;
+        shadow_uv.xy = shadow_uv.xy * 0.5 + 0.5;
+        shadow_uv.y = 1.0 - shadow_uv.y;
+
+        // Sample shadow
+        const float shadow_depth = texture(shadow_cascades[layer], shadow_uv).r;
+        sum += shadow_depth;
+    }
+    
+    // Mie Scattering
+    const float g = 0.7;
+    const vec3 view_dir = normalize(ray);
+    float cosTheta = dot(global_lighting.sun_direction.xyz, -view_dir);
+    float scattering = 1.0 / (4*3.14)* (1 - g*g)/ pow(1 + g*g -2*g * cosTheta , 1.5);
+    sum *= scattering;
+    sum /= float(SAMPLE_COUNT);
+    
+    return vec4(sum * global_lighting.sun_color_intensity.rgb, sample_depth);
+}
+
+void main() {
+    // Early out if OOB
+    if (gl_GlobalInvocationID.x >= sample_count) {
+        return;
+    }
+
+    // debugPrintfEXT("%d", sample_count);
+
+    const uint lin_sample_idx = sample_indices[gl_GlobalInvocationID.x];
+    const uint line_idx = lin_sample_idx / consts.sample_count_per_line;
+    const uint sample_idx = lin_sample_idx - (line_idx * consts.sample_count_per_line);
+
+    epipolar_lines[lin_sample_idx].value = accumulate_light(
+        sample_to_uv(line_idx, sample_idx, get_sun_uv()),
+        epipolar_lines[lin_sample_idx].value.w
+    );
+}

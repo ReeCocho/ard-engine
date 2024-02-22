@@ -4,6 +4,7 @@ use api::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
         CopyBufferToBuffer,
     },
+    compute_pass::ComputePassDispatch,
     cube_map::CubeMap,
     descriptor_set::DescriptorSet,
     render_pass::{ColorAttachmentSource, RenderPassDescriptor},
@@ -19,13 +20,13 @@ use std::ops::Range;
 
 use crate::{
     descriptor_set::BoundValue,
-    util::usage2::{GlobalBufferUsage, PipelineBarrier},
+    util::usage::{GlobalBufferUsage, PipelineBarrier},
     QueueFamilyIndices,
 };
 
 use super::{
     semaphores::{SemaphoreTracker, WaitInfo},
-    usage2::{
+    usage::{
         BufferRegion, GlobalImageUsage, GlobalResourceUsage, GlobalSetUsage, ImageRegion,
         QueueUsage, SubResourceUsage,
     },
@@ -417,7 +418,7 @@ impl CommandSorting {
         load_op: &LoadOp,
         source: &ColorAttachmentSource<'_, crate::VulkanBackend>,
     ) {
-        let (image_region, image, initial_layout, final_layout) = match source {
+        let (image_region, image, sharing_mode, initial_layout, final_layout) = match source {
             ColorAttachmentSource::SurfaceImage(image) => {
                 let semaphores = image.internal().semaphores();
                 info.semaphores
@@ -438,6 +439,7 @@ impl CommandSorting {
                         mip_count: 1,
                     },
                     image.internal().image(),
+                    SharingMode::Concurrent,
                     vk::ImageLayout::UNDEFINED,
                     vk::ImageLayout::PRESENT_SRC_KHR,
                 )
@@ -454,6 +456,7 @@ impl CommandSorting {
                     mip_count: 1,
                 },
                 texture.internal().image,
+                texture.internal().sharing_mode,
                 match load_op {
                     LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                     LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -475,6 +478,7 @@ impl CommandSorting {
                     mip_count: 1,
                 },
                 cube_map.internal().image,
+                cube_map.internal().sharing_mode,
                 match load_op {
                     LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
                     LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -511,6 +515,7 @@ impl CommandSorting {
             &old_usage[0],
             &new_usage,
             image,
+            sharing_mode,
             vk::ImageAspectFlags::COLOR,
             image_region.array_elem,
             image_region.base_mip_level,
@@ -594,6 +599,7 @@ impl CommandSorting {
             &old_usage[0],
             &new_usage,
             texture.internal().image,
+            texture.internal().sharing_mode,
             texture.internal().aspect_flags,
             image_region.array_elem,
             image_region.base_mip_level,
@@ -859,7 +865,54 @@ impl CommandSorting {
                 }
                 true
             }
-            Command::EndComputePass(_, _, _, _) => false,
+            Command::EndComputePass(dispatch, _) => {
+                if let ComputePassDispatch::Indirect {
+                    buffer,
+                    array_element,
+                    ..
+                } = dispatch
+                {
+                    let new_usage = GlobalBufferUsage {
+                        queue: Some(QueueUsage {
+                            queue: info.queue,
+                            timeline_value: info.timeline_value,
+                            command_idx,
+                            is_async: info.is_async,
+                        }),
+                        sub_resource: SubResourceUsage {
+                            access: vk::AccessFlags2::INDIRECT_COMMAND_READ,
+                            stage: vk::PipelineStageFlags2::DRAW_INDIRECT,
+                        },
+                    };
+
+                    let old_usage = info.global.use_buffer(
+                        &BufferRegion {
+                            id: buffer.internal().id,
+                            array_elem: *array_element as u32,
+                        },
+                        &new_usage,
+                    );
+
+                    self.buffer_barrier_check(
+                        info.queue_families,
+                        info.queue_families.to_index(info.queue),
+                        &old_usage,
+                        &new_usage,
+                        buffer.internal().buffer,
+                        buffer.internal().sharing_mode,
+                        buffer.internal().aligned_size,
+                        buffer.internal().offset(*array_element),
+                    );
+
+                    self.dependency_check(
+                        old_usage.queue.as_ref(),
+                        command_idx,
+                        &mut info.wait_queues,
+                        (info.queue, info.timeline_value),
+                    );
+                }
+                false
+            }
             _ => true,
         }
     }
@@ -991,6 +1044,7 @@ impl CommandSorting {
                     aspect_mask,
                     mip,
                     array_element,
+                    sharing_mode,
                     ..
                 } => {
                     let image_region = ImageRegion {
@@ -1024,6 +1078,7 @@ impl CommandSorting {
                         &old_src_usage[0],
                         &new_src_usage,
                         *image,
+                        *sharing_mode,
                         *aspect_mask,
                         *array_element as u32,
                         *mip as u32,
@@ -1043,6 +1098,7 @@ impl CommandSorting {
                     base_mip,
                     mip_count,
                     array_element,
+                    sharing_mode,
                     ..
                 } => {
                     let image_region = ImageRegion {
@@ -1079,6 +1135,7 @@ impl CommandSorting {
                             &out_usages[i],
                             &new_src_usage,
                             *image,
+                            *sharing_mode,
                             *aspect_mask,
                             *array_element as u32,
                             mip,
@@ -1099,6 +1156,7 @@ impl CommandSorting {
                     base_mip,
                     mip_count,
                     array_element,
+                    sharing_mode,
                     ..
                 } => {
                     for face in 0..6 {
@@ -1138,6 +1196,7 @@ impl CommandSorting {
                                 &out_usages[i],
                                 &new_src_usage,
                                 *image,
+                                *sharing_mode,
                                 *aspect_mask,
                                 array_element,
                                 mip,
@@ -1319,6 +1378,7 @@ impl CommandSorting {
             &old_dst_usage[0],
             &new_dst_usage,
             dst.internal().image,
+            dst.internal().sharing_mode,
             dst.internal().aspect_flags,
             copy.texture_array_element as u32,
             copy.texture_mip_level as u32,
@@ -1410,6 +1470,7 @@ impl CommandSorting {
             &old_src_usage[0],
             &new_src_usage,
             src.internal().image,
+            src.internal().sharing_mode,
             src.internal().aspect_flags,
             copy.texture_array_element as u32,
             copy.texture_mip_level as u32,
@@ -1504,6 +1565,7 @@ impl CommandSorting {
                 &old_dst_usage[0],
                 &new_dst_usage,
                 dst.internal().image,
+                dst.internal().sharing_mode,
                 dst.internal().aspect_flags,
                 array_elem,
                 copy.cube_map_mip_level as u32,
@@ -1559,6 +1621,7 @@ impl CommandSorting {
                 &old_src_usage[0],
                 &new_src_usage,
                 src.internal().image,
+                src.internal().sharing_mode,
                 src.internal().aspect_flags,
                 array_elem,
                 copy.cube_map_mip_level as u32,
@@ -1620,7 +1683,7 @@ impl CommandSorting {
         dst: &BlitDestination<'_, crate::VulkanBackend>,
         blit: &Blit,
     ) {
-        let (src_image_region, src_image, src_aspect) = match src {
+        let (src_image_region, src_image, src_aspect, src_sharing_mode) = match src {
             BlitSource::Texture(tex) => (
                 ImageRegion {
                     id: tex.internal().id,
@@ -1630,6 +1693,7 @@ impl CommandSorting {
                 },
                 tex.internal().image,
                 tex.internal().aspect_flags,
+                tex.internal().sharing_mode,
             ),
             BlitSource::CubeMap { cube_map, face } => (
                 ImageRegion {
@@ -1643,10 +1707,11 @@ impl CommandSorting {
                 },
                 cube_map.internal().image,
                 cube_map.internal().aspect_flags,
+                cube_map.internal().sharing_mode,
             ),
         };
 
-        let (dst_image_region, dst_image, dst_aspect) = match dst {
+        let (dst_image_region, dst_image, dst_aspect, dst_sharing_mode) = match dst {
             BlitDestination::Texture(tex) => (
                 ImageRegion {
                     id: tex.internal().id,
@@ -1656,6 +1721,7 @@ impl CommandSorting {
                 },
                 tex.internal().image,
                 tex.internal().aspect_flags,
+                tex.internal().sharing_mode,
             ),
             BlitDestination::CubeMap { cube_map, face } => (
                 ImageRegion {
@@ -1669,6 +1735,7 @@ impl CommandSorting {
                 },
                 cube_map.internal().image,
                 cube_map.internal().aspect_flags,
+                cube_map.internal().sharing_mode,
             ),
             BlitDestination::SurfaceImage(tex) => {
                 let internal = tex.internal();
@@ -1694,6 +1761,7 @@ impl CommandSorting {
                     },
                     tex.internal().image(),
                     vk::ImageAspectFlags::COLOR,
+                    SharingMode::Concurrent,
                 )
             }
         };
@@ -1722,6 +1790,7 @@ impl CommandSorting {
             &old_src_usage[0],
             &new_src_usage,
             src_image,
+            src_sharing_mode,
             src_aspect,
             src_image_region.array_elem,
             src_image_region.base_mip_level,
@@ -1758,6 +1827,7 @@ impl CommandSorting {
             &old_dst_usage[0],
             &new_dst_usage,
             dst_image,
+            dst_sharing_mode,
             dst_aspect,
             dst_image_region.array_elem,
             dst_image_region.base_mip_level,
@@ -1825,6 +1895,7 @@ impl CommandSorting {
                 &old_usage,
                 &new_usage,
                 texture.internal().image,
+                texture.internal().sharing_mode,
                 texture.internal().aspect_flags,
                 array_element as u32,
                 base_mip + i as u32,
@@ -2141,6 +2212,7 @@ impl CommandSorting {
         old: &GlobalImageUsage,
         new: &GlobalImageUsage,
         image: vk::Image,
+        sharing_mode: SharingMode,
         aspect_flags: vk::ImageAspectFlags,
         array_element: u32,
         mip_level: u32,
@@ -2149,7 +2221,7 @@ impl CommandSorting {
             return false;
         }
 
-        let barrier = match old.into_barrier(&new) {
+        let barrier = match old.into_barrier(&new, sharing_mode) {
             Some(barrier) => barrier,
             None => return false,
         };

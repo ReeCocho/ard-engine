@@ -3,8 +3,6 @@ use ard_render_base::ecs::Frame;
 use ard_render_si::bindings::*;
 use ordered_float::NotNan;
 
-use crate::effects::{ImageEffect, ImageEffectDst, ImageEffectTextureType};
-
 const BLOOM_IMAGE_FORMAT: Format = Format::Rgba16SFloat;
 
 pub const BLOOM_SAMPLE_FILTER: Sampler = Sampler {
@@ -282,22 +280,8 @@ impl<const FIF: usize> Bloom<FIF> {
 
         sets
     }
-}
 
-impl<const FIF: usize> ImageEffect for Bloom<FIF> {
-    fn has_output(&self) -> bool {
-        false
-    }
-
-    fn src_texture_type(&self) -> ImageEffectTextureType {
-        ImageEffectTextureType::HDR
-    }
-
-    fn dst_texture_type(&self) -> ImageEffectTextureType {
-        ImageEffectTextureType::HDR
-    }
-
-    fn bind_images(&mut self, frame: Frame, src: &Texture, _: ImageEffectDst, _: &Texture) {
+    pub fn bind_images(&mut self, frame: Frame, src: &Texture) {
         self.downscale_sets[usize::from(frame)][0].update(&[DescriptorSetUpdate {
             binding: BLOOM_SET_SOURCE_IMAGE_BINDING,
             array_element: 0,
@@ -311,7 +295,7 @@ impl<const FIF: usize> ImageEffect for Bloom<FIF> {
         }]);
     }
 
-    fn render<'a>(&'a self, frame: Frame, commands: &mut CommandBuffer<'a>, _: ImageEffectDst<'a>) {
+    pub fn render<'a>(&'a self, frame: Frame, commands: &mut CommandBuffer<'a>) {
         // Perform downscaling
         self.downscale_sets[usize::from(frame)]
             .iter()

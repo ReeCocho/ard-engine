@@ -1,10 +1,7 @@
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_camera::target::RenderTarget;
-use ard_render_image_effects::{
-    ao::{AmbientOcclusion, AoImage},
-    effects::ImageEffectTextures,
-};
+use ard_render_image_effects::ao::{AmbientOcclusion, AoImage};
 use ard_render_renderers::highz::{HzbImage, HzbRenderer};
 
 use crate::{AntiAliasingMode, FRAMES_IN_FLIGHT};
@@ -118,7 +115,6 @@ impl Canvas {
         ctx: &Context,
         hzb_render: &HzbRenderer,
         ao: &AmbientOcclusion,
-        effects: &mut ImageEffectTextures,
         dims: (u32, u32),
     ) -> bool {
         if dims == self.size {
@@ -129,7 +125,6 @@ impl Canvas {
         self.render_target = RenderTarget::new(ctx, dims, self.anti_aliasing.into());
         self.hzb = HzbImage::new(hzb_render, dims.0, dims.1);
         self.ao = AoImage::new(ao, dims);
-        effects.resize(ctx, dims);
         self.update_bindings();
 
         true

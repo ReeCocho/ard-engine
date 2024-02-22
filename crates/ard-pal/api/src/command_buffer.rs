@@ -1,6 +1,6 @@
 use crate::{
     buffer::Buffer,
-    compute_pass::ComputePass,
+    compute_pass::{ComputePass, ComputePassDispatch},
     compute_pipeline::ComputePipeline,
     cube_map::CubeMap,
     descriptor_set::DescriptorSet,
@@ -105,7 +105,7 @@ pub enum Command<'a, B: Backend> {
     BeginRenderPass(RenderPassDescriptor<'a, B>, Option<&'a str>),
     EndRenderPass(Option<&'a str>),
     BeginComputePass(ComputePipeline<B>, Option<&'a str>),
-    EndComputePass(u32, u32, u32, Option<&'a str>),
+    EndComputePass(ComputePassDispatch<'a, B>, Option<&'a str>),
     BindGraphicsPipeline(GraphicsPipeline<B>),
     PushConstants {
         stage: ShaderStage,
@@ -277,7 +277,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         &mut self,
         pipeline: &ComputePipeline<B>,
         debug_name: Option<&'a str>,
-        pass: impl FnOnce(&mut ComputePass<'a, B>) -> (u32, u32, u32),
+        pass: impl FnOnce(&mut ComputePass<'a, B>) -> ComputePassDispatch<'a, B>,
     ) {
         assert!(
             self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
@@ -290,14 +290,10 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         let mut compute_pass = ComputePass {
             commands: Vec::default(),
         };
-        let workgroups = pass(&mut compute_pass);
+        let dispatch = pass(&mut compute_pass);
         self.commands.extend(compute_pass.commands);
-        self.commands.push(Command::EndComputePass(
-            workgroups.0,
-            workgroups.1,
-            workgroups.2,
-            debug_name,
-        ));
+        self.commands
+            .push(Command::EndComputePass(dispatch, debug_name));
     }
 
     /// Relinquishes ownership of a buffer by the current queue for another queue type.

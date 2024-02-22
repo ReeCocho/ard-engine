@@ -1,7 +1,19 @@
-use crate::{command_buffer::Command, descriptor_set::DescriptorSet, types::ShaderStage, Backend};
+use crate::{
+    buffer::Buffer, command_buffer::Command, descriptor_set::DescriptorSet, types::ShaderStage,
+    Backend,
+};
 
 pub struct ComputePass<'a, B: Backend> {
     pub(crate) commands: Vec<Command<'a, B>>,
+}
+
+pub enum ComputePassDispatch<'a, B: Backend> {
+    Inline(u32, u32, u32),
+    Indirect {
+        buffer: &'a Buffer<B>,
+        array_element: usize,
+        offset: u64,
+    },
 }
 
 impl<'a, B: Backend> ComputePass<'a, B> {

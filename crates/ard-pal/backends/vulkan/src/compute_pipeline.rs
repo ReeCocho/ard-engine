@@ -2,6 +2,7 @@ use std::ffi::CString;
 
 use api::compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
 use ash::vk::{self, Handle};
+use bytemuck::{Pod, Zeroable};
 use crossbeam_channel::Sender;
 
 use crate::util::garbage_collector::Garbage;
@@ -11,6 +12,17 @@ pub struct ComputePipeline {
     pub(crate) pipeline: vk::Pipeline,
     garbage: Sender<Garbage>,
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DispatchIndirect {
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+}
+
+unsafe impl Pod for DispatchIndirect {}
+unsafe impl Zeroable for DispatchIndirect {}
 
 impl ComputePipeline {
     pub(crate) unsafe fn new(
