@@ -39,9 +39,11 @@ impl RenderTarget {
             color_attachments: Vec::default(),
             color_resolve_attachments: Vec::default(),
             depth_stencil_attachment: Some(DepthStencilAttachment {
-                texture: self.depth(),
-                array_element: 0,
-                mip_level: 0,
+                dst: DepthStencilAttachmentDestination::Texture {
+                    texture: self.depth(),
+                    array_element: 0,
+                    mip_level: 0,
+                },
                 load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
                 store_op: StoreOp::Store,
                 samples: MultiSamples::Count1,
@@ -56,18 +58,22 @@ impl RenderTarget {
                 color_attachments: Vec::default(),
                 color_resolve_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &self.depth,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &self.depth,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
                     store_op: StoreOp::DontCare,
                     samples: self.samples,
                 }),
                 // Store and resolve depth for image effects
                 depth_stencil_resolve_attachment: Some(DepthStencilResolveAttachment {
-                    dst: &self.depth_resolve,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &self.depth_resolve,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                     depth_resolve_mode: ResolveMode::Max,
@@ -79,9 +85,11 @@ impl RenderTarget {
                 color_attachments: Vec::default(),
                 color_resolve_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &self.depth,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &self.depth,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     // NOTE: We load here in the no MSAA path here because we can use the depth
                     // buffer generated during HZB render.
                     load_op: LoadOp::Load,
@@ -96,7 +104,7 @@ impl RenderTarget {
     pub fn opaque_pass(&self, clear_op: CameraClearColor) -> RenderPassDescriptor {
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::Texture {
+                dst: ColorAttachmentDestination::Texture {
                     texture: &self.color,
                     array_element: 0,
                     mip_level: 0,
@@ -112,9 +120,11 @@ impl RenderTarget {
             }],
             color_resolve_attachments: Vec::default(),
             depth_stencil_attachment: Some(DepthStencilAttachment {
-                texture: &self.depth,
-                array_element: 0,
-                mip_level: 0,
+                dst: DepthStencilAttachmentDestination::Texture {
+                    texture: &self.depth,
+                    array_element: 0,
+                    mip_level: 0,
+                },
                 load_op: LoadOp::Load,
                 store_op: StoreOp::None,
                 samples: self.samples,
@@ -127,7 +137,7 @@ impl RenderTarget {
         if let Some(color_resolve) = &self.color_resolve {
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: &self.color,
                         array_element: 0,
                         mip_level: 0,
@@ -138,7 +148,7 @@ impl RenderTarget {
                 }],
                 color_resolve_attachments: vec![ColorResolveAttachment {
                     src: 0,
-                    dst: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: color_resolve,
                         array_element: 0,
                         mip_level: 0,
@@ -147,9 +157,11 @@ impl RenderTarget {
                     store_op: StoreOp::Store,
                 }],
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &self.depth,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &self.depth,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::Load,
                     store_op: StoreOp::DontCare,
                     samples: self.samples,
@@ -159,7 +171,7 @@ impl RenderTarget {
         } else {
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: &self.color,
                         array_element: 0,
                         mip_level: 0,
@@ -170,9 +182,11 @@ impl RenderTarget {
                 }],
                 color_resolve_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &self.depth,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &self.depth,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::Load,
                     store_op: StoreOp::DontCare,
                     samples: self.samples,

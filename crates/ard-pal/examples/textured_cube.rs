@@ -435,7 +435,7 @@ fn main() {
                 command_buffer.render_pass(
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
-                            source: ColorAttachmentSource::Texture {
+                            dst: ColorAttachmentDestination::Texture {
                                 texture: &triangle_texture,
                                 array_element: 0,
                                 mip_level: 0,
@@ -468,16 +468,18 @@ fn main() {
                 command_buffer.render_pass(
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
-                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            dst: ColorAttachmentDestination::SurfaceImage(&surface_image),
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.2, 0.2, 0.2, 0.0)),
                             store_op: StoreOp::Store,
                             samples: MultiSamples::Count1,
                         }],
                         color_resolve_attachments: Vec::default(),
                         depth_stencil_attachment: Some(DepthStencilAttachment {
-                            texture: &depth_buffer,
-                            array_element: 0,
-                            mip_level: 0,
+                            dst: DepthStencilAttachmentDestination::Texture {
+                                texture: &depth_buffer,
+                                array_element: 0,
+                                mip_level: 0,
+                            },
                             load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
                             store_op: StoreOp::DontCare,
                             samples: MultiSamples::Count1,

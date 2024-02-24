@@ -34,8 +34,9 @@ pub mod prelude {
     pub type RenderPass<'a> = api::render_pass::RenderPass<'a, crate::Backend>;
     pub type RenderPassDescriptor<'a> = api::render_pass::RenderPassDescriptor<'a, crate::Backend>;
     pub use api::render_pass::{
-        ColorAttachment, ColorAttachmentSource, ColorResolveAttachment, DepthStencilAttachment,
-        DepthStencilResolveAttachment, VertexBind,
+        ColorAttachment, ColorAttachmentDestination, ColorResolveAttachment,
+        DepthStencilAttachment, DepthStencilAttachmentDestination, DepthStencilResolveAttachment,
+        VertexBind,
     };
 
     // Command buffer

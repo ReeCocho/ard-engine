@@ -85,6 +85,13 @@
                     unbounded_array: None,
                 )
             ),
+            // Diffuse irradiance cube map.
+            (
+                name: "DiMap",
+                stage: AllStages,
+                count: "1",
+                data: CubeMap("di_map"),
+            ),
         ]
     ),
     // Per material and texture slot bindings.
@@ -139,7 +146,7 @@
                 count: "1",
                 data: Ubo((
                     name: "camera",
-                    ty: Struct("Camera"),
+                    ty: Array(ty: Struct("Camera"), len: "6"),
                 ))
             ),
             (
@@ -165,7 +172,7 @@
                 count: "1",
                 data: Ubo((
                     name: "camera",
-                    ty: Struct("Camera"),
+                    ty: Array(ty: Struct("Camera"), len: "6"),
                 ))
             ),
             (
@@ -855,6 +862,66 @@
                 stage: Fragment,
                 count: "1",
                 data: Texture("screen_tex")
+            )
+        ]
+    ),
+    // Diffuse irradiance gathering.
+    (
+        name: "DiGather",
+        bindings: [
+            (
+                name: "DiSamples",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "di_samples", ty: Struct("DiCoefficients"))),
+                )
+            )
+        ]
+    ),
+    // Diffuse irradiance parallel reduction.
+    (
+        name: "DiParReduce",
+        bindings: [
+            (
+                name: "DiSamples",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "di_samples", ty: Struct("DiCoefficients"))),
+                )
+            ),
+            (
+                name: "DiPrefilteringMats",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "prefiltering_mats", ty: Struct("PrefilteringMatrices"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    // Diffuse irradiance rendering.
+    (
+        name: "DiRender",
+        bindings: [
+            (
+                name: "DiPrefilteringMats",
+                stage: Fragment,
+                count: "1",
+                data: Ubo((
+                    name: "prefiltering_mats",
+                    ty: Struct("PrefilteringMatrices"),
+                ))
             )
         ]
     )

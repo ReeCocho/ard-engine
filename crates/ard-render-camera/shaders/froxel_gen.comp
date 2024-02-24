@@ -40,10 +40,10 @@ void main() {
         1.0
     );
 
-    corners[0] = camera.projection_inv * corners[0];
-    corners[1] = camera.projection_inv * corners[1];
-    corners[2] = camera.projection_inv * corners[2];
-    corners[3] = camera.projection_inv * corners[3];
+    corners[0] = camera[0].projection_inv * corners[0];
+    corners[1] = camera[0].projection_inv * corners[1];
+    corners[2] = camera[0].projection_inv * corners[2];
+    corners[3] = camera[0].projection_inv * corners[3];
 
     corners[0] /= corners[0].w;
     corners[1] /= corners[1].w;
@@ -71,18 +71,18 @@ void main() {
         [3] = vec4(normalize(cross(corners[0].xyz, corners[3].xyz)), 1.0);
 
     // Computing min and max Z over the entire depth
-    const float f_over_n = camera.far_clip / camera.near_clip;
+    const float f_over_n = camera[0].far_clip / camera[0].near_clip;
 
     // NOTE: For this to work, CAMERA_FROXELS_WIDTH * CAMERA_FROXELS_HEIGHT >= CAMERA_FROXELS_DEPTH
     if (gl_LocalInvocationIndex < CAMERA_FROXELS_DEPTH) {
         float near = 
-            camera.near_clip * 
+            camera[0].near_clip * 
             pow(f_over_n, float(gl_LocalInvocationIndex) / float(CAMERA_FROXELS_DEPTH));
 
         float far = 
             gl_LocalInvocationIndex == CAMERA_FROXELS_DEPTH - 1 ? 
             uintBitsToFloat(0x7F800000) : 
-            camera.near_clip * 
+            camera[0].near_clip * 
             pow(f_over_n, float(gl_LocalInvocationIndex + 1) / float(CAMERA_FROXELS_DEPTH));
 
         froxels.min_max_z[gl_LocalInvocationIndex] = vec2(near, far);
@@ -106,73 +106,73 @@ void main() {
         vec4[4] corners_far;
 
         float near = 
-            camera.near_clip * 
+            camera[0].near_clip * 
             pow(f_over_n, float(z) / float(CAMERA_FROXELS_DEPTH));
 
         float far = 
-            camera.near_clip * 
+            camera[0].near_clip * 
             pow(f_over_n, float(z + 1) / float(CAMERA_FROXELS_DEPTH));
 
         corners_near[0] = vec4(
             ((float(gl_LocalInvocationID.x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / near,
+            camera[0].near_clip / near,
             1.0
         );
 
         corners_near[1] = vec4(
             ((float(gl_LocalInvocationID.x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / near,
+            camera[0].near_clip / near,
             1.0
         );
 
         corners_near[2] = vec4(
             ((float(gl_LocalInvocationID.x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / near,
+            camera[0].near_clip / near,
             1.0
         );
 
         corners_near[3] = vec4(
             ((float(gl_LocalInvocationID.x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / near,
+            camera[0].near_clip / near,
             1.0
         );
 
         corners_far[0] = vec4(
             ((float(gl_LocalInvocationID.x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / far,
+            camera[0].near_clip / far,
             1.0
         );
 
         corners_far[1] = vec4(
             ((float(gl_LocalInvocationID.x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 0) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / far,
+            camera[0].near_clip / far,
             1.0
         );
 
         corners_far[2] = vec4(
             ((float(gl_LocalInvocationID.x + 1) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / far,
+            camera[0].near_clip / far,
             1.0
         );
 
         corners_far[3] = vec4(
             ((float(gl_LocalInvocationID.x + 0) / float(CAMERA_FROXELS_WIDTH)) * 2.0) - 1.0,
             ((float(gl_LocalInvocationID.y + 1) / float(CAMERA_FROXELS_HEIGHT)) * 2.0) - 1.0,
-            camera.near_clip / far,
+            camera[0].near_clip / far,
             1.0
         );
 
         [[unroll]]
         for (uint i = 0; i < 4; i++) {
-            corners_near[i] = camera.projection_inv * corners_near[i];
-            corners_far[i] = camera.projection_inv * corners_far[i];
+            corners_near[i] = camera[0].projection_inv * corners_near[i];
+            corners_far[i] = camera[0].projection_inv * corners_far[i];
 
             corners_near[i] /= corners_near[i].w;
             corners_far[i] /= corners_far[i].w;

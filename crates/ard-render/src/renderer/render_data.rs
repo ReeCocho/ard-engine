@@ -742,7 +742,7 @@ impl GlobalRenderData {
                 RenderPassDescriptor {
                     color_attachments: Vec::default(),
                     depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &empty_shadow,
+                        dst: &empty_shadow,
                         array_element: frame,
                         mip_level: 0,
                         load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),

@@ -115,7 +115,7 @@ impl RenderEcs {
         let sun_shadows_renderer =
             SunShadowsRenderer::new(&ctx, &layouts, &draw_gen, &lighting, FRAMES_IN_FLIGHT, 4);
 
-        let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
+        let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
         let sun_shafts = SunShafts::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
         let mut tonemapping = Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
@@ -135,6 +135,10 @@ impl RenderEcs {
                         .unwrap_or_else(|| sun_shadows_renderer.empty_shadow())
                 }),
             );
+
+            scene_renderer
+                .global_sets_mut()
+                .update_di_map_binding(frame, proc_skybox.di_map());
 
             scene_renderer
                 .global_sets_mut()
@@ -294,7 +298,7 @@ impl RenderEcs {
         );
 
         // Phase 1:
-        //      Main: Render the HZB.
+        //      Main: Render the HZB and skybox for diffuse irradiance.
         //      Comp: Bin lights, generate shadow draw calls.
         let mut main_cb = self.ctx.main().command_buffer();
         // let mut compute_cb = self.ctx.main().command_buffer();
@@ -316,6 +320,9 @@ impl RenderEcs {
             &self.sun_shadows_renderer,
             &self.draw_gen,
         );
+
+        self.proc_skybox
+            .gather_diffuse_irradiance(&mut main_cb, frame.lights.global().sun_direction());
 
         self.ctx().main().submit(Some("Phase 1"), main_cb);
 

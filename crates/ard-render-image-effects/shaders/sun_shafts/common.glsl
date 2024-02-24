@@ -10,7 +10,7 @@ uint epipolar_line_sample(uint line, uint s) {
 
 #ifdef HAS_GLOBAL_LIGHTING
 vec2 get_sun_uv() {
-    const vec4 sun_ndc = camera.vp * vec4(global_lighting.sun_direction.xyz, 0.0);
+    const vec4 sun_ndc = camera[0].vp * vec4(global_lighting.sun_direction.xyz, 0.0);
     vec2 sun_uv = (vec2(sun_ndc.xy / sun_ndc.w) + vec2(1.0)) * 0.5;
     return sun_uv;
 }

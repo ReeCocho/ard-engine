@@ -99,7 +99,7 @@ impl Fxaa {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: dst,
                         array_element: dst_array_element,
                         mip_level: 0,

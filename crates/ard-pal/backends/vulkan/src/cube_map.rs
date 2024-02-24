@@ -332,6 +332,11 @@ impl CubeMap {
         self.face_views
             [(array_elem * 6 * self.mip_count as usize) + (mip * 6) + cube_face_to_idx(face)]
     }
+
+    #[inline(always)]
+    pub(crate) fn get_view(&self, array_elem: usize, mip: usize) -> vk::ImageView {
+        self.views[(array_elem * 6) + mip]
+    }
 }
 
 impl Drop for CubeMap {

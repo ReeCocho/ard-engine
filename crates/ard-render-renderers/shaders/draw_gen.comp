@@ -43,7 +43,7 @@ BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
     half_extents.z = max(half_extents.z + 0.1, 0.1);
 
     // Compute all eight corners
-    mat4 vm = camera.view * model;
+    mat4 vm = camera[0].view * model;
     bb.corners[0] = vm * vec4(center.xyz + vec3(+half_extents.x, +half_extents.y, +half_extents.z), 1.0);
     bb.corners[1] = vm * vec4(center.xyz + vec3(-half_extents.x, +half_extents.y, +half_extents.z), 1.0);
     bb.corners[2] = vm * vec4(center.xyz + vec3(-half_extents.x, -half_extents.y, +half_extents.z), 1.0);
@@ -63,7 +63,7 @@ BoundingBox transform_bounding_box(mat4 model, vec4 center, vec4 half_extents) {
         // Depth
         bb.depth = min(bb.depth, bb.corners[i].z);
     
-        bb.corners[i] = camera.projection * bb.corners[i];
+        bb.corners[i] = camera[0].projection * bb.corners[i];
         bb.corners[i] /= bb.corners[i].w;
         vec4 pt = bb.corners[i];
 
@@ -115,7 +115,7 @@ void main() {
     // make sure to add back in the check for the final plane.
     [[unroll]]
     for (int i = 0; i < 5; i++) { 
-        if (dot(vec4(pos.xyz, 1.0), camera.frustum.planes[i]) < -radius) {
+        if (dot(vec4(pos.xyz, 1.0), camera[0].frustum.planes[i]) < -radius) {
             return;
         }
     }
@@ -144,7 +144,7 @@ void main() {
 
     // Determine depth (in world space)
     float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
-    depth = camera.near_clip / depth;
+    depth = camera[0].near_clip / depth;
 
     // If our object is behind all local objects, cull
     if (bb.depth > depth) {

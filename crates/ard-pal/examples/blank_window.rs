@@ -73,7 +73,7 @@ fn main() {
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
                             // The source of our image is from a surface (as opposed to a texture)
-                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            dst: ColorAttachmentDestination::SurfaceImage(&surface_image),
                             // We clear the image with black
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
                             // And store the image instead of discarding the contents

@@ -1,6 +1,7 @@
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_image_effects::ao::AO_SAMPLER;
+use ard_render_lighting::proc_skybox::DI_MAP_SAMPLER;
 use ard_render_si::{bindings::*, consts::*};
 
 use crate::shadow::SHADOW_SAMPLER;
@@ -75,6 +76,21 @@ impl GlobalSets {
         });
 
         set.update(&shadow_cascades_update);
+    }
+
+    pub fn update_di_map_binding(&mut self, frame: Frame, di_map: &CubeMap) {
+        let set = &mut self.sets[usize::from(frame)];
+        set.update(&[DescriptorSetUpdate {
+            binding: GLOBAL_SET_DI_MAP_BINDING,
+            array_element: 0,
+            value: DescriptorValue::CubeMap {
+                cube_map: di_map,
+                array_element: 0,
+                sampler: DI_MAP_SAMPLER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }]);
     }
 
     pub fn update_ao_image_binding(&mut self, frame: Frame, ao_image: &Texture) {

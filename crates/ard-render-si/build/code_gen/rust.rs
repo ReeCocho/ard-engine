@@ -128,6 +128,7 @@ impl<W: Write> RustSetsCodeGen<W> {
             GpuBindingData::Texture(_)
             | GpuBindingData::UnboundedTextureArray(_)
             | GpuBindingData::ShadowTextureArray(_) => "DescriptorType::Texture".to_owned(),
+            GpuBindingData::CubeMap(_) => "DescriptorType::CubeMap".to_owned(),
             GpuBindingData::StorageImage { access, .. } => {
                 format!(
                     "DescriptorType::StorageImage(AccessType::{:?})",

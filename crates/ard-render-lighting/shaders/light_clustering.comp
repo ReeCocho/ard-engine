@@ -64,7 +64,7 @@ void main() {
             const Light light = lights[local_light_idx];
             const vec4 light_pos_hmg = vec4(light.position_range.xyz, 1.0);
             const float light_radius = light.position_range.w;
-            const vec3 position = (camera.view * light_pos_hmg).xyz;
+            const vec3 position = (camera[0].view * light_pos_hmg).xyz;
 
             // Early discard based on Z slice since all clusters share the same Z.
             const bool within_z_bounds =
@@ -78,11 +78,11 @@ void main() {
             // them. We can also skip testing the far plane since we're using an infinite
             // perspective matrix (the light is always within it's bounds).
             const bool outside_camera_bounds = 
-                dot(light_pos_hmg, camera.frustum.planes[0]) < -light_radius ||
-                dot(light_pos_hmg, camera.frustum.planes[1]) < -light_radius ||
-                dot(light_pos_hmg, camera.frustum.planes[2]) < -light_radius ||
-                dot(light_pos_hmg, camera.frustum.planes[3]) < -light_radius ||
-                dot(light_pos_hmg, camera.frustum.planes[4]) < -light_radius;
+                dot(light_pos_hmg, camera[0].frustum.planes[0]) < -light_radius ||
+                dot(light_pos_hmg, camera[0].frustum.planes[1]) < -light_radius ||
+                dot(light_pos_hmg, camera[0].frustum.planes[2]) < -light_radius ||
+                dot(light_pos_hmg, camera[0].frustum.planes[3]) < -light_radius ||
+                dot(light_pos_hmg, camera[0].frustum.planes[4]) < -light_radius;
 
             if (within_z_bounds && !outside_camera_bounds) {
                 const uint idx = atomicAdd(shared_lights_count, 1);

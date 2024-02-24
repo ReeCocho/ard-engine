@@ -358,8 +358,8 @@ impl Tonemapping {
         camera: &'a CameraUbo,
         surface_image: &'a SurfaceImage,
     ) {
-        const MIN_LOG_LUM: f32 = -120.0;
-        const MAX_LOG_LUM: f32 = 100.0;
+        const MIN_LOG_LUM: f32 = -12.0;
+        const MAX_LOG_LUM: f32 = 10.0;
 
         let histogram_params = [GpuAdaptiveLumHistogramGenPushConstants {
             min_log2_lum: MIN_LOG_LUM,
@@ -407,7 +407,7 @@ impl Tonemapping {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::SurfaceImage(surface_image),
+                    dst: ColorAttachmentDestination::SurfaceImage(surface_image),
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,

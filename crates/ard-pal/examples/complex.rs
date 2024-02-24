@@ -390,7 +390,7 @@ fn main() {
                 command_buffer.render_pass(
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
-                            source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                            dst: ColorAttachmentDestination::SurfaceImage(&surface_image),
                             load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
                             store_op: StoreOp::Store,
                             samples: MultiSamples::Count1,

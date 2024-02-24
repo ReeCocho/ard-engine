@@ -227,6 +227,24 @@
             (name: "value", ty: Vec4),
         ]
     ),
+    // Diffuse irradiance lighting coefficients.
+    (
+        name: "DiCoefficients",
+        no_mangle: false,
+        fields: [
+            (name: "samples", ty: Array(len: "7", ty: Vec4)),
+        ]
+    ),
+    // Diffuse irradiance prefiltering matrices.
+    (
+        name: "PrefilteringMatrices",
+        no_mangle: false,
+        fields: [
+            (name: "red", ty: Mat4),
+            (name: "green", ty: Mat4),
+            (name: "blue", ty: Mat4),
+        ]
+    ),
     // Push constants for HZB generation.
     (
         name: "HzbGenPushConstants",
@@ -327,6 +345,25 @@
             (name: "steps_per_sample", ty: U32),
             (name: "depth_threshold", ty: F32),
             (name: "output_dims", ty: IVec2),
+        ]
+    ),
+    // Push constants for diffuse irradiance gathering.
+    (
+        name: "DiGatherPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "sample_dim", ty: U32),
+            (name: "sun_direction", ty: Vec4),
+        ]
+    ),
+    // Push constants for doing parallel reduction on gathered diffuse irradiance spherical 
+    // harmonic coefficients.
+    (
+        name: "DiParReducePushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "construct_prefiltering_matrices", ty: U32),
+            (name: "block_size", ty: U32),
         ]
     ),
 ]

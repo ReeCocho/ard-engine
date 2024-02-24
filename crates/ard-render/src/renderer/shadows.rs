@@ -330,7 +330,7 @@ impl Shadows {
                 RenderPassDescriptor {
                     color_attachments: Vec::default(),
                     depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &cascade.map,
+                        dst: &cascade.map,
                         array_element: 0,
                         mip_level: 0,
                         load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),

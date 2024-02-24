@@ -21,9 +21,9 @@ layout(push_constant) uniform constants {
 
 vec4 accumulate_light(vec2 sample_uv, float sample_depth) {
     // Convert sample to world space
-    float depth = clamp(sample_depth, 0.0, camera.far_clip);
-    depth = camera.near_clip / depth;
-    vec4 world_space_pos = camera.vp_inv * vec4(
+    float depth = clamp(sample_depth, 0.0, camera[0].far_clip);
+    depth = camera[0].near_clip / depth;
+    vec4 world_space_pos = camera[0].vp_inv * vec4(
         (sample_uv.x - 0.5) * 2.0,
         (sample_uv.y - 0.5) * 2.0,
         depth,
@@ -33,7 +33,7 @@ vec4 accumulate_light(vec2 sample_uv, float sample_depth) {
 
     // Ray march from the camera to the sample point
     const uint SAMPLE_COUNT = consts.steps_per_sample;
-    const vec3 ray = world_space_pos.xyz - camera.position.xyz;
+    const vec3 ray = world_space_pos.xyz - camera[0].position.xyz;
 
     float sum = 0.0;
     uint layer = 0;
@@ -41,9 +41,9 @@ vec4 accumulate_light(vec2 sample_uv, float sample_depth) {
     for (uint i = 0; i < SAMPLE_COUNT; i++) {
         // World space position of the ray
         const float t = float(i) / float(SAMPLE_COUNT - 1);
-        vec3 pos = camera.position.xyz + (ray * t);
+        vec3 pos = camera[0].position.xyz + (ray * t);
 
-        const float dist = length(pos - camera.position.xyz);
+        const float dist = length(pos - camera[0].position.xyz);
 
         if(dist > sun_shadow_info.cascades[layer].far_plane) {
             layer = clamp(layer + 1, 0, sun_shadow_info.count - 1);

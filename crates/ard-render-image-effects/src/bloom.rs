@@ -304,7 +304,7 @@ impl<const FIF: usize> Bloom<FIF> {
                 commands.render_pass(
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
-                            source: ColorAttachmentSource::Texture {
+                            dst: ColorAttachmentDestination::Texture {
                                 texture: &self.bloom_image,
                                 array_element: 0,
                                 mip_level: mip,
@@ -335,7 +335,7 @@ impl<const FIF: usize> Bloom<FIF> {
                 commands.render_pass(
                     RenderPassDescriptor {
                         color_attachments: vec![ColorAttachment {
-                            source: ColorAttachmentSource::Texture {
+                            dst: ColorAttachmentDestination::Texture {
                                 texture: &self.bloom_image,
                                 array_element: 0,
                                 mip_level: mip,

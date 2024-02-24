@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use api::{
-    render_pass::{ColorAttachmentSource, RenderPassDescriptor},
+    render_pass::{
+        ColorAttachmentDestination, DepthStencilAttachmentDestination, RenderPassDescriptor,
+    },
     types::LoadOp,
 };
 use ash::vk;
@@ -55,6 +57,7 @@ pub(crate) struct VkRenderPassDescriptor {
     pub color_resolve_attachments: Vec<VkAttachment>,
     pub depth_stencil_attachment: Option<VkAttachment>,
     pub depth_stencil_resolve_attachment: Option<VkAttachment>,
+    pub is_cube_render: bool,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -78,18 +81,23 @@ impl RenderPassCache {
         let descriptor = VkRenderPassDescriptor::from_descriptor(pass);
         *self.passes.entry(descriptor).or_insert_with(|| {
             let mut sample_count = vk::SampleCountFlags::TYPE_1;
+            let mut is_cube_render = false;
 
             // Create attachment descriptors
             let mut attachments = Vec::with_capacity(
                 pass.color_attachments.len() + pass.color_resolve_attachments.len(),
             );
             for attachment in &pass.color_attachments {
-                let final_layout = match &attachment.source {
-                    ColorAttachmentSource::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
-                    ColorAttachmentSource::Texture { .. } => {
+                let final_layout = match &attachment.dst {
+                    ColorAttachmentDestination::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
+                    ColorAttachmentDestination::Texture { .. } => {
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                     }
-                    ColorAttachmentSource::CubeMap { .. } => {
+                    ColorAttachmentDestination::CubeFace { .. } => {
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                    }
+                    ColorAttachmentDestination::CubeMap { .. } => {
+                        is_cube_render = true;
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                     }
                 };
@@ -108,12 +116,17 @@ impl RenderPassCache {
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
-                        .format(match &attachment.source {
-                            ColorAttachmentSource::SurfaceImage(image) => image.internal().format(),
-                            ColorAttachmentSource::Texture { texture, .. } => {
+                        .format(match &attachment.dst {
+                            ColorAttachmentDestination::SurfaceImage(image) => {
+                                image.internal().format()
+                            }
+                            ColorAttachmentDestination::Texture { texture, .. } => {
                                 texture.internal().format
                             }
-                            ColorAttachmentSource::CubeMap { cube_map, .. } => {
+                            ColorAttachmentDestination::CubeFace { cube_map, .. } => {
+                                cube_map.internal().format
+                            }
+                            ColorAttachmentDestination::CubeMap { cube_map, .. } => {
                                 cube_map.internal().format
                             }
                         })
@@ -124,11 +137,15 @@ impl RenderPassCache {
 
             for attachment in &pass.color_resolve_attachments {
                 let final_layout = match &attachment.dst {
-                    ColorAttachmentSource::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
-                    ColorAttachmentSource::Texture { .. } => {
+                    ColorAttachmentDestination::SurfaceImage(_) => vk::ImageLayout::PRESENT_SRC_KHR,
+                    ColorAttachmentDestination::Texture { .. } => {
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                     }
-                    ColorAttachmentSource::CubeMap { .. } => {
+                    ColorAttachmentDestination::CubeFace { .. } => {
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                    }
+                    ColorAttachmentDestination::CubeMap { .. } => {
+                        is_cube_render = true;
                         vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                     }
                 };
@@ -146,11 +163,16 @@ impl RenderPassCache {
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(match &attachment.dst {
-                            ColorAttachmentSource::SurfaceImage(image) => image.internal().format(),
-                            ColorAttachmentSource::Texture { texture, .. } => {
+                            ColorAttachmentDestination::SurfaceImage(image) => {
+                                image.internal().format()
+                            }
+                            ColorAttachmentDestination::Texture { texture, .. } => {
                                 texture.internal().format
                             }
-                            ColorAttachmentSource::CubeMap { cube_map, .. } => {
+                            ColorAttachmentDestination::CubeFace { cube_map, .. } => {
+                                cube_map.internal().format
+                            }
+                            ColorAttachmentDestination::CubeMap { cube_map, .. } => {
                                 cube_map.internal().format
                             }
                         })
@@ -176,13 +198,26 @@ impl RenderPassCache {
                     read_only_depth = false;
                 }
 
+                let format = match attachment.dst {
+                    DepthStencilAttachmentDestination::Texture { texture, .. } => {
+                        texture.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeFace { cube_map, .. } => {
+                        cube_map.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeMap { cube_map, .. } => {
+                        is_cube_render = true;
+                        cube_map.internal().format
+                    }
+                };
+
                 attachments.push(
                     vk::AttachmentDescription2::builder()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
-                        .format(attachment.texture.internal().format)
+                        .format(format)
                         .samples(sample_count)
                         .build(),
                 );
@@ -201,13 +236,26 @@ impl RenderPassCache {
                     read_only_depth = false;
                 }
 
+                let format = match attachment.dst {
+                    DepthStencilAttachmentDestination::Texture { texture, .. } => {
+                        texture.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeFace { cube_map, .. } => {
+                        cube_map.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeMap { cube_map, .. } => {
+                        is_cube_render = true;
+                        cube_map.internal().format
+                    }
+                };
+
                 attachments.push(
                     vk::AttachmentDescription2::builder()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
-                        .format(attachment.dst.internal().format)
+                        .format(format)
                         .samples(vk::SampleCountFlags::TYPE_1)
                         .build(),
                 );
@@ -247,6 +295,7 @@ impl RenderPassCache {
 
             let subpass = vk::SubpassDescription2::builder()
                 .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                .view_mask(if is_cube_render { 0b111111 } else { 0 })
                 .color_attachments(&attachment_refs)
                 .resolve_attachments(&resolve_attachment_refs);
 
@@ -285,11 +334,19 @@ impl RenderPassCache {
 
             let subpass = [subpass.push_next(&mut depth_resolve).build()];
 
+            let cube_correlation_mask = [0b111111];
+            let tex_correlation_mask = [];
+
             // Create the render pass
             unsafe {
                 let create_info = vk::RenderPassCreateInfo2::builder()
                     .attachments(&attachments)
                     .subpasses(&subpass)
+                    .correlated_view_masks(if is_cube_render {
+                        &cube_correlation_mask
+                    } else {
+                        &tex_correlation_mask
+                    })
                     .build();
 
                 VkRenderPass {
@@ -426,8 +483,8 @@ impl VkRenderPassDescriptor {
             Vec::with_capacity(descriptor.color_resolve_attachments.len());
 
         for attachment in &descriptor.color_attachments {
-            let (image_format, initial_layout, final_layout) = match &attachment.source {
-                ColorAttachmentSource::SurfaceImage(image) => (
+            let (image_format, initial_layout, final_layout) = match &attachment.dst {
+                ColorAttachmentDestination::SurfaceImage(image) => (
                     image.internal().format(),
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -436,7 +493,7 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::PRESENT_SRC_KHR,
                 ),
-                ColorAttachmentSource::Texture { texture, .. } => (
+                ColorAttachmentDestination::Texture { texture, .. } => (
                     texture.internal().format,
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -445,7 +502,7 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
-                ColorAttachmentSource::CubeMap { cube_map, .. } => (
+                ColorAttachmentDestination::CubeFace { cube_map, .. } => (
                     cube_map.internal().format,
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -454,6 +511,18 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
+                ColorAttachmentDestination::CubeMap { cube_map, .. } => {
+                    out.is_cube_render = true;
+                    (
+                        cube_map.internal().format,
+                        match &attachment.load_op {
+                            LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                            LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                        },
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    )
+                }
             };
 
             out.color_attachments.push(VkAttachment {
@@ -468,7 +537,7 @@ impl VkRenderPassDescriptor {
 
         for attachment in &descriptor.color_resolve_attachments {
             let (image_format, initial_layout, final_layout) = match &attachment.dst {
-                ColorAttachmentSource::SurfaceImage(image) => (
+                ColorAttachmentDestination::SurfaceImage(image) => (
                     image.internal().format(),
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -477,7 +546,7 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::PRESENT_SRC_KHR,
                 ),
-                ColorAttachmentSource::Texture { texture, .. } => (
+                ColorAttachmentDestination::Texture { texture, .. } => (
                     texture.internal().format,
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -486,7 +555,7 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
-                ColorAttachmentSource::CubeMap { cube_map, .. } => (
+                ColorAttachmentDestination::CubeFace { cube_map, .. } => (
                     cube_map.internal().format,
                     match &attachment.load_op {
                         LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -495,6 +564,18 @@ impl VkRenderPassDescriptor {
                     },
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ),
+                ColorAttachmentDestination::CubeMap { cube_map, .. } => {
+                    out.is_cube_render = true;
+                    (
+                        cube_map.internal().format,
+                        match &attachment.load_op {
+                            LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                            LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                        },
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    )
+                }
             };
 
             out.color_resolve_attachments.push(VkAttachment {
@@ -515,7 +596,18 @@ impl VkRenderPassDescriptor {
             };
 
             out.depth_stencil_attachment = Some(VkAttachment {
-                image_format: attachment.texture.internal().format,
+                image_format: match attachment.dst {
+                    DepthStencilAttachmentDestination::Texture { texture, .. } => {
+                        texture.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeFace { cube_map, .. } => {
+                        cube_map.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeMap { cube_map, .. } => {
+                        out.is_cube_render = true;
+                        cube_map.internal().format
+                    }
+                },
                 initial_layout,
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
@@ -532,7 +624,18 @@ impl VkRenderPassDescriptor {
             };
 
             out.depth_stencil_resolve_attachment = Some(VkAttachment {
-                image_format: attachment.dst.internal().format,
+                image_format: match attachment.dst {
+                    DepthStencilAttachmentDestination::Texture { texture, .. } => {
+                        texture.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeFace { cube_map, .. } => {
+                        cube_map.internal().format
+                    }
+                    DepthStencilAttachmentDestination::CubeMap { cube_map, .. } => {
+                        out.is_cube_render = true;
+                        cube_map.internal().format
+                    }
+                },
                 initial_layout,
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),

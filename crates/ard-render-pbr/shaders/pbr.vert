@@ -1,6 +1,7 @@
 #version 450 core
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_multiview : enable
 
 #define VERTEX_SHADER
 
@@ -36,9 +37,9 @@ void main() {
 #endif
 
     const vec4 ws_frag_pos = model * ard_Position;
-    const vec4 position = camera.vp * ws_frag_pos;
+    const vec4 position = camera[gl_ViewIndex].vp * ws_frag_pos;
 #ifndef DEPTH_ONLY
-    vs_ViewSpacePosition = camera.view * ws_frag_pos;
+    vs_ViewSpacePosition = camera[gl_ViewIndex].view * ws_frag_pos;
 #endif
 
     gl_Position = position;

@@ -239,7 +239,7 @@ uvec3 get_cluster_id(vec2 uv, float depth) {
         clamp(uint(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
         clamp(uint(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
         clamp(
-            uint(log(depth) * camera.cluster_scale_bias.x - camera.cluster_scale_bias.y), 
+            uint(log(depth) * camera[gl_ViewIndex].cluster_scale_bias.x - camera[gl_ViewIndex].cluster_scale_bias.y), 
             0,
             CAMERA_FROXELS_DEPTH - 1
         )

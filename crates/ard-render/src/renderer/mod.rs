@@ -560,7 +560,7 @@ impl Renderer {
                 RenderPassDescriptor {
                     color_attachments: vec![],
                     depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &self.depth_buffer,
+                        dst: &self.depth_buffer,
                         array_element: 0,
                         mip_level: 0,
                         load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
@@ -669,7 +669,7 @@ impl Renderer {
                 RenderPassDescriptor {
                     color_attachments: vec![],
                     depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &self.depth_buffer,
+                        dst: &self.depth_buffer,
                         array_element: 0,
                         mip_level: 0,
                         load_op: LoadOp::Load,
@@ -732,7 +732,7 @@ impl Renderer {
             commands.render_pass(
                 RenderPassDescriptor {
                     color_attachments: vec![ColorAttachment {
-                        source: ColorAttachmentSource::Texture {
+                        dst: ColorAttachmentDestination::Texture {
                             texture: &self.hdr_image,
                             array_element: 0,
                             mip_level: 0,
@@ -741,7 +741,7 @@ impl Renderer {
                         store_op: StoreOp::Store,
                     }],
                     depth_stencil_attachment: Some(DepthStencilAttachment {
-                        texture: &self.depth_buffer,
+                        dst: &self.depth_buffer,
                         array_element: 0,
                         mip_level: 0,
                         load_op: LoadOp::Load,
@@ -808,7 +808,7 @@ impl Renderer {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::SurfaceImage(&surface_image),
+                    dst: ColorAttachmentDestination::SurfaceImage(&surface_image),
                     load_op: LoadOp::Load,
                     store_op: StoreOp::Store,
                 }],

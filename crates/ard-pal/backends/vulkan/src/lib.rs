@@ -10,7 +10,7 @@ use api::{
     },
     graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo},
     queue::SurfacePresentFailure,
-    render_pass::ColorAttachmentSource,
+    render_pass::{ColorAttachmentDestination, DepthStencilAttachmentDestination},
     shader::{ShaderCreateError, ShaderCreateInfo},
     surface::{
         SurfaceCapabilities, SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo,
@@ -701,6 +701,10 @@ impl VulkanBackend {
             .sampler_anisotropy(true)
             .build();
 
+        let mut features11 = vk::PhysicalDeviceVulkan11Features::builder()
+            .multiview(true)
+            .build();
+
         let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
             .timeline_semaphore(true)
             .buffer_device_address(true)
@@ -716,6 +720,7 @@ impl VulkanBackend {
         let create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_infos)
             .enabled_extension_names(&device_extensions)
+            .push_next(&mut features11)
             .push_next(&mut features12)
             .push_next(&mut features13)
             .enabled_features(&features);
@@ -1351,14 +1356,14 @@ impl VulkanBackend {
                             + descriptor.color_resolve_attachments.len(),
                     );
                     for attachment in &descriptor.color_attachments {
-                        views.push(match &attachment.source {
-                            ColorAttachmentSource::SurfaceImage(image) => {
+                        views.push(match &attachment.dst {
+                            ColorAttachmentDestination::SurfaceImage(image) => {
                                 // Indicate that the surface image has been drawn to
                                 image.internal().signal_draw();
                                 dims = image.internal().dims();
                                 image.internal().view()
                             }
-                            ColorAttachmentSource::Texture {
+                            ColorAttachmentDestination::Texture {
                                 texture,
                                 array_element,
                                 mip_level,
@@ -1369,7 +1374,7 @@ impl VulkanBackend {
                                 );
                                 texture.internal().get_view(*array_element, *mip_level)
                             }
-                            ColorAttachmentSource::CubeMap {
+                            ColorAttachmentDestination::CubeFace {
                                 cube_map,
                                 array_element,
                                 face,
@@ -1382,19 +1387,30 @@ impl VulkanBackend {
                                 cube_map
                                     .internal()
                                     .get_face_view(*array_element, *mip_level, *face)
+                            }
+                            ColorAttachmentDestination::CubeMap {
+                                cube_map,
+                                array_element,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map.internal().get_view(*array_element, *mip_level)
                             }
                         });
                     }
 
                     for attachment in &descriptor.color_resolve_attachments {
                         views.push(match &attachment.dst {
-                            ColorAttachmentSource::SurfaceImage(image) => {
+                            ColorAttachmentDestination::SurfaceImage(image) => {
                                 // Indicate that the surface image has been drawn to
                                 image.internal().signal_draw();
                                 dims = image.internal().dims();
                                 image.internal().view()
                             }
-                            ColorAttachmentSource::Texture {
+                            ColorAttachmentDestination::Texture {
                                 texture,
                                 array_element,
                                 mip_level,
@@ -1405,7 +1421,7 @@ impl VulkanBackend {
                                 );
                                 texture.internal().get_view(*array_element, *mip_level)
                             }
-                            ColorAttachmentSource::CubeMap {
+                            ColorAttachmentDestination::CubeFace {
                                 cube_map,
                                 array_element,
                                 face,
@@ -1419,23 +1435,71 @@ impl VulkanBackend {
                                     .internal()
                                     .get_face_view(*array_element, *mip_level, *face)
                             }
+                            ColorAttachmentDestination::CubeMap {
+                                cube_map,
+                                array_element,
+                                mip_level,
+                            } => {
+                                dims = (
+                                    cube_map.dim().shr(mip_level).max(1),
+                                    cube_map.dim().shr(mip_level).max(1),
+                                );
+                                cube_map.internal().get_view(*array_element, *mip_level)
+                            }
                         });
                     }
 
+                    fn deptch_stencil_attachment_get_view(
+                        dst: &DepthStencilAttachmentDestination<'_, crate::VulkanBackend>,
+                    ) -> (vk::ImageView, u32, u32) {
+                        match dst {
+                            DepthStencilAttachmentDestination::Texture {
+                                texture,
+                                array_element,
+                                mip_level,
+                            } => {
+                                let (width, height, _) = texture.dims();
+                                let view = texture.internal().get_view(*array_element, *mip_level);
+                                (view, width, height)
+                            }
+                            DepthStencilAttachmentDestination::CubeFace {
+                                cube_map,
+                                array_element,
+                                face,
+                                mip_level,
+                            } => {
+                                let dim = cube_map.dim();
+                                let view = cube_map.internal().get_face_view(
+                                    *array_element,
+                                    *mip_level,
+                                    *face,
+                                );
+                                (view, dim, dim)
+                            }
+                            DepthStencilAttachmentDestination::CubeMap {
+                                cube_map,
+                                array_element,
+                                mip_level,
+                            } => {
+                                let dim = cube_map.dim();
+                                let view = cube_map.internal().get_view(*array_element, *mip_level);
+                                (view, dim, dim)
+                            }
+                        }
+                    }
+
                     if let Some(attachment) = &descriptor.depth_stencil_attachment {
-                        let (width, height, _) = attachment.texture.dims();
-                        let texture = attachment.texture.internal();
+                        let (view, width, height) =
+                            deptch_stencil_attachment_get_view(&attachment.dst);
                         dims = (width, height);
-                        views
-                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
+                        views.push(view);
                     }
 
                     if let Some(attachment) = &descriptor.depth_stencil_resolve_attachment {
-                        let (width, height, _) = attachment.dst.dims();
-                        let texture = attachment.dst.internal();
+                        let (view, width, height) =
+                            deptch_stencil_attachment_get_view(&attachment.dst);
                         dims = (width, height);
-                        views
-                            .push(texture.get_view(attachment.array_element, attachment.mip_level));
+                        views.push(view);
                     }
 
                     // Find the framebuffer

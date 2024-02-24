@@ -58,7 +58,7 @@ void main() {
         sample_uv += 0.5 / vec2(consts.output_dims);
 
         // Store sample with depth and initial sample mark
-        s.value = vec4(0.0, 0.0, 0.0, camera.near_clip / texture(depth_tex, sample_uv).r);
+        s.value = vec4(0.0, 0.0, 0.0, camera[0].near_clip / texture(depth_tex, sample_uv).r);
         s.initial = is_initial_sample(gl_GlobalInvocationID.y, gl_GlobalInvocationID.x) ? 1 : 0;
     }
 

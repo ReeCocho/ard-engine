@@ -936,7 +936,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::East,
@@ -958,7 +958,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::West,
@@ -980,7 +980,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::Top,
@@ -1002,7 +1002,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::Bottom,
@@ -1024,7 +1024,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::North,
@@ -1046,7 +1046,7 @@ fn draw_cube_faces<'a, 'b>(
     commands.render_pass(
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
-                source: ColorAttachmentSource::CubeMap {
+                dst: ColorAttachmentDestination::CubeFace {
                     cube_map,
                     array_element: 0,
                     face: CubeFace::South,

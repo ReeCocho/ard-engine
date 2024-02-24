@@ -55,7 +55,7 @@ vec4 sample_line(uint line, vec2 scaled_pt, vec2 sun_uv, float t, float l, float
         const uint high = epipolar_lines[lin_idx].high;
         const vec4 low_value = epipolar_lines[low].value;
         const vec4 high_value = epipolar_lines[high].value;
-        const vec2 sample_pos = sample_to_uv(line, sample_idx, sun_uv) * vec2(camera.aspect_ratio, 1.0);
+        const vec2 sample_pos = sample_to_uv(line, sample_idx, sun_uv) * vec2(camera[0].aspect_ratio, 1.0);
         const vec2 pt_to_sample = sample_pos - scaled_pt;
         float weight = exp(-36.0 * dot(pt_to_sample, pt_to_sample));
 
@@ -130,7 +130,7 @@ float depth_sample(uvec2 screen_coord) {
     const vec2 depth_pt2 = vec2(screen_coord + uvec2(0, 1)) / vec2(consts.output_dims);
     const vec2 depth_pt3 = vec2(screen_coord + uvec2(1, 0)) / vec2(consts.output_dims);
     const vec2 depth_pt4 = vec2(screen_coord + uvec2(1, 1)) / vec2(consts.output_dims);
-    const vec4 samples = camera.near_clip / vec4(
+    const vec4 samples = camera[0].near_clip / vec4(
         texture(depth_tex, depth_pt1).r,
         texture(depth_tex, depth_pt2).r,
         texture(depth_tex, depth_pt3).r,
@@ -159,7 +159,7 @@ void main() {
         0.0
     );
 
-    const float pixel_depth = camera.near_clip / 
+    const float pixel_depth = camera[0].near_clip / 
         texture(
             depth_tex, 
             vec2(
@@ -203,7 +203,7 @@ void main() {
         low_line_idx, 
         high_line_idx,
         pixel_depth,
-        vec2(camera.aspect_ratio, 1.0),
+        vec2(camera[0].aspect_ratio, 1.0),
         pt.xy,
         sun_uv.xy
     );
@@ -226,7 +226,7 @@ void main() {
             new_low, 
             new_high,
             pixel_depth,
-            vec2(camera.aspect_ratio, 1.0),
+            vec2(camera[0].aspect_ratio, 1.0),
             pt.xy,
             sun_uv.xy
         );

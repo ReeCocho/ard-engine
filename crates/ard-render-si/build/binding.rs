@@ -26,6 +26,7 @@ pub enum GpuBindingData {
     },
     Ubo(GpuStructField),
     Texture(String),
+    CubeMap(String),
     UnboundedTextureArray(String),
     ShadowTextureArray(String),
     StorageImage {

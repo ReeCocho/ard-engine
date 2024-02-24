@@ -11,7 +11,7 @@ use ard_render2::{
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
-use ard_render_lighting::Light;
+use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
 use ard_render_pbr::PbrMaterialData;
@@ -137,6 +137,40 @@ impl From<CameraMover> for System {
     }
 }
 
+#[derive(SystemState)]
+pub struct SunMover {
+    pub speed: f32,
+    pub time: f32,
+}
+
+impl SunMover {
+    fn on_tick(
+        &mut self,
+        evt: Tick,
+        _: Commands,
+        _: Queries<()>,
+        res: Res<(Write<GlobalLighting>,)>,
+    ) {
+        self.time += evt.0.as_secs_f32();
+
+        let mut lighting = res.get_mut::<GlobalLighting>().unwrap();
+
+        let dir = Vec4::new(0.0, 0.0, 1.0, 1.0);
+
+        lighting.set_sun_direction(
+            (Mat4::from_rotation_x((self.time * self.speed).to_radians()) * dir).xyz(),
+        );
+    }
+}
+
+impl From<SunMover> for System {
+    fn from(mover: SunMover) -> Self {
+        SystemBuilder::new(mover)
+            .with_handler(SunMover::on_tick)
+            .build()
+    }
+}
+
 fn main() {
     let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
     let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
@@ -170,6 +204,10 @@ fn main() {
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
+        .add_system(SunMover {
+            speed: 5.0,
+            time: 0.0,
+        })
         .add_startup_function(setup)
         .run();
 }
@@ -246,6 +284,68 @@ fn setup(app: &mut App) {
         &mut [],
     );
     */
+
+    // Big quad for the floor to prevent light leaking when the sun is low.
+    let quad = factory
+        .create_mesh(MeshCreateInfo {
+            debug_name: Some("quad".to_owned()),
+            vertices: VertexAttributes {
+                positions: &[
+                    Vec4::new(-1.0, 0.0, -1.0, 1.0),
+                    Vec4::new(-1.0, 0.0, 1.0, 1.0),
+                    Vec4::new(1.0, 0.0, 1.0, 1.0),
+                    Vec4::new(1.0, 0.0, -1.0, 1.0),
+                    Vec4::new(-1.0, 0.0, -1.0, 1.0),
+                    Vec4::new(-1.0, 0.0, 1.0, 1.0),
+                    Vec4::new(1.0, 0.0, 1.0, 1.0),
+                    Vec4::new(1.0, 0.0, -1.0, 1.0),
+                ],
+                normals: &[
+                    Vec4::new(0.0, 1.0, 0.0, 0.0),
+                    Vec4::new(0.0, 1.0, 0.0, 0.0),
+                    Vec4::new(0.0, 1.0, 0.0, 0.0),
+                    Vec4::new(0.0, 1.0, 0.0, 0.0),
+                    Vec4::new(0.0, -1.0, 0.0, 0.0),
+                    Vec4::new(0.0, -1.0, 0.0, 0.0),
+                    Vec4::new(0.0, -1.0, 0.0, 0.0),
+                    Vec4::new(0.0, -1.0, 0.0, 0.0),
+                ],
+                tangents: None,
+                colors: None,
+                uv0: None,
+                uv1: None,
+                uv2: None,
+                uv3: None,
+            },
+            indices: [1u32, 0, 2, 2, 0, 3, 4, 5, 6, 4, 6, 7].as_slice(),
+        })
+        .unwrap();
+
+    let quad_material = factory.create_pbr_material_instance().unwrap();
+    factory.set_material_data(
+        &quad_material,
+        &PbrMaterialData {
+            alpha_cutoff: 0.0,
+            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            metallic: 0.0,
+            roughness: 1.0,
+        },
+    );
+
+    app.world.entities().commands().create(
+        (
+            vec![quad.clone()],
+            vec![quad_material.clone()],
+            vec![Model(
+                Mat4::from_scale(Vec3::new(600.0, 1.0, 600.0))
+                    * Mat4::from_translation(Vec3::new(0.0, -3.0, 0.0)),
+            )],
+            vec![RenderingMode::Opaque],
+            vec![RenderFlags::empty()],
+            vec![Static(0)],
+        ),
+        &mut [],
+    );
 
     // Create a mesh
     let mesh = factory
@@ -338,7 +438,7 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 8.0,
+        move_speed: 24.0,
         entity: camera[0],
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,

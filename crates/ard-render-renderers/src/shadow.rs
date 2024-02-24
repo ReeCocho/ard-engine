@@ -114,9 +114,11 @@ impl SunShadowsRenderer {
                 color_attachments: Vec::default(),
                 color_resolve_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &empty_shadow,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &empty_shadow,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,
@@ -350,9 +352,11 @@ impl SunShadowsRenderer {
             .iter_mut()
             .enumerate()
             .for_each(|(i, cascade)| {
-                cascade
-                    .camera
-                    .update_raw(frame, self.ubo[usize::from(frame)].camera(i).unwrap());
+                cascade.camera.update_raw(
+                    frame,
+                    self.ubo[usize::from(frame)].camera(i).unwrap(),
+                    0,
+                );
             });
     }
 
@@ -395,9 +399,11 @@ impl SunShadowsRenderer {
                 color_attachments: Vec::default(),
                 color_resolve_attachments: Vec::default(),
                 depth_stencil_attachment: Some(DepthStencilAttachment {
-                    texture: &cascade.image,
-                    array_element: 0,
-                    mip_level: 0,
+                    dst: DepthStencilAttachmentDestination::Texture {
+                        texture: &cascade.image,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
                     load_op: LoadOp::Clear(ClearColor::D32S32(1.0, 0)),
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,

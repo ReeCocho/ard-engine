@@ -1,0 +1,116 @@
+#version 450
+#extension GL_EXT_control_flow_attributes: enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define ARD_SET_DI_GATHER 0
+#include "ard_bindings.glsl"
+#include "skybox.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    DiGatherPushConstants consts;
+};
+
+void main() {
+    // Check for OOB
+    if (gl_GlobalInvocationID.x >= consts.sample_dim 
+        || gl_GlobalInvocationID.y >= consts.sample_dim
+    ) {
+        return;    
+    }
+
+    // Convert thread ID to sample directions
+    const float sample_dim_scale = 1.0 / float(consts.sample_dim);
+    const float horz_dir = (((float(gl_GlobalInvocationID.x) + 0.5) * sample_dim_scale) - 0.5) * 2.0;
+    const float vert_dir = (((float(gl_GlobalInvocationID.y) + 0.5) * sample_dim_scale) - 0.5) * 2.0;
+
+    vec3 pos_x = normalize(vec3(1.0, vert_dir, horz_dir));
+    vec3 pos_y = normalize(vec3(vert_dir, 1.0, horz_dir));
+    vec3 pos_z = normalize(vec3(horz_dir, vert_dir, 1.0));
+    vec3 neg_x = -pos_x;
+    vec3 neg_y = -pos_y;
+    vec3 neg_z = -pos_z;
+
+    // Compute lighting at each direction
+    const vec3 sun_dir = normalize(consts.sun_direction.xyz);
+    const vec3 pos_x_color = skybox_color(pos_x, sun_dir);
+    const vec3 pos_y_color = skybox_color(pos_y, sun_dir);
+    const vec3 pos_z_color = skybox_color(pos_z, sun_dir);
+    const vec3 neg_x_color = skybox_color(neg_x, sun_dir);
+    const vec3 neg_y_color = skybox_color(neg_y, sun_dir);
+    const vec3 neg_z_color = skybox_color(neg_z, sun_dir);
+
+    // Paper uses Z up coordinate system, so we convert before proceding
+    pos_x = vec3(pos_x.x, pos_x.z, pos_x.y);
+    pos_y = vec3(pos_y.x, pos_y.z, pos_y.y);
+    pos_z = vec3(pos_z.x, pos_z.z, pos_z.y);
+    neg_x = vec3(neg_x.x, neg_x.z, neg_x.y);
+    neg_y = vec3(neg_y.x, neg_y.z, neg_y.y);
+    neg_z = vec3(neg_z.x, neg_z.z, neg_z.y);
+
+    // Compute spherical harmonics
+    // NOTE: It's possible we could cache these, but after measuring performance I didn't see any
+    // need. Complete gather is sub 1/100 ms. Performance might actually degrade because we'd have
+    // to read values from global memory.
+    const float y00 = 0.282095;
+
+    const vec3 pos_x_y1 = 0.488603 * pos_x.xzy;
+    const vec3 pos_y_y1 = 0.488603 * pos_y.xzy;
+    const vec3 pos_z_y1 = 0.488603 * pos_z.xzy;
+    const vec3 neg_x_y1 = 0.488603 * neg_x.xzy;
+    const vec3 neg_y_y1 = 0.488603 * neg_y.xzy;
+    const vec3 neg_z_y1 = 0.488603 * neg_z.xzy;
+
+    const vec4 y2_coeff = vec4(vec3(1.092548), 0.315392);
+    const vec4 pos_x_y2 = y2_coeff * vec4(pos_x.x * pos_x.z, pos_x.y * pos_x.z, pos_x.x * pos_x.y, (3.0 * pos_x.z * pos_x.z) - 1.0);
+    const vec4 pos_y_y2 = y2_coeff * vec4(pos_y.x * pos_y.z, pos_y.y * pos_y.z, pos_y.x * pos_y.y, (3.0 * pos_y.z * pos_y.z) - 1.0);
+    const vec4 pos_z_y2 = y2_coeff * vec4(pos_z.x * pos_z.z, pos_z.y * pos_z.z, pos_z.x * pos_z.y, (3.0 * pos_z.z * pos_z.z) - 1.0);
+    const vec4 neg_x_y2 = y2_coeff * vec4(neg_x.x * neg_x.z, neg_x.y * neg_x.z, neg_x.x * neg_x.y, (3.0 * neg_x.z * neg_x.z) - 1.0);
+    const vec4 neg_y_y2 = y2_coeff * vec4(neg_y.x * neg_y.z, neg_y.y * neg_y.z, neg_y.x * neg_y.y, (3.0 * neg_y.z * neg_y.z) - 1.0);
+    const vec4 neg_z_y2 = y2_coeff * vec4(neg_z.x * neg_z.z, neg_z.y * neg_z.z, neg_z.x * neg_z.y, (3.0 * neg_z.z * neg_z.z) - 1.0);
+
+    const float pos_x_y22 = 0.546274 * ((pos_x.x * pos_x.x) - (pos_x.y * pos_x.y));
+    const float pos_y_y22 = 0.546274 * ((pos_y.x * pos_y.x) - (pos_y.y * pos_y.y));
+    const float pos_z_y22 = 0.546274 * ((pos_z.x * pos_z.x) - (pos_z.y * pos_z.y));
+    const float neg_x_y22 = 0.546274 * ((neg_x.x * neg_x.x) - (neg_x.y * neg_x.y));
+    const float neg_y_y22 = 0.546274 * ((neg_y.x * neg_y.x) - (neg_y.y * neg_y.y));
+    const float neg_z_y22 = 0.546274 * ((neg_z.x * neg_z.x) - (neg_z.y * neg_z.y));
+
+    // Compute values for each coefficient
+    const vec3 L00 = y00 * (pos_x_color + pos_y_color + pos_z_color + neg_x_color + neg_y_color + neg_z_color);
+    
+    const vec3 L1p1 = (pos_x_y1.x * pos_x_color) + (pos_y_y1.x * pos_y_color) + (pos_z_y1.x * pos_z_color) + (neg_x_y1.x * neg_x_color) + (neg_y_y1.x * neg_y_color) + (neg_z_y1.x * neg_z_color);
+    const vec3 L10  = (pos_x_y1.y * pos_x_color) + (pos_y_y1.y * pos_y_color) + (pos_z_y1.y * pos_z_color) + (neg_x_y1.y * neg_x_color) + (neg_y_y1.y * neg_y_color) + (neg_z_y1.y * neg_z_color);
+    const vec3 L1n1 = (pos_x_y1.z * pos_x_color) + (pos_y_y1.z * pos_y_color) + (pos_z_y1.z * pos_z_color) + (neg_x_y1.z * neg_x_color) + (neg_y_y1.z * neg_y_color) + (neg_z_y1.z * neg_z_color);
+    
+    const vec3 L2p2 = (pos_x_y22  * pos_x_color) + (pos_y_y22  * pos_y_color) + (pos_z_y22  * pos_z_color) + (neg_x_y22  * neg_x_color) + (neg_y_y22  * neg_y_color) + (neg_z_y22  * neg_z_color);
+    const vec3 L2p1 = (pos_x_y2.x * pos_x_color) + (pos_y_y2.x * pos_y_color) + (pos_z_y2.x * pos_z_color) + (neg_x_y2.x * neg_x_color) + (neg_y_y2.x * neg_y_color) + (neg_z_y2.x * neg_z_color);
+    const vec3 L20  = (pos_x_y2.w * pos_x_color) + (pos_y_y2.w * pos_y_color) + (pos_z_y2.w * pos_z_color) + (neg_x_y2.w * neg_x_color) + (neg_y_y2.w * neg_y_color) + (neg_z_y2.w * neg_z_color);
+    const vec3 L2n1 = (pos_x_y2.y * pos_x_color) + (pos_y_y2.y * pos_y_color) + (pos_z_y2.y * pos_z_color) + (neg_x_y2.y * neg_x_color) + (neg_y_y2.y * neg_y_color) + (neg_z_y2.y * neg_z_color);
+    const vec3 L2n2 = (pos_x_y2.z * pos_x_color) + (pos_y_y2.z * pos_y_color) + (pos_z_y2.z * pos_z_color) + (neg_x_y2.z * neg_x_color) + (neg_y_y2.z * neg_y_color) + (neg_z_y2.z * neg_z_color);
+
+    // Compute and store
+    // Values are stored as follows:
+    // R0+0, G0+0, B0+0, R1+1
+    // G1+1, B1+1, R1+0, G1+0
+    // B1+0, R1-1, G1-1, B1-1
+    // R2+1, G2+1, B2+1, R2-1
+    // G2-1, B2-1, R2-2, G2-2
+    // B2-2, R2+0, G2+0, B2+0
+    // R2+2, G2+2, B2+2, NULL
+    const float final_scaling = 1.0 / (float(consts.sample_dim) * float(consts.sample_dim) * 6.0);
+    DiCoefficients coeff;
+    coeff.samples[0] = vec4(L00, L1p1.r) * final_scaling;
+    coeff.samples[1] = vec4(L1p1.gb, L10.rg) * final_scaling;
+    coeff.samples[2] = vec4(L10.b, L1n1) * final_scaling;
+    coeff.samples[3] = vec4(L2p1, L2n1.r) * final_scaling;
+    coeff.samples[4] = vec4(L2n1.gb, L2n2.rg) * final_scaling;
+    coeff.samples[5] = vec4(L2n2.b, L20) * final_scaling;
+    coeff.samples[6] = vec4(L2p2, 0.0) * final_scaling;
+
+    const uint sample_idx = (gl_GlobalInvocationID.y * consts.sample_dim) + gl_GlobalInvocationID.x;
+    di_samples[sample_idx] = coeff;
+}

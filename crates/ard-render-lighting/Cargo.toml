@@ -15,6 +15,7 @@ ard-render-objects = { path = "../ard-render-objects" }
 ard-render-si = { path = "../ard-render-si" }
 bytemuck.workspace = true
 rustc-hash.workspace = true
+ordered-float.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

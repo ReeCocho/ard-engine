@@ -396,7 +396,7 @@ impl PostProcessing {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: &self.images,
                         // Ping
                         array_element: 0,
@@ -419,7 +419,7 @@ impl PostProcessing {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    source: ColorAttachmentSource::Texture {
+                    dst: ColorAttachmentDestination::Texture {
                         texture: &self.images,
                         // Pong
                         array_element: 1,

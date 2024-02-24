@@ -7,10 +7,13 @@ use api::{
     compute_pass::ComputePassDispatch,
     cube_map::CubeMap,
     descriptor_set::DescriptorSet,
-    render_pass::{ColorAttachmentSource, RenderPassDescriptor},
+    render_pass::{
+        ColorAttachmentDestination, DepthStencilAttachmentDestination, RenderPassDescriptor,
+    },
     texture::{Blit, Texture},
     types::{BufferUsage, CubeFace, LoadOp, QueueType, SharingMode, StoreOp, TextureUsage},
 };
+use arrayvec::ArrayVec;
 use ash::{
     vk::{self, AccessFlags2, ImageLayout},
     Device,
@@ -352,12 +355,7 @@ impl CommandSorting {
         desc: &RenderPassDescriptor<'_, crate::VulkanBackend>,
     ) -> usize {
         for attachment in &desc.color_attachments {
-            self.inspect_color_attachment(
-                info,
-                command_idx,
-                &attachment.load_op,
-                &attachment.source,
-            );
+            self.inspect_color_attachment(info, command_idx, &attachment.load_op, &attachment.dst);
         }
 
         for attachment in &desc.color_resolve_attachments {
@@ -370,9 +368,7 @@ impl CommandSorting {
                 command_idx,
                 attachment.store_op,
                 &attachment.load_op,
-                &attachment.texture,
-                attachment.array_element as u32,
-                attachment.mip_level as u32,
+                &attachment.dst,
                 false,
             );
         }
@@ -384,8 +380,6 @@ impl CommandSorting {
                 attachment.store_op,
                 &attachment.load_op,
                 &attachment.dst,
-                attachment.array_element as u32,
-                attachment.mip_level as u32,
                 true,
             );
         }
@@ -416,10 +410,18 @@ impl CommandSorting {
         info: &mut CommandSortingInfo,
         command_idx: usize,
         load_op: &LoadOp,
-        source: &ColorAttachmentSource<'_, crate::VulkanBackend>,
+        destination: &ColorAttachmentDestination<'_, crate::VulkanBackend>,
     ) {
-        let (image_region, image, sharing_mode, initial_layout, final_layout) = match source {
-            ColorAttachmentSource::SurfaceImage(image) => {
+        struct InspectionSource {
+            regions: ArrayVec<ImageRegion, 6>,
+            image: vk::Image,
+            sharing_mode: SharingMode,
+            initial_layout: vk::ImageLayout,
+            final_layout: vk::ImageLayout,
+        }
+
+        let src = match destination {
+            ColorAttachmentDestination::SurfaceImage(image) => {
                 let semaphores = image.internal().semaphores();
                 info.semaphores
                     .register_signal(semaphores.presentable, None);
@@ -431,61 +433,101 @@ impl CommandSorting {
                     },
                 );
 
-                (
-                    ImageRegion {
-                        id: image.internal().id(),
-                        array_elem: 0,
-                        base_mip_level: 0,
-                        mip_count: 1,
-                    },
-                    image.internal().image(),
-                    SharingMode::Concurrent,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::PRESENT_SRC_KHR,
-                )
+                let mut regions = ArrayVec::new();
+                regions.push(ImageRegion {
+                    id: image.internal().id(),
+                    array_elem: 0,
+                    base_mip_level: 0,
+                    mip_count: 1,
+                });
+
+                InspectionSource {
+                    regions,
+                    image: image.internal().image(),
+                    sharing_mode: SharingMode::Concurrent,
+                    initial_layout: vk::ImageLayout::UNDEFINED,
+                    final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                }
             }
-            ColorAttachmentSource::Texture {
+            ColorAttachmentDestination::Texture {
                 texture,
                 array_element,
                 mip_level,
-            } => (
-                ImageRegion {
+            } => {
+                let mut regions = ArrayVec::new();
+                regions.push(ImageRegion {
                     id: texture.internal().id,
                     array_elem: *array_element as u32,
                     base_mip_level: *mip_level as u32,
                     mip_count: 1,
-                },
-                texture.internal().image,
-                texture.internal().sharing_mode,
-                match load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                },
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            ),
-            ColorAttachmentSource::CubeMap {
+                });
+
+                InspectionSource {
+                    regions,
+                    image: texture.internal().image,
+                    sharing_mode: texture.internal().sharing_mode,
+                    initial_layout: match load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                }
+            }
+            ColorAttachmentDestination::CubeFace {
                 cube_map,
                 array_element,
                 face,
                 mip_level,
-            } => (
-                ImageRegion {
+            } => {
+                let mut regions = ArrayVec::new();
+                regions.push(ImageRegion {
                     id: cube_map.internal().id,
                     array_elem: crate::cube_map::CubeMap::to_array_elem(*array_element, *face)
                         as u32,
                     base_mip_level: *mip_level as u32,
                     mip_count: 1,
-                },
-                cube_map.internal().image,
-                cube_map.internal().sharing_mode,
-                match load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                },
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            ),
+                });
+
+                InspectionSource {
+                    regions,
+                    image: cube_map.internal().image,
+                    sharing_mode: cube_map.internal().sharing_mode,
+                    initial_layout: match load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                }
+            }
+            ColorAttachmentDestination::CubeMap {
+                cube_map,
+                array_element,
+                mip_level,
+            } => {
+                let mut regions = ArrayVec::new();
+                for i in 0..6 {
+                    regions.push(ImageRegion {
+                        id: cube_map.internal().id,
+                        array_elem: ((*array_element * 6) + i) as u32,
+                        base_mip_level: *mip_level as u32,
+                        mip_count: 1,
+                    });
+                }
+
+                InspectionSource {
+                    regions,
+                    image: cube_map.internal().image,
+                    sharing_mode: cube_map.internal().sharing_mode,
+                    initial_layout: match load_op {
+                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
+                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
+                    },
+                    final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                }
+            }
         };
 
         let mut new_usage = GlobalImageUsage {
@@ -500,33 +542,37 @@ impl CommandSorting {
                     | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
                 stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
             },
-            layout: final_layout,
+            layout: src.final_layout,
         };
 
-        let mut old_usage = [GlobalImageUsage::default()];
-        info.global
-            .use_image(&image_region, &new_usage, &mut old_usage);
+        let mut old_usages = [GlobalImageUsage::default(); 6];
+        src.regions.iter().enumerate().for_each(|(i, region)| {
+            info.global
+                .use_image(region, &new_usage, &mut old_usages[i..(i + 1)]);
+        });
 
-        new_usage.layout = initial_layout;
+        new_usage.layout = src.initial_layout;
 
-        self.image_barrier_check(
-            info.queue_families,
-            info.queue_families.to_index(info.queue),
-            &old_usage[0],
-            &new_usage,
-            image,
-            sharing_mode,
-            vk::ImageAspectFlags::COLOR,
-            image_region.array_elem,
-            image_region.base_mip_level,
-        );
+        for (old_usage, image_region) in old_usages.iter().zip(src.regions.iter()) {
+            self.image_barrier_check(
+                info.queue_families,
+                info.queue_families.to_index(info.queue),
+                old_usage,
+                &new_usage,
+                src.image,
+                src.sharing_mode,
+                vk::ImageAspectFlags::COLOR,
+                image_region.array_elem,
+                image_region.base_mip_level,
+            );
 
-        self.dependency_check(
-            old_usage[0].queue.as_ref(),
-            command_idx,
-            &mut info.wait_queues,
-            (info.queue, info.timeline_value),
-        );
+            self.dependency_check(
+                old_usage.queue.as_ref(),
+                command_idx,
+                &mut info.wait_queues,
+                (info.queue, info.timeline_value),
+            );
+        }
     }
 
     fn inspect_depth_stencil_attachment(
@@ -535,16 +581,81 @@ impl CommandSorting {
         command_idx: usize,
         store_op: StoreOp,
         load_op: &LoadOp,
-        texture: &Texture<crate::VulkanBackend>,
-        array_elem: u32,
-        mip_level: u32,
+        destination: &DepthStencilAttachmentDestination<'_, crate::VulkanBackend>,
         is_resolve_attachment: bool,
     ) {
-        let image_region = ImageRegion {
-            id: texture.internal().id,
-            array_elem,
-            base_mip_level: mip_level,
-            mip_count: 1,
+        struct InspectionSource {
+            regions: ArrayVec<ImageRegion, 6>,
+            image: vk::Image,
+            sharing_mode: SharingMode,
+            aspect_flags: vk::ImageAspectFlags,
+        }
+
+        let src = match destination {
+            DepthStencilAttachmentDestination::Texture {
+                texture,
+                array_element,
+                mip_level,
+            } => {
+                let mut regions = ArrayVec::new();
+                regions.push(ImageRegion {
+                    id: texture.internal().id,
+                    array_elem: *array_element as u32,
+                    base_mip_level: *mip_level as u32,
+                    mip_count: 1,
+                });
+
+                InspectionSource {
+                    regions,
+                    image: texture.internal().image,
+                    sharing_mode: texture.internal().sharing_mode,
+                    aspect_flags: texture.internal().aspect_flags,
+                }
+            }
+            DepthStencilAttachmentDestination::CubeFace {
+                cube_map,
+                array_element,
+                face,
+                mip_level,
+            } => {
+                let mut regions = ArrayVec::new();
+                regions.push(ImageRegion {
+                    id: cube_map.internal().id,
+                    array_elem: crate::cube_map::CubeMap::to_array_elem(*array_element, *face)
+                        as u32,
+                    base_mip_level: *mip_level as u32,
+                    mip_count: 1,
+                });
+
+                InspectionSource {
+                    regions,
+                    image: cube_map.internal().image,
+                    sharing_mode: cube_map.internal().sharing_mode,
+                    aspect_flags: cube_map.internal().aspect_flags,
+                }
+            }
+            DepthStencilAttachmentDestination::CubeMap {
+                cube_map,
+                array_element,
+                mip_level,
+            } => {
+                let mut regions = ArrayVec::new();
+                for i in 0..6 {
+                    regions.push(ImageRegion {
+                        id: cube_map.internal().id,
+                        array_elem: ((*array_element * 6) + i) as u32,
+                        base_mip_level: *mip_level as u32,
+                        mip_count: 1,
+                    });
+                }
+
+                InspectionSource {
+                    regions,
+                    image: cube_map.internal().image,
+                    sharing_mode: cube_map.internal().sharing_mode,
+                    aspect_flags: cube_map.internal().aspect_flags,
+                }
+            }
         };
 
         let final_layout = crate::util::depth_store_op_to_layout(store_op);
@@ -583,9 +694,11 @@ impl CommandSorting {
             layout: final_layout,
         };
 
-        let mut old_usage = [GlobalImageUsage::default()];
-        info.global
-            .use_image(&image_region, &new_usage, &mut old_usage);
+        let mut old_usages = [GlobalImageUsage::default(); 6];
+        src.regions.iter().enumerate().for_each(|(i, region)| {
+            info.global
+                .use_image(region, &new_usage, &mut old_usages[i..(i + 1)]);
+        });
 
         new_usage.layout = match load_op {
             LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
@@ -593,24 +706,26 @@ impl CommandSorting {
             LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
         };
 
-        self.image_barrier_check(
-            info.queue_families,
-            info.queue_families.to_index(info.queue),
-            &old_usage[0],
-            &new_usage,
-            texture.internal().image,
-            texture.internal().sharing_mode,
-            texture.internal().aspect_flags,
-            image_region.array_elem,
-            image_region.base_mip_level,
-        );
+        for (old_usage, image_region) in old_usages.iter().zip(src.regions.iter()) {
+            self.image_barrier_check(
+                info.queue_families,
+                info.queue_families.to_index(info.queue),
+                old_usage,
+                &new_usage,
+                src.image,
+                src.sharing_mode,
+                src.aspect_flags,
+                image_region.array_elem,
+                image_region.base_mip_level,
+            );
 
-        self.dependency_check(
-            old_usage[0].queue.as_ref(),
-            command_idx,
-            &mut info.wait_queues,
-            (info.queue, info.timeline_value),
-        );
+            self.dependency_check(
+                old_usage.queue.as_ref(),
+                command_idx,
+                &mut info.wait_queues,
+                (info.queue, info.timeline_value),
+            );
+        }
     }
 
     fn inspect_render_pass_command(

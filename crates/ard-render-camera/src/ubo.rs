@@ -35,7 +35,7 @@ impl CameraUbo {
         let ubo = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
-                size: std::mem::size_of::<GpuCamera>() as u64,
+                size: 6 * std::mem::size_of::<GpuCamera>() as u64,
                 array_elements: fif,
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
@@ -189,8 +189,8 @@ impl CameraUbo {
             value.into_gpu_struct(width as f32, height as f32, model);
     }
 
-    pub fn update_raw(&mut self, frame: Frame, value: &GpuCamera) {
+    pub fn update_raw(&mut self, frame: Frame, value: &GpuCamera, idx: usize) {
         let mut view = self.ubo.write(frame.into()).unwrap();
-        bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[0] = *value;
+        bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[idx] = *value;
     }
 }

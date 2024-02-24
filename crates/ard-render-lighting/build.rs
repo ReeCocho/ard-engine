@@ -14,6 +14,27 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/di_gather.comp",
+        PathBuf::from(&out_dir).join("di_gather.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/di_par_reduce.comp",
+        PathBuf::from(&out_dir).join("di_par_reduce.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/di_render.frag",
+        PathBuf::from(&out_dir).join("di_render.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/proc_skybox.vert",
         PathBuf::from(&out_dir).join("proc_skybox.vert.spv"),
         &["./shaders/"],

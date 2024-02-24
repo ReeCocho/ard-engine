@@ -1,6 +1,7 @@
 #version 450 core
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_multiview : enable
 
 #define FRAGMENT_SHADER
 
@@ -42,6 +43,7 @@ void main() {
 
 // We only need to compute final color if we're not depth-only
 #ifndef DEPTH_ONLY
+
     // Prefetch textures
     #if ARD_VS_HAS_UV0
         const vec4 mr_map = sample_texture_default(vs_Slots.y, vs_Uv, vec4(0.0, 1.0, 0.0, 0.0));
@@ -69,7 +71,7 @@ void main() {
     #endif
 
     // View vector
-    const vec3 V = normalize(camera.position.xyz - vs_WorldSpaceFragPos);
+    const vec3 V = normalize(camera[gl_ViewIndex].position.xyz - vs_WorldSpaceFragPos);
 
     // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
@@ -95,7 +97,7 @@ void main() {
 
     // Lighting from point lights
     const vec2 screen_uv = (vs_Position.xy / vs_Position.w) * vec2(0.5) + vec2(0.5);
-    const float screen_depth = (vs_Position.w * camera.near_clip) / vs_Position.z;
+    const float screen_depth = (vs_Position.w * camera[gl_ViewIndex].near_clip) / vs_Position.z;
     const uvec3 cluster = get_cluster_id(screen_uv, screen_depth);
 
     int light_index = 0;
@@ -125,52 +127,7 @@ void main() {
         light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][light_index];
     }
 
-    // Ambient lighting
-    const vec3 L00  = vec3(0.38, 0.43, 0.45);
-    const vec3 L1n1 = vec3(0.29, 0.36, 0.41);
-    const vec3 L10  = vec3(0.04, 0.03, 0.01);
-    const vec3 L1p1 = vec3(-0.10, -0.10, -0.09);
-    const vec3 L2n2 = vec3(-0.06, -0.06, -0.04);
-    const vec3 L2n1 = vec3(0.01, -0.01, -0.05);
-    const vec3 L20  = vec3(-0.09, -0.13, -0.15);
-    const vec3 L2p1 = vec3(-0.06, -0.05, -0.04);
-    const vec3 L2p2 = vec3(0.02, 0.0, -0.05);
-
-    const float c1 = 0.429043;
-    const float c2 = 0.511664;
-    const float c3 = 0.743125;
-    const float c4 = 0.886227;
-    const float c5 = 0.247708;
-
-    const mat4 Mr = mat4(
-        vec4(c1 * L2p2.r, c1 * L2n2.r, c1 * L2p1.r, c2 * L1p1.r),
-        vec4(c1 * L2n2.r, -c1 * L2p2.r, c1 * L2n1.r, c2 * L1n1.r),
-        vec4(c1 * L2p1.r, c1 * L2n1.r, c3 * L20.r, c2 * L10.r),
-        vec4(c2 * L1p1.r, c2 * L1n1.r, c2 * L10.r, (c4 * L00.r) - (c5 * L20.r))
-    );
-
-    const mat4 Mg = mat4(
-        vec4(c1 * L2p2.g, c1 * L2n2.g, c1 * L2p1.g, c2 * L1p1.g),
-        vec4(c1 * L2n2.g, -c1 * L2p2.g, c1 * L2n1.g, c2 * L1n1.g),
-        vec4(c1 * L2p1.g, c1 * L2n1.g, c3 * L20.g, c2 * L10.g),
-        vec4(c2 * L1p1.g, c2 * L1n1.g, c2 * L10.g, (c4 * L00.g) - (c5 * L20.g))
-    );
-
-    const mat4 Mb = mat4(
-        vec4(c1 * L2p2.b, c1 * L2n2.b, c1 * L2p1.b, c2 * L1p1.b),
-        vec4(c1 * L2n2.b, -c1 * L2p2.b, c1 * L2n1.b, c2 * L1n1.b),
-        vec4(c1 * L2p1.b, c1 * L2n1.b, c3 * L20.b, c2 * L10.b),
-        vec4(c2 * L1p1.b, c2 * L1n1.b, c2 * L10.b, (c4 * L00.b) - (c5 * L20.b))
-    );
-
-    const vec4 ir_N = vec4(N, 1.0);
-
-    const vec3 ambient_color = vec3(
-        dot(ir_N, Mr * ir_N),
-        dot(ir_N, Mg * ir_N),
-        dot(ir_N, Mb * ir_N)
-    );
-
+    const vec3 ambient_color = texture(di_map, N).rgb;
     const vec3 kS = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
     const vec3 kD = (1.0 - kS) * (1.0 - metallic);
     const float ao = texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r;

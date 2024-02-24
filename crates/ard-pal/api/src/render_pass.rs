@@ -26,8 +26,8 @@ pub struct RenderPassDescriptor<'a, B: Backend> {
 
 /// Describes a color attachment of a render pass.
 pub struct ColorAttachment<'a, B: Backend> {
-    /// The source image of the attachment.
-    pub source: ColorAttachmentSource<'a, B>,
+    /// The destination image of the attachment.
+    pub dst: ColorAttachmentDestination<'a, B>,
     /// How the color attachment should be loaded.
     pub load_op: LoadOp,
     /// How the color attachment should be stored.
@@ -42,37 +42,38 @@ pub struct ColorResolveAttachment<'a, B: Backend> {
     /// pass.
     pub src: usize,
     /// The source image of the attachment.
-    pub dst: ColorAttachmentSource<'a, B>,
+    pub dst: ColorAttachmentDestination<'a, B>,
     /// How the color attachment should be loaded.
     pub load_op: LoadOp,
     /// How the color attachment should be stored.
     pub store_op: StoreOp,
 }
 
-/// The source data of a color attachment.
-pub enum ColorAttachmentSource<'a, B: Backend> {
+/// The destination data of a color attachment.
+pub enum ColorAttachmentDestination<'a, B: Backend> {
     SurfaceImage(&'a SurfaceImage<B>),
     Texture {
         texture: &'a Texture<B>,
         array_element: usize,
         mip_level: usize,
     },
-    CubeMap {
+    CubeFace {
         cube_map: &'a CubeMap<B>,
         array_element: usize,
         face: CubeFace,
+        mip_level: usize,
+    },
+    CubeMap {
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
         mip_level: usize,
     },
 }
 
 /// Describes the depth stencil attachment of a render pass.
 pub struct DepthStencilAttachment<'a, B: Backend> {
-    /// The texture source.
-    pub texture: &'a Texture<B>,
-    /// The array element of the texture to use.
-    pub array_element: usize,
-    /// The mip level of the array element of the texture to use.
-    pub mip_level: usize,
+    /// The attachment destination.
+    pub dst: DepthStencilAttachmentDestination<'a, B>,
     /// How the depth stencil attachment should be loaded.
     pub load_op: LoadOp,
     /// How the depth stencil attachment should be stored.
@@ -83,12 +84,8 @@ pub struct DepthStencilAttachment<'a, B: Backend> {
 
 /// Describes the depth stencil attachment used for multi-sample resolution of a render pass.
 pub struct DepthStencilResolveAttachment<'a, B: Backend> {
-    /// The texture destination to resolve to.
-    pub dst: &'a Texture<B>,
-    /// The array element of the texture to use.
-    pub array_element: usize,
-    /// The mip level of the array element of the texture to use.
-    pub mip_level: usize,
+    /// The attachment destination to resolve to.
+    pub dst: DepthStencilAttachmentDestination<'a, B>,
     /// How the depth stencil attachment should be loaded.
     pub load_op: LoadOp,
     /// How the depth stencil attachment should be stored.
@@ -97,6 +94,26 @@ pub struct DepthStencilResolveAttachment<'a, B: Backend> {
     pub depth_resolve_mode: ResolveMode,
     /// How stencil values should be resolved.
     pub stencil_resolve_mode: ResolveMode,
+}
+
+/// The destination data of a depth stencil attachment.
+pub enum DepthStencilAttachmentDestination<'a, B: Backend> {
+    Texture {
+        texture: &'a Texture<B>,
+        array_element: usize,
+        mip_level: usize,
+    },
+    CubeFace {
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
+        face: CubeFace,
+        mip_level: usize,
+    },
+    CubeMap {
+        cube_map: &'a CubeMap<B>,
+        array_element: usize,
+        mip_level: usize,
+    },
 }
 
 pub struct RenderPass<'a, B: Backend> {
