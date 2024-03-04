@@ -1,73 +1,86 @@
-pub mod asset;
-pub mod camera;
-pub mod cube_map;
-pub mod factory;
-pub mod lighting;
-pub mod material;
-pub mod mesh;
-pub mod pbr;
-pub mod renderer;
-pub mod shader_constants;
-pub mod static_geometry;
-pub mod texture;
+use std::time::Duration;
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_window::window::WindowId;
+use ard_pal::prelude::*;
+use ard_render_lighting::global::GlobalLighting;
+use ard_window::prelude::*;
 use ard_winit::windows::WinitWindows;
-use renderer::{Renderer, RendererSettings};
+use system::RenderSystem;
 
-pub mod prelude {
-    pub use crate::{
-        asset::{
-            cube_map::CubeMapAsset, material::MaterialAsset, model::ModelAsset, RenderAssetsPlugin,
-        },
-        camera::{CameraClearColor, CameraDescriptor, CameraIbl, CameraShadows},
-        factory::{Factory, ShaderCreateInfo},
-        lighting::PointLight,
-        material::{MaterialCreateInfo, MaterialInstanceCreateInfo},
-        mesh::{MeshBounds, MeshCreateInfo, Vertices},
-        renderer::{gui::Gui, Model, RenderLayer, Renderable, Renderer, RendererSettings},
-        static_geometry::StaticGeometry,
-        RenderPlugin,
-    };
+pub mod canvas;
+pub mod ecs;
+pub mod factory;
+pub mod frame;
+pub mod staging;
+pub mod system;
+
+pub const FRAMES_IN_FLIGHT: usize = 2;
+
+#[derive(Clone, Copy)]
+pub struct RendererSettings {
+    /// Flag to enable drawing the game scene. For games, this should be `true` all the time. This
+    /// is useful for things like editors where you only want a GUI.
+    pub render_scene: bool,
+    /// Time between frame draws. `None` indicates no render limiting.
+    pub render_time: Option<Duration>,
+    /// Preferred presentation mode.
+    pub present_mode: PresentMode,
+    /// Type of anti-aliasing to use.
+    pub anti_aliasing: AntiAliasingMode,
+    /// Super resolution scale factor. A value of `1.0` means no super sampling is performed.
+    pub render_scale: f32,
+    /// Width and height of the renderer image. `None` indicates the dimensions should match that
+    /// of the surface being presented to.
+    pub canvas_size: Option<(u32, u32)>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
+pub enum AntiAliasingMode {
+    None,
+    MSAA(MultiSamples),
+}
+
+#[derive(Resource, Clone)]
 pub struct RenderPlugin {
     pub window: WindowId,
     pub settings: RendererSettings,
     pub debug: bool,
 }
 
-#[derive(Resource, Clone)]
-struct LateRenderInit(RenderPlugin);
-
 impl Plugin for RenderPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
-        app.add_resource(LateRenderInit(self.clone()));
+        app.add_resource(self.clone());
+        app.add_resource(GlobalLighting::default());
         app.add_startup_function(late_render_init);
     }
 }
 
 fn late_render_init(app: &mut App) {
-    let plugin = app.resources.get::<LateRenderInit>().unwrap().clone();
+    let plugin = app.resources.get::<RenderPlugin>().unwrap().clone();
     let windows = app.resources.get::<WinitWindows>().unwrap();
-    let window = windows.get_window(plugin.0.window).unwrap();
+    let dirty_static = app.resources.get::<DirtyStatic>().unwrap();
+    let window = windows.get_window(plugin.window).unwrap();
     let size = window.inner_size();
 
-    let (renderer, factory, static_geo, lighting, gui) = Renderer::new(
-        plugin.0.clone(),
+    let window_id = plugin.window;
+    let (render_system, factory) = RenderSystem::new(
+        plugin,
+        &dirty_static,
         window,
-        plugin.0.window,
+        window_id,
         (size.width, size.height),
-        &plugin.0.settings,
     );
 
-    app.dispatcher.add_system(renderer);
-    app.resources.add(gui);
-    app.resources.add(lighting);
-    app.resources.add(plugin.0.settings);
+    app.dispatcher.add_system(render_system);
     app.resources.add(factory);
-    app.resources.add(static_geo);
+}
+
+impl From<AntiAliasingMode> for MultiSamples {
+    fn from(value: AntiAliasingMode) -> Self {
+        match value {
+            AntiAliasingMode::MSAA(samples) => samples,
+            _ => MultiSamples::Count1,
+        }
+    }
 }

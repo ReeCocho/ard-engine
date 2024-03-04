@@ -9,11 +9,11 @@
     #include "pbr_common.fs.glsl"
 #endif
 
+#include "pbr_brdf.glsl"
+
 /////////////////
 /// CONSTANTS ///
 /////////////////
-
-const float PI = 3.14159265359;
 
 const int SHADOW_KERNEL_SIZE = 2;
 const int SHADOW_SAMPLE_COUNT = (1 + (2 * SHADOW_KERNEL_SIZE)) * (1 + (2 * SHADOW_KERNEL_SIZE));
@@ -27,82 +27,8 @@ const float ATTENUATION_EPSILON = 0.001;
 /// `range` - Range of the light source.
 float light_attenuation(float x, float range) {
     // Variation of inverse square falloff that allows for attenuation of 0 at x = range
-    const float s = x / range;
-    
-    if (s >= 1.0) return 0.0;
-
-    float s2 = s * s;
-    s2 = 1.0 - s2;
-    s2 = s2 * s2;
-
-    return s2 / (1.0 + s);
-}
-
-/// Trowbridge-Reitz GGZ normal distribution function for approximating surface area of 
-/// microfacets.
-///
-/// `N` - Surface normal.
-/// `H` - The halfway vector.
-/// `roughness` - Linear roughness.
-///
-/// Values closer to 0 are more specular. Values closer to 1 are more rough.
-float distribution_ggx(vec3 N, vec3 H, float roughness) {
-    const float a = roughness * roughness;
-    const float a2 = a * a;
-    const float NdotH = max(dot(N, H), 0.0);
-    const float NdotH2 = NdotH * NdotH;
-
-    const float nom = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-
-    return nom / denom;
-}
-
-float geometry_schlick_ggx(float NdotV, float roughness) {
-    const float r = (roughness + 1.0);
-    const float k = (r * r) / 8.0;
-
-    const float nom = NdotV;
-    const float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
-}
-
-/// Schlick approximation of Smith using GGX for approximating geometry shadowing factor.
-///
-/// `NdotV` - Surface normal dotted with the viewing vector.
-/// `roughness` - Linear roughness.
-///
-/// Values closer to 0 represent higher microfacet shadowing. Values closer to 1 represent lower
-/// microfacet shadowing.
-float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
-    const float NdotV = max(dot(N, V), 0.0);
-    const float NdotL = max(dot(N, L), 0.0);
-    const float ggx2 = geometry_schlick_ggx(NdotV, roughness);
-    const float ggx1 = geometry_schlick_ggx(NdotL, roughness);
-    return ggx1 * ggx2;
-}
-
-/// Fresnel Schlick approximation of light refractance.
-///
-/// `NdotH` - Surface normal dotted with the halfway vector.
-/// `F0` - Base reflectivity of the surface (index of refraction).
-///
-/// Returns ratio of light reflected over the ratio that gets refracted.
-vec3 fresnel_schlick(float NdotH, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - NdotH, 0.0, 1.0), 5.0);
-}
-
-/// Fresnel Schlick approximation of light refractance taking into account surface roughness.
-///
-/// `NdotH` - Surface normal dotted with the halfway vector.
-/// `F0` - Base reflectivity of the surface (index of refraction).
-/// `roughness` - Linear roughness.
-///
-/// Returns ratio of light reflected over the ratio that gets refracted.
-vec3 fresnel_schlick_roughness(float cos_theta, vec3 F0, float roughness) {
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+    // and constant brightness regardless of range.
+    return pow(clamp(1.0 - pow(x / range, 4.0), 0.0, 1.0), 2.0) / ((x * x) + 1.0);
 }
 
 #ifndef DEPTH_ONLY
@@ -202,35 +128,11 @@ vec3 light_fragment(
     // Per light radiance
     const vec3 radiance = light_color * attenuation;
 
-    // Cook-Torrance BRDF
-    const vec3 H = normalize(V + L);
-    const float NDF = distribution_ggx(N, H, roughness);
-    const float G = geometry_smith(N, V, L, roughness);
-    const vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+    // Evaluate the BRDF
+    const float ndotl = max(dot(N, L), 0.0);
+    const vec3 brdf = evaluate_brdf(base_color, F0, V, N, L, metallic, roughness, ndotl);
 
-    // Bias to avoid divide by 0
-    const vec3 numerator = NDF * G * F;
-    const float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-    const vec3 specular = numerator / denominator;
-
-    // kS is Fresnel
-    const vec3 kS = F;
-
-    // For energy conservation, the diffuse and specular light can't be above 1.0 (unless
-    // the surface emits light); to preserve this relationship the diffuse component (kD)
-    // should be equal to 1.0 - kS
-    //
-    // Multiply kD by the inverse metalness such that only non-metals have diffuse
-    // lighting, or a linear blend if partly metal (pure metals have no diffuse light).
-    const vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
-
-    // Scale light by NdotL
-    const float NdotL = max(dot(N, L), 0.0);
-
-    // Add to outgoing radiance Lo
-    // NOTE: We already multiplied the BRDF by the Fresnel (kS) so we won't multiply
-    // by kS again
-    return (kD * base_color / PI + specular) * radiance * NdotL;
+    return brdf * radiance * ndotl;
 }
 
 /// Get the cluster ID for the given screen coordinate.

@@ -358,8 +358,8 @@ impl Tonemapping {
         camera: &'a CameraUbo,
         surface_image: &'a SurfaceImage,
     ) {
-        const MIN_LOG_LUM: f32 = -12.0;
-        const MAX_LOG_LUM: f32 = 10.0;
+        const MIN_LOG_LUM: f32 = -8.0;
+        const MAX_LOG_LUM: f32 = 12.0;
 
         let histogram_params = [GpuAdaptiveLumHistogramGenPushConstants {
             min_log2_lum: MIN_LOG_LUM,
@@ -374,7 +374,7 @@ impl Tonemapping {
         }];
 
         let tonemapping_params = [GpuToneMappingPushConstants {
-            exposure: 0.12,
+            exposure: 0.15,
             gamma: 2.2,
         }];
 

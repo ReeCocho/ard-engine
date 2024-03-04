@@ -127,15 +127,23 @@ void main() {
         light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][light_index];
     }
 
-    const vec3 ambient_color = texture(di_map, N).rgb;
-    const vec3 kS = fresnel_schlick_roughness(max(dot(N, V), 0.0), F0, roughness);
-    const vec3 kD = (1.0 - kS) * (1.0 - metallic);
-    const float ao = texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r;
-    const vec3 ambient = ao
-        // * global_lighting.ambient_color_intensity.a
-        * color.rgb
-        * ambient_color;
-        // * global_lighting.ambient_color_intensity.rgb;
+    // Ambient lighting
+    const vec3 ambient_color = texture(di_map, N).rgb 
+        * global_lighting.ambient_color_intensity.rgb;
+    const float ambient_attenuation = global_lighting.ambient_color_intensity.a
+        * texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r;
+    const vec3 ambient = light_fragment(
+        ambient_color,
+        ambient_attenuation,
+        color.rgb,
+        roughness,
+        metallic,
+        F0,
+        N,
+        V,
+        N
+    );
+
     final_color += vec4(ambient, 0.0);
 
     OUT_COLOR = final_color;

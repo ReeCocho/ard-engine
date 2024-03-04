@@ -3,8 +3,6 @@ name = "ard-render"
 version.workspace = true
 edition.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 ard-core = { path = "../ard-core" }
 ard-window = { path = "../ard-window" }
@@ -17,28 +15,21 @@ ard-assets = { path = "../ard-assets" }
 ard-input = { path = "../ard-input" }
 ard-gltf = { path = "../ard-gltf" }
 ard-formats = { path = "../ard-formats" }
-bitflags.workspace = true
-bytemuck.workspace = true
+ard-render-si = { path = "../ard-render-si" }
+ard-render-base = { path = "../ard-render-base" }
+ard-render-meshes = { path = "../ard-render-meshes" }
+ard-render-textures = { path = "../ard-render-textures" }
+ard-render-material = { path = "../ard-render-material" }
+ard-render-pbr = { path = "../ard-render-pbr" }
+ard-render-objects = { path = "../ard-render-objects" }
+ard-render-renderers = { path = "../ard-render-renderers" }
+ard-render-camera = { path = "../ard-render-camera" }
+ard-render-lighting = { path = "../ard-render-lighting" }
+ard-render-image-effects = { path = "../ard-render-image-effects" }
 crossbeam-channel.workspace = true
-async-trait.workspace = true
-serde.workspace = true
-ron.workspace = true
-rayon.workspace = true
-bincode.workspace = true
-rustc-hash.workspace = true
-futures.workspace = true
-tokio-stream.workspace = true
-ordered-float.workspace = true
+thiserror.workspace = true
 raw-window-handle.workspace = true
-image.workspace = true
-gltf.workspace = true
-egui.workspace = true
-half = { version = "2.1.0", features = ["bytemuck"] }
-
-[features]
-default = [ "vulkan" ]
-vulkan = [ "ard-pal/vulkan" ]
-
-[build-dependencies]
-serde.workspace = true
-ron.workspace = true
+bytemuck.workspace = true
+rustc-hash.workspace = true
+rayon.workspace = true
+puffin.workspace = true

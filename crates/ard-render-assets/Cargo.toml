@@ -13,7 +13,7 @@ ard-render-meshes = { path = "../ard-render-meshes" }
 ard-render-material = { path = "../ard-render-material" }
 ard-render-textures = { path = "../ard-render-textures" }
 ard-render-pbr = { path = "../ard-render-pbr" }
-ard-render2 = { path = "../ard-render2" }
+ard-render = { path = "../ard-render" }
 ard-math = { path = "../ard-math" }
 ard-pal = { path = "../ard-pal" }
 ard-log = { path = "../ard-log" }

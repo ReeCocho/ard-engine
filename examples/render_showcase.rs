@@ -6,7 +6,7 @@ use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
-use ard_render2::{
+use ard_render::{
     factory::Factory, system::PostRender, AntiAliasingMode, RenderPlugin, RendererSettings,
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
@@ -205,7 +205,7 @@ fn main() {
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
         .add_system(SunMover {
-            speed: 5.0,
+            speed: 10.0,
             time: 0.0,
         })
         .add_startup_function(setup)
@@ -337,7 +337,7 @@ fn setup(app: &mut App) {
             vec![quad.clone()],
             vec![quad_material.clone()],
             vec![Model(
-                Mat4::from_scale(Vec3::new(600.0, 1.0, 600.0))
+                Mat4::from_scale(Vec3::new(1000.0, 1.0, 1000.0))
                     * Mat4::from_translation(Vec3::new(0.0, -3.0, 0.0)),
             )],
             vec![RenderingMode::Opaque],

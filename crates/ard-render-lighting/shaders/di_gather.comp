@@ -101,7 +101,7 @@ void main() {
     // G2-1, B2-1, R2-2, G2-2
     // B2-2, R2+0, G2+0, B2+0
     // R2+2, G2+2, B2+2, NULL
-    const float final_scaling = 1.0 / (float(consts.sample_dim) * float(consts.sample_dim) * 6.0);
+    const float final_scaling = (4.0 * 3.14159) / (float(consts.sample_dim) * float(consts.sample_dim) * 6.0);
     DiCoefficients coeff;
     coeff.samples[0] = vec4(L00, L1p1.r) * final_scaling;
     coeff.samples[1] = vec4(L1p1.gb, L10.rg) * final_scaling;

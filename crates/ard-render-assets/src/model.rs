@@ -8,7 +8,7 @@ use ard_formats::{
     texture::{MipType, Sampler, TextureData, TextureHeader},
 };
 use ard_math::Mat4;
-use ard_render2::factory::Factory;
+use ard_render::factory::Factory;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::{Mesh, MeshCreateInfo};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};

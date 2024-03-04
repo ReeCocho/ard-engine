@@ -1,7 +1,7 @@
 use ard_assets::prelude::Assets;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_render2::factory::Factory;
+use ard_render::factory::Factory;
 use model::{ModelAsset, ModelLoader};
 
 pub mod model;

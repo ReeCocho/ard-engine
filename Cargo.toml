@@ -32,7 +32,6 @@ ard-input = { path = "./crates/ard-input", optional = true }
 ard-assets = { path = "./crates/ard-assets", optional = true }
 ard-window = { path = "./crates/ard-window", optional = true }
 ard-winit = { path = "./crates/ard-winit", optional = true }
-# ard-render = { path = "./crates/ard-render", optional = true }
 ard-render-camera = { path = "./crates/ard-render-camera" }
 ard-render-material = { path = "./crates/ard-render-material" }
 ard-render-meshes = { path = "./crates/ard-render-meshes" }
@@ -40,7 +39,7 @@ ard-render-pbr = { path = "./crates/ard-render-pbr" }
 ard-render-objects = { path = "./crates/ard-render-objects" }
 ard-render-lighting = { path = "./crates/ard-render-lighting" }
 ard-render-image-effects = { path = "./crates/ard-render-image-effects" }
-ard-render2 = { path = "./crates/ard-render2" }
+ard-render = { path = "./crates/ard-render" }
 ard-render-assets = { path = "./crates/ard-render-assets" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
 
