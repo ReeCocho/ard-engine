@@ -33,4 +33,18 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/gui.vert",
+        PathBuf::from(&out_dir).join("gui.vert.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/gui.frag",
+        PathBuf::from(&out_dir).join("gui.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

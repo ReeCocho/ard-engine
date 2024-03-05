@@ -924,5 +924,17 @@
                 ))
             )
         ]
+    ),
+    // GUI rendering layout
+    (
+        name: "Gui",
+        bindings: [
+            (
+                name: "Font",
+                stage: Fragment,
+                count: "1",
+                data: Texture("font_texture"),
+            )
+        ]
     )
 ]

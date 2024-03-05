@@ -3,6 +3,7 @@ use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_camera::active::ActiveCameras;
+use ard_render_gui::GuiRunOutput;
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
 
@@ -15,6 +16,8 @@ pub struct FrameDataInner {
     pub dirty_static: DirtyStaticListener,
     /// The job of the currently processing frame.
     pub job: Option<Job>,
+    /// Gui output to be rendered.
+    pub gui_output: GuiRunOutput,
     /// Object data captured from the primary ECS.
     pub object_data: RenderObjects,
     /// Lights captured from the primary ECS.

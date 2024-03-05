@@ -15,6 +15,7 @@ use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
     draw_gen::DrawGenPipeline,
+    gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
     scene::{SceneRenderArgs, SceneRenderer},
     shadow::{ShadowRenderArgs, SunShadowsRenderer},
@@ -31,6 +32,7 @@ pub(crate) struct RenderEcs {
     camera: CameraUbo,
     scene_renderer: SceneRenderer,
     sun_shadows_renderer: SunShadowsRenderer,
+    gui_renderer: GuiRenderer,
     lighting: Lighting,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
@@ -114,6 +116,7 @@ impl RenderEcs {
         let mut scene_renderer = SceneRenderer::new(&ctx, &layouts, &draw_gen, FRAMES_IN_FLIGHT);
         let sun_shadows_renderer =
             SunShadowsRenderer::new(&ctx, &layouts, &draw_gen, &lighting, FRAMES_IN_FLIGHT, 4);
+        let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
@@ -156,6 +159,7 @@ impl RenderEcs {
                 camera: CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts),
                 scene_renderer,
                 sun_shadows_renderer,
+                gui_renderer,
                 lighting,
                 draw_gen,
                 hzb_render,
@@ -289,6 +293,12 @@ impl RenderEcs {
             frame.lights.global().sun_direction(),
         );
 
+        self.gui_renderer.prepare(GuiDrawPrepare {
+            frame: frame.frame,
+            canvas_size: self.canvas.size(),
+            gui_output: &mut frame.gui_output,
+        });
+
         self.bloom
             .bind_images(frame.frame, self.canvas.render_target().color());
         self.tonemapping.bind_images(
@@ -323,6 +333,8 @@ impl RenderEcs {
 
         self.proc_skybox
             .gather_diffuse_irradiance(&mut main_cb, frame.lights.global().sun_direction());
+
+        self.gui_renderer.update_textures(&mut main_cb);
 
         self.ctx().main().submit(Some("Phase 1"), main_cb);
 
@@ -439,6 +451,25 @@ impl RenderEcs {
         self.bloom.render(frame.frame, &mut cb);
         self.tonemapping
             .render(frame.frame, &mut cb, &self.camera, self.canvas.image());
+
+        cb.render_pass(
+            RenderPassDescriptor {
+                color_attachments: vec![ColorAttachment {
+                    dst: ColorAttachmentDestination::SurfaceImage(self.canvas.image()),
+                    load_op: LoadOp::Load,
+                    store_op: StoreOp::Store,
+                    samples: MultiSamples::Count1,
+                }],
+                color_resolve_attachments: Vec::default(),
+                depth_stencil_attachment: None,
+                depth_stencil_resolve_attachment: None,
+            },
+            Some("gui_rendering"),
+            |pass| {
+                self.gui_renderer
+                    .render(frame.frame, self.canvas.size(), pass);
+            },
+        );
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));

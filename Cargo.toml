@@ -39,6 +39,7 @@ ard-render-pbr = { path = "./crates/ard-render-pbr" }
 ard-render-objects = { path = "./crates/ard-render-objects" }
 ard-render-lighting = { path = "./crates/ard-render-lighting" }
 ard-render-image-effects = { path = "./crates/ard-render-image-effects" }
+ard-render-gui = { path = "./crates/ard-render-gui" }
 ard-render = { path = "./crates/ard-render" }
 ard-render-assets = { path = "./crates/ard-render-assets" }
 ard-pal = { path = "./crates/ard-pal", optional = true }
@@ -55,7 +56,8 @@ bytemuck = { version = "1", features = [ "extern_crate_alloc" ] }
 crossbeam-channel = { version = "0.5" }
 crossbeam-utils = { version = "0.8" }
 dashmap = { version = "5" }
-egui = { version = "0.22", features = ["bytemuck"] }
+egui = { version = "0.26", features = ["bytemuck"] }
+egui_dock = { version = "0.11" }
 enum_dispatch = { version = "0.3" }
 futures = { version = "0.3" }
 gltf = { version = "1", features = ["KHR_lights_punctual"] }
@@ -87,7 +89,7 @@ puffin_http = { version = "0.16" }
 bytemuck = "1.7"
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "fs", "io-util", "io-std", "macros" ] }
 rand = "0.8"
-egui = { version = "0.22", features = ["bytemuck"] }
+egui.workspace = true
 
 [profile.opt-dev]
 inherits = "dev"

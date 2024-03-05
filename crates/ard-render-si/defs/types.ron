@@ -366,4 +366,13 @@
             (name: "block_size", ty: U32),
         ]
     ),
+    // Push constants for GUI rendering.
+    (
+        name: "GuiPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "screen_size", ty: Vec2),
+            (name: "texture_id", ty: U32),
+        ]
+    ),
 ]

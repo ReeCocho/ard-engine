@@ -12,6 +12,7 @@ ard-ecs = { path = "../ard-ecs" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-material = { path = "../ard-render-material" }
 ard-render-si = { path = "../ard-render-si" }
+ard-render-gui = { path = "../ard-render-gui" }
 ard-render-meshes = { path = "../ard-render-meshes" }
 ard-render-objects = { path = "../ard-render-objects" }
 ard-render-camera = { path = "../ard-render-camera" }
@@ -22,6 +23,7 @@ bytemuck.workspace = true
 ordered-float.workspace = true
 rayon.workspace = true
 puffin.workspace = true
+egui.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

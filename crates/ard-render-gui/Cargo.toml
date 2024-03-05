@@ -1,0 +1,11 @@
+[package]
+name = "ard-render-gui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-ecs = { path = "../ard-ecs" }
+ard-core = { path = "../ard-core" }
+ard-input = { path = "../ard-input" }
+ard-window = { path = "../ard-window" }
+egui.workspace = true

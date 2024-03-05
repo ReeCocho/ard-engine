@@ -5,6 +5,7 @@ use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
 };
+use ard_render_gui::{Gui, GuiInputCaptureSystem, GuiRunOutput};
 use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
@@ -64,6 +65,7 @@ impl RenderSystem {
                 .send(Box::new(FrameDataInner {
                     frame: Frame::from(frame),
                     dirty_static: dirty_static.listen().to_all().build(),
+                    gui_output: GuiRunOutput::default(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
                     active_cameras: ActiveCameras::default(),
@@ -93,37 +95,25 @@ impl RenderSystem {
     /// The render systems `tick` handler is responsible for signaling to the render ECS when
     /// a new frame should be rendered, and additionally preparing all the data that needs to be
     /// sent from the main ECS to the render ECS.
-    #[allow(clippy::type_complexity)]
     fn tick(
         &mut self,
         _: Tick,
         commands: Commands,
-        queries: Queries<(
-            Entity,
-            (
-                Read<Camera>,
-                Read<Mesh>,
-                Read<Light>,
-                Read<MaterialInstance>,
-                Read<Model>,
-                Read<RenderingMode>,
-                Read<RenderFlags>,
-                Read<Static>,
-            ),
-            Read<Disabled>,
-        )>,
-        res: Res<(Read<Windows>, Read<GlobalLighting>)>,
+        queries: Queries<Everything>,
+        res: Res<Everything>,
     ) {
         let windows = res.get::<Windows>().unwrap();
-        let global_lighting = res.get::<GlobalLighting>().unwrap();
 
         // Do not render if the window is minimized
         let window = windows
             .get(self.surface_window)
             .expect("surface window is destroyed");
-        if window.physical_height() == 0 || window.physical_width() == 0 {
+        let physical_width = window.physical_width();
+        let physical_height = window.physical_height();
+        if physical_width == 0 || physical_height == 0 {
             return;
         }
+        std::mem::drop(windows);
 
         // See if we have a new frame that's ready for rendering
         let mut frame = match self.complete_frames.try_recv() {
@@ -187,11 +177,16 @@ impl RenderSystem {
             .upload_objects(static_objs, dynamic_objs, &frame.dirty_static);
 
         // Update lighting
+        let global_lighting = res.get::<GlobalLighting>().unwrap();
         frame.lights.update(lights);
         frame.lights.update_global(&global_lighting);
 
+        // Render GUI
+        let mut gui = res.get_mut::<Gui>().unwrap();
+        frame.gui_output = gui.run(&commands, &queries, &res);
+
         // Prepare data for the render thread
-        frame.window_size = (window.physical_width(), window.physical_height());
+        frame.window_size = (physical_width, physical_height);
         frame.canvas_size = frame.window_size;
 
         // Send a message to the render thread to begin rendering the frame
@@ -243,6 +238,7 @@ impl From<RenderSystem> for System {
     fn from(state: RenderSystem) -> Self {
         SystemBuilder::new(state)
             .with_handler(RenderSystem::tick)
+            .run_after::<Tick, GuiInputCaptureSystem>()
             .build()
     }
 }

@@ -3,6 +3,7 @@ use std::time::Duration;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
+use ard_render_gui::{Gui, GuiInputCaptureSystem};
 use ard_render_lighting::global::GlobalLighting;
 use ard_window::prelude::*;
 use ard_winit::windows::WinitWindows;
@@ -52,6 +53,8 @@ impl Plugin for RenderPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.add_resource(self.clone());
         app.add_resource(GlobalLighting::default());
+        app.add_resource(Gui::default());
+        app.add_system(GuiInputCaptureSystem);
         app.add_startup_function(late_render_init);
     }
 }

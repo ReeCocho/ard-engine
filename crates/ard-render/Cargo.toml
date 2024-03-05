@@ -17,6 +17,7 @@ ard-gltf = { path = "../ard-gltf" }
 ard-formats = { path = "../ard-formats" }
 ard-render-si = { path = "../ard-render-si" }
 ard-render-base = { path = "../ard-render-base" }
+ard-render-gui = { path = "../ard-render-gui" }
 ard-render-meshes = { path = "../ard-render-meshes" }
 ard-render-textures = { path = "../ard-render-textures" }
 ard-render-material = { path = "../ard-render-material" }

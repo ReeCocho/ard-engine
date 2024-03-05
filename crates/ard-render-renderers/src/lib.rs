@@ -5,6 +5,7 @@ pub mod bins;
 pub mod calls;
 pub mod draw_gen;
 pub mod global;
+pub mod gui;
 pub mod highz;
 pub mod scene;
 pub mod shadow;

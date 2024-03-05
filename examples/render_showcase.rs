@@ -11,6 +11,7 @@ use ard_render::{
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
+use ard_render_gui::{view::GuiView, Gui};
 use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
@@ -171,6 +172,22 @@ impl From<SunMover> for System {
     }
 }
 
+struct TestingGui;
+
+impl GuiView for TestingGui {
+    fn show(
+        &mut self,
+        ctx: &egui::Context,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) {
+        egui::Window::new("Test").show(ctx, |ui| {
+            ui.label("This is a test.");
+        });
+    }
+}
+
 fn main() {
     let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
     let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
@@ -200,12 +217,12 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
         .add_system(SunMover {
-            speed: 10.0,
+            speed: 3.0,
             time: 0.0,
         })
         .add_startup_function(setup)
@@ -215,6 +232,9 @@ fn main() {
 fn setup(app: &mut App) {
     let factory = app.resources.get::<Factory>().unwrap();
     let assets = app.resources.get::<Assets>().unwrap();
+    let mut gui = app.resources.get_mut::<Gui>().unwrap();
+
+    gui.add_view(TestingGui);
 
     // Load in a model
     let model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
@@ -398,7 +418,7 @@ fn setup(app: &mut App) {
 
     let green = factory.create_pbr_material_instance().unwrap();
     factory.set_material_data(
-        &green,
+        &green, // purple = yes
         &PbrMaterialData {
             alpha_cutoff: 0.0,
             color: Vec4::new(0.0, 1.0, 0.0, 0.2),
