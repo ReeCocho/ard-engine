@@ -151,6 +151,11 @@ impl CameraUbo {
     }
 
     #[inline(always)]
+    pub fn last(&self) -> &Camera {
+        &self.last_camera
+    }
+
+    #[inline(always)]
     pub fn ubo(&self) -> &Buffer {
         &self.ubo
     }

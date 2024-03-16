@@ -1,3 +1,4 @@
+use ard_ecs::resource::Resource;
 use ard_math::IVec2;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
@@ -7,6 +8,23 @@ use ordered_float::NotNan;
 
 const WORK_GROUP_SIZE: u32 = 16;
 const SAMPLE_WORK_GROUP_SIZE: u32 = 128;
+
+#[derive(Copy, Clone, Resource)]
+pub struct SunShaftsSettings {
+    pub low_sample_minimum: u32,
+    pub steps_per_sample: u32,
+    pub depth_threshold: f32,
+}
+
+impl Default for SunShaftsSettings {
+    fn default() -> Self {
+        Self {
+            low_sample_minimum: 10,
+            steps_per_sample: 100,
+            depth_threshold: 0.5,
+        }
+    }
+}
 
 pub struct SunShafts {
     line_count: usize,
@@ -556,6 +574,7 @@ impl SunShafts {
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
         camera: &'a CameraUbo,
+        settings: &SunShaftsSettings,
     ) {
         let (width, height, _) = self.sun_shafts_texture.dims();
         let params = [GpuSunShaftGenPushConstants {
@@ -563,9 +582,9 @@ impl SunShafts {
             sample_count_per_line: self.sample_count as u32,
             initial_sample_count: self.initial_sample_count as u32,
             samples_per_work_group: SAMPLE_WORK_GROUP_SIZE,
-            low_sample_minimum: 10,
-            steps_per_sample: 100,
-            depth_threshold: 0.5,
+            low_sample_minimum: settings.low_sample_minimum,
+            steps_per_sample: settings.steps_per_sample,
+            depth_threshold: settings.depth_threshold,
             output_dims: IVec2::new(width as i32, height as i32),
         }];
 

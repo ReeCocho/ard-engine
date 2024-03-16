@@ -47,6 +47,32 @@ fn main() {
                 "ARD_VS_HAS_UV3=0",
             ],
         },
+        ShaderVariant {
+            ext: ".n",
+            defines: &[
+                "DEPTH_ONLY",
+                "WITH_NORMALS",
+                "ARD_VS_HAS_TANGENT=0",
+                "ARD_VS_HAS_COLOR=0",
+                "ARD_VS_HAS_UV0=0",
+                "ARD_VS_HAS_UV1=0",
+                "ARD_VS_HAS_UV2=0",
+                "ARD_VS_HAS_UV3=0",
+            ],
+        },
+        ShaderVariant {
+            ext: ".uv0n",
+            defines: &[
+                "DEPTH_ONLY",
+                "WITH_NORMALS",
+                "ARD_VS_HAS_TANGENT=0",
+                "ARD_VS_HAS_COLOR=0",
+                "ARD_VS_HAS_UV0=1",
+                "ARD_VS_HAS_UV1=0",
+                "ARD_VS_HAS_UV2=0",
+                "ARD_VS_HAS_UV3=0",
+            ],
+        },
     ];
 
     for variant in variants {
@@ -61,13 +87,13 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
     ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/pbr.vert",
         PathBuf::from(&out_dir).join(vert_name),
-        &["./shaders/"],
+        &["./shaders/", "../ard-render/shaders/"],
         variant.defines,
     );
     ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/pbr.frag",
         PathBuf::from(&out_dir).join(frag_name),
-        &["./shaders/"],
+        &["./shaders/", "../ard-render/shaders/"],
         variant.defines,
     );
 }

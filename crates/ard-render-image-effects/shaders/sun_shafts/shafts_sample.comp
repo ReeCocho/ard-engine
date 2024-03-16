@@ -83,8 +83,13 @@ void main() {
     const uint line_idx = lin_sample_idx / consts.sample_count_per_line;
     const uint sample_idx = lin_sample_idx - (line_idx * consts.sample_count_per_line);
 
-    epipolar_lines[lin_sample_idx].value = accumulate_light(
+    const vec4 light = accumulate_light(
         sample_to_uv(line_idx, sample_idx, get_sun_uv()),
-        epipolar_lines[lin_sample_idx].value.w
+        unpackHalf2x16(epipolar_lines[lin_sample_idx].value.y).y
+    );
+
+    epipolar_lines[lin_sample_idx].value = uvec2(
+        packHalf2x16(light.xy),
+        packHalf2x16(light.zw)
     );
 }

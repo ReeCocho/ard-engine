@@ -25,11 +25,15 @@ int t_to_sample_idx(float t) {
 
 vec4 get_sample_line(uint line, uint s) {
     const uint lin_idx = epipolar_line_sample(line, s);
-    const uint low = epipolar_lines[lin_idx].low;
-    const uint high = epipolar_lines[lin_idx].high;
+    const uint low_high = epipolar_lines[lin_idx].low_high;
+    const uint low = low_high & 0xFFFF;
+    const uint high = low_high >> 16;
+    const uvec2 low_value = epipolar_lines[low].value;
+    const uvec2 high_value = epipolar_lines[high].value;
+
     return mix(
-        epipolar_lines[low].value,
-        epipolar_lines[high].value,
+        vec4(unpackHalf2x16(low_value.x), unpackHalf2x16(low_value.y)),
+        vec4(unpackHalf2x16(high_value.x), unpackHalf2x16(high_value.y)),
         float(high != low) * (float(lin_idx - low) / max(float(high - low), 0.1))
     );
 }
@@ -51,17 +55,18 @@ vec4 sample_line(uint line, vec2 scaled_pt, vec2 sun_uv, float t, float l, float
         sample_idx = clamp(sample_idx, 0, int(consts.sample_count_per_line - 1));
 
         const uint lin_idx = epipolar_line_sample(line, sample_idx);
-        const uint low = epipolar_lines[lin_idx].low;
-        const uint high = epipolar_lines[lin_idx].high;
-        const vec4 low_value = epipolar_lines[low].value;
-        const vec4 high_value = epipolar_lines[high].value;
+        const uint low_high = epipolar_lines[lin_idx].low_high;
+        const uint low = epipolar_line_sample(line, low_high & 0xFFFF);
+        const uint high = epipolar_line_sample(line, low_high >> 16);
+        const uvec2 low_value = epipolar_lines[low].value;
+        const uvec2 high_value = epipolar_lines[high].value;
         const vec2 sample_pos = sample_to_uv(line, sample_idx, sun_uv) * vec2(camera[0].aspect_ratio, 1.0);
         const vec2 pt_to_sample = sample_pos - scaled_pt;
         float weight = exp(-36.0 * dot(pt_to_sample, pt_to_sample));
 
         const vec4 color_depth = mix(
-            low_value,
-            high_value,
+            vec4(unpackHalf2x16(low_value.x), unpackHalf2x16(low_value.y)),
+            vec4(unpackHalf2x16(high_value.x), unpackHalf2x16(high_value.y)),
             float(high != low) * (float(lin_idx - low) / max(float(high - low), 0.1))
         );
 

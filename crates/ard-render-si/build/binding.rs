@@ -26,6 +26,8 @@ pub enum GpuBindingData {
     },
     Ubo(GpuStructField),
     Texture(String),
+    UTexture(String),
+    ITexture(String),
     CubeMap(String),
     UnboundedTextureArray(String),
     ShadowTextureArray(String),
@@ -46,6 +48,7 @@ pub enum GpuSsboAccessType {
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum GpuStorageImageFormat {
+    R8,
     R16F,
     R32F,
     Rgba16F,
@@ -95,6 +98,7 @@ impl GpuBinding {
 impl GpuStorageImageFormat {
     pub fn to_glsl(self) -> &'static str {
         match self {
+            GpuStorageImageFormat::R8 => "r8",
             GpuStorageImageFormat::R16F => "r16f",
             GpuStorageImageFormat::R32F => "r32f",
             GpuStorageImageFormat::Rgba16F => "rgba16f",

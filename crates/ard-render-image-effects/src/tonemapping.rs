@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use ard_ecs::resource::Resource;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_camera::ubo::CameraUbo;
@@ -37,6 +40,27 @@ const TONEMAPPING_SRC_IMAGE_SAMPLER: Sampler = Sampler {
     border_color: None,
     unnormalize_coords: false,
 };
+
+#[derive(Copy, Clone, Resource)]
+pub struct TonemappingSettings {
+    pub min_luminance: f32,
+    pub max_luminance: f32,
+    pub gamma: f32,
+    pub exposure: f32,
+    pub auto_exposure_rate: f32,
+}
+
+impl Default for TonemappingSettings {
+    fn default() -> Self {
+        Self {
+            min_luminance: -1.3,
+            max_luminance: 3.0,
+            gamma: 2.2,
+            exposure: 0.5,
+            auto_exposure_rate: 4.0,
+        }
+    }
+}
 
 pub struct Tonemapping {
     _histogram: Buffer,
@@ -357,25 +381,26 @@ impl Tonemapping {
         commands: &mut CommandBuffer<'a>,
         camera: &'a CameraUbo,
         surface_image: &'a SurfaceImage,
+        settings: &TonemappingSettings,
+        dt: Duration,
     ) {
-        const MIN_LOG_LUM: f32 = -8.0;
-        const MAX_LOG_LUM: f32 = 12.0;
+        let lum_diff = (settings.max_luminance - settings.min_luminance).max(0.0001);
 
         let histogram_params = [GpuAdaptiveLumHistogramGenPushConstants {
-            min_log2_lum: MIN_LOG_LUM,
-            inv_log2_lum: 1.0 / (MAX_LOG_LUM - MIN_LOG_LUM),
+            min_log2_lum: settings.min_luminance,
+            inv_log2_lum: 1.0 / lum_diff,
         }];
 
         let lum_params = [GpuAdaptiveLumPushConstants {
-            min_log_lum: MIN_LOG_LUM,
-            log_lum_range: MAX_LOG_LUM - MIN_LOG_LUM,
+            min_log_lum: settings.min_luminance,
+            log_lum_range: lum_diff,
             num_pixels: (self.screen_size.0 * self.screen_size.1) as f32,
-            time_coeff: 0.1,
+            time_coeff: settings.auto_exposure_rate * dt.as_secs_f32(),
         }];
 
         let tonemapping_params = [GpuToneMappingPushConstants {
-            exposure: 0.15,
-            gamma: 2.2,
+            exposure: settings.exposure,
+            gamma: settings.gamma,
         }];
 
         // Adaptive luminance

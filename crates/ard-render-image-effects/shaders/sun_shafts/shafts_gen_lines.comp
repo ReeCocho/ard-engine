@@ -42,7 +42,10 @@ void main() {
     const vec2 line_pos = epipolar_line_edge_uv(line_idx);
     const vec2 sun_uv = get_sun_uv();
     SunShaftSample s;
-    s.value = vec4(0.0, 0.0, 0.0, uintBitsToFloat(0x7F800000));
+    s.value = uvec2(
+        packHalf2x16(vec2(0.0, 0.0)), 
+        packHalf2x16(vec2(0.0, uintBitsToFloat(0x7F800000)))
+    );
     s.initial = LINE_IS_OOB;
 
     // Check if the line is valid
@@ -58,7 +61,10 @@ void main() {
         sample_uv += 0.5 / vec2(consts.output_dims);
 
         // Store sample with depth and initial sample mark
-        s.value = vec4(0.0, 0.0, 0.0, camera[0].near_clip / texture(depth_tex, sample_uv).r);
+        s.value = uvec2(
+            packHalf2x16(vec2(0.0, 0.0)),
+            packHalf2x16(vec2(0.0, camera[0].near_clip / texture(depth_tex, sample_uv).r))
+        );
         s.initial = is_initial_sample(gl_GlobalInvocationID.y, gl_GlobalInvocationID.x) ? 1 : 0;
     }
 

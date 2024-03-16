@@ -1,0 +1,115 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_AO_DEPTH_PREFILTER 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    GtaoPushConstants consts;
+};
+
+shared float scratch_depths[8][8];
+
+float screen_space_to_view_space_depth(float depth) {
+    return consts.camera_near_clip / depth;
+}
+
+float clamp_depth(float depth) {
+    return clamp(depth, 0.0, 3.402823466e+38);
+}
+
+float depth_mip_filter(vec4 depths) {
+    const float max_depth = max(depths.x, max(depths.y, max(depths.z, depths.w)));
+
+    const float depth_range_scale_factor = 0.75;
+
+    const float effect_radius = depth_range_scale_factor * consts.effect_radius * consts.radius_multiplier;
+    const float falloff_range = consts.effect_falloff_range * effect_radius;
+    const float falloff_from = effect_radius * (1.0 - consts.effect_falloff_range);
+    const float falloff_mul = -1.0 / falloff_range;
+    const float falloff_add = falloff_from / falloff_range + 1.0;
+
+    const vec4 weights = clamp(
+        ((vec4(max_depth) - depths) * falloff_mul) + vec4(falloff_add), 
+        0.0, 
+        1.0
+    );
+
+    const float weight_sum = weights.x + weights.y + weights.z + weights.w;
+    return dot(weights, depths) / weight_sum;
+}
+
+void main() {
+    const uvec2 group_thread_id = gl_LocalInvocationID.xy;
+    const ivec2 base_coord = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 pix_coord = base_coord * 2;
+    const vec4 depths4 = textureGather(
+        src_depth, 
+        vec2(pix_coord + ivec2(1)) * consts.viewport_pixel_size
+    );
+
+    const float depth0 = clamp_depth(screen_space_to_view_space_depth(depths4.w));
+    const float depth1 = clamp_depth(screen_space_to_view_space_depth(depths4.z));
+    const float depth2 = clamp_depth(screen_space_to_view_space_depth(depths4.x));
+    const float depth3 = clamp_depth(screen_space_to_view_space_depth(depths4.y));
+
+    imageStore(out_depth0, pix_coord + ivec2(0, 0), vec4(depth0));
+    imageStore(out_depth0, pix_coord + ivec2(1, 0), vec4(depth1));
+    imageStore(out_depth0, pix_coord + ivec2(0, 1), vec4(depth2));
+    imageStore(out_depth0, pix_coord + ivec2(1, 1), vec4(depth3));
+
+    // MIP 1
+    const float dm1 = depth_mip_filter(vec4(depth0, depth1, depth2, depth3));
+    imageStore(out_depth1, base_coord, vec4(dm1));
+    scratch_depths[group_thread_id.x][group_thread_id.y] = dm1;
+
+    barrier();
+
+    // MIP 2
+    if (all(equal(group_thread_id.xy % uvec2(2), uvec2(0))))
+    {
+        const float inTL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 0];
+        const float inTR = scratch_depths[group_thread_id.x + 1][group_thread_id.y + 0];
+        const float inBL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 1];
+        const float inBR = scratch_depths[group_thread_id.x + 1][group_thread_id.y + 1];
+
+        const float dm2 = depth_mip_filter(vec4(inTL, inTR, inBL, inBR));
+        imageStore(out_depth2, base_coord / 2, vec4(dm2));
+        scratch_depths[group_thread_id.x][group_thread_id.y] = dm2;
+    }
+
+    barrier();
+
+    // MIP 3
+    if (all(equal(group_thread_id.xy % uvec2(4), uvec2(0))))
+    {
+        const float inTL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 0];
+        const float inTR = scratch_depths[group_thread_id.x + 2][group_thread_id.y + 0];
+        const float inBL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 2];
+        const float inBR = scratch_depths[group_thread_id.x + 2][group_thread_id.y + 2];
+
+        const float dm3 = depth_mip_filter(vec4(inTL, inTR, inBL, inBR));
+        imageStore(out_depth3, base_coord / 4, vec4(dm3));
+        scratch_depths[group_thread_id.x][group_thread_id.y] = dm3;
+    }
+
+    barrier();
+
+    // MIP 4
+    if (all(equal(group_thread_id.xy % uvec2(8), uvec2(0))))
+    {
+        const float inTL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 0];
+        const float inTR = scratch_depths[group_thread_id.x + 4][group_thread_id.y + 0];
+        const float inBL = scratch_depths[group_thread_id.x + 0][group_thread_id.y + 4];
+        const float inBR = scratch_depths[group_thread_id.x + 4][group_thread_id.y + 4];
+
+        const float dm4 = depth_mip_filter(vec4(inTL, inTR, inBL, inBR));
+        imageStore(out_depth4, base_coord / 8, vec4(dm4));
+    }
+}

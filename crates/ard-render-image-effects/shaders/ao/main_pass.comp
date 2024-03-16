@@ -1,0 +1,311 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_AO_MAIN_PASS 0
+#include "utils.glsl"
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    GtaoPushConstants consts;
+};
+
+
+
+#define SLICE_COUNT 3
+#define STEPS_PER_SLICE 3
+#define PI (3.1415926535897932)
+#define HALF_PI (1.57079632679)
+#define XE_GTAO_DEPTH_MIP_LEVELS 5.0
+
+float fast_sqrt(float x) {
+    return intBitsToFloat(0x1fbd1df5 + (floatBitsToInt(x) >> 1));
+}
+
+float fast_acos(float in_x) {
+    const float x = abs(in_x); 
+    float res = -0.156583 * x + HALF_PI; 
+    res *= fast_sqrt(1.0 - x); 
+    return (in_x >= 0) ? res : PI - res; 
+}
+
+vec3 compute_viewspace_position(const vec2 screen_pos, const float viewspace_depth) {
+    vec3 ret;
+    ret.xy = (consts.ndc_to_view_mul * screen_pos.xy + consts.ndc_to_view_add) * viewspace_depth;
+    ret.z = viewspace_depth;
+    return ret;
+}
+
+vec4 calculate_edges(
+    const float center_z, 
+    const float left_z, 
+    const float right_z, 
+    const float top_z, 
+    const float bottom_z
+) {
+    vec4 edgesLRTB = vec4(left_z, right_z, top_z, bottom_z) - vec4(center_z);
+
+    const float slopeLR = (edgesLRTB.y - edgesLRTB.x) * 0.5;
+    const float slopeTB = (edgesLRTB.w - edgesLRTB.z) * 0.5;
+    const vec4 edges_LRTB_slope_adjusted = edgesLRTB + vec4(slopeLR, -slopeLR, slopeTB, -slopeTB);
+
+    edgesLRTB = min(abs(edgesLRTB), abs(edges_LRTB_slope_adjusted));
+
+    return vec4(clamp((1.25 - edgesLRTB / (center_z * 0.011)), 0.0, 1.0));
+}
+
+float pack_edges(vec4 edges_lrtb) {
+    edges_lrtb = round(clamp(edges_lrtb, 0.0, 1.0) * 2.9);
+    return dot(edges_lrtb, vec4(64.0 / 255.0, 16.0 / 255.0, 4.0 / 255.0, 1.0 / 255.0));
+}
+
+vec2 spatio_temporal_noise(uvec2 pix_coord, uint temporal_index) {
+    uint index = texture(noise_tex, vec2(pix_coord) / 64.0).r;
+    index += 288 * (temporal_index % 64);
+    return vec2(fract(0.5 + index * vec2(0.75487766624669276005, 0.5698402909980532659114)));
+}
+
+vec3 construct_normal(
+    vec3 center,
+    vec3 left,
+    vec3 right,
+    vec3 top,
+    vec3 bottom
+) {
+    const uint best_z_horizontal = 
+        abs(right.z - center.z) < abs(left.z - center.z) ? 1 : 2;
+    const uint best_z_vertical = 
+        abs(bottom.z - center.z) < abs(top.z - center.z) ? 3 : 4;
+
+    // Construct the normal
+    vec3 P1 = vec3(0); 
+    vec3 P2 = vec3(0);
+    if (best_z_horizontal == 1 && best_z_vertical == 4) {
+        P1 = right;
+        P2 = top;
+    }
+    else if (best_z_horizontal == 1 && best_z_vertical == 3) {
+        P1 = bottom;
+        P2 = right;
+    }
+    else if (best_z_horizontal == 2 && best_z_vertical == 4) {
+        P1 = top;
+        P2 = left;
+    }
+    else if (best_z_horizontal == 2 && best_z_vertical == 3) {
+        P1 = left;
+        P2 = bottom;
+    }
+
+    const vec3 P0 = center;
+
+    return normalize(cross(P2 - P0, P1 - P0));
+}
+
+void main() {
+    const uvec2 pix_coord = gl_GlobalInvocationID.xy;
+
+    const vec2 normalized_screen_pos = (vec2(pix_coord) + vec2(0.5)) * consts.viewport_pixel_size;
+
+    const vec4 valuesUL = textureGather(src_depth, vec2(pix_coord) * consts.viewport_pixel_size);
+    const vec4 valuesBR = textureGather(
+        src_depth, 
+        (vec2(pix_coord) * consts.viewport_pixel_size) + consts.viewport_pixel_size
+    );
+    float viewspace_z = valuesUL.y;
+
+    const float pixLZ = valuesUL.x;
+    const float pixTZ = valuesUL.z;
+    const float pixRZ = valuesBR.z;
+    const float pixBZ = valuesBR.x;
+
+    // Store edge information for denoising
+    const vec4 edges_lrtb = calculate_edges(viewspace_z, pixLZ, pixRZ, pixTZ, pixBZ);
+    imageStore(out_edges, ivec2(gl_GlobalInvocationID.xy), vec4(pack_edges(edges_lrtb)));
+
+    // Fetch viewspace normal
+    vec3 viewspace_normal = construct_normal(
+        compute_viewspace_position(normalized_screen_pos, viewspace_z),
+        compute_viewspace_position(normalized_screen_pos + vec2(-1.0,  0.0) * consts.viewport_pixel_size, pixLZ),
+        compute_viewspace_position(normalized_screen_pos + vec2( 1.0,  0.0) * consts.viewport_pixel_size, pixRZ),
+        compute_viewspace_position(normalized_screen_pos + vec2( 0.0, -1.0) * consts.viewport_pixel_size, pixTZ),
+        compute_viewspace_position(normalized_screen_pos + vec2( 0.0,  1.0) * consts.viewport_pixel_size, pixBZ)
+    );
+
+    // Move center pixel slightly towards camera to avoid imprecision artifacts due to depth 
+    // buffer imprecision
+    viewspace_z *= 0.99999;
+
+    const vec3 pix_center_pos = compute_viewspace_position(normalized_screen_pos, viewspace_z);
+    const vec3 view_vec = normalize(-pix_center_pos);
+
+    const float effect_radius = consts.effect_radius * consts.radius_multiplier;
+    const float sample_distribution_power = consts.sample_distribution_power;
+    const float thin_occluder_compensation = consts.thin_occluder_compensation;
+    const float falloff_range = consts.effect_falloff_range * effect_radius;
+
+    const float falloff_from = effect_radius * (1.0 - consts.effect_falloff_range);
+
+    const float falloff_mul = -1.0 / falloff_range;
+    const float falloff_add = falloff_from / falloff_range + 1.0;
+
+    float visibility = 0.0;
+
+    vec2 local_noise = spatio_temporal_noise(gl_GlobalInvocationID.xy, 0);
+    const float noise_slice = local_noise.x;
+    const float noise_sample = local_noise.y;
+
+    const float pixel_too_close_threshold = 1.3;
+    const vec2 pixel_dir_rb_viewspace_size_at_center_z = 
+        vec2(viewspace_z) 
+        * consts.ndc_to_view_mul_x_pixel_size;
+
+    const float screenspace_radius = effect_radius / pixel_dir_rb_viewspace_size_at_center_z.x;
+
+    // Fade out for small screen radii 
+    visibility += clamp((10.0 - screenspace_radius) / 100.0, 0.0, 1.0) * 0.5;
+
+    // This is the min distance to start sampling from to avoid sampling from the center pixel 
+    // (no useful data obtained from sampling center pixel)
+    const float min_s = pixel_too_close_threshold / screenspace_radius;
+
+    const float slice_count = float(SLICE_COUNT);
+    const float steps_per_slice = float(STEPS_PER_SLICE);
+
+    for (float sl = 0.0; sl < slice_count; sl += 1.0) {
+        const float slice_k = (sl + noise_slice) / slice_count;
+
+        const float phi = slice_k * PI;
+        const float cos_phi = cos(phi);
+        const float sin_phi = sin(phi);
+        vec2 omega = vec2(cos_phi, -sin_phi);
+
+        omega *= screenspace_radius;
+
+        const vec3 direction_vec = vec3(cos_phi, sin_phi, 0);
+        const vec3 ortho_direction_vec = direction_vec - (dot(direction_vec, view_vec) * view_vec);
+
+        const vec3 axis_vec = normalize(cross(ortho_direction_vec, view_vec));
+        const vec3 projected_normal_vec = 
+            viewspace_normal - axis_vec * dot(viewspace_normal, axis_vec);
+
+        const float sign_norm = sign(dot(ortho_direction_vec, projected_normal_vec));
+
+        float projected_normal_vec_length = length(projected_normal_vec);
+        const float cos_norm = 
+            clamp(dot(projected_normal_vec, view_vec) / projected_normal_vec_length, 0.0, 1.0);
+
+        const float n = sign_norm * fast_acos(cos_norm);
+
+        const float low_horizon_cos0 = cos(n + HALF_PI);
+        const float low_horizon_cos1 = cos(n - HALF_PI);
+
+        float horizon_cos0 = low_horizon_cos0;
+        float horizon_cos1 = low_horizon_cos1;
+
+        [[unroll]]
+        for (float st = 0.0; st < steps_per_slice; st += 1.0) {
+            // R1 sequence 
+            // (http://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences/)
+            const float step_base_noise = (sl + st * steps_per_slice) * 0.6180339887498948482;
+            const float step_noise = fract(noise_sample + step_base_noise);
+
+            float s = (st + step_noise) / steps_per_slice;
+
+            // Additional distribution modifier
+            s = pow(s, sample_distribution_power);
+
+            // Avoid sampling center pixel
+            s += min_s;
+
+            // approx lines 21-22 from the paper, unrolled
+            vec2 sample_offset = s * omega;
+
+            const float sample_offset_length = length(sample_offset);
+
+            // Note: when sampling, using point_point_point or point_point_linear sampler works, 
+            // but linear_linear_linear will cause unwanted interpolation between neighbouring 
+            // depth values on the same MIP level!
+            const float mip_level = clamp(
+                log2(sample_offset_length) - consts.depth_mip_sampling_offset, 
+                0, 
+                XE_GTAO_DEPTH_MIP_LEVELS 
+            );
+
+            // Snap to pixel center (more correct direction math, avoids artifacts due to sampling 
+            // pos not matching depth texel center - messes up slope - but adds other artifacts due
+            // to them being pushed off the slice). Also use full precision for high res cases.
+            sample_offset = round(sample_offset) * consts.viewport_pixel_size;
+
+            const vec2 sample_screen_pos0 = normalized_screen_pos + sample_offset;
+            const float SZ0 = textureLod(src_depth, sample_screen_pos0, mip_level).r;
+            const vec3 sample_pos0 = compute_viewspace_position(sample_screen_pos0, SZ0);
+
+            const vec2 sample_screen_pos1 = normalized_screen_pos - sample_offset;
+            const float SZ1 = textureLod(src_depth, sample_screen_pos1, mip_level).r;
+            const vec3 sample_pos1 = compute_viewspace_position(sample_screen_pos1, SZ1);
+
+            const vec3 sample_delta0 = (sample_pos0 - pix_center_pos);
+            const vec3 sample_delta1 = (sample_pos1 - pix_center_pos);
+            const float sample_dist0 = length(sample_delta0);
+            const float sample_dist1 = length(sample_delta1);
+
+            const vec3 sample_horizon_vec0 = sample_delta0 / sample_dist0;
+            const vec3 sample_horizon_vec1 = sample_delta1 / sample_dist1;
+
+            // This is our own thickness heuristic that relies on sooner discarding samples behind
+            // the center
+            const float falloff_base0 = length(
+                vec3(
+                    sample_delta0.x, 
+                    sample_delta0.y, 
+                    sample_delta0.z * (1.0 + thin_occluder_compensation)
+                )
+            );
+            const float falloff_base1 = length(
+                vec3(
+                    sample_delta1.x, 
+                    sample_delta1.y, 
+                    sample_delta1.z * (1.0 + thin_occluder_compensation)
+                )
+            );
+            const float weight0 = clamp(falloff_base0 * falloff_mul + falloff_add, 0.0, 1.0);
+            const float weight1 = clamp(falloff_base1 * falloff_mul + falloff_add, 0.0, 1.0);
+
+            // Sample horizon cos
+            float shc0 = dot(sample_horizon_vec0, view_vec);
+            float shc1 = dot(sample_horizon_vec1, view_vec);
+
+            // discard unwanted samples
+            shc0 = mix(low_horizon_cos0, shc0, weight0);
+            shc1 = mix(low_horizon_cos1, shc1, weight1);
+
+            horizon_cos0 = max(horizon_cos0, shc0);
+            horizon_cos1 = max(horizon_cos1, shc1);
+        }
+
+        // I can't figure out the slight overdarkening on high slopes, so I'm adding this fudge
+        // - in the training set, 0.05 is close (PSNR 21.34) to disabled (PSNR 21.45)
+        projected_normal_vec_length = mix(projected_normal_vec_length, 1, 0.05);
+
+        const float h0 = -fast_acos(horizon_cos1);
+        const float h1 = fast_acos(horizon_cos0);
+
+        const float iarc0 = (cos_norm + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) / 4.0;
+        const float iarc1 = (cos_norm + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) / 4.0;
+        const float local_visibility = projected_normal_vec_length * (iarc0 + iarc1);
+        visibility += local_visibility;
+    }
+
+    visibility /= slice_count;
+    visibility = pow(abs(visibility), consts.final_value_power);
+    visibility = max(0.03, visibility);
+    visibility = clamp(visibility / 1.5, 0.0, 1.0);
+
+    imageStore(out_working_ao, ivec2(gl_GlobalInvocationID.xy), vec4(visibility) * 255.0 + vec4(0.5));
+}

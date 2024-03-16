@@ -6,7 +6,10 @@ use ard_render_camera::{
     active::ActiveCamera, froxels::FroxelGenPipeline, ubo::CameraUbo, Camera, CameraClearColor,
 };
 use ard_render_image_effects::{
-    ao::AmbientOcclusion, bloom::Bloom, fxaa::Fxaa, sun_shafts2::SunShafts,
+    ao::{AmbientOcclusion, AoSettings},
+    bloom::Bloom,
+    fxaa::Fxaa,
+    sun_shafts2::SunShafts,
     tonemapping::Tonemapping,
 };
 use ard_render_lighting::{lights::Lighting, proc_skybox::ProceduralSkyBox};
@@ -20,14 +23,14 @@ use ard_render_renderers::{
     scene::{SceneRenderArgs, SceneRenderer},
     shadow::{ShadowRenderArgs, SunShadowsRenderer},
 };
-use ard_render_si::bindings::Layouts;
+use ard_render_si::{bindings::Layouts, consts::*};
 use ard_render_textures::factory::TextureFactory;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin, FRAMES_IN_FLIGHT};
 
 pub(crate) struct RenderEcs {
-    _layouts: Layouts,
+    layouts: Layouts,
     canvas: Canvas,
     camera: CameraUbo,
     scene_renderer: SceneRenderer,
@@ -36,7 +39,7 @@ pub(crate) struct RenderEcs {
     lighting: Lighting,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
-    fxaa: Fxaa,
+    _fxaa: Fxaa,
     hzb_render: HzbRenderer,
     bloom: Bloom<FRAMES_IN_FLIGHT>,
     sun_shafts: SunShafts,
@@ -114,8 +117,14 @@ impl RenderEcs {
         );
 
         let mut scene_renderer = SceneRenderer::new(&ctx, &layouts, &draw_gen, FRAMES_IN_FLIGHT);
-        let sun_shadows_renderer =
-            SunShadowsRenderer::new(&ctx, &layouts, &draw_gen, &lighting, FRAMES_IN_FLIGHT, 4);
+        let sun_shadows_renderer = SunShadowsRenderer::new(
+            &ctx,
+            &layouts,
+            &draw_gen,
+            &lighting,
+            FRAMES_IN_FLIGHT,
+            MAX_SHADOW_CASCADES,
+        );
         let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
@@ -139,9 +148,12 @@ impl RenderEcs {
                 }),
             );
 
-            scene_renderer
-                .global_sets_mut()
-                .update_di_map_binding(frame, proc_skybox.di_map());
+            scene_renderer.global_sets_mut().update_map_bindings(
+                frame,
+                proc_skybox.brdf_lut(),
+                proc_skybox.di_map(),
+                proc_skybox.prefiltered_env_map(),
+            );
 
             scene_renderer
                 .global_sets_mut()
@@ -163,13 +175,13 @@ impl RenderEcs {
                 lighting,
                 draw_gen,
                 hzb_render,
-                fxaa,
+                _fxaa: fxaa,
                 sun_shafts,
                 ao,
                 tonemapping,
                 bloom,
                 proc_skybox,
-                _layouts: layouts,
+                layouts,
                 factory: factory.clone(),
                 ctx,
             },
@@ -205,8 +217,35 @@ impl RenderEcs {
             }
         }
 
+        // Update shadow cascades if needed
+        let new_shadow_cascades = self.sun_shadows_renderer.update_cascade_settings(
+            &self.ctx,
+            &self.layouts,
+            &self.draw_gen,
+            &self.lighting,
+            FRAMES_IN_FLIGHT,
+            frame.lights.global().shadow_cascades(),
+        );
+
+        if new_shadow_cascades {
+            for i in 0..FRAMES_IN_FLIGHT {
+                let frame = Frame::from(i);
+                self.scene_renderer
+                    .global_sets_mut()
+                    .update_shadow_bindings(
+                        frame,
+                        self.sun_shadows_renderer.sun_shadow_info(frame),
+                        std::array::from_fn(|i| {
+                            self.sun_shadows_renderer
+                                .shadow_cascade(i)
+                                .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
+                        }),
+                    );
+            }
+        }
+
         // Update lights if needed
-        if frame.lights.buffer_expanded() {
+        if frame.lights.buffer_expanded() || new_shadow_cascades {
             self.scene_renderer
                 .global_sets_mut()
                 .update_lighting_binding(
@@ -291,6 +330,7 @@ impl RenderEcs {
             main_camera.model,
             self.canvas.size(),
             frame.lights.global().sun_direction(),
+            frame.lights.global().shadow_cascades(),
         );
 
         self.gui_renderer.prepare(GuiDrawPrepare {
@@ -333,6 +373,9 @@ impl RenderEcs {
 
         self.proc_skybox
             .gather_diffuse_irradiance(&mut main_cb, frame.lights.global().sun_direction());
+
+        self.proc_skybox
+            .prefilter_environment_map(&mut main_cb, frame.lights.global().sun_direction());
 
         self.gui_renderer.update_textures(&mut main_cb);
 
@@ -383,7 +426,14 @@ impl RenderEcs {
         );
 
         // Generate the AO image
-        Self::generate_ao_image(&mut cb, &frame, &self.canvas, &self.camera, &self.ao);
+        Self::generate_ao_image(
+            &mut cb,
+            &frame,
+            &self.canvas,
+            &self.camera,
+            &self.ao,
+            &frame.ao_settings,
+        );
 
         // Hand off sun shafts for async compute
         self.sun_shafts
@@ -427,8 +477,12 @@ impl RenderEcs {
         );
 
         // Render sun shafts in async compute. Hand back depth target after rendering.
-        self.sun_shafts
-            .render(frame.frame, &mut compute_cb, &self.camera);
+        self.sun_shafts.render(
+            frame.frame,
+            &mut compute_cb,
+            &self.camera,
+            &frame.sun_shafts_settings,
+        );
         self.sun_shafts
             .transfer_image_ownership(&mut compute_cb, QueueType::Main);
         compute_cb.transfer_texture_ownership(
@@ -449,8 +503,14 @@ impl RenderEcs {
         let mut cb = self.ctx.main().command_buffer();
 
         self.bloom.render(frame.frame, &mut cb);
-        self.tonemapping
-            .render(frame.frame, &mut cb, &self.camera, self.canvas.image());
+        self.tonemapping.render(
+            frame.frame,
+            &mut cb,
+            &self.camera,
+            self.canvas.image(),
+            &frame.tonemapping_settings,
+            frame.dt,
+        );
 
         cb.render_pass(
             RenderPassDescriptor {
@@ -636,10 +696,11 @@ impl RenderEcs {
         canvas: &'a Canvas,
         camera: &'a CameraUbo,
         ao: &'a AmbientOcclusion,
+        settings: &AoSettings,
     ) {
         puffin::profile_function!();
 
-        ao.generate(frame_data.frame, commands, canvas.ao(), camera);
+        ao.generate(frame_data.frame, commands, canvas.ao(), camera, settings);
 
         // Hand off depth resolve image to compute for sun shafts
         commands.transfer_texture_ownership(
@@ -761,7 +822,7 @@ impl RenderEcs {
                 proc_skybox.render(
                     pass,
                     camera.get_set(frame_data.frame),
-                    scene_render.global_sets().get_set(frame_data.frame),
+                    frame_data.lights.global().sun_direction(),
                 );
             },
         );

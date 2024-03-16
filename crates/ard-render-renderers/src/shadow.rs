@@ -8,7 +8,7 @@ use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::{ubo::CameraUbo, Camera};
 use ard_render_lighting::{
     lights::{Lighting, Lights},
-    shadows::SunShadowsUbo,
+    shadows::{ShadowCascadeSettings, SunShadowsUbo},
 };
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
@@ -139,7 +139,7 @@ impl SunShadowsRenderer {
         let cascades = (0..shadow_cascades)
             .map(|_| {
                 let mut cascade =
-                    ShadowCascadeRenderData::new(ctx, layouts, draw_gen, frames_in_flight);
+                    ShadowCascadeRenderData::new(ctx, layouts, draw_gen, frames_in_flight, 1);
                 for frame_idx in 0..frames_in_flight {
                     let frame = Frame::from(frame_idx);
 
@@ -285,6 +285,58 @@ impl SunShadowsRenderer {
         });
     }
 
+    pub fn update_cascade_settings(
+        &mut self,
+        ctx: &Context,
+        layouts: &Layouts,
+        draw_gen: &DrawGenPipeline,
+        lighting: &Lighting,
+        frames_in_flight: usize,
+        cascades: &[ShadowCascadeSettings],
+    ) -> bool {
+        let mut needs_resize = self.cascades.len() != cascades.len();
+
+        let mut i = cascades.len();
+        self.cascades.resize_with(cascades.len(), || {
+            let mut new_cascade = ShadowCascadeRenderData::new(
+                ctx,
+                layouts,
+                draw_gen,
+                frames_in_flight,
+                cascades[i].resolution,
+            );
+
+            for frame_idx in 0..frames_in_flight {
+                let frame = Frame::from(frame_idx);
+
+                new_cascade
+                    .global
+                    .update_ao_image_binding(frame, &self.empty_shadow);
+
+                new_cascade.global.update_shadow_bindings(
+                    frame,
+                    self.ubo[frame_idx].buffer(),
+                    std::array::from_fn(|_| &self.empty_shadow),
+                );
+
+                new_cascade
+                    .global
+                    .update_light_clusters_binding(frame, lighting.clusters());
+            }
+
+            i += 1;
+            new_cascade
+        });
+
+        for (orig_cascade, new_cascade) in self.cascades.iter_mut().zip(cascades.iter()) {
+            if orig_cascade.resize(ctx, new_cascade.resolution) {
+                needs_resize = true;
+            }
+        }
+
+        needs_resize
+    }
+
     pub fn update_cascade_lights(&mut self, frame: Frame, lights: &Lights) {
         self.cascades.iter_mut().for_each(|cascade| {
             cascade
@@ -338,14 +390,14 @@ impl SunShadowsRenderer {
         camera_model: Model,
         screen_dims: (u32, u32),
         light_dir: Vec3,
+        cascades: &[ShadowCascadeSettings],
     ) {
         self.ubo[usize::from(frame)].update(
-            self.cascades.len(),
+            cascades,
             light_dir,
             camera,
             camera_model,
             screen_dims.0 as f32 / screen_dims.1 as f32,
-            4096,
         );
 
         self.cascades
@@ -463,27 +515,10 @@ impl ShadowCascadeRenderData {
         layouts: &Layouts,
         draw_gen: &DrawGenPipeline,
         frames_in_flight: usize,
+        resolution: u32,
     ) -> Self {
         Self {
-            image: Texture::new(
-                ctx.clone(),
-                TextureCreateInfo {
-                    format: SHADOW_MAP_FORMAT,
-                    ty: TextureType::Type2D,
-                    width: 4096,
-                    height: 4096,
-                    depth: 1,
-                    array_elements: 1,
-                    mip_levels: 1,
-                    sample_count: MultiSamples::Count1,
-                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
-                    memory_usage: MemoryUsage::GpuOnly,
-                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                    sharing_mode: SharingMode::Concurrent,
-                    debug_name: Some("shadow_cascade".into()),
-                },
-            )
-            .unwrap(),
+            image: Self::create_image(ctx, resolution),
             output_ids: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
@@ -502,5 +537,36 @@ impl ShadowCascadeRenderData {
             global: GlobalSets::new(ctx, layouts, frames_in_flight),
             draw_gen: DrawGenSets::new(draw_gen, false, frames_in_flight),
         }
+    }
+
+    pub fn resize(&mut self, ctx: &Context, resolution: u32) -> bool {
+        if self.image.dims().0 == resolution {
+            return false;
+        }
+
+        self.image = Self::create_image(ctx, resolution);
+        true
+    }
+
+    fn create_image(ctx: &Context, resolution: u32) -> Texture {
+        Texture::new(
+            ctx.clone(),
+            TextureCreateInfo {
+                format: SHADOW_MAP_FORMAT,
+                ty: TextureType::Type2D,
+                width: resolution.max(1),
+                height: resolution.max(1),
+                depth: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                sample_count: MultiSamples::Count1,
+                texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                sharing_mode: SharingMode::Concurrent,
+                debug_name: Some("shadow_cascade".into()),
+            },
+        )
+        .unwrap()
     }
 }

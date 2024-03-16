@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_render_base::ecs::Frame;
@@ -6,6 +8,9 @@ use ard_render_camera::{
     Camera,
 };
 use ard_render_gui::{Gui, GuiInputCaptureSystem, GuiRunOutput};
+use ard_render_image_effects::{
+    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+};
 use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
@@ -31,6 +36,8 @@ pub(crate) struct RenderSystem {
     complete_frames: Receiver<FrameData>,
     /// Window ID for the surface.
     surface_window: WindowId,
+    // Instant the last frame was sent.
+    last_frame_time: Instant,
 }
 
 #[derive(Debug, Event, Copy, Clone)]
@@ -64,10 +71,14 @@ impl RenderSystem {
             complete_frames_send
                 .send(Box::new(FrameDataInner {
                     frame: Frame::from(frame),
+                    dt: Duration::from_millis(1),
                     dirty_static: dirty_static.listen().to_all().build(),
                     gui_output: GuiRunOutput::default(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
+                    tonemapping_settings: TonemappingSettings::default(),
+                    ao_settings: AoSettings::default(),
+                    sun_shafts_settings: SunShaftsSettings::default(),
                     active_cameras: ActiveCameras::default(),
                     job: None,
                     window_size,
@@ -87,6 +98,7 @@ impl RenderSystem {
                 messages: messages_send,
                 complete_frames: complete_frames_recv,
                 surface_window: window_id,
+                last_frame_time: Instant::now(),
             },
             factory,
         )
@@ -180,14 +192,23 @@ impl RenderSystem {
         let global_lighting = res.get::<GlobalLighting>().unwrap();
         frame.lights.update(lights);
         frame.lights.update_global(&global_lighting);
+        std::mem::drop(global_lighting);
 
         // Render GUI
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame_time);
         let mut gui = res.get_mut::<Gui>().unwrap();
-        frame.gui_output = gui.run(&commands, &queries, &res);
+        frame.gui_output = gui.run(Tick(dt), &commands, &queries, &res);
 
         // Prepare data for the render thread
         frame.window_size = (physical_width, physical_height);
         frame.canvas_size = frame.window_size;
+        frame.dt = dt;
+        frame.tonemapping_settings = *res.get::<TonemappingSettings>().unwrap();
+        frame.ao_settings = *res.get::<AoSettings>().unwrap();
+        frame.sun_shafts_settings = *res.get::<SunShaftsSettings>().unwrap();
+
+        self.last_frame_time = now;
 
         // Send a message to the render thread to begin rendering the frame
         let _ = self.messages.send(RenderSystemMessage::RenderFrame(frame));

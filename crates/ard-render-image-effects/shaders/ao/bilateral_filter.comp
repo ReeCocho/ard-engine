@@ -1,0 +1,60 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_AO_BILATERAL_FILTER_PASS 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    GtaoPushConstants consts;
+};
+
+
+
+float gauss_r(float sigma, float dist) {
+	return exp(-(dist * dist) / (2.0 * sigma * sigma));
+}
+
+float gauss_d(float sigma, int x, int y) {
+	return exp(-((x * x + y * y) / (2.0 * sigma * sigma)));
+}
+
+void main() {
+    const ivec2 tid = ivec2(gl_GlobalInvocationID.xy);
+
+    const int kernel_radius = int(ceil(2.0 * consts.bilateral_filter_d));
+
+    float sum = 0.0;
+    float sum_weight = 0.0;
+
+    const float center = imageLoad(src_ao, tid).r;
+
+    const int upper = int(float(kernel_radius - 1) * 0.5);
+    const int lower = -upper;
+
+    for (int x = lower; x <= upper; ++x) {
+        for(int y = lower; y <= upper; ++y) {
+            const ivec2 offset = ivec2(x, y);
+
+            const float int_ker_pos = imageLoad(src_ao, tid.xy + offset).r;
+            const float gd = gauss_d(consts.bilateral_filter_d, x, y);
+            const float gr = gauss_r(
+                consts.bilateral_filter_r, 
+                int_ker_pos - center
+            );
+            const float weight = gd * gr;
+
+            sum_weight += weight;
+            sum += weight * int_ker_pos;
+        }
+    }
+
+    const float visibility = sum_weight > 0.0 ? sum / (sum_weight + 0.001) : center;
+
+    imageStore(out_ao, tid, vec4(visibility));
+}

@@ -710,6 +710,7 @@ impl VulkanBackend {
             .buffer_device_address(true)
             .runtime_descriptor_array(true)
             .draw_indirect_count(true)
+            .uniform_buffer_standard_layout(true)
             .build();
 
         let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
@@ -1529,6 +1530,8 @@ impl VulkanBackend {
                                 }
                             };
                             clear_values.push(vk::ClearValue { color });
+                        } else {
+                            clear_values.push(vk::ClearValue::default());
                         }
                     }
 
@@ -1546,6 +1549,8 @@ impl VulkanBackend {
                                 }
                             };
                             clear_values.push(vk::ClearValue { color });
+                        } else {
+                            clear_values.push(vk::ClearValue::default());
                         }
                     }
 
@@ -1559,6 +1564,8 @@ impl VulkanBackend {
                                 _ => panic!("invalid depth clear color"),
                             };
                             clear_values.push(vk::ClearValue { depth_stencil })
+                        } else {
+                            clear_values.push(vk::ClearValue::default());
                         }
                     }
 
@@ -1572,6 +1579,8 @@ impl VulkanBackend {
                                 _ => panic!("invalid depth clear color"),
                             };
                             clear_values.push(vk::ClearValue { depth_stencil })
+                        } else {
+                            clear_values.push(vk::ClearValue::default());
                         }
                     }
 

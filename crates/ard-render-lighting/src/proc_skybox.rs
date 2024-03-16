@@ -1,3 +1,5 @@
+use std::ops::{DerefMut, Div};
+
 use ard_math::{Mat4, Vec2, Vec3, Vec4};
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
@@ -5,6 +7,7 @@ use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;
 
+const PREFILTERED_ENV_MAP_DIM: u32 = 256;
 const DIFFUSE_IRRADIANCE_MAP_DIM: u32 = 64;
 const DIFFUSE_IRRADIANCE_SAMPLE_DIM: u64 = DI_REDUCE_BLOCK_SIZE as u64;
 
@@ -35,13 +38,24 @@ pub struct ProceduralSkyBox {
     // Pipeline for rendering the diffuse irradiance map.
     di_render_pipeline: GraphicsPipeline,
     di_render_set: DescriptorSet,
+    // Pipeline for prefiltering the environment map.
+    prefilter_pipeline: GraphicsPipeline,
+    prefilter_sets: Vec<DescriptorSet>,
     // Camera UBO for rendering the diffuse irradiance map.
     di_render_camera: CameraUbo,
     /// Samples for computing diffuse irradiance.
     _diffuse_irradiance_samples: Buffer,
     // Prefiltering matrices. Output from irradiance gather pipeline.
     _prefiltering_matrices: Buffer,
-    // Prefiltered diffuse irradiance map.
+    // Environment prefiltering info.
+    _env_prefilter_info: Buffer,
+    /// BRDF lookup texture.
+    brdf_lut: Texture,
+    // Skybox cube map with mip maps used for prefiltering.
+    sky_box: CubeMap,
+    // Prefiltered environment map.
+    prefiltered_map: CubeMap,
+    // Diffuse irradiance map.
     di_map: CubeMap,
 }
 
@@ -77,7 +91,46 @@ impl ProceduralSkyBox {
         )
         .unwrap();
 
-        // Prefiltering diffuse irradiance map.
+        // Sky box.
+        let sky_box = CubeMap::new(
+            ctx.clone(),
+            CubeMapCreateInfo {
+                format: Format::Rgba16SFloat,
+                size: PREFILTERED_ENV_MAP_DIM,
+                array_elements: 1,
+                mip_levels: (PREFILTERED_ENV_MAP_DIM as f32).log2() as usize + 1,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT
+                    | TextureUsage::SAMPLED
+                    | TextureUsage::TRANSFER_DST
+                    | TextureUsage::TRANSFER_SRC,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("sky_box".into()),
+            },
+        )
+        .unwrap();
+
+        // Prefiltered environment map.
+        let prefiltered_map = CubeMap::new(
+            ctx.clone(),
+            CubeMapCreateInfo {
+                format: Format::Rgba16SFloat,
+                size: PREFILTERED_ENV_MAP_DIM,
+                array_elements: 1,
+                mip_levels: (PREFILTERED_ENV_MAP_DIM as f32).log2() as usize + 1,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT
+                    | TextureUsage::SAMPLED
+                    | TextureUsage::TRANSFER_DST,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("prefiltered_env_map".into()),
+            },
+        )
+        .unwrap();
+
+        // Diffuse irradiance map.
         let di_map = CubeMap::new(
             ctx.clone(),
             CubeMapCreateInfo {
@@ -93,6 +146,51 @@ impl ProceduralSkyBox {
             },
         )
         .unwrap();
+
+        let brdf_lut = Texture::new(
+            ctx.clone(),
+            TextureCreateInfo {
+                format: Format::Rg16SFloat,
+                ty: TextureType::Type2D,
+                width: 512,
+                height: 512,
+                depth: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                sample_count: MultiSamples::Count1,
+                texture_usage: TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("brdf_lut".into()),
+            },
+        )
+        .unwrap();
+
+        let brdf_lut_staging = Buffer::new_staging(
+            ctx.clone(),
+            QueueType::Main,
+            Some(String::from("brdf_lut_staging")),
+            include_bytes!("../data/brdf_lut.bin"),
+        )
+        .unwrap();
+
+        let mut cb = ctx.main().command_buffer();
+        cb.copy_buffer_to_texture(
+            &brdf_lut,
+            &brdf_lut_staging,
+            BufferTextureCopy {
+                buffer_offset: 0,
+                buffer_row_length: 0,
+                buffer_image_height: 0,
+                buffer_array_element: 0,
+                texture_offset: (0, 0, 0),
+                texture_extent: (512, 512, 1),
+                texture_mip_level: 0,
+                texture_array_element: 0,
+            },
+        );
+        ctx.main().submit(Some("brdf_lut_write"), cb);
 
         // Camera for rendering the diffuse irradiance map
         let mut di_render_camera = CameraUbo::new(ctx, fif, false, layouts);
@@ -162,7 +260,7 @@ impl ProceduralSkyBox {
                     vertex: vs.clone(),
                     fragment: Some(fs),
                 },
-                layouts: vec![layouts.camera.clone(), layouts.global.clone()],
+                layouts: vec![layouts.camera.clone()],
                 vertex_input: VertexInputState {
                     attributes: Vec::default(),
                     bindings: Vec::default(),
@@ -191,7 +289,9 @@ impl ProceduralSkyBox {
                         ..Default::default()
                     }],
                 },
-                push_constants_size: None,
+                push_constants_size: Some(
+                    std::mem::size_of::<GpuSkyBoxRenderPushConstants>() as u32
+                ),
                 debug_name: Some(String::from("sky_box_pipeline")),
             },
         )
@@ -352,6 +452,92 @@ impl ProceduralSkyBox {
             },
         ]);
 
+        // Environment map prefiltering pipeline
+        let fs = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!(concat!(env!("OUT_DIR"), "./env_prefilter.frag.spv")),
+                debug_name: Some("environment_map_prefiltering_fragment_shader".into()),
+            },
+        )
+        .unwrap();
+
+        let prefilter_pipeline = GraphicsPipeline::new(
+            ctx.clone(),
+            GraphicsPipelineCreateInfo {
+                stages: ShaderStages {
+                    vertex: vs.clone(),
+                    fragment: Some(fs),
+                },
+                layouts: vec![layouts.camera.clone(), layouts.env_prefilter.clone()],
+                vertex_input: VertexInputState {
+                    attributes: Vec::default(),
+                    bindings: Vec::default(),
+                    topology: PrimitiveTopology::TriangleList,
+                },
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::None,
+                    front_face: FrontFace::Clockwise,
+                },
+                depth_stencil: None,
+                color_blend: ColorBlendState {
+                    attachments: vec![ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R
+                            | ColorComponents::G
+                            | ColorComponents::B
+                            | ColorComponents::A,
+                        ..Default::default()
+                    }],
+                },
+                push_constants_size: Some(
+                    std::mem::size_of::<GpuEnvPrefilterPushConstants>() as u32
+                ),
+                debug_name: Some(String::from("environment_map_prefiltering_pipeline")),
+            },
+        )
+        .unwrap();
+
+        let env_prefilter_info = Self::env_prefilter_info_buffer(ctx, sky_box.mip_count());
+
+        let prefilter_sets = (0..sky_box.mip_count())
+            .map(|i| {
+                let mut set = DescriptorSet::new(
+                    ctx.clone(),
+                    DescriptorSetCreateInfo {
+                        layout: layouts.env_prefilter.clone(),
+                        debug_name: Some("environment_map_prefiltering_set".into()),
+                    },
+                )
+                .unwrap();
+
+                set.update(&[
+                    DescriptorSetUpdate {
+                        binding: ENV_PREFILTER_SET_ENV_MAP_BINDING,
+                        array_element: 0,
+                        value: DescriptorValue::CubeMap {
+                            array_element: 0,
+                            cube_map: &sky_box,
+                            sampler: DI_MAP_SAMPLER,
+                            base_mip: 0,
+                            mip_count: sky_box.mip_count(),
+                        },
+                    },
+                    DescriptorSetUpdate {
+                        binding: ENV_PREFILTER_SET_PREFILTER_INFO_BINDING,
+                        array_element: 0,
+                        value: DescriptorValue::UniformBuffer {
+                            buffer: &env_prefilter_info,
+                            array_element: i,
+                        },
+                    },
+                ]);
+
+                set
+            })
+            .collect();
+
         Self {
             sky_box_pipeline,
             _diffuse_irradiance_samples: diffuse_irradiance_samples,
@@ -362,14 +548,30 @@ impl ProceduralSkyBox {
             di_render_pipeline,
             di_render_camera,
             di_render_set,
+            prefilter_pipeline,
+            prefilter_sets,
             _prefiltering_matrices: prefiltering_matrices,
+            _env_prefilter_info: env_prefilter_info,
+            sky_box,
+            prefiltered_map,
             di_map,
+            brdf_lut,
         }
+    }
+
+    #[inline(always)]
+    pub fn brdf_lut(&self) -> &Texture {
+        &self.brdf_lut
     }
 
     #[inline(always)]
     pub fn di_map(&self) -> &CubeMap {
         &self.di_map
+    }
+
+    #[inline(always)]
+    pub fn prefiltered_env_map(&self) -> &CubeMap {
+        &self.prefiltered_map
     }
 
     pub fn gather_diffuse_irradiance<'a>(
@@ -449,14 +651,155 @@ impl ProceduralSkyBox {
         );
     }
 
+    pub fn prefilter_environment_map<'a>(
+        &'a self,
+        commands: &mut CommandBuffer<'a>,
+        sun_direction: Vec3,
+    ) {
+        // Render the sky box
+        commands.render_pass(
+            RenderPassDescriptor {
+                color_attachments: vec![ColorAttachment {
+                    dst: ColorAttachmentDestination::CubeMap {
+                        cube_map: &self.sky_box,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
+                    load_op: LoadOp::DontCare,
+                    store_op: StoreOp::Store,
+                    samples: MultiSamples::Count1,
+                }],
+                depth_stencil_attachment: None,
+                color_resolve_attachments: Vec::default(),
+                depth_stencil_resolve_attachment: None,
+            },
+            Some("sky_box_render"),
+            |pass| {
+                pass.bind_pipeline(self.sky_box_pipeline.clone());
+                pass.bind_sets(0, vec![self.di_render_camera.get_set(Frame::from(0))]);
+                let constants = [GpuSkyBoxRenderPushConstants {
+                    sun_direction: Vec4::from((sun_direction, 0.0)),
+                }];
+                pass.push_constants(bytemuck::cast_slice(&constants));
+                pass.draw(36, 1, 0, 0);
+            },
+        );
+
+        // Generate mip maps for the sky box
+        const CUBE_FACES: [CubeFace; 6] = [
+            CubeFace::Top,
+            CubeFace::Bottom,
+            CubeFace::North,
+            CubeFace::East,
+            CubeFace::South,
+            CubeFace::West,
+        ];
+
+        let mut dim = self.sky_box.dim();
+        for i in 1..self.sky_box.mip_count() {
+            let new_dim = dim.div(2).max(1);
+            for face in CUBE_FACES {
+                commands.blit(
+                    BlitSource::CubeMap {
+                        cube_map: &self.sky_box,
+                        face,
+                    },
+                    BlitDestination::CubeMap {
+                        cube_map: &self.sky_box,
+                        face,
+                    },
+                    Blit {
+                        src_min: (0, 0, 0),
+                        src_max: (dim, dim, 1),
+                        src_mip: (i - 1) as usize,
+                        src_array_element: 0,
+                        dst_min: (0, 0, 0),
+                        dst_max: (new_dim, new_dim, 1),
+                        dst_mip: i as usize,
+                        dst_array_element: 0,
+                    },
+                    Filter::Linear,
+                );
+            }
+            dim = new_dim;
+        }
+
+        // Copy in mip 0 of the sky box to mip 0 of the environment map since they're identical
+        for face in CUBE_FACES {
+            commands.blit(
+                BlitSource::CubeMap {
+                    cube_map: &self.sky_box,
+                    face,
+                },
+                BlitDestination::CubeMap {
+                    cube_map: &self.prefiltered_map,
+                    face,
+                },
+                Blit {
+                    src_min: (0, 0, 0),
+                    src_max: (PREFILTERED_ENV_MAP_DIM, PREFILTERED_ENV_MAP_DIM, 1),
+                    src_mip: 0,
+                    src_array_element: 0,
+                    dst_min: (0, 0, 0),
+                    dst_max: (PREFILTERED_ENV_MAP_DIM, PREFILTERED_ENV_MAP_DIM, 1),
+                    dst_mip: 0,
+                    dst_array_element: 0,
+                },
+                Filter::Linear,
+            );
+        }
+
+        // Perform filtering for each mip level
+        for mip_level in 1..self.prefiltered_map.mip_count() {
+            commands.render_pass(
+                RenderPassDescriptor {
+                    color_attachments: vec![ColorAttachment {
+                        dst: ColorAttachmentDestination::CubeMap {
+                            cube_map: &self.prefiltered_map,
+                            array_element: 0,
+                            mip_level: mip_level,
+                        },
+                        load_op: LoadOp::DontCare,
+                        store_op: StoreOp::Store,
+                        samples: MultiSamples::Count1,
+                    }],
+                    depth_stencil_attachment: None,
+                    color_resolve_attachments: Vec::default(),
+                    depth_stencil_resolve_attachment: None,
+                },
+                Some("prefiltered_env_map"),
+                |pass| {
+                    pass.bind_pipeline(self.prefilter_pipeline.clone());
+                    pass.bind_sets(
+                        0,
+                        vec![
+                            self.di_render_camera.get_set(Frame::from(0)),
+                            &self.prefilter_sets[mip_level],
+                        ],
+                    );
+                    let constants = [GpuEnvPrefilterPushConstants {
+                        roughness: mip_level as f32
+                            / (self.prefiltered_map.mip_count() as f32 - 1.0),
+                    }];
+                    pass.push_constants(bytemuck::cast_slice(&constants));
+                    pass.draw(36, 1, 0, 0);
+                },
+            );
+        }
+    }
+
     pub fn render<'a>(
         &'a self,
         pass: &mut RenderPass<'a>,
         camera_set: &'a DescriptorSet,
-        global_set: &'a DescriptorSet,
+        sun_direction: Vec3,
     ) {
         pass.bind_pipeline(self.sky_box_pipeline.clone());
-        pass.bind_sets(0, vec![camera_set, global_set]);
+        pass.bind_sets(0, vec![camera_set]);
+        let constants = [GpuSkyBoxRenderPushConstants {
+            sun_direction: Vec4::from((sun_direction, 0.0)),
+        }];
+        pass.push_constants(bytemuck::cast_slice(&constants));
         pass.draw(36, 1, 0, 0);
     }
 
@@ -466,5 +809,99 @@ impl ProceduralSkyBox {
         // We have 9 values for our spherical harmonics and each value has three color channels,
         // making 27 values total, but we round up to 28 so we can use 7 Vec4s instead of floats.
         * 28 * std::mem::size_of::<f32>() as u64
+    }
+
+    fn env_prefilter_info_buffer(ctx: &Context, mip_count: usize) -> Buffer {
+        let mut buff = Buffer::new(
+            ctx.clone(),
+            BufferCreateInfo {
+                size: std::mem::size_of::<GpuEnvPrefilterInfo>() as u64,
+                array_elements: mip_count,
+                buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                memory_usage: MemoryUsage::CpuToGpu,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("env_prefilter_buffer".into()),
+            },
+        )
+        .unwrap();
+
+        fn radical_inverse_vdc(mut bits: u32) -> f32 {
+            bits = (bits << 16) | (bits >> 16);
+            bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1);
+            bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2);
+            bits = ((bits & 0x0F0F0F0F) << 4) | ((bits & 0xF0F0F0F0) >> 4);
+            bits = ((bits & 0x00FF00FF) << 8) | ((bits & 0xFF00FF00) >> 8);
+            (bits as f32) * 2.3283064365386963e-10 // 0x100000000
+        }
+
+        fn hammersley(i: u32, n: u32) -> Vec2 {
+            Vec2::new((i as f32) / (n as f32), radical_inverse_vdc(i))
+        }
+
+        fn halfway_vector(roughness: f32, xi: Vec2) -> Vec3 {
+            let a = roughness * roughness;
+
+            let phi = 2.0 * std::f32::consts::PI * xi.x;
+            let cos_theta = ((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y)).sqrt();
+            let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+
+            // from spherical coordinates to cartesian coordinates
+            Vec3::new(phi.cos() * sin_theta, phi.sin() * sin_theta, cos_theta).normalize()
+        }
+
+        fn d_ggx(roughness: f32, ndoth: f32) -> f32 {
+            let a = roughness * roughness;
+            let a2 = a * a;
+            let ndoth2 = ndoth * ndoth;
+            let f = 1.0 + (ndoth2 * (a2 - 1.0));
+            a2 / (f * f)
+        }
+
+        fn compute_mip_level(h: Vec3, roughness: f32, env_map_area: f32) -> f32 {
+            const N: Vec3 = Vec3::Z;
+            const V: Vec3 = Vec3::Z;
+
+            // Vectors to evaluate pdf
+            let fndoth = N.dot(h).clamp(0.0, 1.0);
+            let fvdoth = V.dot(h).clamp(0.0, 1.0);
+
+            // Probability Distribution Function
+            let fpdf = d_ggx(roughness, fndoth) * fndoth / (4.0 * fvdoth);
+
+            // Solid angle represented by this sample
+            let fomegas = 1.0 / (ENV_PREFILTER_SAMPLE_COUNT as f32 * fpdf);
+
+            // Solid angle covered by 1 pixel with 6 faces that are EnvMapSize X EnvMapSize
+            let fomegap = 4.0 * std::f32::consts::PI / env_map_area;
+
+            // Original paper suggest biasing the mip to improve the results
+            let fmipbias = 1.0;
+            (0.5 * (fomegas / fomegap).log2() + fmipbias).max(0.0)
+        }
+
+        let env_map_area = 6.0 * (PREFILTERED_ENV_MAP_DIM * PREFILTERED_ENV_MAP_DIM) as f32;
+
+        for mip_level in 0..mip_count {
+            let mut view = buff.write(mip_level).unwrap();
+            let ubo = &mut bytemuck::cast_slice_mut::<_, GpuEnvPrefilterInfo>(view.deref_mut())[0];
+
+            let roughness = mip_level as f32 / (mip_count as f32 - 1.0);
+
+            let mut total_sample_weight = 0.0;
+
+            for i in 0..ENV_PREFILTER_SAMPLE_COUNT {
+                let xi = hammersley(i as u32, ENV_PREFILTER_SAMPLE_COUNT as u32);
+                let h = halfway_vector(roughness, xi);
+                ubo.halfway_vectors[i] = Vec4::from((h, 0.0));
+                ubo.mip_levels[i] = compute_mip_level(h, roughness, env_map_area);
+                ubo.sample_weights[i] = h.z.max(0.0);
+                total_sample_weight += h.z.max(0.0);
+            }
+
+            ubo.inv_total_sample_weight = 1.0 / total_sample_weight;
+        }
+
+        buff
     }
 }

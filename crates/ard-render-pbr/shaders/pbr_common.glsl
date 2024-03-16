@@ -77,13 +77,16 @@ float compute_shadow_factor(vec3 normal) {
         return 1.0;
     }
 
-    const vec4 frag_pos_light_space = 
-        sun_shadow_info.cascades[layer].vp * vec4(vs_WorldSpaceFragPos, 1.0);
+    const vec4 frag_pos_light_space = sun_shadow_info.cascades[layer].vp 
+        * vec4(
+            vs_WorldSpaceFragPos + (sun_shadow_info.cascades[layer].normal_bias * normalize(vs_Normal)),
+            1.0
+        );
 
     float NoL = dot(normal, global_lighting.sun_direction.xyz);
     float bias = max(
-        sun_shadow_info.cascades[layer].max_bias * (1.0 - NoL), 
-        sun_shadow_info.cascades[layer].min_bias
+        sun_shadow_info.cascades[layer].max_depth_bias * (1.0 - NoL), 
+        sun_shadow_info.cascades[layer].min_depth_bias
     ) * (1.0 / sun_shadow_info.cascades[layer].depth_range);
 
     vec3 proj_coords = frag_pos_light_space.xyz / frag_pos_light_space.w;

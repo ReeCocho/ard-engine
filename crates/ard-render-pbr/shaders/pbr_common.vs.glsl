@@ -72,6 +72,10 @@ layout(location = 0) flat out uvec4 vs_Slots;
 layout(location = 1) out vec2 vs_Uv;
 #endif
 
+#ifdef WITH_NORMALS
+    layout(location = 2) out vec3 vs_Normal;
+#endif
+
 #ifndef DEPTH_ONLY
     layout(location = 2) out vec3 vs_Normal;
 

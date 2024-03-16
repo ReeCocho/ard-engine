@@ -1,0 +1,148 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_AO_DENOISE_PASS 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    GtaoPushConstants consts;
+};
+
+void decode_gather_partial(const uvec4 packed_value, out float out_decoded[4]) {
+    for (uint i = 0; i < 4; ++i) {
+        out_decoded[i] = float(packed_value[i]) / 255.0;
+    }
+}
+
+vec4 unpack_edges(float _packed_val)
+{
+    const uint packed_val = uint(_packed_val * 255.5);
+    
+    // there's really no need for mask (as it's an 8 bit input) but I'll leave it in so it doesn't
+    // cause any trouble in the future
+    vec4 edgesLRTB;
+    edgesLRTB.x = float((packed_val >> 6) & 0x03) / 3.0;
+    edgesLRTB.y = float((packed_val >> 4) & 0x03) / 3.0;
+    edgesLRTB.z = float((packed_val >> 2) & 0x03) / 3.0;
+    edgesLRTB.w = float((packed_val >> 0) & 0x03) / 3.0;
+
+    return clamp(edgesLRTB, 0.0, 1.0);
+}
+
+void add_sample(float ssao_value, float edge_value, inout float sum, inout float sum_weight) {
+    float weight = edge_value;
+    sum += (weight * ssao_value);
+    sum_weight += weight;
+}
+
+void gtao_output(uvec2 pix_coord, float output_value) {
+    imageStore(out_ao, ivec2(pix_coord), vec4(output_value));
+}
+
+void main() {
+    const uvec2 pix_coord_base = gl_GlobalInvocationID.xy * uvec2(2, 1);
+
+    const float blur_amount = consts.denoise_blur_beta;
+    const float diag_weight = 0.85 * 0.5;
+
+    float ao_term[2];
+    vec4 edgesC_LRTB[2];
+    float weightTL[2];
+    float weightTR[2];
+    float weightBL[2];
+    float weightBR[2];
+
+    // Gather edge and visibility quads, used later
+    const vec2 gather_center = vec2(pix_coord_base) * consts.viewport_pixel_size;
+    const vec4 edges_q0 = textureGather(in_edges, gather_center);
+    const vec4 edges_q1 = textureGather(
+        in_edges, 
+        gather_center + (consts.viewport_pixel_size * vec2(2.0, 0.0))
+    );
+    const vec4 edges_q2 = textureGather(
+        in_edges, 
+        gather_center + (consts.viewport_pixel_size * vec2(1.0, 2.0))
+    );
+
+    float visQ0[4];
+    decode_gather_partial(uvec4(textureGather(src_depth, gather_center)), visQ0);
+    
+    float visQ1[4];
+    uvec4 gather = uvec4(textureGather(src_depth, gather_center + (consts.viewport_pixel_size * vec2(2.0, 0.0))));
+    decode_gather_partial(gather, visQ1);
+    
+    float visQ2[4];
+    gather = uvec4(textureGather(src_depth, gather_center + (consts.viewport_pixel_size * vec2(0.0, 2.0))));
+    decode_gather_partial(gather, visQ2);
+    
+    float visQ3[4];
+    gather = uvec4(textureGather(src_depth, gather_center + (consts.viewport_pixel_size * vec2(2.0, 2.0))));
+    decode_gather_partial(gather, visQ3);
+
+    for (uint side = 0; side < 2; side++) {
+        const uvec2 pix_coord = uvec2(pix_coord_base.x + side, pix_coord_base.y);
+
+        vec4 edgesL_LRTB  = unpack_edges((side == 0) ? (edges_q0.x) : (edges_q0.y));
+        vec4 edgesT_LRTB  = unpack_edges((side == 0) ? (edges_q0.z) : (edges_q1.w));
+        vec4 edgesR_LRTB  = unpack_edges((side == 0) ? (edges_q1.x) : (edges_q1.y));
+        vec4 edgesB_LRTB  = unpack_edges((side == 0) ? (edges_q2.w) : (edges_q2.z));
+
+        edgesC_LRTB[side] = unpack_edges((side == 0) ? (edges_q0.y) : (edges_q1.x));
+
+        // Edges aren't perfectly symmetrical: edge detection algorithm does not guarantee that a 
+        // left edge on the right pixel will match the right edge on the left pixel (although
+        // they will match in majority of cases). This line further enforces the symmetricity, 
+        // creating a slightly sharper blur. Works real nice with TAA.
+        edgesC_LRTB[side] *= vec4(edgesL_LRTB.y, edgesR_LRTB.x, edgesT_LRTB.w, edgesB_LRTB.z);
+
+        // This allows some small amount of AO leaking from neighbours if there are 3 or 4 edges; 
+        // this reduces both spatial and temporal aliasing
+        const float leak_threshold = 2.5; 
+        const float leak_strength = 0.5;
+        const float edginess = (
+            clamp(4.0 - leak_threshold - dot(edgesC_LRTB[side], vec4(1.0)), 0.0, 1.0) 
+            / (4.0 - leak_threshold)
+        ) * leak_strength;
+        edgesC_LRTB[side] = clamp(edgesC_LRTB[side] + edginess, 0.0, 1.0);
+
+        // For diagonals; used by first and second pass
+        weightTL[side] = diag_weight * (edgesC_LRTB[side].x * edgesL_LRTB.z + edgesC_LRTB[side].z * edgesT_LRTB.x);
+        weightTR[side] = diag_weight * (edgesC_LRTB[side].z * edgesT_LRTB.y + edgesC_LRTB[side].y * edgesR_LRTB.z);
+        weightBL[side] = diag_weight * (edgesC_LRTB[side].w * edgesB_LRTB.x + edgesC_LRTB[side].x * edgesL_LRTB.w);
+        weightBR[side] = diag_weight * (edgesC_LRTB[side].y * edgesR_LRTB.w + edgesC_LRTB[side].w * edgesB_LRTB.y);
+
+        // first pass
+        const float ssao_value     = (side == 0) ? (visQ0[1]) : (visQ1[0]);
+        const float ssao_valueL    = (side == 0) ? (visQ0[0]) : (visQ0[1]);
+        const float ssao_valueT    = (side == 0) ? (visQ0[2]) : (visQ1[3]);
+        const float ssao_valueR    = (side == 0) ? (visQ1[0]) : (visQ1[1]);
+        const float ssao_valueB    = (side == 0) ? (visQ2[2]) : (visQ3[3]);
+        const float ssao_valueTL   = (side == 0) ? (visQ0[3]) : (visQ0[2]);
+        const float ssao_valueBR   = (side == 0) ? (visQ3[3]) : (visQ3[2]);
+        const float ssao_valueTR   = (side == 0) ? (visQ1[3]) : (visQ1[2]);
+        const float ssao_valueBL   = (side == 0) ? (visQ2[3]) : (visQ2[2]);
+
+        float sum_weight = blur_amount;
+        float sum = ssao_value * sum_weight;
+
+        add_sample(ssao_valueL, edgesC_LRTB[side].x, sum, sum_weight);
+        add_sample(ssao_valueR, edgesC_LRTB[side].y, sum, sum_weight);
+        add_sample(ssao_valueT, edgesC_LRTB[side].z, sum, sum_weight);
+        add_sample(ssao_valueB, edgesC_LRTB[side].w, sum, sum_weight);
+
+        add_sample(ssao_valueTL, weightTL[side], sum, sum_weight);
+        add_sample(ssao_valueTR, weightTR[side], sum, sum_weight);
+        add_sample(ssao_valueBL, weightBL[side], sum, sum_weight);
+        add_sample(ssao_valueBR, weightBR[side], sum, sum_weight);
+
+        ao_term[side] = sum / sum_weight;
+
+        gtao_output(pix_coord, ao_term[side]);
+    }
+}

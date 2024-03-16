@@ -55,6 +55,7 @@ impl<W: Write> RustStructCodeGen<W> {
             GpuStructFieldType::U64 => "u64".into(),
             GpuStructFieldType::F32 => "f32".into(),
             GpuStructFieldType::Bool => "bool".into(),
+            GpuStructFieldType::UVec2 => "UVec2".into(),
             GpuStructFieldType::IVec2 => "IVec2".into(),
             GpuStructFieldType::Vec2 => "Vec2".into(),
             GpuStructFieldType::Vec4 => "Vec4".into(),
@@ -126,6 +127,8 @@ impl<W: Write> RustSetsCodeGen<W> {
             }
             GpuBindingData::Ubo(_) => "DescriptorType::UniformBuffer".to_owned(),
             GpuBindingData::Texture(_)
+            | GpuBindingData::UTexture(_)
+            | GpuBindingData::ITexture(_)
             | GpuBindingData::UnboundedTextureArray(_)
             | GpuBindingData::ShadowTextureArray(_) => "DescriptorType::Texture".to_owned(),
             GpuBindingData::CubeMap(_) => "DescriptorType::CubeMap".to_owned(),

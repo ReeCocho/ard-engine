@@ -15,12 +15,12 @@ float specular_d(vec3 N, vec3 H, float roughness) {
     float denom = (ndoth2 * (a2 - 1.0) + 1.0);
     denom = PI * denom * denom;
 
-    return nom / denom;
+    return nom / (denom + 0.00001);
 }
 
 float geometry_schlick_ggx(float ndotv, float k) {
     const float denom = ndotv * (1.0 - k) + k;
-    return ndotv / denom;
+    return ndotv / (denom + 0.00001);
 }
 
 float specular_g(float ndotv, float ndotl, vec3 N, float roughness) {
@@ -35,6 +35,11 @@ vec3 specular_f(vec3 V, vec3 H, vec3 F0) {
     const float vdoth = dot(V, H);
     return F0 + (1.0 - F0) * pow(2.0, ((-5.55473 * vdoth) - 6.98316) * vdoth);
 }
+
+vec3 specular_f_roughness(float ndotv, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - ndotv, 0.0, 1.0), 5.0);
+}   
 
 vec3 evaluate_brdf(
     vec3 albedo,
@@ -57,7 +62,7 @@ vec3 evaluate_brdf(
     const float g = specular_g(ndotv, ndotl, N, roughness);
 
     const vec3 num = d * g * f;
-    const float denom = (4.0 * ndotl * ndotv) + 0.0001;
+    const float denom = (4.0 * ndotl * ndotv) + 0.00001;
     const vec3 f_specular = num / denom;
 
     // Ratio of reflected light is equal to the Fresnel parameter

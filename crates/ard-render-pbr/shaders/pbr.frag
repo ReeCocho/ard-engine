@@ -14,6 +14,7 @@
 
 #define ARD_TEXTURE_COUNT 1
 
+#include "utils.glsl"
 #include "ard_bindings.glsl"
 #include "pbr_common.glsl"
 
@@ -31,22 +32,22 @@ void main() {
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0
     const vec4 color = sample_texture_default(vs_Slots.x, vs_Uv, vec4(1)) * data.color;
-// Or just use the material color if we have no UVs
-#else
-    const vec4 color = data.color;
-#endif
-
+    
     // Alpha-Cutoff
     if (color.a < data.alpha_cutoff) {
         discard;
     }
+// Or just use the material color if we have no UVs
+#else
+    const vec4 color = data.color;
+#endif
 
 // We only need to compute final color if we're not depth-only
 #ifndef DEPTH_ONLY
 
     // Prefetch textures
     #if ARD_VS_HAS_UV0
-        const vec4 mr_map = sample_texture_default(vs_Slots.y, vs_Uv, vec4(0.0, 1.0, 0.0, 0.0));
+        const vec4 mr_map = sample_texture_default(vs_Slots.y, vs_Uv, vec4(1.0));
     #endif
     #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
         vec3 N = sample_texture_default(vs_Slots.z, vs_Uv, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
@@ -72,6 +73,11 @@ void main() {
 
     // View vector
     const vec3 V = normalize(camera[gl_ViewIndex].position.xyz - vs_WorldSpaceFragPos);
+
+    // Reflection vector modified based on roughness
+    vec3 R = reflect(-V, N);
+    const float fa = roughness * roughness;
+    R = mix(N, R, (1.0 - fa) * (sqrt(1.0 - fa) + fa));
 
     // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
@@ -128,23 +134,26 @@ void main() {
     }
 
     // Ambient lighting
-    const vec3 ambient_color = texture(di_map, N).rgb 
-        * global_lighting.ambient_color_intensity.rgb;
-    const float ambient_attenuation = global_lighting.ambient_color_intensity.a
-        * texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r;
-    const vec3 ambient = light_fragment(
-        ambient_color,
-        ambient_attenuation,
-        color.rgb,
-        roughness,
-        metallic,
-        F0,
-        N,
-        V,
-        N
-    );
+    const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
+    const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
 
+    const vec3 diffuse = color.rgb
+        * texture(di_map, N).rgb 
+        * global_lighting.ambient_color_intensity.rgb;
+
+    const float REFLECTION_LODS = float(textureQueryLevels(env_map) - 1);
+    const vec3 prefiltered_color = 
+        textureLod(env_map, R, roughness * REFLECTION_LODS).rgb 
+        * global_lighting.ambient_color_intensity.rgb;
+    const vec2 env_brdf = texture(brdf_lut, vec2(max(dot(N, V), 0.0), roughness)).rg;
+    const vec3 specular = prefiltered_color * (kS * env_brdf.x + env_brdf.y);
+
+    const vec3 ambient = global_lighting.ambient_color_intensity.a * (kD * diffuse + specular);
     final_color += vec4(ambient, 0.0);
+
+    // Ambient occlusion
+    final_color.rgb = texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r * final_color.rgb;
+    // final_color = vec4(vec3(ambient_attenuation), 1.0);
 
     OUT_COLOR = final_color;
 #endif

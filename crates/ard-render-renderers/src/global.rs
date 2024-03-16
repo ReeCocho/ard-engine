@@ -78,19 +78,49 @@ impl GlobalSets {
         set.update(&shadow_cascades_update);
     }
 
-    pub fn update_di_map_binding(&mut self, frame: Frame, di_map: &CubeMap) {
+    pub fn update_map_bindings(
+        &mut self,
+        frame: Frame,
+        brdf_lut: &Texture,
+        di_map: &CubeMap,
+        env_map: &CubeMap,
+    ) {
         let set = &mut self.sets[usize::from(frame)];
-        set.update(&[DescriptorSetUpdate {
-            binding: GLOBAL_SET_DI_MAP_BINDING,
-            array_element: 0,
-            value: DescriptorValue::CubeMap {
-                cube_map: di_map,
+        set.update(&[
+            DescriptorSetUpdate {
+                binding: GLOBAL_SET_DI_MAP_BINDING,
                 array_element: 0,
-                sampler: DI_MAP_SAMPLER,
-                base_mip: 0,
-                mip_count: 1,
+                value: DescriptorValue::CubeMap {
+                    cube_map: di_map,
+                    array_element: 0,
+                    sampler: DI_MAP_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
             },
-        }]);
+            DescriptorSetUpdate {
+                binding: GLOBAL_SET_ENV_MAP_BINDING,
+                array_element: 0,
+                value: DescriptorValue::CubeMap {
+                    cube_map: env_map,
+                    array_element: 0,
+                    sampler: DI_MAP_SAMPLER,
+                    base_mip: 0,
+                    mip_count: env_map.mip_count(),
+                },
+            },
+            DescriptorSetUpdate {
+                binding: GLOBAL_SET_BRDF_LUT_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: brdf_lut,
+                    array_element: 0,
+                    sampler: DI_MAP_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+        ]);
     }
 
     pub fn update_ao_image_binding(&mut self, frame: Frame, ao_image: &Texture) {

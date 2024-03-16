@@ -46,7 +46,7 @@ struct DrawCall {
     index_offset: usize,
     index_count: usize,
     scissor: Scissor,
-    texture_id: u32,
+    _texture_id: u32,
 }
 
 struct TextureDelta {
@@ -300,7 +300,7 @@ impl GuiRenderer {
                     width: clip_max_x - clip_min_x,
                     height: clip_max_y - clip_min_y,
                 },
-                texture_id: match mesh.texture_id {
+                _texture_id: match mesh.texture_id {
                     egui::TextureId::Managed(_) => u32::MAX,
                     egui::TextureId::User(id) => id as u32,
                 },

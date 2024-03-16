@@ -42,8 +42,8 @@ void main() {
         const uint cur_idx = line_base_idx + low;
         const uint next_idx = line_base_idx + low - 1;
 
-        const float cur_depth = epipolar_lines[cur_idx].value.w;
-        const float next_depth = epipolar_lines[next_idx].value.w;
+        const float cur_depth = unpackHalf2x16(epipolar_lines[cur_idx].value.y).y;
+        const float next_depth = unpackHalf2x16(epipolar_lines[next_idx].value.y).y;
         const float depth_dif = cur_depth - next_depth;
 
         if (abs(depth_dif) > consts.depth_threshold) {
@@ -61,8 +61,8 @@ void main() {
         const uint cur_idx = line_base_idx + high;
         const uint next_idx = line_base_idx + high + 1;
         
-        const float cur_depth = epipolar_lines[cur_idx].value.w;
-        const float next_depth = epipolar_lines[next_idx].value.w;
+        const float cur_depth = unpackHalf2x16(epipolar_lines[cur_idx].value.y).y;
+        const float next_depth = unpackHalf2x16(epipolar_lines[next_idx].value.y).y;
         const float depth_dif = cur_depth - next_depth;
 
         if (abs(depth_dif) > consts.depth_threshold) {
@@ -77,13 +77,10 @@ void main() {
     }
 
     // Store low and high interpolation sources
-    low += line_base_idx;
-    high += line_base_idx;
-    epipolar_lines[lin_sample_idx].low = low;
-    epipolar_lines[lin_sample_idx].high = high;
+    epipolar_lines[lin_sample_idx].low_high = (low & 0xFFFF) + (high << 16);
 
     // If low == high, then this is a point that needs sampling
-    if (low == lin_sample_idx || high == lin_sample_idx) {
+    if (low == sample_idx || high == sample_idx) {
         uint old_count = atomicAdd(sample_count, 1);
         sample_indices[old_count] = lin_sample_idx;
         if (old_count % consts.samples_per_work_group == 0) {

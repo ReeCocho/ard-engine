@@ -92,6 +92,20 @@
                 count: "1",
                 data: CubeMap("di_map"),
             ),
+            // Prefiltered environment map.
+            (
+                name: "EnvMap",
+                stage: AllStages,
+                count: "1",
+                data: CubeMap("env_map"),
+            ),
+            // BRDF lookup texture.
+            (
+                name: "BrdfLut",
+                stage: AllStages,
+                count: "1",
+                data: Texture("brdf_lut"),
+            )
         ]
     ),
     // Per material and texture slot bindings.
@@ -449,67 +463,6 @@
                 )
             )
         ]
-    ),
-    // AO construction.
-    (
-        name: "AoConstruct",
-        bindings: [
-            (
-                name: "DepthTexture",
-                stage: Compute,
-                count: "1",
-                data: Texture("depth_tex")
-            ),
-            (
-                name: "AoImage",
-                stage: Compute,
-                count: "1",
-                data: StorageImage(
-                    field_name: "ao_image",
-                    restrict: true,
-                    access: WriteOnly,
-                    format: R16F,
-                )
-            ),
-            (
-                name: "NoiseTexture",
-                stage: Compute,
-                count: "1",
-                data: Texture("noise_tex")
-            ),
-            (
-                name: "KernelSamples",
-                stage: Compute,
-                count: "1",
-                data: Ubo((
-                    name: "samples",
-                    ty: Array(name: "samples", ty: Vec4, len: "KERNEL_SIZE")
-                ))
-            )
-        ]
-    ),
-    // AO blurring.
-    (
-        name: "AoBlur",
-        bindings: [
-            (
-                name: "InputTexture",
-                stage: Compute,
-                count: "1",
-                data: Texture("input_tex")
-            ),
-            (
-                name: "AoImage",
-                stage: Compute,
-                count: "1",
-                data: StorageImage(
-                    field_name: "ao_image",
-                    restrict: true,
-                    access: WriteOnly,
-                    format: R16F,
-                )
-            )
-        ],
     ),
     // Adaptive luminance histogram generation.
     (
@@ -925,6 +878,27 @@
             )
         ]
     ),
+    // Environment map prefiltering.
+    (
+        name: "EnvPrefilter",
+        bindings: [
+            (
+                name: "EnvMap",
+                stage: Fragment,
+                count: "1",
+                data: CubeMap("env_map"),
+            ),
+            (
+                name: "PrefilterInfo",
+                stage: Fragment,
+                count: "1",
+                data: Ubo((
+                    name: "prefilter_info",
+                    ty: Struct("EnvPrefilterInfo")
+                ))
+            ),
+        ]
+    ),
     // GUI rendering layout
     (
         name: "Gui",
@@ -935,6 +909,170 @@
                 count: "1",
                 data: Texture("font_texture"),
             )
+        ]
+    ),
+    // Depth prefiltering layout for GTAO.
+    (
+        name: "AoDepthPrefilter",
+        bindings: [
+            (
+                name: "SrcDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("src_depth"),
+            ),
+            (
+                name: "OutDepth0",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_depth0",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            ),
+            (
+                name: "OutDepth1",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_depth1",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            ),
+            (
+                name: "OutDepth2",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_depth2",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            ),
+            (
+                name: "OutDepth3",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_depth3",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            ),
+            (
+                name: "OutDepth4",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_depth4",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R32F,
+                )
+            ),
+        ]
+    ),
+    // Main pass for GTAO.
+    (
+        name: "AoMainPass",
+        bindings: [
+            (
+                name: "SrcDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("src_depth"),
+            ),
+            (
+                name: "Noise",
+                stage: Compute,
+                count: "1",
+                data: UTexture("noise_tex"),
+            ),
+            (
+                name: "Edges",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_edges",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R8,
+                )
+            ),
+            (
+                name: "WorkingAo",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_working_ao",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R16F,
+                )
+            ),
+        ]
+    ),
+    // Denoise pass for GTAO.
+    (
+        name: "AoDenoisePass",
+        bindings: [
+            (
+                name: "SrcDepth",
+                stage: Compute,
+                count: "1",
+                data: Texture("src_depth"),
+            ),
+            (
+                name: "Edges",
+                stage: Compute,
+                count: "1",
+                data: Texture("in_edges")
+            ),
+            (
+                name: "OutputAo",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_ao",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R16F,
+                )
+            ),
+        ]
+    ),
+    // Bilateral filter pass for GTAO.
+    (
+        name: "AoBilateralFilterPass",
+        bindings: [
+            (
+                name: "SourceAo",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "src_ao",
+                    restrict: true,
+                    access: ReadOnly,
+                    format: R16F,
+                )
+            ),
+            (
+                name: "OutputAo",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_ao",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: R16F,
+                )
+            ),
         ]
     )
 ]

@@ -7,15 +7,29 @@ fn main() {
     println!("cargo:rurun-if-changed={}", ard_render_si::GLSL_INCLUDE_DIR);
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/ao_construct.comp",
-        PathBuf::from(&out_dir).join("ao_construct.comp.spv"),
+        "./shaders/ao/depth_prefilter.comp",
+        PathBuf::from(&out_dir).join("ao_depth_prefilter.comp.spv"),
         &["./shaders/"],
         &[],
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/ao_blur.comp",
-        PathBuf::from(&out_dir).join("ao_blur.comp.spv"),
+        "./shaders/ao/main_pass.comp",
+        PathBuf::from(&out_dir).join("ao_main_pass.comp.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/ao/denoise.comp",
+        PathBuf::from(&out_dir).join("ao_denoise_pass.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/ao/bilateral_filter.comp",
+        PathBuf::from(&out_dir).join("ao_bilateral_filter.comp.spv"),
         &["./shaders/"],
         &[],
     );

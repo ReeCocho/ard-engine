@@ -11,7 +11,7 @@ use view::GuiView;
 
 pub mod view;
 
-#[derive(Default, Resource)]
+#[derive(Resource)]
 pub struct Gui {
     ctx: egui::Context,
     input: egui::RawInput,
@@ -26,6 +26,53 @@ pub struct GuiRunOutput {
     pub full: egui::FullOutput,
     pub primitives: Vec<egui::ClippedPrimitive>,
     pub pixels_per_point: f32,
+}
+
+impl Default for Gui {
+    fn default() -> Self {
+        use egui::{FontFamily::*, FontId, TextStyle};
+
+        let ctx = egui::Context::default();
+
+        // Install fonts
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "Inter-VariableFont".into(),
+            egui::FontData::from_static(include_bytes!("../fonts/Inter-VariableFont.ttf")),
+        );
+        fonts.families.insert(
+            Proportional,
+            vec![
+                "Inter-VariableFont".into(),
+                // NOTE: These come packaged by default with egui
+                "NotoEmoji-Regular".into(),
+                "emoji-icon-font".into(),
+            ],
+        );
+
+        ctx.set_fonts(fonts);
+
+        // Define styling
+        ctx.style_mut(|style| {
+            style.visuals.dark_mode = true;
+            style.visuals.window_rounding = egui::Rounding::from(2.0);
+            style.visuals.window_shadow = egui::epaint::Shadow::small_dark();
+            style.text_styles = [
+                (TextStyle::Small, FontId::new(11.0, Proportional)),
+                (TextStyle::Body, FontId::new(14.0, Proportional)),
+                (TextStyle::Button, FontId::new(14.0, Proportional)),
+                (TextStyle::Heading, FontId::new(16.0, Proportional)),
+                (TextStyle::Monospace, FontId::new(14.0, Monospace)),
+            ]
+            .into();
+        });
+
+        Self {
+            ctx,
+            input: Default::default(),
+            views: Vec::default(),
+        }
+    }
 }
 
 impl Gui {
@@ -134,13 +181,14 @@ impl Gui {
 
     pub fn run(
         &mut self,
+        tick: Tick,
         commands: &Commands,
         queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> GuiRunOutput {
         let mut full = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
             for view in &mut self.views {
-                view.show(ctx, commands, queries, res);
+                view.show(tick, ctx, commands, queries, res);
             }
         });
         let primitives = self

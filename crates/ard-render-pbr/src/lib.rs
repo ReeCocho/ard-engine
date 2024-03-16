@@ -69,6 +69,34 @@ pub fn create_pbr_material(
         data_size: std::mem::size_of::<GpuPbrMaterial>(),
     });
 
+    let vertex_shader_uv0n = create_shader(ShaderCreateInfo {
+        code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.uv0n.spv")),
+        debug_name: Some("pbr_vertex_uv0n".into()),
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
+        data_size: std::mem::size_of::<GpuPbrMaterial>(),
+    });
+
+    let fragment_shader_uv0n = create_shader(ShaderCreateInfo {
+        code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.uv0n.spv")),
+        debug_name: Some("pbr_fragment_uv0n".into()),
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
+        data_size: std::mem::size_of::<GpuPbrMaterial>(),
+    });
+
+    let vertex_shader_n = create_shader(ShaderCreateInfo {
+        code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.n.spv")),
+        debug_name: Some("pbr_vertex_uv0n".into()),
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
+        data_size: std::mem::size_of::<GpuPbrMaterial>(),
+    });
+
+    let fragment_shader_n = create_shader(ShaderCreateInfo {
+        code: include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.n.spv")),
+        debug_name: Some("pbr_fragment_n".into()),
+        texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
+        data_size: std::mem::size_of::<GpuPbrMaterial>(),
+    });
+
     // Actual material creation info
     create_material(MaterialCreateInfo {
         variants: vec![
@@ -76,8 +104,8 @@ pub fn create_pbr_material(
             MaterialVariantDescriptor {
                 pass_id: DEPTH_PREPASS_PASS_ID,
                 vertex_layout: VertexLayout::POSITION | VertexLayout::NORMAL,
-                vertex_shader: vertex_shader.clone(),
-                fragment_shader: None,
+                vertex_shader: vertex_shader_n.clone(),
+                fragment_shader: Some(fragment_shader_n.clone()),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::Back,
@@ -97,8 +125,8 @@ pub fn create_pbr_material(
             MaterialVariantDescriptor {
                 pass_id: DEPTH_PREPASS_PASS_ID,
                 vertex_layout: VertexLayout::POSITION | VertexLayout::NORMAL | VertexLayout::UV0,
-                vertex_shader: vertex_shader_uv0d.clone(),
-                fragment_shader: Some(fragment_shader_uv0d.clone()),
+                vertex_shader: vertex_shader_uv0n.clone(),
+                fragment_shader: Some(fragment_shader_uv0n.clone()),
                 rasterization: RasterizationState {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::Back,

@@ -191,8 +191,9 @@
             (name: "proj", ty: Mat4),
             (name: "uv_size", ty: Vec2),
             (name: "far_plane", ty: F32),
-            (name: "min_bias", ty: F32),
-            (name: "max_bias", ty: F32),
+            (name: "min_depth_bias", ty: F32),
+            (name: "max_depth_bias", ty: F32),
+            (name: "normal_bias", ty: F32),
             (name: "depth_range", ty: F32),
         ]
     ),
@@ -221,10 +222,12 @@
         name: "SunShaftSample",
         no_mangle: false,
         fields: [
-            (name: "low", ty : U32),
-            (name: "high", ty : U32),
+            // Low and high sample indices within the line packed into two 16-bit uints. High is
+            // in the high bits and low is in the low bits.
+            (name: "low_high", ty : U32),
             (name: "initial", ty : U32),
-            (name: "value", ty: Vec4),
+            // 16-bit color packed into two u32s.
+            (name: "value", ty: UVec2),
         ]
     ),
     // Diffuse irradiance lighting coefficients.
@@ -243,6 +246,17 @@
             (name: "red", ty: Mat4),
             (name: "green", ty: Mat4),
             (name: "blue", ty: Mat4),
+        ]
+    ),
+    // Data used for environment prefiltering.
+    (
+        name: "EnvPrefilterInfo",
+        no_mangle: false,
+        fields: [
+            (name: "halfway_vectors", ty: Array(len: "ENV_PREFILTER_SAMPLE_COUNT", ty: Vec4)),
+            (name: "mip_levels", ty: Array(len: "ENV_PREFILTER_SAMPLE_COUNT", ty: F32)),
+            (name: "sample_weights", ty: Array(len: "ENV_PREFILTER_SAMPLE_COUNT", ty: F32)),
+            (name: "inv_total_sample_weight", ty: F32),
         ]
     ),
     // Push constants for HZB generation.
@@ -347,6 +361,14 @@
             (name: "output_dims", ty: IVec2),
         ]
     ),
+    // Push constants for rendering the procedural sky box.
+    (
+        name: "SkyBoxRenderPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "sun_direction", ty: Vec4),
+        ]  
+    ),
     // Push constants for diffuse irradiance gathering.
     (
         name: "DiGatherPushConstants",
@@ -366,6 +388,14 @@
             (name: "block_size", ty: U32),
         ]
     ),
+    // Push constants for environment map prefiltering.
+    (
+        name: "EnvPrefilterPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "roughness", ty: F32),
+        ]
+    ),
     // Push constants for GUI rendering.
     (
         name: "GuiPushConstants",
@@ -375,4 +405,28 @@
             (name: "texture_id", ty: U32),
         ]
     ),
+    // Push constants for GTAO.
+    (
+        name: "GtaoPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "viewport_size", ty: IVec2),
+            (name: "viewport_pixel_size", ty: Vec2),
+            (name: "camera_near_clip", ty: F32),
+            (name: "camera_tan_half_fov", ty: Vec2),
+            (name: "ndc_to_view_mul", ty: Vec2),
+            (name: "ndc_to_view_add", ty: Vec2),
+            (name: "ndc_to_view_mul_x_pixel_size", ty: Vec2),
+            (name: "effect_radius", ty: F32),
+            (name: "effect_falloff_range", ty: F32),
+            (name: "radius_multiplier", ty: F32),
+            (name: "final_value_power", ty: F32),
+            (name: "denoise_blur_beta", ty: F32),
+            (name: "bilateral_filter_d", ty: F32),
+            (name: "bilateral_filter_r", ty: F32),
+            (name: "sample_distribution_power", ty: F32),
+            (name: "thin_occluder_compensation", ty: F32),
+            (name: "depth_mip_sampling_offset", ty: F32),
+        ]
+    )
 ]

@@ -12,4 +12,5 @@
     /// Must be a power of 2.
     (name: "HzbGenKernelSize", value: USize(8)),
     (name: "DiReduceBlockSize", value: UInt(128)),
+    (name: "EnvPrefilterSampleCount", value: USize(32)),
 ]

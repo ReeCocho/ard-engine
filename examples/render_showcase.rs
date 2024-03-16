@@ -12,6 +12,9 @@ use ard_render::{
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
 use ard_render_gui::{view::GuiView, Gui};
+use ard_render_image_effects::{
+    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+};
 use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags, RenderingMode};
@@ -138,60 +141,297 @@ impl From<CameraMover> for System {
     }
 }
 
-#[derive(SystemState)]
-pub struct SunMover {
-    pub speed: f32,
-    pub time: f32,
+struct TestingGui {
+    sun_yaw: f32,
+    sun_pitch: f32,
+    sun_animation_speed: f32,
+    animate_sun: bool,
+    welcome_open: bool,
+    ui_visible: bool,
 }
 
-impl SunMover {
-    fn on_tick(
-        &mut self,
-        evt: Tick,
-        _: Commands,
-        _: Queries<()>,
-        res: Res<(Write<GlobalLighting>,)>,
-    ) {
-        self.time += evt.0.as_secs_f32();
-
-        let mut lighting = res.get_mut::<GlobalLighting>().unwrap();
-
-        let dir = Vec4::new(0.0, 0.0, 1.0, 1.0);
-
-        lighting.set_sun_direction(
-            (Mat4::from_rotation_x((self.time * self.speed).to_radians()) * dir).xyz(),
-        );
+impl Default for TestingGui {
+    fn default() -> Self {
+        Self {
+            sun_yaw: 45.0,
+            sun_pitch: 60.0,
+            sun_animation_speed: 3.0,
+            animate_sun: false,
+            welcome_open: true,
+            ui_visible: true,
+        }
     }
 }
-
-impl From<SunMover> for System {
-    fn from(mover: SunMover) -> Self {
-        SystemBuilder::new(mover)
-            .with_handler(SunMover::on_tick)
-            .build()
-    }
-}
-
-struct TestingGui;
 
 impl GuiView for TestingGui {
     fn show(
         &mut self,
+        tick: Tick,
         ctx: &egui::Context,
-        commands: &Commands,
-        queries: &Queries<Everything>,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) {
-        egui::Window::new("Test").show(ctx, |ui| {
-            ui.label("This is a test.");
-        });
+        let mut lighting = res.get_mut::<GlobalLighting>().unwrap();
+        let mut sun_color = lighting.sun_color().to_array();
+        let mut sun_intensity = lighting.sun_intensity();
+        let mut ambient_color = lighting.ambient_color().to_array();
+        let mut ambient_intensity = lighting.ambient_intensity();
+
+        let mut tonemapping = res.get_mut::<TonemappingSettings>().unwrap();
+        let mut ao = res.get_mut::<AoSettings>().unwrap();
+        let mut sun_shafts = res.get_mut::<SunShaftsSettings>().unwrap();
+
+        if self.ui_visible {
+            egui::Window::new("Welcome").open(&mut self.welcome_open).show(ctx, |ui| {
+                ui.label(
+                    "Hello! Welcome to my renderer. This is a general showcase of some of its \
+                    features. You can view and modify some settings in the other window that should be \
+                    visible. Feel free to play around! If anything looks super broken, please check the \
+                    README.txt file to see if it’s a known issue. If it’s not a known issue, shoot me an \
+                    email at connor.bramham01@gmail.com."
+                );
+
+                ui.separator();
+                ui.heading("Controls");
+
+                ui.label("Press M to toggle mouse lock on and off.");
+                ui.label("Use the mouse to look around (only works when the mouse is locked).");
+                ui.label("W, A, S, D to move.");
+            });
+
+            egui::Window::new("Scene Settings")
+                .min_width(300.0)
+                .max_width(300.0)
+                .show(ctx, |ui| {
+                    ui.set_width(ui.available_width());
+
+                    egui::CollapsingHeader::new("Sun Lighting").show_unindented(ui, |ui| {
+                        egui::Grid::new("_sun_settings_grid").show(ui, |ui| {
+                            ui.label("Animate Sun");
+                            ui.toggle_value(&mut self.animate_sun, "Toggle");
+                            ui.end_row();
+
+                            ui.label("Yaw");
+                            ui.add(egui::Slider::new(&mut self.sun_yaw, 0.0..=360.0));
+                            ui.end_row();
+
+                            ui.label("Pitch");
+                            ui.add_enabled(
+                                !self.animate_sun,
+                                egui::Slider::new(&mut self.sun_pitch, 0.0..=360.0),
+                            );
+                            ui.end_row();
+
+                            ui.label("Animation Speed");
+                            ui.add(egui::Slider::new(&mut self.sun_animation_speed, 0.0..=32.0));
+                            ui.end_row();
+
+                            ui.label("Color");
+                            egui::color_picker::color_edit_button_rgb(ui, &mut sun_color);
+                            ui.end_row();
+
+                            ui.label("Intensity");
+                            ui.add(egui::Slider::new(&mut sun_intensity, 0.0..=64.0));
+                            ui.end_row();
+                        });
+                    });
+
+                    egui::CollapsingHeader::new("Ambient Lighting").show_unindented(ui, |ui| {
+                        egui::Grid::new("_ambient_settings_grid").show(ui, |ui| {
+                            ui.label("Color");
+                            egui::color_picker::color_edit_button_rgb(ui, &mut ambient_color);
+                            ui.end_row();
+
+                            ui.label("Intensity");
+                            ui.add(egui::Slider::new(&mut ambient_intensity, 0.0..=8.0));
+                            ui.end_row();
+                        });
+                    });
+
+                    egui::CollapsingHeader::new("Shadows").show(ui, |ui| {
+                        let mut cascades: Vec<_> = lighting.shadow_cascades().into();
+
+                        for (i, cascade) in cascades.iter_mut().enumerate() {
+                            egui::CollapsingHeader::new(format!("Cascade {i}")).show_unindented(
+                                ui,
+                                |ui| {
+                                    egui::Grid::new(format!("_shadow_cascade_{i}_settings_grid"))
+                                        .show(ui, |ui| {
+                                            ui.label("Min Depth Bias");
+                                            ui.add(egui::Slider::new(
+                                                &mut cascade.min_depth_bias,
+                                                0.0..=8.0,
+                                            ));
+                                            ui.end_row();
+
+                                            ui.label("Max Depth Bias");
+                                            ui.add(egui::Slider::new(
+                                                &mut cascade.max_depth_bias,
+                                                0.0..=8.0,
+                                            ));
+                                            ui.end_row();
+
+                                            ui.label("Normal Bias");
+                                            ui.add(egui::Slider::new(
+                                                &mut cascade.normal_bias,
+                                                0.0..=2.0,
+                                            ));
+                                            ui.end_row();
+
+                                            ui.label("Filter Size");
+                                            ui.add(egui::Slider::new(
+                                                &mut cascade.filter_size,
+                                                0.0..=8.0,
+                                            ));
+                                            ui.end_row();
+
+                                            ui.label("End Distance");
+                                            ui.add(egui::DragValue::new(&mut cascade.end_distance));
+                                            ui.end_row();
+
+                                            ui.label("Resolution");
+                                            ui.add(egui::DragValue::new(&mut cascade.resolution));
+                                            ui.end_row();
+
+                                            cascade.end_distance = cascade.end_distance.max(0.0);
+                                            cascade.resolution =
+                                                cascade.resolution.clamp(1024, 8192);
+                                        });
+                                },
+                            );
+                        }
+
+                        lighting.set_shadow_cascade_settings(&cascades);
+                    });
+
+                    egui::CollapsingHeader::new("Tonemapping").show_unindented(ui, |ui| {
+                        egui::Grid::new("_tonemapping_settings_grid").show(ui, |ui| {
+                            ui.label("Min Luminance");
+                            ui.add(egui::Slider::new(
+                                &mut tonemapping.min_luminance,
+                                -8.0..=8.0,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Max Luminance");
+                            ui.add(egui::Slider::new(
+                                &mut tonemapping.max_luminance,
+                                -8.0..=8.0,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Gamma");
+                            ui.add(egui::Slider::new(&mut tonemapping.gamma, 0.0..=8.0));
+                            ui.end_row();
+
+                            ui.label("Exposure");
+                            ui.add(egui::Slider::new(&mut tonemapping.exposure, 0.0..=8.0));
+                            ui.end_row();
+
+                            ui.label("Auto-Exposure Rate");
+                            ui.add(egui::Slider::new(
+                                &mut tonemapping.auto_exposure_rate,
+                                0.01..=8.0,
+                            ));
+                            ui.end_row();
+                        });
+
+                        tonemapping.min_luminance =
+                            tonemapping.min_luminance.min(tonemapping.max_luminance);
+                    });
+
+                    egui::CollapsingHeader::new("Ambient Occlusion").show_unindented(ui, |ui| {
+                        egui::Grid::new("_ao_settings_grid").show(ui, |ui| {
+                            ui.label("Radius");
+                            ui.add(egui::Slider::new(&mut ao.radius, 0.0..=8.0));
+                            ui.end_row();
+
+                            ui.label("Falloff Range");
+                            ui.add(egui::Slider::new(&mut ao.effect_falloff_range, 0.0..=8.0));
+                            ui.end_row();
+
+                            ui.label("Final Value Power");
+                            ui.add(egui::Slider::new(&mut ao.final_value_power, 0.0..=8.0));
+                            ui.end_row();
+
+                            ui.label("Denoise Blur Beta");
+                            ui.add(egui::Slider::new(&mut ao.denoise_blur_beta, 0.0..=4.0));
+                            ui.end_row();
+
+                            ui.label("Bilateral Filter D");
+                            ui.add(egui::Slider::new(&mut ao.bilateral_filter_d, 0.0..=16.0));
+                            ui.end_row();
+
+                            ui.label("Bilateral Filter R");
+                            ui.add(egui::Slider::new(&mut ao.bilateral_filter_r, 0.0..=4.0));
+                            ui.end_row();
+
+                            ui.label("Sample Distribution Power");
+                            ui.add(egui::Slider::new(
+                                &mut ao.sample_distribution_power,
+                                0.0..=8.0,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Thin Occluder Compensation");
+                            ui.add(egui::Slider::new(
+                                &mut ao.thin_occluder_compensation,
+                                0.0..=8.0,
+                            ));
+                            ui.end_row();
+                        });
+                    });
+
+                    egui::CollapsingHeader::new("Sun Shafts").show_unindented(ui, |ui| {
+                        egui::Grid::new("_sun_shafts_settings_grid").show(ui, |ui| {
+                            ui.label("Low Sample Minimum");
+                            ui.add(egui::Slider::new(
+                                &mut sun_shafts.low_sample_minimum,
+                                0..=50,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Steps Per Sample");
+                            ui.add(egui::Slider::new(&mut sun_shafts.steps_per_sample, 0..=200));
+                            ui.end_row();
+
+                            ui.label("Depth Threshold");
+                            ui.add(egui::Slider::new(
+                                &mut sun_shafts.depth_threshold,
+                                0.0..=8.0,
+                            ));
+                            ui.end_row();
+                        });
+                    });
+                });
+        }
+
+        if self.animate_sun {
+            self.sun_pitch += self.sun_animation_speed * tick.0.as_secs_f32();
+            self.sun_pitch -= self.sun_pitch.div_euclid(360.0) * 360.0;
+        }
+
+        let sun_dir = (Mat4::from_euler(
+            EulerRot::default(),
+            self.sun_yaw.to_radians(),
+            self.sun_pitch.to_radians(),
+            0.0,
+        ) * Vec4::Z)
+            .xyz();
+
+        lighting.set_sun_direction(sun_dir);
+        lighting.set_sun_color(sun_color.into());
+        lighting.set_sun_intensity(sun_intensity);
+        lighting.set_ambient_color(ambient_color.into());
+        lighting.set_ambient_intensity(ambient_intensity);
     }
 }
 
 fn main() {
-    let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
-    let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
-    puffin::set_scopes_on(true);
+    // let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
+    // let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
+    // puffin::set_scopes_on(true);
 
     AppBuilder::new(ard_log::LevelFilter::Info)
         .add_plugin(ArdCorePlugin)
@@ -217,14 +457,10 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
-        .add_system(SunMover {
-            speed: 3.0,
-            time: 0.0,
-        })
         .add_startup_function(setup)
         .run();
 }
@@ -234,26 +470,67 @@ fn setup(app: &mut App) {
     let assets = app.resources.get::<Assets>().unwrap();
     let mut gui = app.resources.get_mut::<Gui>().unwrap();
 
-    gui.add_view(TestingGui);
+    gui.add_view(TestingGui::default());
 
-    // Load in a model
-    let model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    assets.wait_for_load(&model);
+    // Load in models
+    let bistro_model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
+    let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
+    assets.wait_for_load(&bistro_model);
+    assets.wait_for_load(&sphere_model);
 
     // Instantiate models
-    let instance = assets.get(&model).unwrap().instantiate();
-
+    let instance = assets.get(&bistro_model).unwrap().instantiate();
     app.world.entities().commands().create(
         (
             vec![Static(0); instance.meshes.meshes.len()],
-            instance.meshes.meshes.clone(),
-            instance.meshes.materials.clone(),
-            instance.meshes.models.clone(),
-            instance.meshes.rendering_mode.clone(),
-            instance.meshes.flags.clone(),
+            instance.meshes.meshes,
+            instance.meshes.materials,
+            instance.meshes.models,
+            instance.meshes.rendering_mode,
+            instance.meshes.flags,
         ),
         &mut [],
     );
+
+    let sphere = assets.get(&sphere_model).unwrap();
+    let offset = Vec3::new(0.0, 25.0, 0.0);
+    const SPHERE_X: usize = 8;
+    const SPHERE_Y: usize = 4;
+    const SPHERE_COUNT: usize = SPHERE_X * SPHERE_Y;
+
+    let mut pack = (
+        vec![Static(0); SPHERE_COUNT],
+        (0..SPHERE_COUNT)
+            .map(|_| sphere.meshes[0].clone())
+            .collect(),
+        Vec::with_capacity(SPHERE_COUNT),
+        Vec::with_capacity(SPHERE_COUNT),
+        (0..SPHERE_COUNT).map(|_| RenderingMode::Opaque).collect(),
+        (0..SPHERE_COUNT).map(|_| RenderFlags::empty()).collect(),
+    );
+
+    for x in 0..SPHERE_X {
+        for y in 0..SPHERE_Y {
+            let new_mat = factory.create_pbr_material_instance().unwrap();
+            factory.set_material_data(
+                &new_mat,
+                &PbrMaterialData {
+                    alpha_cutoff: 0.0,
+                    color: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    metallic: y as f32 / (SPHERE_Y as f32 - 1.0),
+                    roughness: x as f32 / (SPHERE_X as f32 - 1.0),
+                },
+            );
+
+            pack.2.push(Model(
+                Mat4::from_translation(offset + (2.0 * Vec3::new(x as f32, y as f32, 0.0)))
+                    * Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0)),
+            ));
+            pack.3.push(new_mat);
+        }
+    }
+
+    app.world.entities().commands().create(pack, &mut []);
 
     /*
     app.world.entities().commands().create(
@@ -460,7 +737,7 @@ fn setup(app: &mut App) {
         look_speed: 0.1,
         move_speed: 24.0,
         entity: camera[0],
-        position: Vec3::ZERO,
+        position: Vec3::new(5.0, 5.0, 5.0),
         rotation: Vec3::ZERO,
     });
 
@@ -518,7 +795,7 @@ fn setup(app: &mut App) {
     // Gimmie a ton of light
     use rand::prelude::*;
 
-    const LIGHT_COUNT: usize = 200;
+    const LIGHT_COUNT: usize = 0;
     const LIGHT_AREA_MIN: Vec3 = Vec3::new(-20.0, 0.0, -25.0);
     const LIGHT_AREA_MAX: Vec3 = Vec3::new(20.0, 30.0, 25.0);
     let mut rng = rand::thread_rng();

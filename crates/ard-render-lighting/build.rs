@@ -47,4 +47,11 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/env_prefilter.frag",
+        PathBuf::from(&out_dir).join("env_prefilter.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

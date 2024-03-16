@@ -23,10 +23,9 @@ void main() {
     // Prefetch properties
     const uint id = ard_ObjectId;
     const mat4 model = object_data[id].model;
-#if !(ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0)
     const mat3 normal_mat = mat3(object_data[id].normal);
-#endif
     const uint materials_slot = object_data[id].material;
+
 #if ARD_VS_HAS_UV0
     const uint textures_slot = object_data[id].textures;
     const uint color_slot = texture_slots[textures_slot][0];
@@ -58,10 +57,14 @@ void main() {
         vec3 B = cross(N, T);
         
         vs_TBN = mat3(T, B, N);
-    #else
-        // Output corrected normal
-        vs_Normal = normalize(normal_mat * ard_Normal.xyz);
     #endif
+    
+    // Output corrected normal
+    vs_Normal = normalize(normal_mat * ard_Normal.xyz);
+#endif
+
+#ifdef WITH_NORMALS
+    vs_Normal = vec3(camera[gl_ViewIndex].view * vec4(normalize(normal_mat * ard_Normal.xyz), 0.0));
 #endif
     
 #if ARD_VS_HAS_UV0

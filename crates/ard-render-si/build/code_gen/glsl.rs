@@ -57,6 +57,7 @@ impl<W: Write> GlslStructCodeGen<W> {
             GpuStructFieldType::U64 => "uint".into(),
             GpuStructFieldType::F32 => "float".into(),
             GpuStructFieldType::Bool => "uint".into(),
+            GpuStructFieldType::UVec2 => "uvec2".into(),
             GpuStructFieldType::IVec2 => "ivec2".into(),
             GpuStructFieldType::Vec2 => "vec2".into(),
             GpuStructFieldType::Vec4 => "vec4".into(),
@@ -167,6 +168,8 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
                 .unwrap();
             }
             GpuBindingData::Texture(_)
+            | GpuBindingData::UTexture(_)
+            | GpuBindingData::ITexture(_)
             | GpuBindingData::UnboundedTextureArray(_)
             | GpuBindingData::ShadowTextureArray(_)
             | GpuBindingData::CubeMap(_) => {
@@ -245,6 +248,12 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
             }
             GpuBindingData::Texture(field_name) => {
                 writeln!(self.writer, "uniform sampler2D {field_name};\n").unwrap();
+            }
+            GpuBindingData::UTexture(field_name) => {
+                writeln!(self.writer, "uniform usampler2D {field_name};\n").unwrap();
+            }
+            GpuBindingData::ITexture(field_name) => {
+                writeln!(self.writer, "uniform isampler2D {field_name};\n").unwrap();
             }
             GpuBindingData::CubeMap(field_name) => {
                 writeln!(self.writer, "uniform samplerCube {field_name};\n").unwrap();

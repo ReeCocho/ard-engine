@@ -9,7 +9,16 @@ use ard_render_si::{consts::*, types::*};
 pub struct SunShadowsUbo {
     ubo: Buffer,
     cameras: [GpuCamera; MAX_SHADOW_CASCADES],
-    cascades: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ShadowCascadeSettings {
+    pub min_depth_bias: f32,
+    pub max_depth_bias: f32,
+    pub normal_bias: f32,
+    pub filter_size: f32,
+    pub resolution: u32,
+    pub end_distance: f32,
 }
 
 impl SunShadowsUbo {
@@ -45,7 +54,6 @@ impl SunShadowsUbo {
                 far_clip: 1.0,
                 cluster_scale_bias: Vec2::ONE,
             }),
-            cascades: 0,
         }
     }
 
@@ -61,24 +69,24 @@ impl SunShadowsUbo {
 
     pub fn update(
         &mut self,
-        cascades: usize,
+        cascades: &[ShadowCascadeSettings],
         light_dir: Vec3,
         camera: &Camera,
         camera_model: Model,
         camera_aspect: f32,
-        shadow_resolution: u32,
     ) {
-        debug_assert!(cascades <= MAX_SHADOW_CASCADES);
+        debug_assert!(cascades.len() <= MAX_SHADOW_CASCADES);
 
         let mut buff_view = self.ubo.write(0).unwrap();
         let ubo = &mut bytemuck::cast_slice_mut::<_, GpuSunShadows>(buff_view.deref_mut())[0];
 
-        self.cascades = cascades;
-        ubo.count = cascades as u32;
+        ubo.count = cascades.len() as u32;
 
-        for i in 0..cascades {
-            let lin_near = (i as f32 / cascades as f32).powf(2.0);
-            let lin_far = ((i + 1) as f32 / cascades as f32).powf(2.0);
+        let mut last_cascade_end = camera.near;
+        for (i, cascade) in cascades.iter().enumerate() {
+            let lin_near = last_cascade_end;
+            let lin_far = cascade.end_distance.max(lin_near + 0.01);
+            last_cascade_end = lin_far;
 
             // Bounding view matrix of the camera for the cascade
             let cam_position: Vec3 = camera_model.position().into();
@@ -91,14 +99,7 @@ impl SunShadowsUbo {
             );
 
             // Limited projection matrix for the camera
-            let fmn = camera.far - camera.near;
-            let far_plane = camera.near + (fmn * lin_far);
-            let camera_proj = Mat4::perspective_lh(
-                camera.fov,
-                camera_aspect,
-                camera.near + (fmn * lin_near),
-                far_plane,
-            );
+            let camera_proj = Mat4::perspective_lh(camera.fov, camera_aspect, lin_near, lin_far);
             let camera_vp = camera_proj * camera_view;
             let camera_vp_inv = camera_vp.inverse();
 
@@ -136,7 +137,7 @@ impl SunShadowsUbo {
 
             // Find the radius of the frustum and the number of texels per world unit
             let radius = (max - min).length() / 2.0;
-            let texels_per_unit = shadow_resolution as f32 / (radius * 2.0);
+            let texels_per_unit = cascade.resolution as f32 / (radius * 2.0);
             let scaling =
                 Mat4::from_scale(Vec3::new(texels_per_unit, texels_per_unit, texels_per_unit));
 
@@ -190,11 +191,11 @@ impl SunShadowsUbo {
                 view,
                 proj,
                 // TODO: Make sun size configurable
-                uv_size: 1.5 / (Vec2::ONE * 2.0 * radius),
-                far_plane,
-                // TODO: Max bias configurable
-                min_bias: 0.05,
-                max_bias: 0.2,
+                uv_size: cascade.filter_size / (Vec2::ONE * 2.0 * radius),
+                far_plane: lin_far,
+                min_depth_bias: cascade.min_depth_bias,
+                max_depth_bias: cascade.max_depth_bias,
+                normal_bias: cascade.normal_bias,
                 depth_range: 2.0 * radius,
             };
         }

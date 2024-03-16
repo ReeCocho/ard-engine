@@ -107,6 +107,22 @@ void main() {
     const vec3 normal = normalize(cross(P2 - P0, P1 - P0));
     const vec3 position = P0;
 
+    /*
+    // Parameters
+    const float effect_radius = consts.radius;
+    const float sample_distribution_power = 2.0;
+    const float thin_occluder_compensation = 0.0;
+    const float falloff_range = 0.615 * effect_radius;
+
+    const float falloff_from = effect_radius * (1.0 - 0.615);
+
+    const float falloff_mul = -1.0 / falloff_range;
+    const float falloff_ddd = falloff_from / falloff_range + 1.0;
+
+    float visibility = 0.0;
+    vec3 bent_normal = normal;
+    */
+
     const vec3 random_vec = normalize(vec3(texture(noise_tex, uv * consts.noise_scale).xy, 0.0));
 
     // Compute TBN via Graham-Schmidt
