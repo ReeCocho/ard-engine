@@ -64,6 +64,25 @@ float pack_edges(vec4 edges_lrtb) {
     return dot(edges_lrtb, vec4(64.0 / 255.0, 16.0 / 255.0, 4.0 / 255.0, 1.0 / 255.0));
 }
 
+uint hash32(uint x) {
+    x ^= x >> 17;
+    x *= uint(0xed5ad4bb);
+    x ^= x >> 11;
+    x *= uint(0xac4c1b51);
+    x ^= x >> 15;
+    x *= uint(0x31848bab);
+    x ^= x >> 14;
+    return x;
+}
+
+float hash32_to_float(uint hash) { 
+    return hash / 4294967296.0;
+}
+
+uint hash32_combine(const uint seed, const uint value) {
+    return seed ^ (hash32(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+}
+
 vec2 spatio_temporal_noise(uvec2 pix_coord, uint temporal_index) {
     uint index = texture(noise_tex, vec2(pix_coord) / 64.0).r;
     index += 288 * (temporal_index % 64);
@@ -127,6 +146,14 @@ void main() {
     // Store edge information for denoising
     const vec4 edges_lrtb = calculate_edges(viewspace_z, pixLZ, pixRZ, pixTZ, pixBZ);
     imageStore(out_edges, ivec2(gl_GlobalInvocationID.xy), vec4(pack_edges(edges_lrtb)));
+
+    // If any z is infinity, the pixel is on the sky (or near) and thus doesn't need AO.
+    // This prevents dark shimmering edges when MSAA is enabled
+    const vec4 max_d = vec4(3.402823466e+38);
+    if (any(equal(valuesUL, max_d)) || any(equal(valuesBR, max_d))) {
+        imageStore(out_working_ao, ivec2(gl_GlobalInvocationID.xy), vec4(255.5));
+        return;
+    }
 
     // Fetch viewspace normal
     vec3 viewspace_normal = construct_normal(

@@ -33,16 +33,17 @@ pub mod prelude {
     pub type DrawIndexedIndirect = <crate::Backend as api::Backend>::DrawIndexedIndirect;
     pub type RenderPass<'a> = api::render_pass::RenderPass<'a, crate::Backend>;
     pub type RenderPassDescriptor<'a> = api::render_pass::RenderPassDescriptor<'a, crate::Backend>;
+    pub type ColorAttachmentDestination<'a> =
+        api::render_pass::ColorAttachmentDestination<'a, crate::Backend>;
     pub use api::render_pass::{
-        ColorAttachment, ColorAttachmentDestination, ColorResolveAttachment,
-        DepthStencilAttachment, DepthStencilAttachmentDestination, DepthStencilResolveAttachment,
-        VertexBind,
+        ColorAttachment, ColorResolveAttachment, DepthStencilAttachment,
+        DepthStencilAttachmentDestination, DepthStencilResolveAttachment, VertexBind,
     };
 
     // Command buffer
     pub use api::command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, CopyBufferToBuffer,
-        TextureResolve,
+        CopyTextureToTexture, TextureResolve,
     };
     pub type CommandBuffer<'a> = api::command_buffer::CommandBuffer<'a, crate::Backend>;
 

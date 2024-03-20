@@ -7,6 +7,41 @@ fn main() {
     println!("cargo:rurun-if-changed={}", ard_render_si::GLSL_INCLUDE_DIR);
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/smaa/reset_edges.comp",
+        PathBuf::from(&out_dir).join("smaa_reset_edges.comp.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/smaa/edges.comp",
+        PathBuf::from(&out_dir).join("smaa_edges.comp.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/smaa/weights.comp",
+        PathBuf::from(&out_dir).join("smaa_weights.comp.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/smaa/blend.vert",
+        PathBuf::from(&out_dir).join("smaa_blend.vert.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/smaa/blend.frag",
+        PathBuf::from(&out_dir).join("smaa_blend.frag.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/ao/depth_prefilter.comp",
         PathBuf::from(&out_dir).join("ao_depth_prefilter.comp.spv"),
         &["./shaders/"],

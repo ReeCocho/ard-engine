@@ -427,6 +427,16 @@
             (name: "sample_distribution_power", ty: F32),
             (name: "thin_occluder_compensation", ty: F32),
             (name: "depth_mip_sampling_offset", ty: F32),
+            (name: "blur_dir", ty: IVec2),
         ]
-    )
+    ),
+    // Push constants for SMAA.
+    (
+        name: "SmaaPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "rt_metrics", ty: Vec4),
+            (name: "screen_dims", ty: UVec2),
+        ]
+    ),
 ]

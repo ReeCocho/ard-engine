@@ -1,0 +1,277 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_SMAA_EDGE_DETECT 0
+#include "utils.glsl"
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+#ifndef SMAA_THRESHOLD
+    #define SMAA_THRESHOLD 0.05
+#endif
+
+#ifndef SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR
+    #define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 2.0
+#endif
+
+#define MAX_EDGES_PER_WORK_GROUP 64
+#define LAST_INVOCATION 7
+
+layout(push_constant) uniform constants {
+    SmaaPushConstants consts;
+};
+
+// We dispatch in 8x8 tiles and need a 1x border for pattern 
+// detection, so we need 10x10 for everything
+#define KERNEL_SIZE 10
+#define KERNEL_END (KERNEL_SIZE - 1)
+
+shared float lumas[KERNEL_SIZE][KERNEL_SIZE];
+
+void main() {
+    if (
+        gl_GlobalInvocationID.x >= consts.screen_dims.x ||
+        gl_GlobalInvocationID.y >= consts.screen_dims.y
+    ) {
+        return;
+    }
+
+    const vec2 tex_coord = 
+        (vec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y) + vec2(0.5)) 
+        * consts.rt_metrics.xy;
+
+    // Compute lumas
+    const vec3 weights = vec3(0.2126, 0.7152, 0.0722);
+    const uvec2 tid = gl_LocalInvocationID.xy + uvec2(1);
+
+    vec4 color = texture(color_tex, tex_coord);
+    lumas[tid.x][tid.y] = dot(color.rgb, weights);
+
+    // Special cases for borders
+    if (gl_LocalInvocationID.x == 0) {
+        color = texture(color_tex, tex_coord - vec2(consts.rt_metrics.x, 0.0));
+        lumas[0][tid.y] = dot(color.rgb, weights);
+    }
+
+    if (gl_LocalInvocationID.x == LAST_INVOCATION) {
+        color = texture(color_tex, tex_coord + vec2(consts.rt_metrics.x, 0.0));
+        lumas[KERNEL_END][tid.y] = dot(color.rgb, weights);
+    }
+
+    if (gl_LocalInvocationID.y == 0) {
+        color = texture(color_tex, tex_coord - vec2(0.0, consts.rt_metrics.y));
+        lumas[tid.x][0] = dot(color.rgb, weights);
+    }
+
+    if (gl_LocalInvocationID.y == LAST_INVOCATION) {
+        color = texture(color_tex, tex_coord + vec2(0.0, consts.rt_metrics.y));
+        lumas[tid.x][KERNEL_END] = dot(color.rgb, weights);
+    }
+
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
+        color = texture(color_tex, tex_coord - consts.rt_metrics.xy);
+        lumas[0][0] = dot(color.rgb, weights);
+    }
+
+    if (gl_LocalInvocationID.x == LAST_INVOCATION && gl_LocalInvocationID.y == LAST_INVOCATION) {
+        color = texture(color_tex, tex_coord + consts.rt_metrics.xy);
+        lumas[KERNEL_END][KERNEL_END] = dot(color.rgb, weights);
+    }
+
+    barrier();
+
+    // Calculate lumas:
+    const vec2 threshold = vec2(SMAA_THRESHOLD);
+    float L = lumas[tid.x][tid.y];
+
+    float Lleft = lumas[tid.x - 1][tid.y];
+    float Ltop  = lumas[tid.x][tid.y - 1];
+
+    // We do the usual threshold:
+    vec4 delta;
+    delta.xy = abs(L - vec2(Lleft, Ltop));
+    vec2 edges = step(threshold, delta.xy);
+
+    // Then discard if there is no edge:
+    if (dot(edges, vec2(1.0, 1.0)) == 0.0) {
+        imageStore(edge_tex, ivec2(gl_GlobalInvocationID.xy), vec4(0.0));
+        return;
+    }
+
+    // Compute patterns that pass through the current edge.
+    vec2 pattern1 = vec2(0.0);
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x - 1][tid.y + 1]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x][tid.y + 1]),
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x + 1][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (2.0 * lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x - 1][tid.y + 1]),
+            (2.0 * lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x + 1][tid.y - 1])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (2.0 * lumas[tid.x][tid.y]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x][tid.y + 1]),
+            (2.0 * lumas[tid.x][tid.y]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x - 1][tid.y + 1]),
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y + 1]),
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x + 1][tid.y - 1])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x - 1][tid.y + 1]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y + 1]),
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x - 1][tid.y - 1]) -
+            (lumas[tid.x + 1][tid.y - 1] + lumas[tid.x - 1][tid.y])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y + 1]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x - 1][tid.y + 1]),
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x - 1][tid.y + 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x - 1][tid.y - 1]),
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x + 1][tid.y]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x + 1][tid.y - 1])
+        ))
+    );
+
+    pattern1 = max(
+        pattern1,
+        abs(vec2(
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y + 1]) -
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y - 1]),
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x + 1][tid.y - 1]) -
+            (lumas[tid.x][tid.y] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    // Compute patterns that don't pass through the current edge
+    vec2 pattern2 = vec2(0.0);
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (2.0 * lumas[tid.x - 1][tid.y + 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x][tid.y + 1]),
+            (2.0 * lumas[tid.x - 1][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x][tid.y - 1])
+        ))
+    );
+
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (2.0 * lumas[tid.x][tid.y + 1]) -
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y + 1]),
+            (2.0 * lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y])
+        ))
+    );
+
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (2.0 * lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y]),
+            (2.0 * lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x][tid.y] + lumas[tid.x + 1][tid.y - 1])
+        ))
+    );
+
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y + 1] + lumas[tid.x][tid.y + 1]),
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x - 1][tid.y])
+        ))
+    );
+
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (lumas[tid.x][tid.y] + lumas[tid.x - 1][tid.y]) -
+            (lumas[tid.x - 1][tid.y - 1] + lumas[tid.x][tid.y - 1]),
+            (lumas[tid.x][tid.y] + lumas[tid.x][tid.y - 1]) -
+            (lumas[tid.x + 1][tid.y - 1] + lumas[tid.x - 1][tid.y])
+        ))
+    );
+
+    pattern2 = max(
+        pattern2,
+        abs(vec2(
+            (2.0 * lumas[tid.x - 1][tid.y - 1]) -
+            (lumas[tid.x - 1][tid.y] + lumas[tid.x][tid.y - 1]),
+            (2.0 * lumas[tid.x + 1][tid.y - 1]) -
+            (lumas[tid.x][tid.y - 1] + lumas[tid.x + 1][tid.y])
+        ))
+    );
+
+    // Supress if outside patterns win
+    edges.xy *= step(pattern2, pattern1);
+
+    // Add to the append/consume buffer
+    const uint old_count = atomicAdd(edge_count, 1);
+
+    // Pack the edge coordinate into a single u32
+    out_edges[old_count] = 
+        (gl_GlobalInvocationID.x & 0xFFFF) 
+        | ((gl_GlobalInvocationID.y & 0xFFFF) << 16);
+
+    if (old_count != 0 && old_count % MAX_EDGES_PER_WORK_GROUP == 0) {
+        atomicAdd(indirect_dispatch.x, 1);
+    }
+
+    // Store into edge texture
+    imageStore(edge_tex, ivec2(gl_GlobalInvocationID.xy), vec4(edges, 0.0, 1.0));
+}

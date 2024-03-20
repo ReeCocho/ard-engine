@@ -9,6 +9,7 @@ use ard_render_image_effects::{
     ao::{AmbientOcclusion, AoSettings},
     bloom::Bloom,
     fxaa::Fxaa,
+    smaa::Smaa,
     sun_shafts2::SunShafts,
     tonemapping::Tonemapping,
 };
@@ -40,6 +41,7 @@ pub(crate) struct RenderEcs {
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
     _fxaa: Fxaa,
+    smaa: Smaa,
     hzb_render: HzbRenderer,
     bloom: Bloom<FRAMES_IN_FLIGHT>,
     sun_shafts: SunShafts,
@@ -110,7 +112,6 @@ impl RenderEcs {
             &ctx,
             surface,
             window_size,
-            plugin.settings.anti_aliasing,
             plugin.settings.present_mode,
             &hzb_render,
             &ao,
@@ -130,6 +131,7 @@ impl RenderEcs {
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
         let sun_shafts = SunShafts::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
+        let smaa = Smaa::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
         let mut tonemapping = Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         for frame in 0..FRAMES_IN_FLIGHT {
@@ -176,6 +178,7 @@ impl RenderEcs {
                 draw_gen,
                 hzb_render,
                 _fxaa: fxaa,
+                smaa,
                 sun_shafts,
                 ao,
                 tonemapping,
@@ -199,12 +202,16 @@ impl RenderEcs {
         puffin::profile_function!();
 
         // Update the canvas size and acquire a new swap chain image
-        if self
-            .canvas
-            .resize(&self.ctx, &self.hzb_render, &self.ao, frame.canvas_size)
-        {
+        if self.canvas.resize(
+            &self.ctx,
+            &self.hzb_render,
+            &self.ao,
+            frame.canvas_size,
+            frame.msaa_settings.samples,
+        ) {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
             self.sun_shafts.resize(&self.ctx, frame.canvas_size);
+            self.smaa.resize(&self.ctx, frame.canvas_size);
 
             for frame in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(frame);
@@ -267,8 +274,11 @@ impl RenderEcs {
                     .shadow_cascade(i)
                     .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
             }),
-            self.canvas.render_target().depth(),
+            self.canvas.render_target().depth_resolve(),
         );
+
+        self.smaa
+            .update_bindings(frame.frame, self.canvas.render_target().linear_color());
 
         self.canvas.acquire_image();
 
@@ -340,11 +350,11 @@ impl RenderEcs {
         });
 
         self.bloom
-            .bind_images(frame.frame, self.canvas.render_target().color());
+            .bind_images(frame.frame, self.canvas.render_target().final_color());
         self.tonemapping.bind_images(
             frame.frame,
-            self.canvas.render_target().color(),
-            self.canvas.render_target().depth(),
+            self.canvas.render_target().final_color(),
+            self.canvas.render_target().final_depth(),
         );
 
         // Phase 1:
@@ -486,7 +496,7 @@ impl RenderEcs {
         self.sun_shafts
             .transfer_image_ownership(&mut compute_cb, QueueType::Main);
         compute_cb.transfer_texture_ownership(
-            self.canvas.render_target().depth(),
+            self.canvas.render_target().depth_resolve(),
             0,
             0,
             1,
@@ -502,16 +512,35 @@ impl RenderEcs {
         // Image effects/tonemapping and final output.
         let mut cb = self.ctx.main().command_buffer();
 
+        // Apply image effects to the final render target
         self.bloom.render(frame.frame, &mut cb);
         self.tonemapping.render(
             frame.frame,
             &mut cb,
             &self.camera,
-            self.canvas.image(),
+            // If SMAA is enabled, we want to draw to the "final color" attachment so it can be
+            // read during the SMAA pass.
+            if frame.smaa_settings.enabled {
+                ColorAttachmentDestination::Texture {
+                    texture: self.canvas.render_target().linear_color(),
+                    array_element: 0,
+                    mip_level: 0,
+                }
+            }
+            // Otherwise, we'll draw directly to the surface
+            else {
+                ColorAttachmentDestination::SurfaceImage(self.canvas.image())
+            },
             &frame.tonemapping_settings,
             frame.dt,
         );
 
+        // Apply anti-aliasing
+        if frame.smaa_settings.enabled {
+            self.smaa.render(frame.frame, &mut cb, self.canvas.image());
+        }
+
+        // Render GUI
         cb.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
@@ -581,7 +610,7 @@ impl RenderEcs {
             },
         );
 
-        let depth = self.canvas.render_target().depth();
+        let depth = self.canvas.render_target().final_depth();
         commands.transfer_texture_ownership(
             depth,
             0,
@@ -600,7 +629,7 @@ impl RenderEcs {
         self.hzb_render
             .generate(frame_data.frame, commands, self.canvas.hzb());
 
-        let depth = self.canvas.render_target().depth();
+        let depth = self.canvas.render_target().final_depth();
         commands.transfer_texture_ownership(depth, 0, 0, depth.mip_count(), QueueType::Main, None);
     }
 
@@ -687,6 +716,8 @@ impl RenderEcs {
                 );
             },
         );
+
+        canvas.render_target().copy_depth(commands);
     }
 
     #[inline(never)]
@@ -702,9 +733,9 @@ impl RenderEcs {
 
         ao.generate(frame_data.frame, commands, canvas.ao(), camera, settings);
 
-        // Hand off depth resolve image to compute for sun shafts
+        // Hand off depth copy image to compute for sun shafts
         commands.transfer_texture_ownership(
-            canvas.render_target().depth(),
+            canvas.render_target().depth_resolve(),
             0,
             0,
             1,
@@ -729,15 +760,6 @@ impl RenderEcs {
         for cascade in 0..shadow_renderer.cascade_count() {
             shadow_renderer.compact_draw_calls(frame_data.frame, commands, draw_gen, cascade);
         }
-
-        // for cascade in 0..shadow_renderer.cascade_count() {
-        //     shadow_renderer.transfer_ownership(
-        //         frame_data.frame,
-        //         commands,
-        //         cascade,
-        //         QueueType::Main,
-        //     );
-        // }
     }
 
     #[inline(never)]
@@ -769,15 +791,6 @@ impl RenderEcs {
                 },
             );
         }
-
-        // for cascade in 0..shadow_renderer.cascade_count() {
-        //     shadow_renderer.transfer_ownership(
-        //         frame_data.frame,
-        //         commands,
-        //         cascade,
-        //         QueueType::Compute,
-        //     );
-        // }
     }
 
     #[inline(never)]

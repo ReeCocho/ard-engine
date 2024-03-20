@@ -7,13 +7,14 @@ use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
 use ard_render::{
-    factory::Factory, system::PostRender, AntiAliasingMode, RenderPlugin, RendererSettings,
+    factory::Factory, system::PostRender, MsaaSettings, RenderPlugin, RendererSettings,
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
 use ard_render_gui::{view::GuiView, Gui};
 use ard_render_image_effects::{
-    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
@@ -181,6 +182,8 @@ impl GuiView for TestingGui {
         let mut tonemapping = res.get_mut::<TonemappingSettings>().unwrap();
         let mut ao = res.get_mut::<AoSettings>().unwrap();
         let mut sun_shafts = res.get_mut::<SunShaftsSettings>().unwrap();
+        let mut smaa = res.get_mut::<SmaaSettings>().unwrap();
+        let mut msaa = res.get_mut::<MsaaSettings>().unwrap();
 
         if self.ui_visible {
             egui::Window::new("Welcome").open(&mut self.welcome_open).show(ctx, |ui| {
@@ -380,6 +383,13 @@ impl GuiView for TestingGui {
                                 0.0..=8.0,
                             ));
                             ui.end_row();
+
+                            ui.label("Depth Mip Sampling Offset");
+                            ui.add(egui::Slider::new(
+                                &mut ao.depth_mip_sampling_offset,
+                                0.0..=5.0,
+                            ));
+                            ui.end_row();
                         });
                     });
 
@@ -404,6 +414,43 @@ impl GuiView for TestingGui {
                             ui.end_row();
                         });
                     });
+
+                    egui::CollapsingHeader::new("Anti-Aliasing Settings").show_unindented(
+                        ui,
+                        |ui| {
+                            egui::Grid::new("_aa_settings_grid").show(ui, |ui| {
+                                ui.label("SMAA Enabled");
+                                ui.add(egui::Checkbox::new(&mut smaa.enabled, ""));
+                                ui.end_row();
+
+                                ui.label("MSAA Setting");
+                                egui::ComboBox::new("_msaa_setting", "")
+                                    .selected_text(format!("{:?}", msaa.samples))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut msaa.samples,
+                                            MultiSamples::Count1,
+                                            "Disabled",
+                                        );
+                                        ui.selectable_value(
+                                            &mut msaa.samples,
+                                            MultiSamples::Count2,
+                                            "2x",
+                                        );
+                                        ui.selectable_value(
+                                            &mut msaa.samples,
+                                            MultiSamples::Count4,
+                                            "4x",
+                                        );
+                                        ui.selectable_value(
+                                            &mut msaa.samples,
+                                            MultiSamples::Count8,
+                                            "8x",
+                                        );
+                                    });
+                            });
+                        },
+                    );
                 });
         }
 
@@ -453,11 +500,10 @@ fn main() {
                 render_scene: true,
                 render_time: None,
                 present_mode: PresentMode::Mailbox,
-                anti_aliasing: AntiAliasingMode::MSAA(MultiSamples::Count8),
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
@@ -486,7 +532,16 @@ fn setup(app: &mut App) {
             instance.meshes.meshes,
             instance.meshes.materials,
             instance.meshes.models,
-            instance.meshes.rendering_mode,
+            instance
+                .meshes
+                .rendering_mode
+                .iter()
+                .map(|mode| match *mode {
+                    RenderingMode::Opaque => RenderingMode::Opaque,
+                    RenderingMode::AlphaCutout => RenderingMode::AlphaCutout,
+                    RenderingMode::Transparent => RenderingMode::AlphaCutout,
+                })
+                .collect(),
             instance.meshes.flags,
         ),
         &mut [],

@@ -1074,5 +1074,142 @@
                 )
             ),
         ]
-    )
+    ),
+    // SMAA edge reset.
+    (
+        name: "SmaaResetEdges",
+        bindings: [
+            (
+                name: "Indirect",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "indirect_dispatch", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            ),
+            (
+                name: "Edges",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "edge_count", ty: U32)),
+                    unbounded_array: Some((name: "edges", ty: U32)),
+                )
+            ),
+        ]
+    ),
+    // SMAA edge construction.
+    (
+        name: "SmaaEdgeDetect",
+        bindings: [
+            (
+                name: "Indirect",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "indirect_dispatch", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            ),
+            (
+                name: "EdgeBuffer",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "edge_count", ty: U32)),
+                    unbounded_array: Some((name: "out_edges", ty: U32)),
+                )
+            ),
+            (
+                name: "EdgeTexture",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "edge_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rg8UNorm,
+                )
+            ),
+            (
+                name: "Source",
+                stage: Compute,
+                count: "1",
+                data: Texture("color_tex"),
+            )
+        ]
+    ),
+    // SMAA weights.
+    (
+        name: "SmaaWeights",
+        bindings: [
+            (
+                name: "EdgeBuffer",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "edge_count", ty: U32)),
+                    unbounded_array: Some((name: "in_edges", ty: U32)),
+                )
+            ),
+            (
+                name: "EdgeTexture",
+                stage: Compute,
+                count: "1",
+                data: Texture("edge_tex")
+            ),
+            (
+                name: "BlendTexture",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "blend_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba8UNorm,
+                )
+            ),
+            (
+                name: "SearchTex",
+                stage: Compute,
+                count: "1",
+                data: Texture("search_tex")
+            ),
+            (
+                name: "AreaTex",
+                stage: Compute,
+                count: "1",
+                data: Texture("area_tex")
+            ),
+        ]
+    ),
+    // SMAA blending.
+    (
+        name: "SmaaBlend",
+        bindings: [
+            (
+                name: "Source",
+                stage: Fragment,
+                count: "1",
+                data: Texture("src_tex"),
+            ),
+            (
+                name: "Blend",
+                stage: Fragment,
+                count: "1",
+                data: Texture("blend_tex"),
+            ),
+        ]
+    ),
 ]

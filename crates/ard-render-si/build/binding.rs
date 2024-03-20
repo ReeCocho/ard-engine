@@ -52,6 +52,8 @@ pub enum GpuStorageImageFormat {
     R16F,
     R32F,
     Rgba16F,
+    Rgba8UNorm,
+    Rg8UNorm,
 }
 
 pub struct GpuSetBuilder {
@@ -102,6 +104,8 @@ impl GpuStorageImageFormat {
             GpuStorageImageFormat::R16F => "r16f",
             GpuStorageImageFormat::R32F => "r32f",
             GpuStorageImageFormat::Rgba16F => "rgba16f",
+            GpuStorageImageFormat::Rgba8UNorm => "rgba8",
+            GpuStorageImageFormat::Rg8UNorm => "rg8",
         }
     }
 }

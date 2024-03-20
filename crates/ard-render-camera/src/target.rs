@@ -8,27 +8,30 @@ pub struct RenderTarget {
     ctx: Context,
     dims: (u32, u32),
     samples: MultiSamples,
-    color: Texture,
-    color_resolve: Option<Texture>,
-    depth: Texture,
+    attachments: Attachments,
+}
+
+struct Attachments {
+    color_target: Texture,
+    color_resolve: Texture,
+    depth_target: Texture,
     depth_resolve: Texture,
+    linear_color: Texture,
 }
 
 impl RenderTarget {
-    pub const COLOR_FORMAT: Format = Format::Rgba16SFloat;
+    pub const COLOR_TARGET_FORMAT: Format = Format::Rgba16SFloat;
+    pub const FINAL_COLOR_FORMAT: Format = Format::Rgba8Unorm;
     pub const DEPTH_FORMAT: Format = Format::D32Sfloat;
 
     pub fn new(ctx: &Context, dims: (u32, u32), samples: MultiSamples) -> Self {
         debug_assert!(dims.0 > 0 && dims.1 > 0);
 
-        let (color, color_resolve, depth, depth_resolve) = Self::create_images(ctx, dims, samples);
+        let attachments = Self::create_images(ctx, dims, samples);
 
         Self {
             ctx: ctx.clone(),
-            color,
-            color_resolve,
-            depth,
-            depth_resolve,
+            attachments,
             dims,
             samples,
         }
@@ -40,7 +43,7 @@ impl RenderTarget {
             color_resolve_attachments: Vec::default(),
             depth_stencil_attachment: Some(DepthStencilAttachment {
                 dst: DepthStencilAttachmentDestination::Texture {
-                    texture: self.depth(),
+                    texture: self.final_depth(),
                     array_element: 0,
                     mip_level: 0,
                 },
@@ -53,59 +56,68 @@ impl RenderTarget {
     }
 
     pub fn depth_prepass(&self) -> RenderPassDescriptor {
-        if self.samples != MultiSamples::Count1 {
-            RenderPassDescriptor {
-                color_attachments: Vec::default(),
-                color_resolve_attachments: Vec::default(),
-                depth_stencil_attachment: Some(DepthStencilAttachment {
+        let (load_op, dsra) = match self.samples {
+            MultiSamples::Count1 => {
+                // We can load the result of the HZB render when not using multi-sampling.
+                (LoadOp::Load, None)
+            }
+            _ => (
+                LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
+                Some(DepthStencilResolveAttachment {
                     dst: DepthStencilAttachmentDestination::Texture {
-                        texture: &self.depth,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
-                    store_op: StoreOp::DontCare,
-                    samples: self.samples,
-                }),
-                // Store and resolve depth for image effects
-                depth_stencil_resolve_attachment: Some(DepthStencilResolveAttachment {
-                    dst: DepthStencilAttachmentDestination::Texture {
-                        texture: &self.depth_resolve,
+                        texture: &self.attachments.depth_resolve,
                         array_element: 0,
                         mip_level: 0,
                     },
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
-                    depth_resolve_mode: ResolveMode::Max,
-                    stencil_resolve_mode: ResolveMode::Max,
+                    depth_resolve_mode: ResolveMode::Min,
+                    stencil_resolve_mode: ResolveMode::SampleZero,
                 }),
-            }
-        } else {
-            RenderPassDescriptor {
-                color_attachments: Vec::default(),
-                color_resolve_attachments: Vec::default(),
-                depth_stencil_attachment: Some(DepthStencilAttachment {
-                    dst: DepthStencilAttachmentDestination::Texture {
-                        texture: &self.depth,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    // NOTE: We load here in the no MSAA path here because we can use the depth
-                    // buffer generated during HZB render.
-                    load_op: LoadOp::Load,
-                    store_op: StoreOp::Store,
-                    samples: self.samples,
-                }),
-                depth_stencil_resolve_attachment: None,
-            }
+            ),
+        };
+
+        RenderPassDescriptor {
+            color_attachments: Vec::default(),
+            color_resolve_attachments: Vec::default(),
+            depth_stencil_attachment: Some(DepthStencilAttachment {
+                dst: DepthStencilAttachmentDestination::Texture {
+                    texture: &self.attachments.depth_target,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op,
+                store_op: StoreOp::Store,
+                samples: self.samples,
+            }),
+            depth_stencil_resolve_attachment: dsra,
         }
+    }
+
+    pub fn copy_depth<'a>(&'a self, commands: &mut CommandBuffer<'a>) {
+        // Only need to copy if we aren't using MSAA
+        if self.samples != MultiSamples::Count1 {
+            return;
+        }
+
+        commands.copy_texture_to_texture(CopyTextureToTexture {
+            src: &self.attachments.depth_target,
+            src_offset: (0, 0, 0),
+            src_mip_level: 0,
+            src_array_element: 0,
+            dst: &self.attachments.depth_resolve,
+            dst_offset: (0, 0, 0),
+            dst_mip_level: 0,
+            dst_array_element: 0,
+            extent: self.attachments.depth_target.dims(),
+        });
     }
 
     pub fn opaque_pass(&self, clear_op: CameraClearColor) -> RenderPassDescriptor {
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
                 dst: ColorAttachmentDestination::Texture {
-                    texture: &self.color,
+                    texture: &self.attachments.color_target,
                     array_element: 0,
                     mip_level: 0,
                 },
@@ -121,7 +133,7 @@ impl RenderTarget {
             color_resolve_attachments: Vec::default(),
             depth_stencil_attachment: Some(DepthStencilAttachment {
                 dst: DepthStencilAttachmentDestination::Texture {
-                    texture: &self.depth,
+                    texture: &self.attachments.depth_target,
                     array_element: 0,
                     mip_level: 0,
                 },
@@ -134,65 +146,43 @@ impl RenderTarget {
     }
 
     pub fn transparent_pass(&self) -> RenderPassDescriptor {
-        if let Some(color_resolve) = &self.color_resolve {
-            RenderPassDescriptor {
-                color_attachments: vec![ColorAttachment {
-                    dst: ColorAttachmentDestination::Texture {
-                        texture: &self.color,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::Load,
-                    store_op: StoreOp::DontCare,
-                    samples: self.samples,
-                }],
-                color_resolve_attachments: vec![ColorResolveAttachment {
-                    src: 0,
-                    dst: ColorAttachmentDestination::Texture {
-                        texture: color_resolve,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::DontCare,
-                    store_op: StoreOp::Store,
-                }],
-                depth_stencil_attachment: Some(DepthStencilAttachment {
-                    dst: DepthStencilAttachmentDestination::Texture {
-                        texture: &self.depth,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::Load,
-                    store_op: StoreOp::DontCare,
-                    samples: self.samples,
-                }),
-                depth_stencil_resolve_attachment: None,
-            }
-        } else {
-            RenderPassDescriptor {
-                color_attachments: vec![ColorAttachment {
-                    dst: ColorAttachmentDestination::Texture {
-                        texture: &self.color,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::Load,
-                    store_op: StoreOp::Store,
-                    samples: self.samples,
-                }],
-                color_resolve_attachments: Vec::default(),
-                depth_stencil_attachment: Some(DepthStencilAttachment {
-                    dst: DepthStencilAttachmentDestination::Texture {
-                        texture: &self.depth,
-                        array_element: 0,
-                        mip_level: 0,
-                    },
-                    load_op: LoadOp::Load,
-                    store_op: StoreOp::DontCare,
-                    samples: self.samples,
-                }),
-                depth_stencil_resolve_attachment: None,
-            }
+        let cra = match self.samples {
+            MultiSamples::Count1 => Vec::default(),
+            _ => vec![ColorResolveAttachment {
+                src: 0,
+                dst: ColorAttachmentDestination::Texture {
+                    texture: &self.attachments.color_resolve,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::DontCare,
+                store_op: StoreOp::Store,
+            }],
+        };
+
+        RenderPassDescriptor {
+            color_attachments: vec![ColorAttachment {
+                dst: ColorAttachmentDestination::Texture {
+                    texture: &self.attachments.color_target,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::Load,
+                store_op: StoreOp::Store,
+                samples: self.samples,
+            }],
+            color_resolve_attachments: cra,
+            depth_stencil_attachment: Some(DepthStencilAttachment {
+                dst: DepthStencilAttachmentDestination::Texture {
+                    texture: &self.attachments.depth_target,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::Load,
+                store_op: StoreOp::DontCare,
+                samples: self.samples,
+            }),
+            depth_stencil_resolve_attachment: None,
         }
     }
 
@@ -202,137 +192,153 @@ impl RenderTarget {
     }
 
     #[inline(always)]
-    pub fn color(&self) -> &Texture {
-        self.color_resolve.as_ref().unwrap_or(&self.color)
+    pub fn samples(&self) -> MultiSamples {
+        self.samples
     }
 
     #[inline(always)]
-    pub fn depth(&self) -> &Texture {
-        &self.depth_resolve
+    pub fn color_target(&self) -> &Texture {
+        &self.attachments.color_target
     }
 
-    pub fn resize(&mut self, dims: (u32, u32), samples: MultiSamples) {
-        debug_assert!(dims.0 > 0 && dims.1 > 0);
-
-        self.dims = dims;
-        self.samples = samples;
-
-        let (color, color_resolve, depth, depth_resolve) =
-            Self::create_images(&self.ctx, dims, samples);
-
-        self.color = color;
-        self.color_resolve = color_resolve;
-        self.depth = depth;
-        self.depth_resolve = depth_resolve;
+    #[inline(always)]
+    pub fn final_color(&self) -> &Texture {
+        match self.samples {
+            MultiSamples::Count1 => &self.attachments.color_target,
+            _ => &self.attachments.color_resolve,
+        }
     }
 
-    fn create_images(
-        ctx: &Context,
-        dims: (u32, u32),
-        samples: MultiSamples,
-    ) -> (Texture, Option<Texture>, Texture, Texture) {
-        let color = Texture::new(
-            ctx.clone(),
-            TextureCreateInfo {
-                format: Self::COLOR_FORMAT,
-                ty: TextureType::Type2D,
-                width: dims.0,
-                height: dims.1,
-                depth: 1,
-                array_elements: 1,
-                mip_levels: 1,
-                sample_count: samples,
-                texture_usage: if samples == MultiSamples::Count1 {
-                    TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED
-                } else {
-                    TextureUsage::COLOR_ATTACHMENT | TextureUsage::TRANSFER_SRC
-                },
-                memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN,
-                sharing_mode: SharingMode::Exclusive,
-                debug_name: Some("color_target".to_owned()),
-            },
-        )
-        .unwrap();
+    #[inline(always)]
+    pub fn linear_color(&self) -> &Texture {
+        &self.attachments.linear_color
+    }
 
-        let depth = Texture::new(
-            ctx.clone(),
-            TextureCreateInfo {
-                format: Self::DEPTH_FORMAT,
-                ty: TextureType::Type2D,
-                width: dims.0,
-                height: dims.1,
-                depth: 1,
-                array_elements: 1,
-                mip_levels: 1,
-                sample_count: samples,
-                texture_usage: if samples == MultiSamples::Count1 {
-                    TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED
-                } else {
-                    TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::TRANSFER_SRC
-                },
-                memory_usage: MemoryUsage::GpuOnly,
-                queue_types: if samples == MultiSamples::Count1 {
-                    QueueTypes::MAIN | QueueTypes::COMPUTE
-                } else {
-                    QueueTypes::MAIN
-                },
-                sharing_mode: SharingMode::Exclusive,
-                debug_name: Some("depth_target".to_owned()),
-            },
-        )
-        .unwrap();
+    #[inline(always)]
+    pub fn depth_target(&self) -> &Texture {
+        &self.attachments.depth_target
+    }
 
-        let color_resolve = if samples != MultiSamples::Count1 {
-            Some(
-                Texture::new(
-                    ctx.clone(),
-                    TextureCreateInfo {
-                        format: Self::COLOR_FORMAT,
-                        ty: TextureType::Type2D,
-                        width: dims.0,
-                        height: dims.1,
-                        depth: 1,
-                        array_elements: 1,
-                        mip_levels: 1,
-                        sample_count: MultiSamples::Count1,
-                        texture_usage: TextureUsage::COLOR_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::TRANSFER_DST,
-                        memory_usage: MemoryUsage::GpuOnly,
-                        queue_types: QueueTypes::MAIN,
-                        sharing_mode: SharingMode::Exclusive,
-                        debug_name: Some("color_resolve_target".to_owned()),
-                    },
-                )
-                .unwrap(),
+    #[inline(always)]
+    pub fn depth_resolve(&self) -> &Texture {
+        &self.attachments.depth_resolve
+    }
+
+    #[inline(always)]
+    pub fn final_depth(&self) -> &Texture {
+        match self.samples {
+            MultiSamples::Count1 => &self.attachments.depth_target,
+            _ => &self.attachments.depth_resolve,
+        }
+    }
+
+    fn create_images(ctx: &Context, dims: (u32, u32), samples: MultiSamples) -> Attachments {
+        Attachments {
+            color_target: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::COLOR_TARGET_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: samples,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("color_target".to_owned()),
+                },
             )
-        } else {
-            None
-        };
-
-        let depth_resolve = Texture::new(
-            ctx.clone(),
-            TextureCreateInfo {
-                format: Self::DEPTH_FORMAT,
-                ty: TextureType::Type2D,
-                width: dims.0,
-                height: dims.1,
-                depth: 1,
-                array_elements: 1,
-                mip_levels: 1,
-                sample_count: MultiSamples::Count1,
-                texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT
-                    | TextureUsage::SAMPLED
-                    | TextureUsage::TRANSFER_DST,
-                memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                sharing_mode: SharingMode::Exclusive,
-                debug_name: Some("depth_resolve_target".to_owned()),
-            },
-        )
-        .unwrap();
-
-        (color, color_resolve, depth, depth_resolve)
+            .unwrap(),
+            color_resolve: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::COLOR_TARGET_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("color_resolve".to_owned()),
+                },
+            )
+            .unwrap(),
+            depth_target: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::DEPTH_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: samples,
+                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("depth_target".to_owned()),
+                },
+            )
+            .unwrap(),
+            depth_resolve: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::DEPTH_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_DST,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("depth_resolve".to_owned()),
+                },
+            )
+            .unwrap(),
+            linear_color: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::FINAL_COLOR_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("linear_color".to_owned()),
+                },
+            )
+            .unwrap(),
+        }
     }
 }

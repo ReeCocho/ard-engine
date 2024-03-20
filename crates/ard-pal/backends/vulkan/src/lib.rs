@@ -1055,6 +1055,47 @@ impl VulkanBackend {
                     .build()];
                 device.cmd_copy_buffer(cb, src.buffer, dst.buffer, &region);
             }
+            Command::CopyTextureToTexture(copy) => {
+                let src = copy.src.internal();
+                let dst = copy.dst.internal();
+                let region = [vk::ImageCopy::builder()
+                    .dst_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: dst.aspect_flags,
+                        mip_level: copy.dst_mip_level as u32,
+                        base_array_layer: copy.dst_array_element as u32,
+                        layer_count: 1,
+                    })
+                    .dst_offset(vk::Offset3D {
+                        x: copy.dst_offset.0 as i32,
+                        y: copy.dst_offset.1 as i32,
+                        z: copy.dst_offset.2 as i32,
+                    })
+                    .src_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: src.aspect_flags,
+                        mip_level: copy.src_mip_level as u32,
+                        base_array_layer: copy.src_array_element as u32,
+                        layer_count: 1,
+                    })
+                    .src_offset(vk::Offset3D {
+                        x: copy.src_offset.0 as i32,
+                        y: copy.src_offset.1 as i32,
+                        z: copy.src_offset.2 as i32,
+                    })
+                    .extent(vk::Extent3D {
+                        width: copy.extent.0,
+                        height: copy.extent.1,
+                        depth: copy.extent.2,
+                    })
+                    .build()];
+                device.cmd_copy_image(
+                    cb,
+                    src.image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    dst.image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &region,
+                );
+            }
             Command::CopyBufferToTexture {
                 buffer,
                 texture,

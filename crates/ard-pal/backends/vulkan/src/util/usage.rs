@@ -322,7 +322,10 @@ impl GlobalResourceUsage {
                         old_usage.read_command = new_usage.queue.map(|queue| queue.command_idx);
                         old_usage.read_sub_resource = new_usage.sub_resource;
                     }
-                    old_usage.layout = new_usage.layout;
+
+                    if new_usage.layout != vk::ImageLayout::UNDEFINED {
+                        old_usage.layout = new_usage.layout;
+                    }
 
                     (sub_resc, idx)
                 }
@@ -546,7 +549,11 @@ impl GlobalImageUsage {
                     })
                     .dst_access_mask(other.sub_resource.access)
                     .dst_stage_mask(other.sub_resource.stage)
-                    .old_layout(self.layout)
+                    .old_layout(if other.layout == vk::ImageLayout::UNDEFINED {
+                        vk::ImageLayout::UNDEFINED
+                    } else {
+                        self.layout
+                    })
                     .new_layout(other.layout)
                     .build(),
             ))

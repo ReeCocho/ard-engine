@@ -67,6 +67,7 @@ pub(crate) struct VkAttachment {
     pub final_layout: vk::ImageLayout,
     pub load_op: vk::AttachmentLoadOp,
     pub store_op: vk::AttachmentStoreOp,
+    pub samples: vk::SampleCountFlags,
     pub resolve_src: usize,
 }
 
@@ -268,7 +269,6 @@ impl RenderPassCache {
                     vk::AttachmentReference2::builder()
                         .attachment(i as u32)
                         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
                         .build(),
                 );
             }
@@ -278,7 +278,6 @@ impl RenderPassCache {
                     vk::AttachmentReference2::builder()
                         .attachment(vk::ATTACHMENT_UNUSED)
                         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
                         .build()
                 })
                 .collect();
@@ -531,6 +530,7 @@ impl VkRenderPassDescriptor {
                 final_layout,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
+                samples: crate::util::to_vk_sample_count(attachment.samples),
                 resolve_src: 0,
             });
         }
@@ -584,6 +584,7 @@ impl VkRenderPassDescriptor {
                 final_layout,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
+                samples: vk::SampleCountFlags::TYPE_1,
                 resolve_src: attachment.src,
             });
         }
@@ -612,6 +613,7 @@ impl VkRenderPassDescriptor {
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
+                samples: crate::util::to_vk_sample_count(attachment.samples),
                 resolve_src: 0,
             })
         }
@@ -640,6 +642,7 @@ impl VkRenderPassDescriptor {
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 load_op: crate::util::to_vk_load_op(attachment.load_op),
                 store_op: crate::util::to_vk_store_op(attachment.store_op),
+                samples: vk::SampleCountFlags::TYPE_1,
                 resolve_src: 0,
             })
         }

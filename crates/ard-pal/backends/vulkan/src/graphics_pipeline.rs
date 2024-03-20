@@ -117,9 +117,7 @@ impl GraphicsPipeline {
             .build();
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
-            .sample_shading_enable(true)
             .rasterization_samples(render_pass.samples)
-            .min_sample_shading(0.2)
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false)
             .build();

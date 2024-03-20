@@ -5,7 +5,8 @@ use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_gui::{Gui, GuiInputCaptureSystem};
 use ard_render_image_effects::{
-    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::global::GlobalLighting;
 use ard_window::prelude::*;
@@ -30,8 +31,6 @@ pub struct RendererSettings {
     pub render_time: Option<Duration>,
     /// Preferred presentation mode.
     pub present_mode: PresentMode,
-    /// Type of anti-aliasing to use.
-    pub anti_aliasing: AntiAliasingMode,
     /// Super resolution scale factor. A value of `1.0` means no super sampling is performed.
     pub render_scale: f32,
     /// Width and height of the renderer image. `None` indicates the dimensions should match that
@@ -39,10 +38,9 @@ pub struct RendererSettings {
     pub canvas_size: Option<(u32, u32)>,
 }
 
-#[derive(Clone, Copy)]
-pub enum AntiAliasingMode {
-    None,
-    MSAA(MultiSamples),
+#[derive(Resource, Clone, Copy)]
+pub struct MsaaSettings {
+    pub samples: MultiSamples,
 }
 
 #[derive(Resource, Clone)]
@@ -59,9 +57,19 @@ impl Plugin for RenderPlugin {
         app.add_resource(TonemappingSettings::default());
         app.add_resource(AoSettings::default());
         app.add_resource(SunShaftsSettings::default());
+        app.add_resource(SmaaSettings::default());
+        app.add_resource(MsaaSettings::default());
         app.add_resource(Gui::default());
         app.add_system(GuiInputCaptureSystem);
         app.add_startup_function(late_render_init);
+    }
+}
+
+impl Default for MsaaSettings {
+    fn default() -> Self {
+        MsaaSettings {
+            samples: MultiSamples::Count1,
+        }
     }
 }
 
@@ -83,13 +91,4 @@ fn late_render_init(app: &mut App) {
 
     app.dispatcher.add_system(render_system);
     app.resources.add(factory);
-}
-
-impl From<AntiAliasingMode> for MultiSamples {
-    fn from(value: AntiAliasingMode) -> Self {
-        match value {
-            AntiAliasingMode::MSAA(samples) => samples,
-            _ => MultiSamples::Count1,
-        }
-    }
 }

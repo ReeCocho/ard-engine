@@ -29,7 +29,7 @@ impl Default for AoSettings {
             sample_distribution_power: 2.0,
             thin_occluder_compensation: 0.0,
             depth_mip_sampling_offset: 3.3,
-            bilateral_filter_d: 3.0,
+            bilateral_filter_d: 10.0,
             bilateral_filter_r: 0.2,
         }
     }
@@ -67,7 +67,8 @@ pub struct AoImage<const FIF: usize> {
     /// Sets for the denoising pass.
     denoise_sets: [DescriptorSet; FIF],
     /// Sets for the bilateral filter pass.
-    filter_sets: [DescriptorSet; FIF],
+    horz_filter_sets: [DescriptorSet; FIF],
+    vert_filter_sets: [DescriptorSet; FIF],
 }
 
 const WORK_GROUP_SIZE: u32 = 8;
@@ -77,9 +78,10 @@ const AO_FORMAT: Format = Format::R16SFloat;
 const PREFILTERED_DEPTH_FORMAT: Format = Format::R32SFloat;
 const EDGES_FORMAT: Format = Format::R8Unorm;
 
-const MAIN_PASS_DST: usize = 0;
-const DENOISE_PASS_DST: usize = 1;
-const BLUR_PASS_DST: usize = 0;
+const MAIN_PASS_DST: usize = 1;
+const DENOISE_PASS_DST: usize = 0;
+const HORZ_BLUR_PASS_DST: usize = 1;
+const VERT_BLUR_PASS_DST: usize = 0;
 
 pub const AO_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,
@@ -331,7 +333,7 @@ impl AmbientOcclusion {
             ndc_to_view_mul.y / height as f32,
         );
 
-        let consts = [GpuGtaoPushConstants {
+        let mut consts = [GpuGtaoPushConstants {
             viewport_size: IVec2::new(width as i32, height as i32),
             viewport_pixel_size: 1.0 / Vec2::new(width as f32, height as f32),
             camera_near_clip: camera.last().near,
@@ -349,6 +351,7 @@ impl AmbientOcclusion {
             sample_distribution_power: settings.sample_distribution_power,
             thin_occluder_compensation: settings.thin_occluder_compensation,
             depth_mip_sampling_offset: settings.depth_mip_sampling_offset,
+            blur_dir: IVec2::new(1, 0),
         }];
 
         commands.compute_pass(
@@ -382,8 +385,19 @@ impl AmbientOcclusion {
             ComputePassDispatch::Inline(dispatch_x, dispatch_y, 1)
         });
 
-        commands.compute_pass(&self.filter, Some("ao_bilateral_filter"), |pass| {
-            pass.bind_sets(0, vec![&image.filter_sets[usize::from(frame)]]);
+        commands.compute_pass(&self.filter, Some("ao_horz_bilateral_filter"), |pass| {
+            pass.bind_sets(0, vec![&image.horz_filter_sets[usize::from(frame)]]);
+            pass.push_constants(bytemuck::cast_slice(&consts));
+
+            let dispatch_x = width.div_ceil(WORK_GROUP_SIZE);
+            let dispatch_y = height.div_ceil(WORK_GROUP_SIZE);
+            ComputePassDispatch::Inline(dispatch_x, dispatch_y, 1)
+        });
+
+        consts[0].blur_dir = IVec2::new(0, 1);
+
+        commands.compute_pass(&self.filter, Some("ao_vert_bilateral_filter"), |pass| {
+            pass.bind_sets(0, vec![&image.vert_filter_sets[usize::from(frame)]]);
             pass.push_constants(bytemuck::cast_slice(&consts));
 
             let dispatch_x = width.div_ceil(WORK_GROUP_SIZE);
@@ -619,12 +633,12 @@ impl<const FIF: usize> AoImage<FIF> {
             set
         });
 
-        let filter_sets = std::array::from_fn(|_| {
+        let horz_filter_sets = std::array::from_fn(|_| {
             let mut set = DescriptorSet::new(
                 ao.ctx.clone(),
                 DescriptorSetCreateInfo {
                     layout: ao.filter_layout.clone(),
-                    debug_name: Some("ao_bilateral_filter_pass_set".into()),
+                    debug_name: Some("ao_horz_bilateral_filter_pass_set".into()),
                 },
             )
             .unwrap();
@@ -644,7 +658,41 @@ impl<const FIF: usize> AoImage<FIF> {
                     array_element: 0,
                     value: DescriptorValue::StorageImage {
                         texture: &image,
-                        array_element: BLUR_PASS_DST,
+                        array_element: HORZ_BLUR_PASS_DST,
+                        mip: 0,
+                    },
+                },
+            ]);
+
+            set
+        });
+
+        let vert_filter_sets = std::array::from_fn(|_| {
+            let mut set = DescriptorSet::new(
+                ao.ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: ao.filter_layout.clone(),
+                    debug_name: Some("ao_vert_bilateral_filter_pass_set".into()),
+                },
+            )
+            .unwrap();
+
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: AO_BILATERAL_FILTER_PASS_SET_SOURCE_AO_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageImage {
+                        texture: &image,
+                        array_element: HORZ_BLUR_PASS_DST,
+                        mip: 0,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: AO_BILATERAL_FILTER_PASS_SET_OUTPUT_AO_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageImage {
+                        texture: &image,
+                        array_element: VERT_BLUR_PASS_DST,
                         mip: 0,
                     },
                 },
@@ -660,7 +708,8 @@ impl<const FIF: usize> AoImage<FIF> {
             depth_prefilter_sets,
             main_pass_sets,
             denoise_sets,
-            filter_sets,
+            horz_filter_sets,
+            vert_filter_sets,
         }
     }
 

@@ -4,7 +4,7 @@ use ard_render_camera::target::RenderTarget;
 use ard_render_image_effects::ao::{AmbientOcclusion, AoImage};
 use ard_render_renderers::highz::{HzbImage, HzbRenderer};
 
-use crate::{AntiAliasingMode, FRAMES_IN_FLIGHT};
+use crate::FRAMES_IN_FLIGHT;
 
 #[derive(Resource)]
 pub(crate) struct Canvas {
@@ -20,8 +20,6 @@ pub(crate) struct Canvas {
     image: Option<SurfaceImage>,
     /// Size of the canvas.
     size: (u32, u32),
-    /// Anti aliasing mode being used.
-    anti_aliasing: AntiAliasingMode,
     /// Presentation mode being used.
     present_mode: PresentMode,
     /// Surface image format.
@@ -33,20 +31,18 @@ impl Canvas {
         ctx: &Context,
         surface: Surface,
         dims: (u32, u32),
-        anti_aliasing: AntiAliasingMode,
         present_mode: PresentMode,
         hzb_render: &HzbRenderer,
         ao: &AmbientOcclusion,
     ) -> Self {
         let mut canvas = Self {
             image: None,
-            render_target: RenderTarget::new(ctx, dims, anti_aliasing.into()),
+            render_target: RenderTarget::new(ctx, dims, MultiSamples::Count1),
             hzb: HzbImage::new(hzb_render, dims.0, dims.1),
             ao: AoImage::new(ao, dims),
             size: dims,
             surface,
             present_mode,
-            anti_aliasing,
             format: Format::Bgra8Unorm,
         };
         canvas.update_bindings();
@@ -76,7 +72,7 @@ impl Canvas {
     #[allow(dead_code)]
     pub fn blit_to_surface<'a>(&'a self, commands: &mut CommandBuffer<'a>) {
         let (width, height) = self.surface.dimensions();
-        let color = self.render_target.color();
+        let color = self.render_target.linear_color();
         commands.blit(
             BlitSource::Texture(color),
             BlitDestination::SurfaceImage(self.image()),
@@ -116,13 +112,14 @@ impl Canvas {
         hzb_render: &HzbRenderer,
         ao: &AmbientOcclusion,
         dims: (u32, u32),
+        samples: MultiSamples,
     ) -> bool {
-        if dims == self.size {
+        if dims == self.size && samples == self.render_target.samples() {
             return false;
         }
 
         self.size = dims;
-        self.render_target = RenderTarget::new(ctx, dims, self.anti_aliasing.into());
+        self.render_target = RenderTarget::new(ctx, dims, samples);
         self.hzb = HzbImage::new(hzb_render, dims.0, dims.1);
         self.ao = AoImage::new(ao, dims);
         self.update_bindings();
@@ -158,8 +155,10 @@ impl Canvas {
 
     fn update_bindings(&mut self) {
         for i in 0..FRAMES_IN_FLIGHT {
-            self.hzb.bind_src(i.into(), self.render_target.depth());
-            self.ao.update_binding(i.into(), self.render_target.depth());
+            self.hzb
+                .bind_src(i.into(), self.render_target.final_depth());
+            self.ao
+                .update_binding(i.into(), self.render_target.final_depth());
         }
     }
 }

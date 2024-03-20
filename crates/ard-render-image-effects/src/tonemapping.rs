@@ -380,7 +380,7 @@ impl Tonemapping {
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
         camera: &'a CameraUbo,
-        surface_image: &'a SurfaceImage,
+        dst: ColorAttachmentDestination<'a>,
         settings: &TonemappingSettings,
         dt: Duration,
     ) {
@@ -432,7 +432,7 @@ impl Tonemapping {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    dst: ColorAttachmentDestination::SurfaceImage(surface_image),
+                    dst,
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,

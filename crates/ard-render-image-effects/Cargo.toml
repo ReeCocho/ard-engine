@@ -15,6 +15,7 @@ bytemuck.workspace = true
 rustc-hash.workspace = true
 half.workspace = true
 ordered-float.workspace = true
+image.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }

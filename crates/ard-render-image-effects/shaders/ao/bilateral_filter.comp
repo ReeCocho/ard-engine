@@ -37,21 +37,19 @@ void main() {
     const int upper = int(float(kernel_radius - 1) * 0.5);
     const int lower = -upper;
 
-    for (int x = lower; x <= upper; ++x) {
-        for(int y = lower; y <= upper; ++y) {
-            const ivec2 offset = ivec2(x, y);
+    for (int i = lower; i <= upper; i++) {
+        const ivec2 offset = ivec2(i) * consts.blur_dir;
 
-            const float int_ker_pos = imageLoad(src_ao, tid.xy + offset).r;
-            const float gd = gauss_d(consts.bilateral_filter_d, x, y);
-            const float gr = gauss_r(
-                consts.bilateral_filter_r, 
-                int_ker_pos - center
-            );
-            const float weight = gd * gr;
+        const float int_ker_pos = imageLoad(src_ao, tid.xy + offset).r;
+        const float gd = gauss_d(consts.bilateral_filter_d, i, 0);
+        const float gr = gauss_r(
+            consts.bilateral_filter_r, 
+            int_ker_pos - center
+        );
+        const float weight = gd * gr;
 
-            sum_weight += weight;
-            sum += weight * int_ker_pos;
-        }
+        sum_weight += weight;
+        sum += weight * int_ker_pos;
     }
 
     const float visibility = sum_weight > 0.0 ? sum / (sum_weight + 0.001) : center;

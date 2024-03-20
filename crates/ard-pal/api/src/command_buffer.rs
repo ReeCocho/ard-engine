@@ -49,6 +49,18 @@ pub struct CopyBufferToBuffer<'a, B: Backend> {
     pub len: u64,
 }
 
+pub struct CopyTextureToTexture<'a, B: Backend> {
+    pub src: &'a Texture<B>,
+    pub src_offset: (u32, u32, u32),
+    pub src_mip_level: usize,
+    pub src_array_element: usize,
+    pub dst: &'a Texture<B>,
+    pub dst_offset: (u32, u32, u32),
+    pub dst_mip_level: usize,
+    pub dst_array_element: usize,
+    pub extent: (u32, u32, u32),
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferTextureCopy {
     /// Offset from the start of the buffer array element to begin read/write.
@@ -189,6 +201,7 @@ pub enum Command<'a, B: Backend> {
         max_draw_count: usize,
     },
     CopyBufferToBuffer(CopyBufferToBuffer<'a, B>),
+    CopyTextureToTexture(CopyTextureToTexture<'a, B>),
     CopyBufferToTexture {
         buffer: &'a Buffer<B>,
         texture: &'a Texture<B>,
@@ -424,6 +437,16 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             "attempt to copy too many bytes"
         );
         self.commands.push(Command::CopyBufferToBuffer(copy));
+    }
+
+    #[inline(always)]
+    pub fn copy_texture_to_texture(&mut self, copy: CopyTextureToTexture<'a, B>) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Transfer,
+            "queue `{:?}` does not support transfer commands",
+            self.queue_ty
+        );
+        self.commands.push(Command::CopyTextureToTexture(copy));
     }
 
     /// Copies data from a buffer into a texture.

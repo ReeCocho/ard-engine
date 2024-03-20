@@ -2,7 +2,7 @@ use api::{
     buffer::Buffer,
     command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
-        CopyBufferToBuffer,
+        CopyBufferToBuffer, CopyTextureToTexture,
     },
     compute_pass::ComputePassDispatch,
     cube_map::CubeMap,
@@ -185,6 +185,19 @@ impl CommandSorting {
                     })
                     .collect();
 
+                memory_barriers.push(
+                    vk::MemoryBarrier2::builder()
+                        .dst_access_mask(
+                            vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
+                        )
+                        .dst_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
+                        .src_access_mask(
+                            vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
+                        )
+                        .src_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE)
+                        .build(),
+                );
+
                 let dep = vk::DependencyInfo::builder()
                     .dependency_flags(vk::DependencyFlags::BY_REGION)
                     .memory_barriers(&memory_barriers)
@@ -288,6 +301,10 @@ impl CommandSorting {
             }
             Command::CopyBufferToBuffer(copy) => {
                 self.inspect_copy_buffer_to_buffer(info, command_idx, copy);
+                command_idx + 1
+            }
+            Command::CopyTextureToTexture(copy) => {
+                self.inspect_copy_texture_to_texture(info, command_idx, copy);
                 command_idx + 1
             }
             Command::CopyBufferToTexture {
@@ -1408,6 +1425,103 @@ impl CommandSorting {
 
         self.dependency_check(
             old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+    }
+
+    fn inspect_copy_texture_to_texture(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        copy: &CopyTextureToTexture<crate::VulkanBackend>,
+    ) {
+        let new_src_usage = GlobalImageUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::TRANSFER_READ,
+                stage: vk::PipelineStageFlags2::TRANSFER,
+            },
+            layout: ImageLayout::TRANSFER_SRC_OPTIMAL,
+        };
+
+        let new_dst_usage = GlobalImageUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::TRANSFER_WRITE,
+                stage: vk::PipelineStageFlags2::TRANSFER,
+            },
+            layout: ImageLayout::TRANSFER_DST_OPTIMAL,
+        };
+
+        let mut old_src_usage = [GlobalImageUsage::default()];
+        info.global.use_image(
+            &ImageRegion {
+                id: copy.src.internal().id,
+                array_elem: copy.src_array_element as u32,
+                base_mip_level: copy.src_mip_level as u32,
+                mip_count: 1,
+            },
+            &new_src_usage,
+            &mut old_src_usage,
+        );
+
+        let mut old_dst_usage = [GlobalImageUsage::default()];
+        info.global.use_image(
+            &ImageRegion {
+                id: copy.dst.internal().id,
+                array_elem: copy.dst_array_element as u32,
+                base_mip_level: copy.dst_mip_level as u32,
+                mip_count: 1,
+            },
+            &new_dst_usage,
+            &mut old_dst_usage,
+        );
+
+        self.image_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_src_usage[0],
+            &new_src_usage,
+            copy.src.internal().image,
+            copy.src.internal().sharing_mode,
+            copy.src.internal().aspect_flags,
+            copy.src_array_element as u32,
+            copy.src_mip_level as u32,
+        );
+
+        self.dependency_check(
+            old_src_usage[0].queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+
+        self.image_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage[0],
+            &new_dst_usage,
+            copy.dst.internal().image,
+            copy.dst.internal().sharing_mode,
+            copy.dst.internal().aspect_flags,
+            copy.dst_array_element as u32,
+            copy.dst_mip_level as u32,
+        );
+
+        self.dependency_check(
+            old_dst_usage[0].queue.as_ref(),
             command_idx,
             &mut info.wait_queues,
             (info.queue, info.timeline_value),

@@ -7,10 +7,13 @@ use ard_render_base::ecs::Frame;
 use ard_render_camera::active::ActiveCameras;
 use ard_render_gui::GuiRunOutput;
 use ard_render_image_effects::{
-    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
+
+use crate::MsaaSettings;
 
 /// Information used by the render system to draw things. This data is persisted between frames
 /// for reuse.
@@ -32,6 +35,8 @@ pub struct FrameDataInner {
     pub tonemapping_settings: TonemappingSettings,
     pub ao_settings: AoSettings,
     pub sun_shafts_settings: SunShaftsSettings,
+    pub smaa_settings: SmaaSettings,
+    pub msaa_settings: MsaaSettings,
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.

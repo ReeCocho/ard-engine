@@ -9,7 +9,8 @@ use ard_render_camera::{
 };
 use ard_render_gui::{Gui, GuiInputCaptureSystem, GuiRunOutput};
 use ard_render_image_effects::{
-    ao::AoSettings, sun_shafts2::SunShaftsSettings, tonemapping::TonemappingSettings,
+    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
@@ -23,7 +24,7 @@ use crate::{
     ecs::RenderEcs,
     factory::Factory,
     frame::{FrameData, FrameDataInner},
-    RenderPlugin, FRAMES_IN_FLIGHT,
+    MsaaSettings, RenderPlugin, FRAMES_IN_FLIGHT,
 };
 
 #[derive(SystemState)]
@@ -79,6 +80,8 @@ impl RenderSystem {
                     tonemapping_settings: TonemappingSettings::default(),
                     ao_settings: AoSettings::default(),
                     sun_shafts_settings: SunShaftsSettings::default(),
+                    smaa_settings: SmaaSettings::default(),
+                    msaa_settings: MsaaSettings::default(),
                     active_cameras: ActiveCameras::default(),
                     job: None,
                     window_size,
@@ -207,6 +210,8 @@ impl RenderSystem {
         frame.tonemapping_settings = *res.get::<TonemappingSettings>().unwrap();
         frame.ao_settings = *res.get::<AoSettings>().unwrap();
         frame.sun_shafts_settings = *res.get::<SunShaftsSettings>().unwrap();
+        frame.smaa_settings = *res.get::<SmaaSettings>().unwrap();
+        frame.msaa_settings = *res.get::<MsaaSettings>().unwrap();
 
         self.last_frame_time = now;
 
