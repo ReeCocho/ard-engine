@@ -1,9 +1,8 @@
 [
-    // Globally accessible data for a frame in a scene renderer.
+    // Pass used for rendering depth only images.
     (
-        name: "Global",
+        name: "DepthOnlyPass",
         bindings: [
-            // All objects.
             (
                 name: "GlobalObjectData",
                 stage: AllStages,
@@ -15,7 +14,6 @@
                     unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
                 )
             ),
-            // Instance to object ID mapping.
             (
                 name: "ObjectIds",
                 stage: AllStages,
@@ -27,8 +25,63 @@
                     unbounded_array: Some((name: "object_ids", ty: U32)),
                 )
             ),
-            // Global lighting data (sun).
+        ]
+    ),
+    // Pass used for rendering the depth prepass.
+    (
+        name: "DepthPrepass",
+        bindings: [
             (
+                name: "GlobalObjectData",
+                stage: AllStages,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "ObjectIds",
+                stage: AllStages,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                )
+            ),
+        ]
+    ),
+    // Pass used for rendering opaque geometry.
+    (
+        name: "ColorPass",
+        bindings: [
+            (
+                name: "GlobalObjectData",
+                stage: AllStages,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "ObjectIds",
+                stage: AllStages,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                )
+            ),
+                        (
                 name: "GlobalLightingInfo",
                 stage: AllStages,
                 count: "1",
@@ -37,14 +90,12 @@
                     ty: Struct("GlobalLighting"),
                 ))
             ),
-            // Shadow cascades
             (
                 name: "ShadowCascades",
                 stage: AllStages,
                 count: "MAX_SHADOW_CASCADES",
                 data: ShadowTextureArray("shadow_cascades")
             ),
-            // Sun shadowing info
             (
                 name: "SunShadowInfo",
                 stage: AllStages,
@@ -54,14 +105,12 @@
                     ty: Struct("SunShadows"),
                 ))
             ),
-            // Ambient occlusion image.
             (
                 name: "AoImage",
                 stage: AllStages,
                 count: "1",
                 data: Texture("ao_image")
             ),
-            // Global light buffer.
             (
                 name: "Lights",
                 stage: AllStages,
@@ -73,7 +122,6 @@
                     unbounded_array: Some((name: "lights", ty: Struct("Light"))),
                 )
             ),
-            // Clusters of indices of lights.
             (
                 name: "LightClusters",
                 stage: AllStages,
@@ -85,21 +133,18 @@
                     unbounded_array: None,
                 )
             ),
-            // Diffuse irradiance cube map.
             (
                 name: "DiMap",
                 stage: AllStages,
                 count: "1",
                 data: CubeMap("di_map"),
             ),
-            // Prefiltered environment map.
             (
                 name: "EnvMap",
                 stage: AllStages,
                 count: "1",
                 data: CubeMap("env_map"),
             ),
-            // BRDF lookup texture.
             (
                 name: "BrdfLut",
                 stage: AllStages,

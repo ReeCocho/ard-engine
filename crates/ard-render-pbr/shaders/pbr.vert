@@ -4,15 +4,7 @@
 #extension GL_EXT_multiview : enable
 
 #define VERTEX_SHADER
-
 #define ArdMaterialData PbrMaterial
-
-#define ARD_SET_GLOBAL 0
-#define ARD_SET_CAMERA 1
-#define ARD_SET_TEXTURES 2
-#define ARD_SET_MATERIALS 3
-
-#include "ard_bindings.glsl"
 #include "pbr_common.glsl"
 
 ////////////////////
@@ -37,19 +29,19 @@ void main() {
 
     const vec4 ws_frag_pos = model * ard_Position;
     const vec4 position = camera[gl_ViewIndex].vp * ws_frag_pos;
-#ifndef DEPTH_ONLY
+#ifdef COLOR_PASS
     vs_ViewSpacePosition = camera[gl_ViewIndex].view * ws_frag_pos;
 #endif
 
     gl_Position = position;
-#ifndef DEPTH_ONLY
+#ifdef COLOR_PASS
     vs_Position = position;
     vs_WorldSpaceFragPos = ws_frag_pos.xyz;
 #endif
 
     // Compute TBN if we have tangents and UVs (UVs are required as well because the TBN is only
     // used when doing normal mapping.
-#ifndef DEPTH_ONLY
+#ifdef COLOR_PASS
     #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
         vec3 T = normalize(vec3(model * ard_Tangent));
         vec3 N = normalize(vec3(model * ard_Normal));
@@ -63,10 +55,6 @@ void main() {
     vs_Normal = normalize(normal_mat * ard_Normal.xyz);
 #endif
 
-#ifdef WITH_NORMALS
-    vs_Normal = vec3(camera[gl_ViewIndex].view * vec4(normalize(normal_mat * ard_Normal.xyz), 0.0));
-#endif
-    
 #if ARD_VS_HAS_UV0
     vs_Uv = ard_Uv0;
     #if ARD_VS_HAS_TANGENT

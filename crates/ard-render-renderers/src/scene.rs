@@ -21,9 +21,10 @@ use crate::{
     bins::{DrawBins, RenderArgs},
     calls::OutputDrawCalls,
     draw_gen::{DrawGenPipeline, DrawGenSets},
-    global::GlobalSets,
     highz::HzbImage,
-    DEPTH_PREPASS_PASS_ID, HIGH_Z_PASS_ID, OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
+    passes::{
+        color::ColorPassSets, depth_only::DepthOnlyPassSets, depth_prepass::DepthPrepassSets, COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID, DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, TRANSPARENT_PASS_ID
+    },
 };
 
 pub const DEFAULT_INPUT_ID_CAP: usize = 1;
@@ -45,15 +46,18 @@ pub struct SceneRenderer {
     set: RenderableSet,
     /// Set bindings for draw generation.
     draw_gen: DrawGenSets,
-    /// Global bindings for rendering.
-    global: GlobalSets,
+    /// Sets for rendering the HZB image.
+    hzb_pass_sets: DepthOnlyPassSets,
+    /// Sets for depth prepass rendering.
+    depth_prepass_sets: DepthPrepassSets,
+    /// Sets for color rendering.
+    color_sets: ColorPassSets,
 }
 
 pub struct SceneRenderArgs<'a, 'b, const FIF: usize> {
     pub pass: &'b mut RenderPass<'a>,
     pub static_dirty: bool,
     pub camera: &'a CameraUbo,
-    pub global: &'a GlobalSets,
     pub mesh_factory: &'a MeshFactory,
     pub material_factory: &'a MaterialFactory<FIF>,
     pub texture_factory: &'a TextureFactory,
@@ -98,7 +102,9 @@ impl SceneRenderer {
             bins: DrawBins::new(ctx, frames_in_flight),
             calls: OutputDrawCalls::new(ctx, frames_in_flight),
             set: RenderableSet::default(),
-            global: GlobalSets::new(ctx, layouts, frames_in_flight),
+            hzb_pass_sets: DepthOnlyPassSets::new(ctx, layouts, frames_in_flight),
+            depth_prepass_sets: DepthPrepassSets::new(ctx, layouts, frames_in_flight),
+            color_sets: ColorPassSets::new(ctx, layouts, frames_in_flight),
             draw_gen: DrawGenSets::new(draw_gen, true, frames_in_flight),
         }
     }
@@ -109,13 +115,8 @@ impl SceneRenderer {
     }
 
     #[inline(always)]
-    pub fn global_sets(&self) -> &GlobalSets {
-        &self.global
-    }
-
-    #[inline(always)]
-    pub fn global_sets_mut(&mut self) -> &mut GlobalSets {
-        &mut self.global
+    pub fn color_pass_sets_mut(&mut self) -> &mut ColorPassSets {
+        &mut self.color_sets
     }
 
     pub fn transfer_ownership<'a>(
@@ -205,7 +206,9 @@ impl SceneRenderer {
         self.bins.gen_bins(
             frame,
             self.set.groups()[self.set.static_group_ranges().opaque.clone()].iter(),
-            self.set.groups()[..non_transparent_count].iter(),
+            self.set.groups()[self.set.static_group_ranges().alpha_cutout.clone()].iter(),
+            self.set.groups()[self.set.dynamic_group_ranges().opaque.clone()].iter(),
+            self.set.groups()[self.set.dynamic_group_ranges().alpha_cutout.clone()].iter(),
             self.set.groups().iter().skip(non_transparent_count),
             meshes,
             materials,
@@ -223,7 +226,19 @@ impl SceneRenderer {
         hzb_image: &HzbImage<FIF>,
         meshes: &MeshFactory,
     ) {
-        self.global
+        self.hzb_pass_sets.update_object_data_bindings(
+            frame,
+            objects.object_data(),
+            &self.output_ids,
+        );
+
+        self.depth_prepass_sets.update_object_data_bindings(
+            frame,
+            objects.object_data(),
+            &self.output_ids,
+        );
+
+        self.color_sets
             .update_object_data_bindings(frame, objects.object_data(), &self.output_ids);
 
         self.draw_gen.update_bindings(
@@ -255,12 +270,12 @@ impl SceneRenderer {
         args.pass
             .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
-        // Render opaque static geometry
-        self.bins.render_highz_bins(RenderArgs {
+        // Render static opaque geometry
+        self.bins.render_static_opaque_bins(true, RenderArgs {
             pass_id: HIGH_Z_PASS_ID,
             frame,
             camera: args.camera,
-            global: args.global,
+            global_set: self.hzb_pass_sets.get_set(frame),
             pass: args.pass,
             calls: &self.calls,
             mesh_factory: args.mesh_factory,
@@ -280,11 +295,53 @@ impl SceneRenderer {
             .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
         // Render opaque and alpha cut objects
-        self.bins.render_non_transparent_bins(RenderArgs {
-            pass_id: DEPTH_PREPASS_PASS_ID,
+        self.bins.render_static_opaque_bins(false, RenderArgs {
+            pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
             frame,
             camera: args.camera,
-            global: args.global,
+            global_set: self.depth_prepass_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_dynamic_opaque_bins(RenderArgs {
+            pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.depth_prepass_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_static_alpha_cutoff_bins(RenderArgs {
+            pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.depth_prepass_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
+            pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.depth_prepass_sets.get_set(frame),
             pass: args.pass,
             calls: &self.calls,
             mesh_factory: args.mesh_factory,
@@ -303,11 +360,53 @@ impl SceneRenderer {
         args.pass
             .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
 
-        self.bins.render_non_transparent_bins(RenderArgs {
-            pass_id: OPAQUE_PASS_ID,
+        self.bins.render_static_opaque_bins(false, RenderArgs {
+            pass_id: COLOR_OPAQUE_PASS_ID,
             frame,
             camera: args.camera,
-            global: args.global,
+            global_set: self.color_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_dynamic_opaque_bins(RenderArgs {
+            pass_id: COLOR_OPAQUE_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.color_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_static_alpha_cutoff_bins(RenderArgs {
+            pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.color_sets.get_set(frame),
+            pass: args.pass,
+            calls: &self.calls,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
+
+        self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
+            pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
+            frame,
+            camera: args.camera,
+            global_set: self.color_sets.get_set(frame),
             pass: args.pass,
             calls: &self.calls,
             mesh_factory: args.mesh_factory,
@@ -330,7 +429,7 @@ impl SceneRenderer {
             pass_id: TRANSPARENT_PASS_ID,
             frame,
             camera: args.camera,
-            global: args.global,
+            global_set: self.color_sets.get_set(frame),
             pass: args.pass,
             calls: &self.calls,
             mesh_factory: args.mesh_factory,

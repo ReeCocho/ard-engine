@@ -5,7 +5,6 @@ use crate::CameraClearColor;
 
 #[derive(Component)]
 pub struct RenderTarget {
-    ctx: Context,
     dims: (u32, u32),
     samples: MultiSamples,
     attachments: Attachments,
@@ -30,7 +29,6 @@ impl RenderTarget {
         let attachments = Self::create_images(ctx, dims, samples);
 
         Self {
-            ctx: ctx.clone(),
             attachments,
             dims,
             samples,

@@ -18,7 +18,7 @@ use crate::{
 const DEFAULT_LIGHT_COUNT: usize = 1;
 
 #[derive(Resource)]
-pub struct Lighting {
+pub struct LightClusters {
     /// Buffer containing the light cluster table.
     clusters: Buffer,
     /// Clustering pipeline.
@@ -35,7 +35,7 @@ pub struct Lights {
     count: usize,
 }
 
-impl Lighting {
+impl LightClusters {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let clusters = Buffer::new(
             ctx.clone(),

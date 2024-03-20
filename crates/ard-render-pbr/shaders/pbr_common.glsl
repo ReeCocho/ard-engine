@@ -1,6 +1,31 @@
 #ifndef _ARD_PBR_COMMON
 #define _ARD_PBR_COMMON
 
+///////////////
+/// SET DEF ///
+///////////////
+
+#if defined(COLOR_PASS) || defined (TRANSPARENT_PASS)
+    #define ARD_SET_COLOR_PASS 0
+    #define COLOR_PASS
+#endif
+
+#if defined(SHADOW_PASS) || defined(HIGH_Z_PASS)
+    #define ARD_SET_DEPTH_ONLY_PASS 0
+#endif
+
+#if defined(DEPTH_PREPASS)
+    #define ARD_SET_DEPTH_PREPASS 0
+#endif
+
+#define ARD_SET_CAMERA 1
+#define ARD_SET_TEXTURES 2
+#define ARD_SET_MATERIALS 3
+
+////////////////
+/// INCLUDES ///
+////////////////
+
 #ifdef VERTEX_SHADER
     #include "pbr_common.vs.glsl"
 #endif
@@ -10,6 +35,7 @@
 #endif
 
 #include "pbr_brdf.glsl"
+#include "ard_bindings.glsl"
 
 /////////////////
 /// CONSTANTS ///
@@ -31,7 +57,7 @@ float light_attenuation(float x, float range) {
     return pow(clamp(1.0 - pow(x / range, 4.0), 0.0, 1.0), 2.0) / ((x * x) + 1.0);
 }
 
-#ifndef DEPTH_ONLY
+#ifdef ARD_SET_COLOR_PASS
 /// Samples the shadow cascade at a given UV.
 ///
 /// `cascade` - Index of the shadow cascade to sample.

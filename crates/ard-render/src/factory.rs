@@ -106,7 +106,10 @@ impl Factory {
         });
 
         // Primary passes
-        ard_render_renderers::define_passes(&mut inner.material_factory.lock().unwrap(), layouts);
+        ard_render_renderers::passes::define_passes(
+            &mut inner.material_factory.lock().unwrap(),
+            layouts,
+        );
 
         // PBR setup
         let pbr_material = ard_render_pbr::create_pbr_material(

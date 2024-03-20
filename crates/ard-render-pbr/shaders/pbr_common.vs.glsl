@@ -72,11 +72,7 @@ layout(location = 0) flat out uvec4 vs_Slots;
 layout(location = 1) out vec2 vs_Uv;
 #endif
 
-#ifdef WITH_NORMALS
-    layout(location = 2) out vec3 vs_Normal;
-#endif
-
-#ifndef DEPTH_ONLY
+#ifdef COLOR_PASS
     layout(location = 2) out vec3 vs_Normal;
 
     // Proj * View * Model * Position;
@@ -89,7 +85,7 @@ layout(location = 1) out vec2 vs_Uv;
     layout(location = 5) out vec4 vs_ViewSpacePosition;
 
     #if ARD_VS_HAS_TANGENT
-    layout(location = 6) out mat3 vs_TBN;
+        layout(location = 6) out mat3 vs_TBN;
     #endif
 #endif
 

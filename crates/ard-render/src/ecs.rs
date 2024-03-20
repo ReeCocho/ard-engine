@@ -13,7 +13,7 @@ use ard_render_image_effects::{
     sun_shafts2::SunShafts,
     tonemapping::Tonemapping,
 };
-use ard_render_lighting::{lights::Lighting, proc_skybox::ProceduralSkyBox};
+use ard_render_lighting::{lights::LightClusters, proc_skybox::ProceduralSkyBox};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{Model, RenderFlags};
@@ -37,7 +37,7 @@ pub(crate) struct RenderEcs {
     scene_renderer: SceneRenderer,
     sun_shadows_renderer: SunShadowsRenderer,
     gui_renderer: GuiRenderer,
-    lighting: Lighting,
+    lighting: LightClusters,
     froxels: FroxelGenPipeline,
     draw_gen: DrawGenPipeline,
     _fxaa: Fxaa,
@@ -106,7 +106,7 @@ impl RenderEcs {
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
         let fxaa = Fxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
-        let lighting = Lighting::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let lighting = LightClusters::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         let canvas = Canvas::new(
             &ctx,
@@ -122,7 +122,6 @@ impl RenderEcs {
             &ctx,
             &layouts,
             &draw_gen,
-            &lighting,
             FRAMES_IN_FLIGHT,
             MAX_SHADOW_CASCADES,
         );
@@ -140,30 +139,21 @@ impl RenderEcs {
             tonemapping.bind_bloom(frame, bloom.image());
             tonemapping.bind_sun_shafts(frame, sun_shafts.image());
 
-            scene_renderer.global_sets_mut().update_shadow_bindings(
-                frame,
-                sun_shadows_renderer.sun_shadow_info(frame),
-                std::array::from_fn(|i| {
-                    sun_shadows_renderer
-                        .shadow_cascade(i)
-                        .unwrap_or_else(|| sun_shadows_renderer.empty_shadow())
-                }),
-            );
-
-            scene_renderer.global_sets_mut().update_map_bindings(
-                frame,
-                proc_skybox.brdf_lut(),
-                proc_skybox.di_map(),
-                proc_skybox.prefiltered_env_map(),
-            );
+            scene_renderer
+                .color_pass_sets_mut()
+                .update_sun_shadow_bindings(frame, &sun_shadows_renderer);
 
             scene_renderer
-                .global_sets_mut()
+                .color_pass_sets_mut()
+                .update_sky_box_bindings(frame, &proc_skybox);
+
+            scene_renderer
+                .color_pass_sets_mut()
                 .update_ao_image_binding(frame, canvas.ao().texture());
 
             scene_renderer
-                .global_sets_mut()
-                .update_light_clusters_binding(frame, lighting.clusters());
+                .color_pass_sets_mut()
+                .update_light_clusters_binding(frame, &lighting);
         }
 
         (
@@ -219,7 +209,7 @@ impl RenderEcs {
                 self.tonemapping
                     .bind_sun_shafts(frame, self.sun_shafts.image());
                 self.scene_renderer
-                    .global_sets_mut()
+                    .color_pass_sets_mut()
                     .update_ao_image_binding(frame, self.canvas.ao().texture());
             }
         }
@@ -229,7 +219,6 @@ impl RenderEcs {
             &self.ctx,
             &self.layouts,
             &self.draw_gen,
-            &self.lighting,
             FRAMES_IN_FLIGHT,
             frame.lights.global().shadow_cascades(),
         );
@@ -238,31 +227,16 @@ impl RenderEcs {
             for i in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(i);
                 self.scene_renderer
-                    .global_sets_mut()
-                    .update_shadow_bindings(
-                        frame,
-                        self.sun_shadows_renderer.sun_shadow_info(frame),
-                        std::array::from_fn(|i| {
-                            self.sun_shadows_renderer
-                                .shadow_cascade(i)
-                                .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
-                        }),
-                    );
+                    .color_pass_sets_mut()
+                    .update_sun_shadow_bindings(frame, &self.sun_shadows_renderer);
             }
         }
 
         // Update lights if needed
         if frame.lights.buffer_expanded() || new_shadow_cascades {
             self.scene_renderer
-                .global_sets_mut()
-                .update_lighting_binding(
-                    frame.frame,
-                    frame.lights.global_buffer(),
-                    frame.lights.buffer(),
-                );
-
-            self.sun_shadows_renderer
-                .update_cascade_lights(frame.frame, &frame.lights);
+                .color_pass_sets_mut()
+                .update_lights_binding(frame.frame, &frame.lights);
         }
 
         self.sun_shafts.update_binds(
@@ -599,7 +573,6 @@ impl RenderEcs {
                         camera: &self.camera,
                         pass,
                         static_dirty: frame_data.object_data.static_dirty(),
-                        global: self.scene_renderer.global_sets(),
                         mesh_factory,
                         material_factory,
                         texture_factory,
@@ -706,7 +679,6 @@ impl RenderEcs {
                         pass,
                         camera,
                         static_dirty: frame_data.object_data.static_dirty(),
-                        global: scene_render.global_sets(),
                         mesh_factory,
                         material_factory,
                         texture_factory,
@@ -823,7 +795,6 @@ impl RenderEcs {
                         pass,
                         camera,
                         static_dirty: frame_data.object_data.static_dirty(),
-                        global: scene_render.global_sets(),
                         mesh_factory,
                         material_factory,
                         texture_factory,
@@ -868,7 +839,6 @@ impl RenderEcs {
                         pass,
                         camera,
                         static_dirty: frame_data.object_data.static_dirty(),
-                        global: scene_render.global_sets(),
                         mesh_factory,
                         material_factory,
                         texture_factory,

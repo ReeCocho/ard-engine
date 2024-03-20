@@ -3,23 +3,14 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_multiview : enable
 
+#define ARD_TEXTURE_COUNT 3
 #define FRAGMENT_SHADER
-
 #define ArdMaterialData PbrMaterial
-
-#define ARD_SET_GLOBAL 0
-#define ARD_SET_CAMERA 1
-#define ARD_SET_TEXTURES 2
-#define ARD_SET_MATERIALS 3
-
-#define ARD_TEXTURE_COUNT 1
-
-#include "utils.glsl"
-#include "ard_bindings.glsl"
 #include "pbr_common.glsl"
+#include "utils.glsl"
 
-#ifndef DEPTH_ONLY
-layout(location = 0) out vec4 OUT_COLOR;
+#ifdef COLOR_PASS
+    layout(location = 0) out vec4 OUT_COLOR;
 #endif
 
 ////////////////////
@@ -34,16 +25,18 @@ void main() {
     const vec4 color = sample_texture_default(vs_Slots.x, vs_Uv, vec4(1)) * data.color;
     
     // Alpha-Cutoff
+    #if defined(ALPHA_CUTOFF_PASS)
     if (color.a < data.alpha_cutoff) {
         discard;
     }
+    #endif
 // Or just use the material color if we have no UVs
 #else
     const vec4 color = data.color;
 #endif
 
 // We only need to compute final color if we're not depth-only
-#ifndef DEPTH_ONLY
+#ifdef COLOR_PASS
 
     // Prefetch textures
     #if ARD_VS_HAS_UV0

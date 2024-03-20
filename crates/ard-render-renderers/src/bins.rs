@@ -20,7 +20,6 @@ use ard_render_textures::factory::TextureFactory;
 
 use crate::{
     calls::OutputDrawCalls,
-    global::GlobalSets,
     state::{BindingDelta, RenderStateTracker},
 };
 
@@ -37,8 +36,10 @@ pub struct DrawBins {
 struct DrawBinSet {
     bins: Vec<DrawBin>,
     has_valid_draws: bool,
-    highz_rng: Range<usize>,
-    non_transparent_rng: Range<usize>,
+    static_opaque: Range<usize>,
+    static_ac: Range<usize>,
+    dynamic_opaque: Range<usize>,
+    dynamic_ac: Range<usize>,
     transparent_rng: Range<usize>,
 }
 
@@ -57,7 +58,7 @@ pub struct RenderArgs<'a, 'b, const FIF: usize> {
     pub frame: Frame,
     pub pass: &'b mut RenderPass<'a>,
     pub camera: &'a CameraUbo,
-    pub global: &'a GlobalSets,
+    pub global_set: &'a DescriptorSet,
     pub calls: &'a OutputDrawCalls,
     pub mesh_factory: &'a MeshFactory,
     pub material_factory: &'a MaterialFactory<FIF>,
@@ -143,8 +144,10 @@ impl DrawBins {
     pub fn gen_bins<'a, 'b, const FIF: usize>(
         &'b mut self,
         frame: Frame,
-        highz_draws: impl Iterator<Item = &'a DrawGroup>,
-        non_transparent_draws: impl Iterator<Item = &'a DrawGroup>,
+        static_opaque_draws: impl Iterator<Item = &'a DrawGroup>,
+        static_ac_draws: impl Iterator<Item = &'a DrawGroup>,
+        dynamic_opaque_draws: impl Iterator<Item = &'a DrawGroup>,
+        dynamic_ac_draws: impl Iterator<Item = &'a DrawGroup>,
         transparent_draws: impl Iterator<Item = &'a DrawGroup>,
         meshes: &'a ResourceAllocator<MeshResource, FIF>,
         materials: &'a ResourceAllocator<MaterialResource, FIF>,
@@ -164,52 +167,81 @@ impl DrawBins {
         bin_set.bins.clear();
         bin_set.has_valid_draws = false;
 
-        // Generate high-z bins first
-        bin_set.highz_rng.start = 0;
-        bin_set.non_transparent_rng.start = 0;
-        let highz_res = Self::gen_bins_inner(
-            &mut bin_set.bins,
-            highz_draws.zip(draw_group_slice.iter_mut()),
-            meshes,
-            materials,
-            0,
-            0,
-            &mut bin_set.has_valid_draws,
-        );
-        bin_set.highz_rng.end = highz_res.bin_count;
+        let mut call_offset = 0;
+        let mut id_offset = 0;
 
-        // Generate non-transparent bins next (we skip the high-z draws since they're already
-        // generated)
-        let nt_res = Self::gen_bins_inner(
+        // Static opaque
+        bin_set.static_opaque.start = 0;
+        let res = Self::gen_bins_inner(
             &mut bin_set.bins,
-            non_transparent_draws
-                .zip(draw_group_slice.iter_mut())
-                .skip(highz_res.draw_count),
+            static_opaque_draws.zip(draw_group_slice.iter_mut()),
             meshes,
             materials,
-            highz_res.draw_count,
-            highz_res.object_count,
+            call_offset,
+            id_offset,
             &mut bin_set.has_valid_draws,
         );
-        bin_set.non_transparent_rng.end = highz_res.bin_count + nt_res.bin_count;
+        call_offset += res.draw_count;
+        id_offset += res.object_count;
+        bin_set.static_opaque.end = res.bin_count;
 
-        // Generate transparent bins last (we force this to be non gpu-driven because we can't make
-        // draw call ordering guarantees using GPU atomics)
-        bin_set.transparent_rng.start = bin_set.non_transparent_rng.end;
-        let t_res = Self::gen_bins_inner(
+        // Static alpha cutoff
+        bin_set.static_ac.start = bin_set.static_opaque.end;
+        let res = Self::gen_bins_inner(
             &mut bin_set.bins,
-            transparent_draws.zip(
-                draw_group_slice
-                    .iter_mut()
-                    .skip(highz_res.draw_count + nt_res.draw_count),
-            ),
+            static_ac_draws.zip(draw_group_slice.iter_mut().skip(call_offset)),
             meshes,
             materials,
-            highz_res.draw_count + nt_res.draw_count,
-            highz_res.object_count + nt_res.object_count,
+            call_offset,
+            id_offset,
             &mut bin_set.has_valid_draws,
         );
-        bin_set.transparent_rng.end = bin_set.transparent_rng.start + t_res.bin_count;
+        call_offset += res.draw_count;
+        id_offset += res.object_count;
+        bin_set.static_ac.end = bin_set.static_ac.start + res.bin_count;
+
+        // Dynamic opaque
+        bin_set.dynamic_opaque.start = bin_set.static_ac.end;
+        let res = Self::gen_bins_inner(
+            &mut bin_set.bins,
+            dynamic_opaque_draws.zip(draw_group_slice.iter_mut().skip(call_offset)),
+            meshes,
+            materials,
+            call_offset,
+            id_offset,
+            &mut bin_set.has_valid_draws,
+        );
+        call_offset += res.draw_count;
+        id_offset += res.object_count;
+        bin_set.dynamic_opaque.end = bin_set.dynamic_opaque.start + res.bin_count;
+
+        // Dynamic alpha cutoff
+        bin_set.dynamic_ac.start = bin_set.dynamic_opaque.end;
+        let res = Self::gen_bins_inner(
+            &mut bin_set.bins,
+            dynamic_ac_draws.zip(draw_group_slice.iter_mut().skip(call_offset)),
+            meshes,
+            materials,
+            call_offset,
+            id_offset,
+            &mut bin_set.has_valid_draws,
+        );
+        call_offset += res.draw_count;
+        id_offset += res.object_count;
+        bin_set.dynamic_ac.end = bin_set.dynamic_ac.start + res.bin_count;
+
+        // Transparent
+        bin_set.transparent_rng.start = bin_set.dynamic_ac.end;
+        let res = Self::gen_bins_inner(
+            &mut bin_set.bins,
+            transparent_draws.zip(draw_group_slice.iter_mut().skip(call_offset)),
+            meshes,
+            materials,
+            call_offset,
+            id_offset,
+            &mut bin_set.has_valid_draws,
+        );
+        bin_set.transparent_rng.end = bin_set.transparent_rng.start + res.bin_count;
     }
 
     /// Appends bins from the provided grouped draws.
@@ -324,25 +356,33 @@ impl DrawBins {
         (frame * 2) + self.use_alternate_draw_buffer[frame] as usize
     }
 
-    pub fn render_highz_bins<'a, const FIF: usize>(&'a self, args: RenderArgs<'a, '_, FIF>) {
+    pub fn render_static_opaque_bins<'a, const FIF: usize>(&'a self, use_last: bool, args: RenderArgs<'a, '_, FIF>) {
         let idx = self.draw_call_buffer_idx(args.frame);
         let use_alternate = self.use_alternate_draw_buffer[usize::from(args.frame)];
         let set = &self.bins[idx];
-        let draw_calls = args.calls.last_draw_call_buffer(args.frame, use_alternate);
-        let draw_counts = args.calls.last_draw_count_buffer(args.frame, use_alternate);
+
+        let (draw_calls, draw_counts) = if use_last {
+            (
+                args.calls.last_draw_call_buffer(args.frame, use_alternate),
+                args.calls.last_draw_count_buffer(args.frame, use_alternate)
+            )
+        } else {
+            (
+                args.calls.draw_call_buffer(args.frame, use_alternate),
+                args.calls.draw_counts_buffer(args.frame, use_alternate)
+            )
+        };
+
         self.render_bins(
             args,
             draw_calls,
             draw_counts,
-            set.highz_rng.start,
-            set.highz_rng.len(),
+            set.static_opaque.start,
+            set.static_opaque.len(),
         );
     }
 
-    pub fn render_non_transparent_bins<'a, const FIF: usize>(
-        &'a self,
-        args: RenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_static_alpha_cutoff_bins<'a, const FIF: usize>(&'a self, args: RenderArgs<'a, '_, FIF>) {
         let idx = self.draw_call_buffer_idx(args.frame);
         let use_alternate = self.use_alternate_draw_buffer[usize::from(args.frame)];
         let set = &self.bins[idx];
@@ -352,8 +392,38 @@ impl DrawBins {
             args,
             draw_calls,
             draw_counts,
-            set.non_transparent_rng.start,
-            set.non_transparent_rng.len(),
+            set.static_ac.start,
+            set.static_ac.len(),
+        );
+    }
+
+    pub fn render_dynamic_opaque_bins<'a, const FIF: usize>(&'a self, args: RenderArgs<'a, '_, FIF>) {
+        let idx = self.draw_call_buffer_idx(args.frame);
+        let use_alternate = self.use_alternate_draw_buffer[usize::from(args.frame)];
+        let set = &self.bins[idx];
+        let draw_calls = args.calls.draw_call_buffer(args.frame, use_alternate);
+        let draw_counts = args.calls.draw_counts_buffer(args.frame, use_alternate);
+        self.render_bins(
+            args,
+            draw_calls,
+            draw_counts,
+            set.dynamic_opaque.start,
+            set.dynamic_opaque.len(),
+        );
+    }
+
+    pub fn render_dynamic_alpha_cutoff_bins<'a, const FIF: usize>(&'a self, args: RenderArgs<'a, '_, FIF>) {
+        let idx = self.draw_call_buffer_idx(args.frame);
+        let use_alternate = self.use_alternate_draw_buffer[usize::from(args.frame)];
+        let set = &self.bins[idx];
+        let draw_calls = args.calls.last_draw_call_buffer(args.frame, use_alternate);
+        let draw_counts = args.calls.draw_counts_buffer(args.frame, use_alternate);
+        self.render_bins(
+            args,
+            draw_calls,
+            draw_counts,
+            set.dynamic_ac.start,
+            set.dynamic_ac.len(),
         );
     }
 
@@ -504,13 +574,8 @@ impl DrawBins {
 
 impl<'a, 'b, const FIF: usize> RenderArgs<'a, 'b, FIF> {
     fn bind_global(&mut self) {
-        self.pass.bind_sets(
-            0,
-            vec![
-                self.global.get_set(self.frame),
-                self.camera.get_set(self.frame),
-            ],
-        );
+        self.pass
+            .bind_sets(0, vec![self.global_set, self.camera.get_set(self.frame)]);
 
         // SAFETY: This is safe as long as:
         // 1. We transition to SAMPLED usage in the factory during texture mip upload.

@@ -1,38 +1,14 @@
 use ard_formats::mesh::VertexLayout;
 use ard_log::warn;
-use ard_pal::prelude::RenderPass;
-use ard_render_base::{
-    ecs::Frame,
-    resource::{ResourceAllocator, ResourceId},
-};
-use ard_render_camera::ubo::CameraUbo;
-use ard_render_material::{
-    factory::{MaterialFactory, PassId},
-    material::MaterialResource,
-};
-use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
+use ard_render_base::resource::{ResourceAllocator, ResourceId};
+use ard_render_material::material::MaterialResource;
+use ard_render_meshes::mesh::MeshResource;
 use ard_render_objects::keys::SeparatedDrawKey;
-use ard_render_textures::factory::TextureFactory;
-
-use crate::global::GlobalSets;
 
 pub struct RenderStateTracker {
     last_material: ResourceId,
     last_vertex_layout: VertexLayout,
     last_data_size: u32,
-}
-
-pub struct RenderArgs<'a, 'b, const FIF: usize> {
-    pub pass_id: PassId,
-    pub frame: Frame,
-    pub pass: &'b mut RenderPass<'a>,
-    pub camera: &'a CameraUbo,
-    pub global: &'a GlobalSets,
-    pub mesh_factory: &'a MeshFactory,
-    pub material_factory: &'a MaterialFactory<FIF>,
-    pub texture_factory: &'a TextureFactory,
-    pub meshes: &'a ResourceAllocator<MeshResource, FIF>,
-    pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
 }
 
 #[derive(Debug, Default)]
