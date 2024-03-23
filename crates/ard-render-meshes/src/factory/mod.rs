@@ -1,14 +1,16 @@
 pub mod allocator;
 pub mod vertex_buffers;
 
+use ard_formats::{
+    mesh::MeshData,
+    vertex::{VertexAttribute, VertexLayout},
+};
 use ard_render_base::{ecs::Frame, resource::ResourceId};
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use ard_formats::mesh::{IndexData, VertexAttribute, VertexLayout};
 use ard_pal::prelude::*;
-use ard_render_si::types::GpuMeshInfo;
+use ard_render_si::{bindings::*, types::*};
 
 use self::{
     allocator::{BufferBlock, BufferBlockAllocator},
@@ -17,31 +19,35 @@ use self::{
 
 #[derive(Serialize, Deserialize)]
 pub struct MeshFactoryConfig {
-    /// Number of vertex elements held in the smallest block of the vertex buffer. Must be a power
-    /// of 2.
+    /// Number of vertex elements held in the smallest block of the vertex buffer.
     pub base_vertex_block_len: usize,
-    /// Number of indices held in the smallest block of the index buffer. Must be a power of 2.
+    /// Number of indices held in the smallest block of the index buffer.
     pub base_index_block_len: usize,
-    /// Maps individual vertex layouts to their default sizes.
-    pub default_vertex_layout_len: HashMap<VertexLayout, usize>,
-    /// All vertex layouts not defined in `default_vertex_layout_len` will have this default
-    /// length.
+    /// Number of meshlet held in the smallest block of the meshlet buffer.
+    pub base_meshlet_block_len: usize,
+    /// Number of vertices held in the smallest block of the vertex buffer. Must be a power of 2.
     pub default_vertex_buffer_len: usize,
-    /// Default length of the shared index buffer.
+    /// Number of indices held in the smallest block of the index buffer. Must be a power of 2.
     pub default_index_buffer_len: usize,
+    /// Default number of blocks in the meshlet buffer. Must be a power of 2.
+    pub default_meshlet_buffer_len: usize,
 }
 
 pub struct MeshFactory {
-    ctx: Context,
-    config: MeshFactoryConfig,
-    /// Maps vertex layouts to the allocators for meshes that have that layout.
-    vertex_allocators: FxHashMap<VertexLayout, VertexBuffers>,
+    _ctx: Context,
+    /// Allocator for vertex data.
+    vertex_allocator: VertexBuffers,
     /// Allocator for index data.
     index_allocator: BufferBlockAllocator,
+    /// Allocator for mesh meshlet data.
+    meshlet_allocator: BufferBlockAllocator,
     /// SSBO for mesh info.
     mesh_info_buffer: Buffer,
     /// Staging for mesh info upload. One list per frame in flight.
     mesh_info_staging: Vec<Vec<(ResourceId, GpuMeshInfo)>>,
+    /// Descriptor set for vertex, index, and meshlet data.
+    sets: Vec<DescriptorSet>,
+    needs_rebind: Vec<bool>,
 }
 
 /// Data upload information for a mesh.
@@ -50,6 +56,8 @@ pub struct MeshUpload {
     pub vertex_offsets: HashMap<VertexAttribute, u32>,
     pub index_staging: Buffer,
     pub vertex_count: usize,
+    pub meshlet_staging: Buffer,
+    pub meshlet_count: usize,
     pub block: MeshBlock,
 }
 
@@ -59,11 +67,13 @@ pub struct MeshBlock {
     layout: VertexLayout,
     vb: BufferBlock,
     ib: BufferBlock,
+    mb: BufferBlock,
 }
 
 impl MeshFactory {
     pub fn new(
         ctx: Context,
+        layouts: &Layouts,
         config: MeshFactoryConfig,
         max_mesh_count: usize,
         frames_in_flight: usize,
@@ -71,17 +81,45 @@ impl MeshFactory {
         let index_allocator = BufferBlockAllocator::new(
             ctx.clone(),
             Some("index_buffer".into()),
-            BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
+            BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
             config.base_index_block_len,
             config.default_index_buffer_len,
-            IndexData::SIZE,
+            MeshData::INDEX_SIZE,
         );
 
+        let meshlet_allocator = BufferBlockAllocator::new(
+            ctx.clone(),
+            Some("meshlet_buffer".into()),
+            BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
+            config.base_meshlet_block_len,
+            config.default_meshlet_buffer_len,
+            std::mem::size_of::<GpuMeshlet>(),
+        );
+
+        let vertex_allocator = VertexBuffers::new(
+            &ctx,
+            config.base_index_block_len,
+            config.default_index_buffer_len,
+        );
+
+        let sets = (0..frames_in_flight)
+            .map(|_| {
+                DescriptorSet::new(
+                    ctx.clone(),
+                    DescriptorSetCreateInfo {
+                        layout: layouts.mesh_data.clone(),
+                        debug_name: Some("mesh_data_set".into()),
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+
         Self {
-            ctx: ctx.clone(),
-            config,
-            vertex_allocators: FxHashMap::default(),
+            _ctx: ctx.clone(),
+            vertex_allocator,
             index_allocator,
+            meshlet_allocator,
             mesh_info_buffer: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
@@ -96,7 +134,14 @@ impl MeshFactory {
             )
             .unwrap(),
             mesh_info_staging: (0..frames_in_flight).map(|_| Vec::default()).collect(),
+            sets,
+            needs_rebind: (0..frames_in_flight).map(|_| true).collect(),
         }
+    }
+
+    #[inline(always)]
+    pub fn mesh_data_set(&self, frame: Frame) -> &DescriptorSet {
+        &self.sets[usize::from(frame)]
     }
 
     #[inline(always)]
@@ -110,8 +155,8 @@ impl MeshFactory {
     }
 
     #[inline(always)]
-    pub fn vertex_buffer(&self, layout: VertexLayout) -> Option<&VertexBuffers> {
-        self.vertex_allocators.get(&layout)
+    pub fn vertex_buffer(&self) -> &VertexBuffers {
+        &self.vertex_allocator
     }
 
     /// Set the info for a particular mesh.
@@ -127,25 +172,15 @@ impl MeshFactory {
         layout: VertexLayout,
         vertex_count: usize,
         index_count: usize,
+        meshlet_count: usize,
     ) -> MeshBlock {
-        let vbs = self.vertex_allocators.entry(layout).or_insert_with(|| {
-            VertexBuffers::new(
-                &self.ctx,
-                layout,
-                self.config.base_vertex_block_len,
-                *self
-                    .config
-                    .default_vertex_layout_len
-                    .get(&layout)
-                    .unwrap_or(&self.config.default_vertex_buffer_len),
-            )
-        });
-
-        let vb = match vbs.allocate(vertex_count) {
+        let vb = match self.vertex_allocator.allocate(vertex_count) {
             Some(vb) => vb,
             None => {
-                vbs.reserve(vertex_count);
-                vbs.allocate(vertex_count)
+                self.needs_rebind.iter_mut().for_each(|r| *r = true);
+                self.vertex_allocator.reserve(vertex_count);
+                self.vertex_allocator
+                    .allocate(vertex_count)
                     .expect("vertex buffer reservation should allow for further allocation")
             }
         };
@@ -153,6 +188,7 @@ impl MeshFactory {
         let ib = match self.index_allocator.allocate(index_count) {
             Some(ib) => ib,
             None => {
+                self.needs_rebind.iter_mut().for_each(|r| *r = true);
                 self.index_allocator.reserve(index_count);
                 self.index_allocator
                     .allocate(index_count)
@@ -160,15 +196,25 @@ impl MeshFactory {
             }
         };
 
-        MeshBlock { layout, vb, ib }
+        let mb = match self.meshlet_allocator.allocate(meshlet_count) {
+            Some(ib) => ib,
+            None => {
+                self.needs_rebind.iter_mut().for_each(|r| *r = true);
+                self.meshlet_allocator.reserve(meshlet_count);
+                self.meshlet_allocator
+                    .allocate(meshlet_count)
+                    .expect("meshlet buffer reservation should allow for further allocation")
+            }
+        };
+
+        MeshBlock { layout, vb, ib, mb }
     }
 
     /// Free an allocated mesh block.
     pub fn free(&mut self, block: MeshBlock) {
         self.index_allocator.free(block.ib);
-        if let Some(vbs) = self.vertex_allocators.get_mut(&block.layout) {
-            vbs.free(block.vb);
-        }
+        self.vertex_allocator.free(block.vb);
+        self.meshlet_allocator.free(block.mb);
     }
 
     /// Flushes all mesh info to the GPU for a particular frame in flight.
@@ -180,6 +226,83 @@ impl MeshFactory {
         staging.drain(..).for_each(|(id, info)| {
             view.set_as_array(info, usize::from(id));
         });
+    }
+
+    /// Checks if descriptor sets need rebinding.
+    pub fn check_rebind(&mut self, frame: Frame) {
+        let frame = usize::from(frame);
+        if !self.needs_rebind[frame] {
+            return;
+        }
+
+        self.sets[frame].update(&[
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_POSITIONS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.vertex_allocator.buffer(VertexAttribute::Position),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_NORMALS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.vertex_allocator.buffer(VertexAttribute::Normal),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_TANGENTS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.vertex_allocator.buffer(VertexAttribute::Tangent),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_UV_0_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.vertex_allocator.buffer(VertexAttribute::Uv0),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_UV_1_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.vertex_allocator.buffer(VertexAttribute::Uv1),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_MESHLETS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.meshlet_allocator.buffer(),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_INDICES_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: self.index_allocator.buffer(),
+                    array_element: 0,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: MESH_DATA_SET_MESH_INFO_LOOKUP_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &self.mesh_info_buffer,
+                    array_element: frame,
+                },
+            },
+        ]);
+
+        self.needs_rebind[frame] = false;
     }
 
     /// Records a command to upload a mesh to the factory.
@@ -194,14 +317,21 @@ impl MeshFactory {
             src_offset: 0,
             dst: self.index_allocator.buffer(),
             dst_array_element: 0,
-            dst_offset: upload.block.index_block().base() as u64 * IndexData::SIZE as u64,
+            dst_offset: upload.block.index_block().base() as u64 * MeshData::INDEX_SIZE as u64,
             len: upload.index_staging.size(),
         });
 
-        // Copy in vertex data
-        // NOTE: Safe to unwrap since the vertex buffers for this layout must have existed to
-        // allocate the mesh
-        let vbs = self.vertex_allocators.get(&upload.block.layout()).unwrap();
+        // Copy meshlet data
+        commands.copy_buffer_to_buffer(CopyBufferToBuffer {
+            src: &upload.meshlet_staging,
+            src_array_element: 0,
+            src_offset: 0,
+            dst: self.meshlet_allocator.buffer(),
+            dst_array_element: 0,
+            dst_offset: upload.block.meshlet_block().base() as u64
+                * std::mem::size_of::<GpuMeshlet>() as u64,
+            len: upload.meshlet_staging.size(),
+        });
 
         // Copy in vertex attributes
         for (attribute, offset) in &upload.vertex_offsets {
@@ -210,7 +340,7 @@ impl MeshFactory {
                 src_array_element: 0,
                 src_offset: *offset as u64,
                 // Safe to unrap since the allocator has a matching layout
-                dst: vbs.buffer(*attribute).unwrap(),
+                dst: self.vertex_allocator.buffer(*attribute),
                 dst_array_element: 0,
                 dst_offset: upload.block.vertex_block().base() as u64 * attribute.size() as u64,
                 len: (upload.vertex_count * attribute.size()) as u64,
@@ -228,6 +358,11 @@ impl MeshBlock {
     #[inline(always)]
     pub fn index_block(&self) -> BufferBlock {
         self.ib
+    }
+
+    #[inline(always)]
+    pub fn meshlet_block(&self) -> BufferBlock {
+        self.mb
     }
 
     #[inline(always)]

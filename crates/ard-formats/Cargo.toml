@@ -13,3 +13,6 @@ bitflags.workspace = true
 bytemuck.workspace = true
 static_assertions.workspace = true
 thiserror.workspace = true
+rustc-hash.workspace = true
+half.workspace = true
+ordered-float.workspace = true

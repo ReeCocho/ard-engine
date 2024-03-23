@@ -378,4 +378,12 @@ impl<'a, B: Backend> RenderPass<'a, B> {
             max_draw_count,
         });
     }
+
+    #[inline]
+    pub fn draw_mesh_tasks(&mut self, x: u32, y: u32, z: u32) {
+        debug_assert_ne!(x, 0);
+        debug_assert_ne!(y, 0);
+        debug_assert_ne!(z, 0);
+        self.commands.push(Command::DrawMeshTasks(x, y, z));
+    }
 }

@@ -179,7 +179,7 @@ impl Tonemapping {
             GraphicsPipeline::new(
                 ctx.clone(),
                 GraphicsPipelineCreateInfo {
-                    stages: ShaderStages {
+                    stages: ShaderStages::Traditional {
                         vertex: vert_module.clone(),
                         fragment: Some(frag_module),
                     },

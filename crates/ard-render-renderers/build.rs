@@ -14,27 +14,6 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/draw_gen.comp",
-        PathBuf::from(&out_dir).join("draw_gen.comp.spv"),
-        &["./shaders/"],
-        &["HIGH_Z_CULLING"],
-    );
-
-    ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/draw_gen.comp",
-        PathBuf::from(&out_dir).join("draw_gen_no_hzb.comp.spv"),
-        &["./shaders/"],
-        &[],
-    );
-
-    ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/draw_compact.comp",
-        PathBuf::from(&out_dir).join("draw_compact.comp.spv"),
-        &["./shaders/"],
-        &[],
-    );
-
-    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/gui.vert",
         PathBuf::from(&out_dir).join("gui.vert.spv"),
         &["./shaders/"],

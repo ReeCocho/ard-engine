@@ -58,6 +58,7 @@ impl<W: Write> GlslStructCodeGen<W> {
             GpuStructFieldType::F32 => "float".into(),
             GpuStructFieldType::Bool => "uint".into(),
             GpuStructFieldType::UVec2 => "uvec2".into(),
+            GpuStructFieldType::UVec4 => "uvec4".into(),
             GpuStructFieldType::IVec2 => "ivec2".into(),
             GpuStructFieldType::Vec2 => "vec2".into(),
             GpuStructFieldType::Vec4 => "vec4".into(),

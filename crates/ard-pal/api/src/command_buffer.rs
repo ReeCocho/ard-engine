@@ -200,6 +200,7 @@ pub enum Command<'a, B: Backend> {
         count_offset: u64,
         max_draw_count: usize,
     },
+    DrawMeshTasks(u32, u32, u32),
     CopyBufferToBuffer(CopyBufferToBuffer<'a, B>),
     CopyTextureToTexture(CopyTextureToTexture<'a, B>),
     CopyBufferToTexture {

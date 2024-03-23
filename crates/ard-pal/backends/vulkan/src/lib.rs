@@ -3,6 +3,7 @@ use api::{
     command_buffer::{BlitDestination, BlitSource, Command},
     compute_pass::ComputePassDispatch,
     compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo},
+    context::{GraphicsProperties, MeshShadingProperties},
     cube_map::{CubeMapCreateError, CubeMapCreateInfo},
     descriptor_set::{
         DescriptorSetCreateError, DescriptorSetCreateInfo, DescriptorSetLayoutCreateError,
@@ -92,10 +93,12 @@ pub enum VulkanBackendCreateError {
 pub struct VulkanBackend {
     pub(crate) entry: ash::Entry,
     pub(crate) instance: ash::Instance,
+    pub(crate) mesh_shading: ash::extensions::ext::MeshShader,
     pub(crate) debug: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
     pub(crate) physical_device: vk::PhysicalDevice,
     pub(crate) queue_family_indices: QueueFamilyIndices,
     pub(crate) properties: vk::PhysicalDeviceProperties,
+    pub(crate) graphics_properties: GraphicsProperties,
     pub(crate) _features: vk::PhysicalDeviceFeatures,
     pub(crate) device: ash::Device,
     pub(crate) surface_loader: ash::extensions::khr::Surface,
@@ -136,7 +139,8 @@ pub(crate) struct QueueFamilyIndices {
 struct PhysicalDeviceQuery {
     pub device: vk::PhysicalDevice,
     pub queue_family_indices: QueueFamilyIndices,
-    pub properties: vk::PhysicalDeviceProperties,
+    pub properties: vk::PhysicalDeviceProperties2,
+    pub mesh_shading_properties: vk::PhysicalDeviceMeshShaderPropertiesEXT,
     pub features: vk::PhysicalDeviceFeatures,
 }
 
@@ -154,6 +158,11 @@ impl Backend for VulkanBackend {
     type Job = Job;
     type DrawIndexedIndirect = DrawIndexedIndirect;
     type DispatchIndirect = DispatchIndirect;
+
+    #[inline(always)]
+    unsafe fn properties(&self) -> &GraphicsProperties {
+        &self.graphics_properties
+    }
 
     #[inline(always)]
     unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
@@ -579,7 +588,10 @@ impl VulkanBackend {
 
         // Get required device extensions
         let device_extensions = {
-            let mut extensions = vec![ash::extensions::khr::Swapchain::name()];
+            let mut extensions = vec![
+                ash::extensions::khr::Swapchain::name(),
+                ash::extensions::ext::MeshShader::name(),
+            ];
             if create_info.debug {
                 extensions.push(CStr::from_bytes_with_nul(b"VK_EXT_robustness2\0").unwrap());
             }
@@ -718,13 +730,24 @@ impl VulkanBackend {
             .maintenance4(true)
             .build();
 
-        let create_info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(&queue_infos)
-            .enabled_extension_names(&device_extensions)
+        let mut ms_features = vk::PhysicalDeviceMeshShaderFeaturesEXT::builder()
+            .mesh_shader(true)
+            .task_shader(true)
+            .multiview_mesh_shader(true)
+            .build();
+
+        let mut features2 = vk::PhysicalDeviceFeatures2::builder()
+            .features(features)
             .push_next(&mut features11)
             .push_next(&mut features12)
             .push_next(&mut features13)
-            .enabled_features(&features);
+            .push_next(&mut ms_features)
+            .build();
+
+        let create_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&queue_infos)
+            .enabled_extension_names(&device_extensions)
+            .push_next(&mut features2);
 
         let create_info = create_info.build();
 
@@ -753,6 +776,9 @@ impl VulkanBackend {
             })
             .expect("unable to create GPU memory allocator"),
         ));
+
+        // Mesh shading functions
+        let mesh_shading = ash::extensions::ext::MeshShader::new(&instance, &device);
 
         // Create queues
         let main = unsafe {
@@ -804,13 +830,26 @@ impl VulkanBackend {
             )?
         };
 
+        let graphics_properties = GraphicsProperties {
+            mesh_shading: MeshShadingProperties {
+                preferred_mesh_work_group_invocations: pd_query
+                    .mesh_shading_properties
+                    .max_preferred_mesh_work_group_invocations,
+                preferred_task_work_group_invocations: pd_query
+                    .mesh_shading_properties
+                    .max_preferred_task_work_group_invocations,
+            },
+        };
+
         let ctx = Self {
             entry,
             instance,
             debug,
+            mesh_shading,
             physical_device: pd_query.device,
             queue_family_indices: pd_query.queue_family_indices,
-            properties: pd_query.properties,
+            properties: pd_query.properties.properties,
+            graphics_properties,
             _features: pd_query.features,
             device,
             surface_loader,
@@ -911,6 +950,7 @@ impl VulkanBackend {
                 VulkanBackend::execute_command(
                     cb,
                     device,
+                    &self.mesh_shading,
                     idx,
                     commands,
                     &self.render_passes,
@@ -1024,6 +1064,7 @@ impl VulkanBackend {
     unsafe fn execute_command<'a>(
         cb: vk::CommandBuffer,
         device: &ash::Device,
+        mesh_shading: &ash::extensions::ext::MeshShader,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
@@ -1035,6 +1076,7 @@ impl VulkanBackend {
             Command::BeginRenderPass(_, _) => Self::execute_render_pass(
                 cb,
                 device,
+                mesh_shading,
                 command_idx,
                 commands,
                 render_passes,
@@ -1367,6 +1409,7 @@ impl VulkanBackend {
     unsafe fn execute_render_pass<'a>(
         cb: vk::CommandBuffer,
         device: &ash::Device,
+        mesh_shading: &ash::extensions::ext::MeshShader,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
@@ -1831,6 +1874,9 @@ impl VulkanBackend {
                         *draw_stride as u32,
                     );
                 }
+                Command::DrawMeshTasks(x, y, z) => {
+                    mesh_shading.cmd_draw_mesh_tasks(cb, *x, *y, *z);
+                }
                 _ => unreachable!(),
             }
         }
@@ -2149,7 +2195,12 @@ unsafe fn pick_physical_device(
     let mut device_type = vk::PhysicalDeviceType::OTHER;
     let mut query = None;
     for device in devices {
-        let properties = instance.get_physical_device_properties(device);
+        let mut mesh_shading_properties = vk::PhysicalDeviceMeshShaderPropertiesEXT::default();
+        let mut properties = vk::PhysicalDeviceProperties2::builder()
+            .push_next(&mut mesh_shading_properties)
+            .build();
+
+        instance.get_physical_device_properties2(device, &mut properties);
         let features = instance.get_physical_device_features(device);
 
         // Must support requested extensions
@@ -2180,12 +2231,13 @@ unsafe fn pick_physical_device(
         }
 
         // Pick this device if it's better than the old one
-        if device_type_rank(properties.device_type) >= device_type_rank(device_type) {
-            device_type = properties.device_type;
+        if device_type_rank(properties.properties.device_type) >= device_type_rank(device_type) {
+            device_type = properties.properties.device_type;
             query = Some(PhysicalDeviceQuery {
                 device,
                 features,
                 properties,
+                mesh_shading_properties,
                 queue_family_indices: qfi.unwrap(),
             });
         }

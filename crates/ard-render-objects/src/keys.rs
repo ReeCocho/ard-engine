@@ -1,4 +1,4 @@
-use ard_formats::mesh::VertexLayout;
+use ard_formats::vertex::VertexLayout;
 use ard_render_base::resource::ResourceId;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;

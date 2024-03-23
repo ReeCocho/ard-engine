@@ -1,6 +1,6 @@
 use std::{env, ffi::OsStr, path::PathBuf};
 
-use ard_formats::mesh::VertexLayout;
+use ard_formats::vertex::VertexLayout;
 
 struct ShaderVariant {
     pub vertex_layout: VertexLayout,
@@ -113,10 +113,6 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
             vl.push_str("t");
         }
 
-        if variant.vertex_layout.contains(VertexLayout::COLOR) {
-            vl.push_str("c");
-        }
-
         if variant.vertex_layout.contains(VertexLayout::UV0) {
             vl.push_str("uv0");
         }
@@ -125,18 +121,11 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
             vl.push_str("uv1");
         }
 
-        if variant.vertex_layout.contains(VertexLayout::UV2) {
-            vl.push_str("uv2");
-        }
-
-        if variant.vertex_layout.contains(VertexLayout::UV3) {
-            vl.push_str("uv3");
-        }
-
         ext.push_str(&vl);
     }
 
-    let vert_name = format!("pbr.vert{}.spv", ext);
+    let ts_name = format!("pbr.task{}.spv", ext);
+    let ms_name = format!("pbr.mesh{}.spv", ext);
     let frag_name = format!("pbr.frag{}.spv", ext);
 
     let mut defines = Vec::default();
@@ -164,10 +153,6 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
         variant.vertex_layout.contains(VertexLayout::TANGENT) as u32
     ));
     defines.push(format!(
-        "ARD_VS_HAS_COLOR={}",
-        variant.vertex_layout.contains(VertexLayout::COLOR) as u32
-    ));
-    defines.push(format!(
         "ARD_VS_HAS_UV0={}",
         variant.vertex_layout.contains(VertexLayout::UV0) as u32
     ));
@@ -175,18 +160,16 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
         "ARD_VS_HAS_UV1={}",
         variant.vertex_layout.contains(VertexLayout::UV1) as u32
     ));
-    defines.push(format!(
-        "ARD_VS_HAS_UV2={}",
-        variant.vertex_layout.contains(VertexLayout::UV2) as u32
-    ));
-    defines.push(format!(
-        "ARD_VS_HAS_UV3={}",
-        variant.vertex_layout.contains(VertexLayout::UV3) as u32
-    ));
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/pbr.vert",
-        PathBuf::from(&out_dir).join(vert_name),
+        "./shaders/pbr.ms.glsl",
+        PathBuf::from(&out_dir).join(ms_name),
+        &["./shaders/", "../ard-render/shaders/"],
+        &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+    );
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/pbr.ts.glsl",
+        PathBuf::from(&out_dir).join(ts_name),
         &["./shaders/", "../ard-render/shaders/"],
         &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
     );

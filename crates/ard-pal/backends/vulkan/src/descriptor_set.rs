@@ -222,14 +222,20 @@ impl DescriptorSet {
                     ShaderStage::Vertex => vk::PipelineStageFlags2::VERTEX_SHADER,
                     ShaderStage::Fragment => vk::PipelineStageFlags2::FRAGMENT_SHADER,
                     ShaderStage::Compute => vk::PipelineStageFlags2::COMPUTE_SHADER,
+                    ShaderStage::Mesh => vk::PipelineStageFlags2::MESH_SHADER_EXT,
+                    ShaderStage::Task => vk::PipelineStageFlags2::TASK_SHADER_EXT,
                     ShaderStage::AllStages => {
                         vk::PipelineStageFlags2::VERTEX_SHADER
                             | vk::PipelineStageFlags2::FRAGMENT_SHADER
                             | vk::PipelineStageFlags2::COMPUTE_SHADER
+                            | vk::PipelineStageFlags2::MESH_SHADER_EXT
+                            | vk::PipelineStageFlags2::TASK_SHADER_EXT
                     }
                     ShaderStage::AllGraphics => {
                         vk::PipelineStageFlags2::VERTEX_SHADER
                             | vk::PipelineStageFlags2::FRAGMENT_SHADER
+                            | vk::PipelineStageFlags2::MESH_SHADER_EXT
+                            | vk::PipelineStageFlags2::TASK_SHADER_EXT
                     }
                 };
 

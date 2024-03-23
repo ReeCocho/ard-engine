@@ -1,11 +1,13 @@
 use std::sync::Mutex;
 
-use ard_formats::mesh::VertexLayout;
+use ard_formats::vertex::VertexLayout;
 use ard_pal::prelude::{
     ColorBlendState, Context, DepthStencilState, GraphicsPipeline, GraphicsPipelineCreateError,
-    GraphicsPipelineCreateInfo, RasterizationState, ShaderStages,
+    GraphicsPipelineCreateInfo, MeshShadingShader, RasterizationState, ShaderStages,
+    VertexInputState,
 };
 use ard_render_base::resource::{ResourceAllocator, ResourceHandle, ResourceId};
+use ard_render_si::types::*;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
@@ -28,8 +30,10 @@ pub struct MaterialVariantDescriptor {
     pub pass_id: PassId,
     /// The minimum required vertex attributes for this variant.
     pub vertex_layout: VertexLayout,
-    /// The vertex shader for this variant.
-    pub vertex_shader: Shader,
+    /// The task shader for this variant.
+    pub task_shader: Shader,
+    /// The mesh shader for this variant.
+    pub mesh_shader: Shader,
     /// The fragment shader for this variant.
     pub fragment_shader: Option<Shader>,
     /// How this variant rasterizes triangles.
@@ -145,8 +149,8 @@ impl MaterialResource {
         let (texture_slots, data_size) = {
             let variant = create_info.variants.first().unwrap();
             (
-                variant.vertex_shader.texture_slots(),
-                variant.vertex_shader.data_size(),
+                variant.mesh_shader.texture_slots(),
+                variant.mesh_shader.data_size(),
             )
         };
 
@@ -159,11 +163,11 @@ impl MaterialResource {
             };
 
             // Must have matching texture slots and data size
-            if texture_slots != variant.vertex_shader.texture_slots() {
+            if texture_slots != variant.mesh_shader.texture_slots() {
                 return Err(MaterialCreateError::MismatchingTextureSlots);
             }
 
-            if data_size != variant.vertex_shader.data_size() {
+            if data_size != variant.mesh_shader.data_size() {
                 return Err(MaterialCreateError::MismatchingDataSize);
             }
 
@@ -231,12 +235,17 @@ impl MaterialResource {
             let pass = factory.get_pass(variant_desc.pass_id).unwrap();
 
             // Safe to unwrap shaders since they must exist if we have handles to them.
-            let stages = ShaderStages {
-                vertex: shaders
-                    .get(variant_desc.vertex_shader.id())
-                    .unwrap()
-                    .shader
-                    .clone(),
+            let task = shaders.get(variant_desc.task_shader.id()).unwrap();
+            let mesh = shaders.get(variant_desc.mesh_shader.id()).unwrap();
+            let stages = ShaderStages::MeshShading {
+                task: Some(MeshShadingShader {
+                    shader: task.shader.clone(),
+                    work_group_size: task.work_group_size,
+                }),
+                mesh: MeshShadingShader {
+                    shader: mesh.shader.clone(),
+                    work_group_size: mesh.work_group_size,
+                },
                 fragment: variant_desc
                     .fragment_shader
                     .map(|fs| shaders.get(fs.id()).unwrap().shader.clone()),
@@ -249,11 +258,13 @@ impl MaterialResource {
                     GraphicsPipelineCreateInfo {
                         stages,
                         layouts: pass.layouts.clone(),
-                        vertex_input: variant_desc.vertex_layout.vertex_input_state(),
+                        vertex_input: VertexInputState::default(),
                         rasterization: variant_desc.rasterization,
                         depth_stencil: variant_desc.depth_stencil,
                         color_blend: variant_desc.color_blend,
-                        push_constants_size: None,
+                        push_constants_size: Some(
+                            std::mem::size_of::<GpuDrawPushConstants>() as u32
+                        ),
                         debug_name: variant_desc.debug_name,
                     },
                 )?,

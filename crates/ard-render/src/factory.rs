@@ -8,10 +8,7 @@ use crate::{
     FRAMES_IN_FLIGHT,
 };
 use ard_ecs::prelude::*;
-use ard_formats::{
-    mesh::{IndexSource, VertexSource},
-    texture::TextureSource,
-};
+use ard_formats::{mesh::MeshData, texture::TextureSource};
 use ard_pal::prelude::{Buffer, Context, QueueType};
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_material::{
@@ -80,13 +77,15 @@ impl Factory {
             )),
             mesh_factory: Mutex::new(MeshFactory::new(
                 ctx.clone(),
+                layouts,
                 // TODO: Load this from a config file
                 MeshFactoryConfig {
                     base_vertex_block_len: 64,
                     base_index_block_len: 256,
-                    default_vertex_layout_len: HashMap::default(),
+                    base_meshlet_block_len: 8,
                     default_vertex_buffer_len: 65536,
                     default_index_buffer_len: 65536,
+                    default_meshlet_buffer_len: 65536,
                 },
                 MAX_MESHES,
                 FRAMES_IN_FLIGHT,
@@ -102,7 +101,7 @@ impl Factory {
                     fallback_materials_cap: 32,
                 },
             )),
-            ctx,
+            ctx: ctx.clone(),
         });
 
         // Primary passes
@@ -113,6 +112,7 @@ impl Factory {
 
         // PBR setup
         let pbr_material = ard_render_pbr::create_pbr_material(
+            ctx.properties(),
             |create_info| inner.create_shader(create_info).unwrap(),
             |create_info| inner.create_material(create_info).unwrap(),
         );
@@ -168,6 +168,7 @@ impl Factory {
         );
 
         mesh_factory.flush_mesh_info(frame);
+        mesh_factory.check_rebind(frame);
 
         // Drop pending resources
         static_meshes.drop_pending(
@@ -203,10 +204,10 @@ impl Factory {
         texture_factory.update_bindings(frame, &textures);
     }
 
-    pub fn create_mesh<V: VertexSource, I: IndexSource>(
+    pub fn create_mesh<M: Into<MeshData>>(
         &self,
-        create_info: MeshCreateInfo<V, I>,
-    ) -> Result<Mesh, MeshCreateError<V, I>> {
+        create_info: MeshCreateInfo<M>,
+    ) -> Result<Mesh, MeshCreateError> {
         self.inner.create_mesh(create_info)
     }
 
@@ -271,10 +272,10 @@ impl Factory {
 }
 
 impl FactoryInner {
-    fn create_mesh<V: VertexSource, I: IndexSource>(
+    fn create_mesh<M: Into<MeshData>>(
         &self,
-        create_info: MeshCreateInfo<V, I>,
-    ) -> Result<Mesh, MeshCreateError<V, I>> {
+        create_info: MeshCreateInfo<M>,
+    ) -> Result<Mesh, MeshCreateError> {
         let mut staging = self.staging.lock().unwrap();
         let mut static_meshes = self.meshes.lock().unwrap();
         let mut mesh_factory = self.mesh_factory.lock().unwrap();

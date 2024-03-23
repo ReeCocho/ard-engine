@@ -19,23 +19,40 @@
 #endif
 
 #define ARD_SET_CAMERA 1
-#define ARD_SET_TEXTURES 2
-#define ARD_SET_MATERIALS 3
+#define ARD_SET_MESH_DATA 2
+#define ARD_SET_TEXTURES 3
+#define ARD_SET_MATERIALS 4
+
+#include "ard_bindings.glsl"
+
+///////////////
+/// STRUCTS ///
+///////////////
+
+struct MsPayload {
+    uint object_ids[MAX_TASK_SHADER_INVOCATIONS];
+    uint index_offsets[MAX_TASK_SHADER_INVOCATIONS];
+    uint vertex_offsets[MAX_TASK_SHADER_INVOCATIONS];
+    uint counts[MAX_TASK_SHADER_INVOCATIONS];
+};
 
 ////////////////
 /// INCLUDES ///
 ////////////////
 
-#ifdef VERTEX_SHADER
-    #include "pbr_common.vs.glsl"
+#include "pbr_brdf.glsl"
+
+#ifdef MESH_SHADER
+    #include "pbr_common.ms.glsl"
+#endif
+
+#ifdef TASK_SHADER
+    #include "pbr_common.ts.glsl"
 #endif
 
 #ifdef FRAGMENT_SHADER
     #include "pbr_common.fs.glsl"
 #endif
-
-#include "pbr_brdf.glsl"
-#include "ard_bindings.glsl"
 
 /////////////////
 /// CONSTANTS ///
@@ -47,6 +64,10 @@ const int SHADOW_SAMPLE_COUNT = (1 + (2 * SHADOW_KERNEL_SIZE)) * (1 + (2 * SHADO
 // Intensity of lighting attenuation we consider to be "close enough" to 0.
 const float ATTENUATION_EPSILON = 0.001;
 
+/////////////////
+/// FUNCTIONS ///
+/////////////////
+
 /// Inverse square attenuation that works based off of range.
 ///
 /// `x` - Distance from the light source.
@@ -57,7 +78,7 @@ float light_attenuation(float x, float range) {
     return pow(clamp(1.0 - pow(x / range, 4.0), 0.0, 1.0), 2.0) / ((x * x) + 1.0);
 }
 
-#ifdef ARD_SET_COLOR_PASS
+#if defined(ARD_SET_COLOR_PASS) && defined(FRAGMENT_SHADER)
 /// Samples the shadow cascade at a given UV.
 ///
 /// `cascade` - Index of the shadow cascade to sample.
@@ -165,17 +186,20 @@ vec3 light_fragment(
 }
 
 /// Get the cluster ID for the given screen coordinate.
+#if !defined(TASK_SHADER)
 uvec3 get_cluster_id(vec2 uv, float depth) {
     return uvec3(
         clamp(uint(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
         clamp(uint(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
         clamp(
+            // TODO: Multiview
             uint(log(depth) * camera[gl_ViewIndex].cluster_scale_bias.x - camera[gl_ViewIndex].cluster_scale_bias.y), 
             0,
             CAMERA_FROXELS_DEPTH - 1
         )
     );
 }
+#endif
 
 #ifdef VERTEX_SHADER
     #define ard_ObjectId (object_ids[gl_InstanceIndex])

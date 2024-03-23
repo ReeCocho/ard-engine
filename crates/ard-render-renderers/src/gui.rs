@@ -81,7 +81,7 @@ impl GuiRenderer {
         let font_pipeline = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex,
                     fragment: Some(fragment),
                 },

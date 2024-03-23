@@ -7,9 +7,22 @@ use thiserror::Error;
 
 /// The shader stages used by a graphics pipeline.
 #[derive(Clone)]
-pub struct ShaderStages<B: Backend> {
-    pub vertex: Shader<B>,
-    pub fragment: Option<Shader<B>>,
+pub enum ShaderStages<B: Backend> {
+    Traditional {
+        vertex: Shader<B>,
+        fragment: Option<Shader<B>>,
+    },
+    MeshShading {
+        task: Option<MeshShadingShader<B>>,
+        mesh: MeshShadingShader<B>,
+        fragment: Option<Shader<B>>,
+    },
+}
+
+#[derive(Clone)]
+pub struct MeshShadingShader<B: Backend> {
+    pub shader: Shader<B>,
+    pub work_group_size: (u32, u32, u32),
 }
 
 /// Describes a vertex attribute.

@@ -9,6 +9,9 @@
     (name: "CAMERA_FROXELS_DEPTH", value: USize(24)),
     (name: "MAX_LIGHTS_PER_CLUSTER", value: USize(256)),
     (name: "AdaptiveLumHistogramSize", value: USize(256)),
+    (name: "MaxTaskShaderInvocations", value: UInt(32)),
+    (name: "MaxPrimitives", value: UInt(126)),
+    (name: "MaxVertices", value: UInt(64)),
     /// Must be a power of 2.
     (name: "HzbGenKernelSize", value: USize(8)),
     (name: "DiReduceBlockSize", value: UInt(128)),

@@ -289,6 +289,8 @@ pub enum ShaderStage {
     Vertex,
     Fragment,
     Compute,
+    Mesh,
+    Task,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

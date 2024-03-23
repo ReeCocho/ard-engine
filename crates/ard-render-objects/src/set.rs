@@ -1,6 +1,8 @@
 use std::ops::Range;
 
 use ard_math::Vec3A;
+use ard_render_base::resource::ResourceAllocator;
+use ard_render_meshes::mesh::MeshResource;
 use ordered_float::OrderedFloat;
 
 use crate::{
@@ -18,12 +20,12 @@ use ard_render_si::types::GpuObjectId;
 /// [Static | Opaque] [Static | Alpha Cutout] [Dynamic | Opaque] [Dynamic | Alpha Cutout] [Dynamic | Transparent] [Static | Transparent]
 #[derive(Default)]
 pub struct RenderableSet {
-    /// Object IDs for sorting draw calls or GPU driven rendering.
+    /// Instances of objects to sort.
+    object_instances: Vec<ObjectInstance>,
+    /// Resulting object IDs for each object/meshlet pair.
     object_ids: Vec<GpuObjectId>,
-    non_transparent_object_count: usize,
     /// Draw groups to render.
     groups: Vec<DrawGroup>,
-    non_transparent_draw_count: usize,
     static_object_ranges: RenderableRanges,
     dynamic_object_ranges: RenderableRanges,
     transparent_object_range: Range<usize>,
@@ -53,20 +55,17 @@ pub struct RenderableRanges {
     pub alpha_cutout: Range<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ObjectInstance {
+    key: DrawKey,
+    id: u32,
+    distance: OrderedFloat<f32>,
+}
+
 impl RenderableSet {
     #[inline(always)]
     pub fn ids(&self) -> &[GpuObjectId] {
         &self.object_ids
-    }
-
-    #[inline(always)]
-    pub fn non_transparent_object_count(&self) -> usize {
-        self.non_transparent_object_count
-    }
-
-    #[inline(always)]
-    pub fn non_transparent_draw_count(&self) -> usize {
-        self.non_transparent_draw_count
     }
 
     #[inline(always)]
@@ -130,21 +129,22 @@ impl<'a> RenderableSetUpdate<'a> {
         self
     }
 
-    pub fn update(
+    pub fn update<const FIF: usize>(
         self,
         view_location: Vec3A,
         objects: &RenderObjects,
+        meshes: &ResourceAllocator<MeshResource, FIF>,
         filter_opaque: impl Fn(&OpaqueObjectIndex) -> bool,
         filter_alpha_cut: impl Fn(&AlphaCutoutObjectIndex) -> bool,
         filter_transparent: impl Fn(&TransparentObjectIndex) -> bool,
     ) {
+        let instances = &mut self.set.object_instances;
         let ids = &mut self.set.object_ids;
         let groups = &mut self.set.groups;
 
-        // NOTE: Instead of writing the batch index here, we write the draw key so that we can
-        // sort the object IDs here in place and then later determine the batch index. This is
-        // fine as long as the size of object used for `batch_idx` is the same as the size used
-        // for `DrawKey`.
+        // NOTE: The object ranges returned from calls to `write_keyed_instances` gives us back
+        // ranges over the "instances", but what we really need are ranges over the "ids".
+        instances.clear();
 
         // Either reset everything or ignore static objects and groups
         if objects.static_dirty() {
@@ -161,14 +161,14 @@ impl<'a> RenderableSetUpdate<'a> {
             self.set.static_object_ranges.opaque = if self.include_opaque {
                 objects.static_objects().values().for_each(|set| {
                     let base = set.block.base();
-                    opaque_obj_count += Self::write_keyed_ids(
-                        ids,
+                    opaque_obj_count += Self::write_keyed_instances(
+                        instances,
                         set.opaque
                             .indices
                             .iter()
                             .filter(|&obj| filter_opaque(obj))
-                            .map(|obj| (obj.key, base + obj.idx, 0.0)),
-                        |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                            .map(|obj| (obj.key, base + obj.idx, OrderedFloat::default())),
+                        |id| id.key,
                     )
                     .len();
                 });
@@ -186,14 +186,14 @@ impl<'a> RenderableSetUpdate<'a> {
             self.set.static_object_ranges.alpha_cutout = if self.include_alpha_cutout {
                 objects.static_objects().values().for_each(|set| {
                     let base = set.block.base();
-                    ac_obj_count += Self::write_keyed_ids(
-                        ids,
+                    ac_obj_count += Self::write_keyed_instances(
+                        instances,
                         set.alpha_cutout
                             .indices
                             .iter()
                             .filter(|&obj| filter_alpha_cut(obj))
-                            .map(|obj| (obj.key, base + obj.idx, 0.0)),
-                        |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                            .map(|obj| (obj.key, base + obj.idx, OrderedFloat::default())),
+                        |id| id.key,
                     )
                     .len();
                 });
@@ -206,15 +206,29 @@ impl<'a> RenderableSetUpdate<'a> {
                 Range::default()
             };
 
+            let start = ids.len();
             self.set.static_group_ranges.opaque = Self::compact_groups(
-                &mut ids[self.set.static_object_ranges.opaque.clone()],
+                &instances[self.set.static_object_ranges.opaque.clone()],
+                ids,
                 groups,
+                meshes,
             );
+            self.set.static_object_ranges.opaque = Range {
+                start,
+                end: ids.len(),
+            };
 
+            let start = ids.len();
             self.set.static_group_ranges.alpha_cutout = Self::compact_groups(
-                &mut ids[self.set.static_object_ranges.alpha_cutout.clone()],
+                &mut instances[self.set.static_object_ranges.alpha_cutout.clone()],
+                ids,
                 groups,
+                meshes,
             );
+            self.set.static_object_ranges.alpha_cutout = Range {
+                start,
+                end: ids.len(),
+            };
         } else {
             ids.truncate(
                 self.set.static_object_ranges.opaque.len()
@@ -230,51 +244,62 @@ impl<'a> RenderableSetUpdate<'a> {
         let base = objects.dynamic_objects().block.base();
 
         self.set.dynamic_object_ranges.opaque = if self.include_opaque {
-            Self::write_keyed_ids(
-                ids,
+            Self::write_keyed_instances(
+                instances,
                 objects
                     .dynamic_objects()
                     .opaque
                     .indices
                     .iter()
                     .filter(|&obj| filter_opaque(obj))
-                    .map(|obj| (obj.key, base + obj.idx, 0.0)),
-                |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                    .map(|obj| (obj.key, base + obj.idx, OrderedFloat::default())),
+                |id| id.key,
             )
         } else {
             Range::default()
         };
 
         self.set.dynamic_object_ranges.alpha_cutout = if self.include_alpha_cutout {
-            Self::write_keyed_ids(
-                ids,
+            Self::write_keyed_instances(
+                instances,
                 objects
                     .dynamic_objects()
                     .alpha_cutout
                     .indices
                     .iter()
                     .filter(|&obj| filter_alpha_cut(obj))
-                    .map(|obj| (obj.key, base + obj.idx, 0.0)),
-                |id| bytemuck::cast::<_, DrawKey>(id.draw_idx),
+                    .map(|obj| (obj.key, base + obj.idx, OrderedFloat::default())),
+                |id| id.key,
             )
         } else {
             Range::default()
         };
 
+        let start = ids.len();
         self.set.dynamic_group_ranges.opaque = Self::compact_groups(
-            &mut ids[self.set.dynamic_object_ranges.opaque.clone()],
+            &mut instances[self.set.dynamic_object_ranges.opaque.clone()],
+            ids,
             groups,
+            meshes,
         );
+        self.set.dynamic_object_ranges.opaque = Range {
+            start,
+            end: ids.len(),
+        };
 
+        let start = ids.len();
         self.set.dynamic_group_ranges.alpha_cutout = Self::compact_groups(
-            &mut ids[self.set.dynamic_object_ranges.alpha_cutout.clone()],
+            &mut instances[self.set.dynamic_object_ranges.alpha_cutout.clone()],
+            ids,
             groups,
+            meshes,
         );
+        self.set.dynamic_object_ranges.alpha_cutout = Range {
+            start,
+            end: ids.len(),
+        };
 
         // Add in dynamic and static transparent objects
-        self.set.non_transparent_object_count = ids.len();
-        self.set.non_transparent_draw_count = groups.len();
-
         if self.include_transparent {
             let dyn_objects = objects
                 .dynamic_objects()
@@ -290,8 +315,8 @@ impl<'a> RenderableSetUpdate<'a> {
                     .zip(Some(set.block.base()).into_iter().cycle())
             });
 
-            self.set.transparent_object_range = Self::write_keyed_ids(
-                ids,
+            self.set.transparent_object_range = Self::write_keyed_instances(
+                instances,
                 dyn_objects
                     .chain(static_objects)
                     .filter(|(obj, _)| filter_transparent(obj))
@@ -300,32 +325,41 @@ impl<'a> RenderableSetUpdate<'a> {
                             obj.key,
                             base + obj.idx,
                             // Fill the padding in with the distance from the view...
-                            -(view_location - obj.position).length_squared(),
+                            (-(view_location - obj.position).length_squared()).into(),
                         )
                     }),
-                |id| OrderedFloat::from(id._padding),
+                |id| id.distance,
             );
 
-            self.set.transparent_group_range =
-                Self::compact_groups(&mut ids[self.set.transparent_object_range.clone()], groups);
+            let start = ids.len();
+            self.set.transparent_group_range = Self::compact_groups(
+                &mut instances[self.set.transparent_object_range.clone()],
+                ids,
+                groups,
+                meshes,
+            );
+            self.set.transparent_object_range = Range {
+                start,
+                end: ids.len(),
+            };
         } else {
             self.set.transparent_object_range = Range::default();
             self.set.transparent_group_range = Range::default();
         }
     }
 
-    fn write_keyed_ids<K: Ord>(
-        buff: &mut Vec<GpuObjectId>,
-        src: impl Iterator<Item = (DrawKey, u32, f32)>,
-        sort: impl FnMut(&GpuObjectId) -> K,
+    fn write_keyed_instances<K: Ord>(
+        buff: &mut Vec<ObjectInstance>,
+        src: impl Iterator<Item = (DrawKey, u32, OrderedFloat<f32>)>,
+        sort: impl FnMut(&ObjectInstance) -> K,
     ) -> Range<usize> {
         let start = buff.len();
 
-        for (key, idx, padding) in src {
-            buff.push(GpuObjectId {
-                draw_idx: bytemuck::cast(key),
-                data_idx: idx,
-                _padding: padding,
+        for (key, idx, distance) in src {
+            buff.push(ObjectInstance {
+                key,
+                id: idx,
+                distance,
             });
         }
 
@@ -339,24 +373,31 @@ impl<'a> RenderableSetUpdate<'a> {
         rng
     }
 
-    fn compact_groups(ids: &mut [GpuObjectId], groups: &mut Vec<DrawGroup>) -> Range<usize> {
+    fn compact_groups<const FIF: usize>(
+        instances: &[ObjectInstance],
+        ids: &mut Vec<GpuObjectId>,
+        groups: &mut Vec<DrawGroup>,
+        meshes: &ResourceAllocator<MeshResource, FIF>,
+    ) -> Range<usize> {
         let start = groups.len();
 
-        if ids.is_empty() {
+        if instances.is_empty() {
             return Range { start, end: start };
         }
 
-        let mut cur_key: DrawKey = bytemuck::cast(ids[0].draw_idx);
+        let mut cur_key = instances[0].key;
+        let mut cur_mesh = meshes.get(cur_key.separate().mesh_id).unwrap();
         groups.push(DrawGroup {
             key: cur_key,
             len: 0,
         });
 
-        ids.iter_mut().for_each(|id| {
+        instances.iter().for_each(|instance| {
             // Create a new group if we encounter a new key
-            let new_key = bytemuck::cast(id.draw_idx);
+            let new_key = instance.key;
             if new_key != cur_key {
                 cur_key = new_key;
+                cur_mesh = meshes.get(cur_key.separate().mesh_id).unwrap();
                 groups.push(DrawGroup {
                     key: cur_key,
                     len: 0,
@@ -365,9 +406,17 @@ impl<'a> RenderableSetUpdate<'a> {
 
             // Update the draw count
             let draw_idx = groups.len() - 1;
-            groups[draw_idx].len += 1;
-            id.draw_idx[0] = draw_idx as u32;
-            id.draw_idx[1] = draw_idx as u32;
+            groups[draw_idx].len += cur_mesh.meshlet_count;
+
+            // Create IDs
+            for i in 0..(cur_mesh.meshlet_count) {
+                ids.push(GpuObjectId {
+                    // The highest bit of data idx is reserved as a visibility flag for objects.
+                    // New objects are always considered visible.
+                    data_idx: instance.id | (1 << 31),
+                    meshlet: cur_mesh.block.meshlet_block().base() + i as u32,
+                });
+            }
         });
 
         Range {

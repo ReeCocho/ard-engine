@@ -54,7 +54,7 @@ impl<const FIF: usize> Bloom<FIF> {
         let downscale = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vert_module.clone(),
                     fragment: Some(frag_module),
                 },
@@ -98,7 +98,7 @@ impl<const FIF: usize> Bloom<FIF> {
         let upscale = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vert_module.clone(),
                     fragment: Some(frag_module),
                 },

@@ -11,6 +11,8 @@ pub struct ShaderCreateInfo<'a> {
     pub texture_slots: usize,
     /// The size of per instance data this shader supports.
     pub data_size: usize,
+    /// Work group size used by mesh, task, and compute shaders. Unused by others.
+    pub work_group_size: (u32, u32, u32),
 }
 
 #[derive(Debug, Error)]
@@ -29,6 +31,8 @@ pub struct Shader {
 pub struct ShaderResource {
     /// The actual shader module.
     pub shader: ard_pal::prelude::Shader,
+    /// Workgroup size for compute, mesh, and task shaders. Unused by other types.
+    pub work_group_size: (u32, u32, u32),
     pub texture_slots: usize,
     pub data_size: usize,
 }
@@ -75,6 +79,7 @@ impl ShaderResource {
             shader,
             texture_slots: create_info.texture_slots,
             data_size: create_info.data_size,
+            work_group_size: create_info.work_group_size,
         })
     }
 }

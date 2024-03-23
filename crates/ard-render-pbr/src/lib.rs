@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use ard_formats::mesh::VertexLayout;
+use ard_formats::vertex::VertexLayout;
 use ard_pal::prelude::{
     BlendFactor, BlendOp, ColorBlendAttachment, ColorBlendState, ColorComponents, CompareOp,
-    CullMode, DepthStencilState, FrontFace, PolygonMode, RasterizationState, ShaderStage,
+    CullMode, DepthStencilState, FrontFace, GraphicsProperties, PolygonMode, RasterizationState,
+    ShaderStage,
 };
 use ard_render_material::{
     factory::PassId,
@@ -16,7 +17,7 @@ use ard_render_renderers::passes::{
     DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
     SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
-use ard_render_si::types::GpuPbrMaterial;
+use ard_render_si::{consts::*, types::GpuPbrMaterial};
 
 pub type PbrMaterialData = GpuPbrMaterial;
 
@@ -28,6 +29,7 @@ pub const PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT: TextureSlot = TextureSlot(2);
 /// Creates the PBR material given functions that can create shader modules and materials (this is
 /// probably going to be a wrapper for the factories shader creation function).
 pub fn create_pbr_material(
+    properties: &GraphicsProperties,
     create_shader: impl Fn(ShaderCreateInfo) -> Shader,
     create_material: impl Fn(MaterialCreateInfo) -> Material,
 ) -> Material {
@@ -53,9 +55,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: HIGH_Z_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.high_z.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.high_z.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: HIGH_Z_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.high_z.spv")),
     );
 
     // Shadow pass
@@ -63,27 +73,51 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: SHADOW_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.shadow.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: SHADOW_OPAQUE_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.shadow_ac.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow_ac.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow_ac.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.shadow_ac.uv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow_ac.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow_ac.uv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -99,29 +133,56 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.depth_prepass.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.depth_prepass.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.depth_prepass_ac.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.depth_prepass_ac.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass_ac.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::UV0,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
         include_bytes!(concat!(
             env!("OUT_DIR"),
-            "./pbr.vert.depth_prepass_ac.uv0.spv"
+            "./pbr.task.depth_prepass_ac.uv0.spv"
+        )),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.mesh.depth_prepass_ac.uv0.spv"
         )),
     );
     variant_code.insert(
@@ -141,9 +202,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_OPAQUE_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -158,9 +227,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color.uv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_OPAQUE_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.uv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -175,9 +252,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color.tuv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.tuv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_OPAQUE_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.tuv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -192,9 +277,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color_ac.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -209,9 +302,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color_ac.uv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.uv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -226,9 +327,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.color_ac.tuv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.tuv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.tuv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -244,9 +353,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::empty(),
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.transparent.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: TRANSPARENT_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -261,9 +378,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.transparent.uv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: TRANSPARENT_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.uv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -278,9 +403,17 @@ pub fn create_pbr_material(
         ShaderVariant {
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
-            stage: ShaderStage::Vertex,
+            stage: ShaderStage::Task,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.vert.transparent.tuv0.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.tuv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: TRANSPARENT_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Mesh,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.tuv0.spv")),
     );
     variant_code.insert(
         ShaderVariant {
@@ -299,12 +432,35 @@ pub fn create_pbr_material(
             create_shader(ShaderCreateInfo {
                 code: *code,
                 debug_name: Some(match variant.stage {
-                    ShaderStage::Vertex => "pbr_vert".into(),
+                    ShaderStage::Task => "pbr_task".into(),
+                    ShaderStage::Mesh => "pbr_mesh".into(),
                     ShaderStage::Fragment => "pbr_frag".into(),
                     _ => String::default(),
                 }),
                 texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
                 data_size: std::mem::size_of::<GpuPbrMaterial>(),
+                work_group_size: match variant.stage {
+                    // Task shader can't have more invocations that we have support for subgroup
+                    // ballots. On the implementations we care about, this is 32.
+                    ShaderStage::Task => (
+                        properties
+                            .mesh_shading
+                            .preferred_task_work_group_invocations
+                            .min(32),
+                        1,
+                        1,
+                    ),
+                    // For mesh shaders, we never want to dispatch more than we have primitives per meshlet.
+                    ShaderStage::Mesh => (
+                        properties
+                            .mesh_shading
+                            .preferred_mesh_work_group_invocations
+                            .min(MAX_PRIMITIVES),
+                        1,
+                        1,
+                    ),
+                    _ => (0, 0, 0),
+                },
             }),
         );
     }
@@ -515,11 +671,20 @@ pub fn create_pbr_material(
     // Construct variants
     let mut variants = Vec::default();
 
-    for (variant, vshader) in variant_shaders.iter() {
-        // Skip if this is not a vertex shader
-        if variant.stage != ShaderStage::Vertex {
+    for (variant, tshader) in variant_shaders.iter() {
+        // Skip if this is not a task shader
+        if variant.stage != ShaderStage::Task {
             continue;
         }
+
+        // Get associated mesh shader
+        let mshader = variant_shaders
+            .get(&ShaderVariant {
+                pass: variant.pass,
+                vertex_layout: variant.vertex_layout,
+                stage: ShaderStage::Mesh,
+            })
+            .unwrap();
 
         // Get the associated fragment shader (if available)
         let fshader = variant_shaders
@@ -536,7 +701,8 @@ pub fn create_pbr_material(
         variants.push(MaterialVariantDescriptor {
             pass_id: variant.pass,
             vertex_layout: VertexLayout::POSITION | VertexLayout::NORMAL | variant.vertex_layout,
-            vertex_shader: vshader.clone(),
+            task_shader: tshader.clone(),
+            mesh_shader: mshader.clone(),
             fragment_shader: fshader,
             rasterization: template.rasterization,
             depth_stencil: template.depth_stencil,

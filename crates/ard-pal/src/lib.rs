@@ -17,6 +17,7 @@ pub mod prelude {
 
     // Context
     pub type Context = api::context::Context<crate::Backend>;
+    pub type GraphicsProperties = api::context::GraphicsProperties;
 
     // Surface
     pub type Surface = api::surface::Surface<crate::Backend>;
@@ -57,6 +58,7 @@ pub mod prelude {
 
     // Graphics pipeline
     pub type GraphicsPipeline = api::graphics_pipeline::GraphicsPipeline<crate::Backend>;
+    pub type MeshShadingShader = api::graphics_pipeline::MeshShadingShader<crate::Backend>;
     pub use api::graphics_pipeline::{
         ColorBlendAttachment, ColorBlendState, DepthStencilState, GraphicsPipelineCreateError,
         GraphicsPipelineCreateInfo, RasterizationState, ShaderStages, VertexInputAttribute,

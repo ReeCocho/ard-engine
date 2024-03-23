@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use ard_assets::prelude::*;
 use ard_formats::{
     material::{BlendType, MaterialType},
-    mesh::{IndexData, MeshHeader, VertexData},
+    mesh::{MeshData, MeshHeader},
     model::{MeshGroup, ModelHeader},
     texture::{MipType, Sampler, TextureData, TextureHeader},
 };
@@ -309,20 +309,12 @@ impl ModelLoader {
         futures::future::join_all((0..header.meshes.len()).map(|mesh_idx| {
             async move {
                 let mesh_path = ModelHeader::mesh_path(asset_path, mesh_idx);
-                let vertex_path = MeshHeader::vertex_path(mesh_path.clone());
-                let index_path = MeshHeader::index_path(mesh_path);
+                let mesh_data_path = MeshHeader::mesh_data_path(mesh_path);
 
-                let (vdata, idata) =
-                    futures::future::try_join(package.read(vertex_path), package.read(index_path))
-                        .await?;
+                let mdata = package.read(mesh_data_path).await?;
 
-                // Decode vertex and index data from bincode
-                let vdata = match bincode::deserialize::<VertexData>(&vdata) {
-                    Ok(data) => data,
-                    Err(err) => return Err(AssetLoadError::Other(err.to_string())),
-                };
-
-                let idata = match bincode::deserialize::<IndexData>(&idata) {
+                // Decode mesh data from bincode
+                let mdata = match bincode::deserialize::<MeshData>(&mdata) {
                     Ok(data) => data,
                     Err(err) => return Err(AssetLoadError::Other(err.to_string())),
                 };
@@ -330,8 +322,7 @@ impl ModelLoader {
                 // Create mesh
                 let create_info = MeshCreateInfo {
                     debug_name: Some(format!("{asset_path:?}/meshes/{mesh_idx}")),
-                    vertices: vdata,
-                    indices: idata,
+                    data: mdata,
                 };
 
                 match self.factory.create_mesh(create_info) {

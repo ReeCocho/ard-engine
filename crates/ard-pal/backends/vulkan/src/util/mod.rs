@@ -7,14 +7,12 @@ pub mod descriptor_pool;
 pub mod fast_int_hasher;
 pub mod garbage_collector;
 pub mod id_gen;
-// pub mod ownership;
 pub mod pipeline_cache;
 pub mod sampler_cache;
 pub mod semaphores;
-// pub mod tracking;
-// pub mod usage;
 pub mod usage;
 
+// TODO: Pretty sure this is wrong
 #[inline(always)]
 pub(crate) const fn rank_pipeline_stage(stage: vk::PipelineStageFlags) -> u32 {
     match stage {
@@ -158,12 +156,18 @@ pub(crate) const fn to_vk_vertex_rate(rate: VertexInputRate) -> vk::VertexInputR
 }
 
 #[inline(always)]
-pub(crate) const fn to_vk_shader_stage(ss: ShaderStage) -> vk::ShaderStageFlags {
+pub(crate) fn to_vk_shader_stage(ss: ShaderStage) -> vk::ShaderStageFlags {
     match ss {
-        ShaderStage::AllGraphics => vk::ShaderStageFlags::ALL_GRAPHICS,
+        ShaderStage::AllGraphics => {
+            vk::ShaderStageFlags::ALL_GRAPHICS
+                | vk::ShaderStageFlags::MESH_EXT
+                | vk::ShaderStageFlags::TASK_EXT
+        }
         ShaderStage::Vertex => vk::ShaderStageFlags::VERTEX,
         ShaderStage::Fragment => vk::ShaderStageFlags::FRAGMENT,
         ShaderStage::Compute => vk::ShaderStageFlags::COMPUTE,
+        ShaderStage::Mesh => vk::ShaderStageFlags::MESH_EXT,
+        ShaderStage::Task => vk::ShaderStageFlags::TASK_EXT,
         ShaderStage::AllStages => vk::ShaderStageFlags::ALL,
     }
 }
@@ -434,16 +438,20 @@ pub fn texture_usage_to_stage_access(
 
     if usage.contains(TextureUsage::SAMPLED) {
         access |= vk::AccessFlags2::SHADER_SAMPLED_READ;
-        stage |= vk::PipelineStageFlags2::VERTEX_SHADER
+        stage |= vk::PipelineStageFlags2::ALL_GRAPHICS
             | vk::PipelineStageFlags2::FRAGMENT_SHADER
-            | vk::PipelineStageFlags2::COMPUTE_SHADER;
+            | vk::PipelineStageFlags2::COMPUTE_SHADER
+            | vk::PipelineStageFlags2::MESH_SHADER_EXT
+            | vk::PipelineStageFlags2::TASK_SHADER_EXT;
     }
 
     if usage.contains(TextureUsage::STORAGE) {
         access |= vk::AccessFlags2::SHADER_STORAGE_READ | vk::AccessFlags2::SHADER_STORAGE_WRITE;
         stage |= vk::PipelineStageFlags2::VERTEX_SHADER
             | vk::PipelineStageFlags2::FRAGMENT_SHADER
-            | vk::PipelineStageFlags2::COMPUTE_SHADER;
+            | vk::PipelineStageFlags2::COMPUTE_SHADER
+            | vk::PipelineStageFlags2::MESH_SHADER_EXT
+            | vk::PipelineStageFlags2::TASK_SHADER_EXT;
     }
 
     if usage.contains(TextureUsage::TRANSFER_DST) {

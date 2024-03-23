@@ -1,9 +1,8 @@
 use ard_ecs::prelude::*;
-use ard_formats::mesh::IndexData;
-use ard_math::Vec3A;
+use ard_math::{Vec2, Vec3A};
 use ard_pal::prelude::{
-    Buffer, BufferCreateInfo, BufferUsage, CommandBuffer, Context, MemoryUsage, QueueType,
-    QueueTypes, RenderPass, SharingMode,
+    Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, RenderPass,
+    SharingMode,
 };
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
@@ -19,11 +18,11 @@ use std::ops::DerefMut;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
-    calls::OutputDrawCalls,
-    draw_gen::{DrawGenPipeline, DrawGenSets},
     highz::HzbImage,
     passes::{
-        color::ColorPassSets, depth_only::DepthOnlyPassSets, depth_prepass::DepthPrepassSets, COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID, DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, TRANSPARENT_PASS_ID
+        color::ColorPassSets, depth_only::DepthOnlyPassSets, depth_prepass::DepthPrepassSets,
+        COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+        DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, TRANSPARENT_PASS_ID,
     },
 };
 
@@ -33,19 +32,14 @@ pub const DEFAULT_OUTPUT_ID_CAP: usize = 1;
 /// Primary GPU driven scene renderer.
 #[derive(Resource)]
 pub struct SceneRenderer {
+    ctx: Context,
     /// Object IDs which are filtered using the GPU driven frustum and occlusion culling compute
     /// shaders.
     input_ids: Buffer,
-    /// IDs output from the culling computer shader to be bound when actual rendering is performed.
-    output_ids: Buffer,
     /// Draw bins.
     bins: DrawBins,
-    /// Draw calls.
-    calls: OutputDrawCalls,
     /// Object information.
     set: RenderableSet,
-    /// Set bindings for draw generation.
-    draw_gen: DrawGenSets,
     /// Sets for rendering the HZB image.
     hzb_pass_sets: DepthOnlyPassSets,
     /// Sets for depth prepass rendering.
@@ -56,6 +50,7 @@ pub struct SceneRenderer {
 
 pub struct SceneRenderArgs<'a, 'b, const FIF: usize> {
     pub pass: &'b mut RenderPass<'a>,
+    pub render_area: Vec2,
     pub static_dirty: bool,
     pub camera: &'a CameraUbo,
     pub mesh_factory: &'a MeshFactory,
@@ -66,13 +61,9 @@ pub struct SceneRenderArgs<'a, 'b, const FIF: usize> {
 }
 
 impl SceneRenderer {
-    pub fn new(
-        ctx: &Context,
-        layouts: &Layouts,
-        draw_gen: &DrawGenPipeline,
-        frames_in_flight: usize,
-    ) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         Self {
+            ctx: ctx.clone(),
             input_ids: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
@@ -86,54 +77,17 @@ impl SceneRenderer {
                 },
             )
             .unwrap(),
-            output_ids: Buffer::new(
-                ctx.clone(),
-                BufferCreateInfo {
-                    size: (DEFAULT_OUTPUT_ID_CAP * std::mem::size_of::<u32>()) as u64,
-                    array_elements: 1,
-                    buffer_usage: BufferUsage::STORAGE_BUFFER,
-                    memory_usage: MemoryUsage::GpuOnly,
-                    queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
-                    sharing_mode: SharingMode::Exclusive,
-                    debug_name: Some("output_ids".to_owned()),
-                },
-            )
-            .unwrap(),
-            bins: DrawBins::new(ctx, frames_in_flight),
-            calls: OutputDrawCalls::new(ctx, frames_in_flight),
+            bins: DrawBins::new(frames_in_flight),
             set: RenderableSet::default(),
             hzb_pass_sets: DepthOnlyPassSets::new(ctx, layouts, frames_in_flight),
             depth_prepass_sets: DepthPrepassSets::new(ctx, layouts, frames_in_flight),
             color_sets: ColorPassSets::new(ctx, layouts, frames_in_flight),
-            draw_gen: DrawGenSets::new(draw_gen, true, frames_in_flight),
         }
-    }
-
-    #[inline(always)]
-    pub fn draw_gen_sets(&self) -> &DrawGenSets {
-        &self.draw_gen
     }
 
     #[inline(always)]
     pub fn color_pass_sets_mut(&mut self) -> &mut ColorPassSets {
         &mut self.color_sets
-    }
-
-    pub fn transfer_ownership<'a>(
-        &'a self,
-        frame: Frame,
-        commands: &mut CommandBuffer<'a>,
-        new_queue: QueueType,
-    ) {
-        // Don't transfer ownership unless we have valid draw calls to render, because if we don't
-        // then the buffers are never actually acquired, and we'll end up with duplicate releases.
-        if !self.bins.has_valid_draws(frame) {
-            return;
-        }
-
-        self.calls
-            .transfer_ownership(commands, frame, self.bins.use_alternate(frame), new_queue);
-        commands.transfer_buffer_ownership(&self.output_ids, 0, new_queue, None);
     }
 
     pub fn upload<const FIF: usize>(
@@ -151,7 +105,7 @@ impl SceneRenderer {
             .with_opaque()
             .with_alpha_cutout()
             .with_transparent()
-            .update(view_location, objects, |_| true, |_| true, |_| true);
+            .update(view_location, objects, meshes, |_| true, |_| true, |_| true);
 
         // Expand ID buffers if needed
         let input_id_buffer_size = std::mem::size_of_val(self.set.ids()) as u64;
@@ -163,13 +117,6 @@ impl SceneRenderer {
                 }
                 None => false,
             };
-
-        let output_id_buffer_size = (self.set.ids().len() * std::mem::size_of::<u32>()) as u64;
-        if let Some(mut new_buffer) = Buffer::expand(&self.output_ids, output_id_buffer_size, false)
-        {
-            std::mem::swap(&mut self.output_ids, &mut new_buffer);
-        }
-
         // Write in object IDs
         let mut id_view = self.input_ids.write(usize::from(frame)).unwrap();
         let id_slice = bytemuck::cast_slice_mut::<_, GpuObjectId>(id_view.deref_mut());
@@ -200,9 +147,6 @@ impl SceneRenderer {
             + self.set.dynamic_group_ranges().opaque.len()
             + self.set.dynamic_group_ranges().alpha_cutout.len();
 
-        self.bins
-            .preallocate_draw_group_buffers(self.set.groups().len());
-
         self.bins.gen_bins(
             frame,
             self.set.groups()[self.set.static_group_ranges().opaque.clone()].iter(),
@@ -213,10 +157,6 @@ impl SceneRenderer {
             meshes,
             materials,
         );
-
-        self.calls.preallocate(self.set.groups().len());
-        self.calls
-            .upload_counts(self.bins.bins(frame), frame, self.bins.use_alternate(frame));
     }
 
     pub fn update_bindings<const FIF: usize>(
@@ -224,42 +164,22 @@ impl SceneRenderer {
         frame: Frame,
         objects: &RenderObjects,
         hzb_image: &HzbImage<FIF>,
-        meshes: &MeshFactory,
     ) {
         self.hzb_pass_sets.update_object_data_bindings(
             frame,
             objects.object_data(),
-            &self.output_ids,
+            &self.input_ids,
         );
 
         self.depth_prepass_sets.update_object_data_bindings(
             frame,
             objects.object_data(),
-            &self.output_ids,
+            &self.input_ids,
         );
+        self.depth_prepass_sets.update_hzb_binding(frame, hzb_image);
 
         self.color_sets
-            .update_object_data_bindings(frame, objects.object_data(), &self.output_ids);
-
-        self.draw_gen.update_bindings(
-            frame,
-            self.set.ids().len(),
-            self.set.non_transparent_object_count(),
-            self.set.groups().len(),
-            self.set.non_transparent_draw_count(),
-            self.bins.draw_groups_buffer(frame),
-            self.calls
-                .instance_count_buffer(frame, self.bins.use_alternate(frame)),
-            self.calls
-                .draw_call_buffer(frame, self.bins.use_alternate(frame)),
-            self.calls
-                .draw_counts_buffer(frame, self.bins.use_alternate(frame)),
-            objects,
-            Some(hzb_image),
-            &self.input_ids,
-            &self.output_ids,
-            meshes.mesh_info_buffer(),
-        );
+            .update_object_data_bindings(frame, objects.object_data(), &self.input_ids);
     }
 
     pub fn render_hzb<'a, const FIF: usize>(
@@ -267,17 +187,15 @@ impl SceneRenderer {
         frame: Frame,
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
-        args.pass
-            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
-
         // Render static opaque geometry
-        self.bins.render_static_opaque_bins(true, RenderArgs {
+        self.bins.render_static_opaque_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: HIGH_Z_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.hzb_pass_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -291,17 +209,15 @@ impl SceneRenderer {
         frame: Frame,
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
-        args.pass
-            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
-
         // Render opaque and alpha cut objects
-        self.bins.render_static_opaque_bins(false, RenderArgs {
+        self.bins.render_static_opaque_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.depth_prepass_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -310,12 +226,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_dynamic_opaque_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
             frame,
             camera: args.camera,
+            render_area: args.render_area,
             global_set: self.depth_prepass_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -324,12 +241,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_static_alpha_cutoff_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.depth_prepass_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -338,12 +256,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.depth_prepass_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -357,16 +276,14 @@ impl SceneRenderer {
         frame: Frame,
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
-        args.pass
-            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
-
-        self.bins.render_static_opaque_bins(false, RenderArgs {
+        self.bins.render_static_opaque_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: COLOR_OPAQUE_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.color_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -375,12 +292,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_dynamic_opaque_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: COLOR_OPAQUE_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.color_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -389,12 +307,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_static_alpha_cutoff_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.color_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -403,12 +322,13 @@ impl SceneRenderer {
         });
 
         self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.color_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,
@@ -422,16 +342,14 @@ impl SceneRenderer {
         frame: Frame,
         args: SceneRenderArgs<'a, '_, FIF>,
     ) {
-        args.pass
-            .bind_index_buffer(args.mesh_factory.index_buffer(), 0, 0, IndexData::TYPE);
-
         self.bins.render_transparent_bins(RenderArgs {
+            ctx: &self.ctx,
             pass_id: TRANSPARENT_PASS_ID,
             frame,
+            render_area: args.render_area,
             camera: args.camera,
             global_set: self.color_sets.get_set(frame),
             pass: args.pass,
-            calls: &self.calls,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
             texture_factory: args.texture_factory,

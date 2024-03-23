@@ -18,7 +18,6 @@ use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
-    draw_gen::DrawGenPipeline,
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
     scene::{SceneRenderArgs, SceneRenderer},
@@ -39,7 +38,6 @@ pub(crate) struct RenderEcs {
     gui_renderer: GuiRenderer,
     lighting: LightClusters,
     froxels: FroxelGenPipeline,
-    draw_gen: DrawGenPipeline,
     _fxaa: Fxaa,
     smaa: Smaa,
     hzb_render: HzbRenderer,
@@ -102,7 +100,6 @@ impl RenderEcs {
 
         let layouts = Layouts::new(&ctx);
         let factory = Factory::new(ctx.clone(), &layouts);
-        let draw_gen = DrawGenPipeline::new(&ctx, &layouts);
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
         let fxaa = Fxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
@@ -117,14 +114,9 @@ impl RenderEcs {
             &ao,
         );
 
-        let mut scene_renderer = SceneRenderer::new(&ctx, &layouts, &draw_gen, FRAMES_IN_FLIGHT);
-        let sun_shadows_renderer = SunShadowsRenderer::new(
-            &ctx,
-            &layouts,
-            &draw_gen,
-            FRAMES_IN_FLIGHT,
-            MAX_SHADOW_CASCADES,
-        );
+        let mut scene_renderer = SceneRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let sun_shadows_renderer =
+            SunShadowsRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES);
         let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
@@ -165,7 +157,6 @@ impl RenderEcs {
                 sun_shadows_renderer,
                 gui_renderer,
                 lighting,
-                draw_gen,
                 hzb_render,
                 _fxaa: fxaa,
                 smaa,
@@ -218,7 +209,6 @@ impl RenderEcs {
         let new_shadow_cascades = self.sun_shadows_renderer.update_cascade_settings(
             &self.ctx,
             &self.layouts,
-            &self.draw_gen,
             FRAMES_IN_FLIGHT,
             frame.lights.global().shadow_cascades(),
         );
@@ -298,15 +288,11 @@ impl RenderEcs {
         // Update sets and bindings
         self.lighting.update_set(frame.frame, &frame.lights);
 
-        self.scene_renderer.update_bindings(
-            frame.frame,
-            &frame.object_data,
-            self.canvas.hzb(),
-            &mesh_factory,
-        );
+        self.scene_renderer
+            .update_bindings(frame.frame, &frame.object_data, self.canvas.hzb());
 
         self.sun_shadows_renderer
-            .update_bindings::<FRAMES_IN_FLIGHT>(frame.frame, &frame.object_data, &mesh_factory);
+            .update_bindings::<FRAMES_IN_FLIGHT>(frame.frame, &frame.object_data);
 
         self.sun_shadows_renderer.update_cascade_views(
             frame.frame,
@@ -348,13 +334,6 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        Self::generate_shadow_draw_calls(
-            &mut main_cb,
-            &frame,
-            &self.sun_shadows_renderer,
-            &self.draw_gen,
-        );
-
         self.proc_skybox
             .gather_diffuse_irradiance(&mut main_cb, frame.lights.global().sun_direction());
 
@@ -383,7 +362,6 @@ impl RenderEcs {
         );
 
         self.generate_hzb(&mut compute_cb, &frame);
-        self.generate_draw_calls(&mut compute_cb, &frame);
         self.generate_froxels(&mut compute_cb, &frame);
         self.cluster_lights(&mut compute_cb, &frame);
 
@@ -558,6 +536,9 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
+        let (width, height, _) = self.canvas.render_target().color_target().dims();
+        let render_area = Vec2::new(width as f32, height as f32);
+
         commands.render_pass(
             self.canvas.render_target().hzb_pass(),
             Some("render_hzb"),
@@ -572,6 +553,7 @@ impl RenderEcs {
                     SceneRenderArgs {
                         camera: &self.camera,
                         pass,
+                        render_area,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -583,6 +565,7 @@ impl RenderEcs {
             },
         );
 
+        // Transfer depth so it can be read when generating the HZB
         let depth = self.canvas.render_target().final_depth();
         commands.transfer_texture_ownership(
             depth,
@@ -592,6 +575,11 @@ impl RenderEcs {
             QueueType::Compute,
             None,
         );
+
+        // Transfer the HZB image itself.
+        self.canvas
+            .hzb()
+            .transfer_ownership(commands, QueueType::Compute);
     }
 
     #[inline(never)]
@@ -604,6 +592,9 @@ impl RenderEcs {
 
         let depth = self.canvas.render_target().final_depth();
         commands.transfer_texture_ownership(depth, 0, 0, depth.mip_count(), QueueType::Main, None);
+        self.canvas
+            .hzb()
+            .transfer_ownership(commands, QueueType::Main);
     }
 
     #[inline(never)]
@@ -629,30 +620,6 @@ impl RenderEcs {
     }
 
     #[inline(never)]
-    /// Generates draw calls.
-    fn generate_draw_calls<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
-        puffin::profile_function!();
-
-        let (width, height) = self.canvas.size();
-        self.draw_gen.generate(
-            frame_data.frame,
-            commands,
-            self.scene_renderer.draw_gen_sets(),
-            &self.camera,
-            Vec2::new(width as f32, height as f32),
-        );
-
-        self.draw_gen.compact(
-            frame_data.frame,
-            commands,
-            self.scene_renderer.draw_gen_sets(),
-        );
-
-        self.scene_renderer
-            .transfer_ownership(frame_data.frame, commands, QueueType::Main);
-    }
-
-    #[inline(never)]
     /// Performs the entire depth prepass.
     #[allow(clippy::too_many_arguments)]
     fn depth_prepass<'a>(
@@ -669,6 +636,9 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
+        let (width, height, _) = canvas.render_target().color_target().dims();
+        let render_area = Vec2::new(width as f32, height as f32);
+
         commands.render_pass(
             canvas.render_target().depth_prepass(),
             Some("depth_prepass"),
@@ -678,6 +648,7 @@ impl RenderEcs {
                     SceneRenderArgs {
                         pass,
                         camera,
+                        render_area,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -714,24 +685,6 @@ impl RenderEcs {
             QueueType::Compute,
             None,
         );
-    }
-
-    #[inline(never)]
-    fn generate_shadow_draw_calls<'a>(
-        commands: &mut CommandBuffer<'a>,
-        frame_data: &FrameData,
-        shadow_renderer: &'a SunShadowsRenderer,
-        draw_gen: &'a DrawGenPipeline,
-    ) {
-        puffin::profile_function!();
-
-        for cascade in 0..shadow_renderer.cascade_count() {
-            shadow_renderer.generate_draw_calls(frame_data.frame, commands, draw_gen, cascade);
-        }
-
-        for cascade in 0..shadow_renderer.cascade_count() {
-            shadow_renderer.compact_draw_calls(frame_data.frame, commands, draw_gen, cascade);
-        }
     }
 
     #[inline(never)]
@@ -783,6 +736,9 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
+        let (width, height, _) = canvas.render_target().color_target().dims();
+        let render_area = Vec2::new(width as f32, height as f32);
+
         commands.render_pass(
             canvas
                 .render_target()
@@ -794,6 +750,7 @@ impl RenderEcs {
                     SceneRenderArgs {
                         pass,
                         camera,
+                        render_area,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -829,6 +786,9 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
+        let (width, height, _) = canvas.render_target().color_target().dims();
+        let render_area = Vec2::new(width as f32, height as f32);
+
         commands.render_pass(
             canvas.render_target().transparent_pass(),
             Some("transparent_pass"),
@@ -838,6 +798,7 @@ impl RenderEcs {
                     SceneRenderArgs {
                         pass,
                         camera,
+                        render_area,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -848,7 +809,5 @@ impl RenderEcs {
                 );
             },
         );
-
-        scene_render.transfer_ownership(frame_data.frame, commands, QueueType::Compute);
     }
 }

@@ -5,7 +5,7 @@
         bindings: [
             (
                 name: "GlobalObjectData",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -16,13 +16,13 @@
             ),
             (
                 name: "ObjectIds",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
                 )
             ),
         ]
@@ -33,7 +33,7 @@
         bindings: [
             (
                 name: "GlobalObjectData",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -44,14 +44,20 @@
             ),
             (
                 name: "ObjectIds",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
-                    access: ReadOnly,
+                    access: ReadWrite,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
                 )
+            ),
+            (
+                name: "HzbImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("hzb_image"),
             ),
         ]
     ),
@@ -61,7 +67,7 @@
         bindings: [
             (
                 name: "GlobalObjectData",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -72,18 +78,35 @@
             ),
             (
                 name: "ObjectIds",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: U32)),
+                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
                 )
             ),
-                        (
+            // Shadows
+            (
+                name: "ShadowCascades",
+                stage: AllGraphics,
+                count: "MAX_SHADOW_CASCADES",
+                data: ShadowTextureArray("shadow_cascades")
+            ),
+            (
+                name: "SunShadowInfo",
+                stage: AllGraphics,
+                count: "1",
+                data: Ubo((
+                    name: "sun_shadow_info",
+                    ty: Struct("SunShadows"),
+                ))
+            ),
+            // Lighting.
+            (
                 name: "GlobalLightingInfo",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ubo((
                     name: "global_lighting",
@@ -91,29 +114,8 @@
                 ))
             ),
             (
-                name: "ShadowCascades",
-                stage: AllStages,
-                count: "MAX_SHADOW_CASCADES",
-                data: ShadowTextureArray("shadow_cascades")
-            ),
-            (
-                name: "SunShadowInfo",
-                stage: AllStages,
-                count: "1",
-                data: Ubo((
-                    name: "sun_shadow_info",
-                    ty: Struct("SunShadows"),
-                ))
-            ),
-            (
-                name: "AoImage",
-                stage: AllStages,
-                count: "1",
-                data: Texture("ao_image")
-            ),
-            (
                 name: "Lights",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -124,7 +126,7 @@
             ),
             (
                 name: "LightClusters",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
@@ -133,24 +135,126 @@
                     unbounded_array: None,
                 )
             ),
+            // Screen images.
+            (
+                name: "AoImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("ao_image")
+            ),
+            // IBL.
             (
                 name: "DiMap",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: CubeMap("di_map"),
             ),
             (
                 name: "EnvMap",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: CubeMap("env_map"),
             ),
             (
                 name: "BrdfLut",
-                stage: AllStages,
+                stage: AllGraphics,
                 count: "1",
                 data: Texture("brdf_lut"),
             )
+        ]
+    ),
+    // Mesh data.
+    (
+        name: "MeshData",
+        bindings: [
+            (
+                name: "Indices",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_indices", ty: U32)),
+                )
+            ),
+            (
+                name: "Positions",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_positions", ty: Vec4)),
+                )
+            ),
+            (
+                name: "Normals",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_normals", ty: UVec2)),
+                )
+            ),
+            (
+                name: "Tangents",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_tangents", ty: UVec2)),
+                )
+            ),
+            (
+                name: "UV0",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_uv0s", ty: U32)),
+                )
+            ),
+            (
+                name: "UV1",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_uv1s", ty: U32)),
+                )
+            ),
+            (
+                name: "Meshlets",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "v_meshlets", ty: Struct("Meshlet"))),
+                )
+            ),
+            (
+                name: "MeshInfoLookup",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
+                )
+            ),
         ]
     ),
     // Per material and texture slot bindings.

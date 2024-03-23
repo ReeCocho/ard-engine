@@ -1,4 +1,4 @@
-use api::graphics_pipeline::GraphicsPipelineCreateInfo;
+use api::graphics_pipeline::{GraphicsPipelineCreateInfo, ShaderStages};
 use ash::vk::{self, Handle};
 use crossbeam_channel::Sender;
 use std::ffi::CString;
@@ -22,7 +22,9 @@ impl GraphicsPipeline {
     ) -> Self {
         let push_constant_ranges = descriptor.push_constants_size.map(|size| {
             [vk::PushConstantRange {
-                stage_flags: vk::ShaderStageFlags::ALL_GRAPHICS,
+                stage_flags: vk::ShaderStageFlags::ALL_GRAPHICS
+                    | vk::ShaderStageFlags::MESH_EXT
+                    | vk::ShaderStageFlags::TASK_EXT,
                 offset: 0,
                 size,
             }]
@@ -152,24 +154,108 @@ impl GraphicsPipeline {
             .dynamic_states(&dynamic_states)
             .build();
 
-        let entry_point = std::ffi::CString::new("main").unwrap();
-        let mut shader_stages = Vec::with_capacity(2);
-        shader_stages.push(
-            vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(self.descriptor.stages.vertex.internal().module)
-                .name(&entry_point)
+        let spec_map_entries = [
+            vk::SpecializationMapEntry::builder()
+                .constant_id(0)
+                .offset(0)
+                .size(std::mem::size_of::<u32>())
                 .build(),
-        );
-        if let Some(stage) = &self.descriptor.stages.fragment {
-            shader_stages.push(
-                vk::PipelineShaderStageCreateInfo::builder()
-                    .stage(vk::ShaderStageFlags::FRAGMENT)
-                    .module(stage.internal().module)
-                    .name(&entry_point)
-                    .build(),
-            );
-        }
+            vk::SpecializationMapEntry::builder()
+                .constant_id(1)
+                .offset(std::mem::size_of::<u32>() as u32)
+                .size(std::mem::size_of::<u32>())
+                .build(),
+            vk::SpecializationMapEntry::builder()
+                .constant_id(2)
+                .offset(2 * std::mem::size_of::<u32>() as u32)
+                .size(std::mem::size_of::<u32>())
+                .build(),
+        ];
+        let mesh_spec_map_values;
+        let task_spec_map_values;
+        let mesh_spec;
+        let task_spec;
+
+        let entry_point = std::ffi::CString::new("main").unwrap();
+        let shader_stages = match &self.descriptor.stages {
+            ShaderStages::Traditional { vertex, fragment } => {
+                let mut shader_stages = Vec::with_capacity(2);
+                shader_stages.push(
+                    vk::PipelineShaderStageCreateInfo::builder()
+                        .stage(vk::ShaderStageFlags::VERTEX)
+                        .module(vertex.internal().module)
+                        .name(&entry_point)
+                        .build(),
+                );
+                if let Some(stage) = fragment {
+                    shader_stages.push(
+                        vk::PipelineShaderStageCreateInfo::builder()
+                            .stage(vk::ShaderStageFlags::FRAGMENT)
+                            .module(stage.internal().module)
+                            .name(&entry_point)
+                            .build(),
+                    );
+                }
+                shader_stages
+            }
+            ShaderStages::MeshShading {
+                task,
+                mesh,
+                fragment,
+            } => {
+                let mut shader_stages = Vec::with_capacity(3);
+
+                mesh_spec_map_values = vec![
+                    mesh.work_group_size.0,
+                    mesh.work_group_size.1,
+                    mesh.work_group_size.2,
+                ];
+
+                mesh_spec = vk::SpecializationInfo::builder()
+                    .map_entries(&spec_map_entries)
+                    .data(bytemuck::cast_slice(&mesh_spec_map_values));
+
+                shader_stages.push(
+                    vk::PipelineShaderStageCreateInfo::builder()
+                        .stage(vk::ShaderStageFlags::MESH_EXT)
+                        .module(mesh.shader.internal().module)
+                        .name(&entry_point)
+                        .specialization_info(&mesh_spec)
+                        .build(),
+                );
+
+                if let Some(stage) = task {
+                    task_spec_map_values = vec![
+                        stage.work_group_size.0,
+                        stage.work_group_size.1,
+                        stage.work_group_size.2,
+                    ];
+
+                    task_spec = vk::SpecializationInfo::builder()
+                        .map_entries(&spec_map_entries)
+                        .data(bytemuck::cast_slice(&task_spec_map_values));
+
+                    shader_stages.push(
+                        vk::PipelineShaderStageCreateInfo::builder()
+                            .stage(vk::ShaderStageFlags::TASK_EXT)
+                            .module(stage.shader.internal().module)
+                            .name(&entry_point)
+                            .specialization_info(&task_spec)
+                            .build(),
+                    );
+                }
+                if let Some(stage) = fragment {
+                    shader_stages.push(
+                        vk::PipelineShaderStageCreateInfo::builder()
+                            .stage(vk::ShaderStageFlags::FRAGMENT)
+                            .module(stage.internal().module)
+                            .name(&entry_point)
+                            .build(),
+                    );
+                }
+                shader_stages
+            }
+        };
 
         let depth_stencil = match &self.descriptor.depth_stencil {
             Some(depth_stencil) => vk::PipelineDepthStencilStateCreateInfo::builder()

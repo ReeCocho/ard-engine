@@ -1,5 +1,24 @@
 [
     (
+        name: "Meshlet",
+        no_mangle: false,
+        // Data for meshlets is packed together into a single 128-bit value.
+        // The layout is as follows (from lowest to highest bit).
+        //
+        // Vertex offset    : 32
+        // Index offset     : 32
+        // Vertex count     : 8
+        // Primitive count  : 8
+        // Min point        : 24
+        // Max point        : 24
+        //
+        // Min and max point are 8-bit per channel unorm vec3s.
+        // They represent the bounding box relative to the bounds of the whole mesh.
+        fields: [
+            (name: "data", ty: UVec4),
+        ]
+    ),
+    (
         name: "Frustum",
         no_mangle: false,
         fields: [
@@ -54,24 +73,21 @@
         name: "ObjectBounds",
         no_mangle: false,
         fields: [
-            // The `w` component of `center` should be a bounding sphere radius.
-            (name: "center", ty: Vec4),
-            (name: "half_extents", ty: Vec4),
+            // The `w` component of `min_pt` should be a bounding sphere radius.
+            (name: "min_pt", ty: Vec4),
+            (name: "max_pt", ty: Vec4),
         ]
     ),
     (
         name: "ObjectId",
         no_mangle: true,
         fields: [
-            /// Index within the draw call buffer for the draw this object belongs to.
-            ///
-            /// # NOTE
-            /// This is an array of two elements because we use this space for object sorting
-            /// using draw keys which are u64s (two u32s).
-            (name: "draw_idx", ty: Array(ty: U32, len: "2")),
-            /// Index within the object data buffer for the object
+            /// Index within the object data buffer for the object.
+            /// The highest bit in the data index is reserved for 
+            /// a visibility flag used by culling.
             (name: "data_idx", ty: U32),
-            (name: "_padding", ty: F32),
+            /// ID of the meshlet for this object.
+            (name: "meshlet", ty: U32),
         ]
     ),
     // Per instance object data.
@@ -81,7 +97,7 @@
         fields: [
             (name: "model", ty: Mat4),       // Object instance model matrix
             (name: "normal", ty: Mat4),      // inv(transpose(model))
-            (name: "mesh", ty: U32),     // Mesh ID
+            (name: "mesh", ty: U32),         // Mesh ID
             (name: "material", ty: U32),     // Material ID for properties lookup
             (name: "textures", ty: U32),     // Texture table ID
             (name: "entity_id", ty: U32),    // ECS entity ID
@@ -257,6 +273,16 @@
             (name: "mip_levels", ty: Array(len: "ENV_PREFILTER_SAMPLE_COUNT", ty: F32)),
             (name: "sample_weights", ty: Array(len: "ENV_PREFILTER_SAMPLE_COUNT", ty: F32)),
             (name: "inv_total_sample_weight", ty: F32),
+        ]
+    ),
+    // Push constants for mesh shadering rendering.
+    (
+        name: "DrawPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "object_id_offset", ty: U32),
+            (name: "object_id_count", ty: U32),
+            (name: "render_area", ty: Vec2),
         ]
     ),
     // Push constants for HZB generation.

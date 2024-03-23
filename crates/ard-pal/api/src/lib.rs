@@ -24,6 +24,7 @@ use std::{ptr::NonNull, time::Duration};
 use buffer::{BufferCreateError, BufferCreateInfo, BufferViewError};
 use command_buffer::Command;
 use compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
+use context::GraphicsProperties;
 use cube_map::{CubeMapCreateError, CubeMapCreateInfo};
 use descriptor_set::{
     DescriptorSetCreateError, DescriptorSetCreateInfo, DescriptorSetLayoutCreateError,
@@ -59,6 +60,8 @@ pub trait Backend: Sized + 'static {
     type Job;
     type DrawIndexedIndirect: Copy + Clone;
     type DispatchIndirect: Copy + Clone;
+
+    unsafe fn properties(&self) -> &GraphicsProperties;
 
     unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
         &self,

@@ -520,9 +520,9 @@ fn setup(app: &mut App) {
 
     // Load in models
     let bistro_model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
+    // let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
     assets.wait_for_load(&bistro_model);
-    assets.wait_for_load(&sphere_model);
+    // assets.wait_for_load(&sphere_model);
 
     // Instantiate models
     let instance = assets.get(&bistro_model).unwrap().instantiate();
@@ -547,6 +547,7 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
+    /*
     let sphere = assets.get(&sphere_model).unwrap();
     let offset = Vec3::new(0.0, 25.0, 0.0);
     const SPHERE_X: usize = 8;
@@ -586,6 +587,7 @@ fn setup(app: &mut App) {
     }
 
     app.world.entities().commands().create(pack, &mut []);
+    */
 
     /*
     app.world.entities().commands().create(
@@ -641,7 +643,8 @@ fn setup(app: &mut App) {
     let quad = factory
         .create_mesh(MeshCreateInfo {
             debug_name: Some("quad".to_owned()),
-            vertices: VertexAttributes {
+            data: VertexAttributes {
+                indices: [1u32, 0, 2, 2, 0, 3, 4, 5, 6, 4, 6, 7].as_slice(),
                 positions: &[
                     Vec4::new(-1.0, 0.0, -1.0, 1.0),
                     Vec4::new(-1.0, 0.0, 1.0, 1.0),
@@ -663,13 +666,9 @@ fn setup(app: &mut App) {
                     Vec4::new(0.0, -1.0, 0.0, 0.0),
                 ],
                 tangents: None,
-                colors: None,
                 uv0: None,
                 uv1: None,
-                uv2: None,
-                uv3: None,
             },
-            indices: [1u32, 0, 2, 2, 0, 3, 4, 5, 6, 4, 6, 7].as_slice(),
         })
         .unwrap();
 
@@ -703,7 +702,8 @@ fn setup(app: &mut App) {
     let mesh = factory
         .create_mesh(MeshCreateInfo {
             debug_name: Some("triangle".to_owned()),
-            vertices: VertexAttributes {
+            data: VertexAttributes {
+                indices: [0u32, 1, 2, 0, 2, 1].as_slice(),
                 positions: &[
                     Vec4::new(1.0, 0.0, 0.1, 1.0),
                     Vec4::new(-1.0, 0.0, 0.1, 1.0),
@@ -715,13 +715,9 @@ fn setup(app: &mut App) {
                     Vec4::new(0.0, 0.0, 1.0, 0.0),
                 ],
                 tangents: None,
-                colors: None,
                 uv0: None,
                 uv1: None,
-                uv2: None,
-                uv3: None,
             },
-            indices: [0u32, 1, 2, 0, 2, 1].as_slice(),
         })
         .unwrap();
 

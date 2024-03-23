@@ -7,6 +7,17 @@ use crate::{queue::Queue, types::QueueType, Backend};
 /// The context also provides you with a selection of four [`Queues`](Queue).
 pub struct Context<B: Backend>(pub(crate) Arc<B>);
 
+#[derive(Debug, Default)]
+pub struct GraphicsProperties {
+    pub mesh_shading: MeshShadingProperties,
+}
+
+#[derive(Debug, Default)]
+pub struct MeshShadingProperties {
+    pub preferred_mesh_work_group_invocations: u32,
+    pub preferred_task_work_group_invocations: u32,
+}
+
 impl<B: Backend> Context<B> {
     /// Creates a new Pal instance.
     ///
@@ -60,6 +71,11 @@ impl<B: Backend> Context<B> {
     #[inline(always)]
     pub fn present(&self) -> Queue<B> {
         Queue::new(self.clone(), QueueType::Present)
+    }
+
+    #[inline(always)]
+    pub fn properties(&self) -> &GraphicsProperties {
+        unsafe { self.0.properties() }
     }
 }
 

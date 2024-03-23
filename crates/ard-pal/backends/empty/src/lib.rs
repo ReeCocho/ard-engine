@@ -1,7 +1,7 @@
-use api::{surface::SurfaceCapabilities, Backend};
+use api::{context::GraphicsProperties, surface::SurfaceCapabilities, Backend};
 use raw_window_handle::HasRawWindowHandle;
 
-pub struct EmptyBackend;
+pub struct EmptyBackend(GraphicsProperties);
 
 impl Backend for EmptyBackend {
     type Buffer = ();
@@ -17,6 +17,10 @@ impl Backend for EmptyBackend {
     type Job = ();
     type DrawIndexedIndirect = ();
     type DispatchIndirect = ();
+
+    unsafe fn properties(&self) -> &GraphicsProperties {
+        &self.0
+    }
 
     unsafe fn create_surface<W: HasRawWindowHandle>(
         &self,

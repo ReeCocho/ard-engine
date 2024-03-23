@@ -256,7 +256,7 @@ impl ProceduralSkyBox {
         let sky_box_pipeline = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vs.clone(),
                     fragment: Some(fs),
                 },
@@ -328,7 +328,7 @@ impl ProceduralSkyBox {
         let di_render_pipeline = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vs.clone(),
                     fragment: Some(fs),
                 },
@@ -465,7 +465,7 @@ impl ProceduralSkyBox {
         let prefilter_pipeline = GraphicsPipeline::new(
             ctx.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vs.clone(),
                     fragment: Some(fs),
                 },

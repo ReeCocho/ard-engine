@@ -138,7 +138,7 @@ fn main() {
         GraphicsPipeline::new(
             context.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vertex_shader,
                     fragment: Some(fragment_shader),
                 },
@@ -305,7 +305,7 @@ fn main() {
         let pipeline = GraphicsPipeline::new(
             context.clone(),
             GraphicsPipelineCreateInfo {
-                stages: ShaderStages {
+                stages: ShaderStages::Traditional {
                     vertex: vertex_shader,
                     fragment: Some(fragment_shader),
                 },

@@ -1,4 +1,4 @@
-use ard_formats::mesh::VertexLayout;
+use ard_formats::vertex::VertexLayout;
 use ard_log::warn;
 use ard_render_base::resource::{ResourceAllocator, ResourceId};
 use ard_render_material::material::MaterialResource;

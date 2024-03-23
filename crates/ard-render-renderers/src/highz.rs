@@ -114,7 +114,7 @@ impl<const FIF: usize> HzbImage<FIF> {
                 sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::SAMPLED | TextureUsage::STORAGE,
                 memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::COMPUTE,
+                queue_types: QueueTypes::COMPUTE | QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
                 debug_name: Some(String::from("hzb_image")),
             },
@@ -230,5 +230,20 @@ impl<const FIF: usize> HzbImage<FIF> {
     #[inline(always)]
     pub fn tex(&self) -> &Texture {
         &self.image
+    }
+
+    pub fn transfer_ownership<'a>(
+        &'a self,
+        commands: &mut CommandBuffer<'a>,
+        new_queue: QueueType,
+    ) {
+        commands.transfer_texture_ownership(
+            &self.image,
+            0,
+            0,
+            self.image.mip_count(),
+            new_queue,
+            None,
+        );
     }
 }

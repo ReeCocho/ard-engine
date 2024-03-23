@@ -38,6 +38,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.depth_only_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -54,6 +55,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.depth_only_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -70,6 +72,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.depth_only_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -86,6 +89,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.depth_prepass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -102,6 +106,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.depth_prepass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -118,6 +123,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.color_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -134,6 +140,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.color_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],
@@ -150,6 +157,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 layouts: vec![
                     layouts.color_pass.clone(),
                     layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
                     layouts.textures.clone(),
                     layouts.materials.clone(),
                 ],

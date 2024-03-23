@@ -1,12 +1,14 @@
 use std::fs;
+use std::io::BufWriter;
 use std::ops::Div;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
-use ard_formats::mesh::{IndexData, MeshHeader, VertexDataBuilder, VertexLayout};
+use ard_formats::mesh::{MeshDataBuilder, MeshHeader};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
 use ard_formats::texture::{Sampler, TextureData, TextureHeader};
+use ard_formats::vertex::VertexLayout;
 use ard_gltf::{GltfLight, GltfMesh, GltfTexture};
 use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::Format;
@@ -54,7 +56,7 @@ fn main() {
 
     // Parse the model
     println!("Parsing model...");
-    let model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
+    let mut model = ard_gltf::GltfModel::from_slice(&bin).unwrap();
     std::mem::drop(bin);
 
     // For each texture, we mark if it was used in a way that needs a UNORM color format and not
@@ -65,21 +67,30 @@ fn main() {
         .map(|_| AtomicBool::new(false))
         .collect();
 
-    // Construct the model header and save it
     println!("Constructing header...");
-    let header = create_header(&args, &model, &texture_is_unorm);
-    let header_path = ModelHeader::header_path(out_path.clone());
-    let mut file = std::fs::File::create(header_path).unwrap();
-    bincode::serialize_into(&mut file, &header).unwrap();
-    std::mem::drop(file);
-    std::mem::drop(header);
+    let mut header = create_header(&args, &model, &texture_is_unorm);
 
     // Save everything
-    println!("Saving...");
-    rayon::join(
-        || save_meshes(&args, &out_path, &model.meshes),
-        || save_textures(&args, &out_path, &model.textures, &texture_is_unorm),
+    println!("Saving meshes and textures...");
+    let (mesh_headers, _) = rayon::join(
+        || save_meshes(&args, &out_path, std::mem::take(&mut model.meshes)),
+        || {
+            save_textures(
+                &args,
+                &out_path,
+                std::mem::take(&mut model.textures),
+                &texture_is_unorm,
+            )
+        },
     );
+
+    // Save the header
+    header.meshes = mesh_headers;
+    let header_path = ModelHeader::header_path(out_path.clone());
+    let mut f = BufWriter::new(fs::File::create(&header_path).unwrap());
+    bincode::serialize_into(&mut f, &header).unwrap();
+    std::mem::drop(f);
+    std::mem::drop(header);
 }
 
 fn create_header(
@@ -93,7 +104,6 @@ fn create_header(
     header.mesh_groups = Vec::with_capacity(gltf.mesh_groups.len());
     header.textures = Vec::with_capacity(gltf.textures.len());
     header.roots = Vec::with_capacity(gltf.roots.len());
-    header.meshes = Vec::with_capacity(gltf.meshes.len());
 
     for light in &gltf.lights {
         header.lights.push(match light {
@@ -159,40 +169,6 @@ fn create_header(
                     }),
                 },
             },
-        });
-    }
-
-    for mesh in &gltf.meshes {
-        let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
-
-        if mesh.tangents.is_some() {
-            vertex_layout |= VertexLayout::TANGENT;
-        }
-
-        if mesh.colors.is_some() {
-            vertex_layout |= VertexLayout::COLOR;
-        }
-
-        if mesh.uv0.is_some() {
-            vertex_layout |= VertexLayout::UV0;
-        }
-
-        if mesh.uv1.is_some() {
-            vertex_layout |= VertexLayout::UV1;
-        }
-
-        if mesh.uv2.is_some() {
-            vertex_layout |= VertexLayout::UV2;
-        }
-
-        if mesh.uv3.is_some() {
-            vertex_layout |= VertexLayout::UV3;
-        }
-
-        header.meshes.push(MeshHeader {
-            index_count: mesh.indices.len() as u32,
-            vertex_count: mesh.positions.len() as u32,
-            vertex_layout,
         });
     }
 
@@ -271,179 +247,167 @@ fn create_header(
     header
 }
 
-fn save_meshes(args: &Args, out: &Path, meshes: &[GltfMesh]) {
+fn save_meshes(args: &Args, out: &Path, meshes: Vec<GltfMesh>) -> Vec<MeshHeader> {
     use rayon::prelude::*;
-    meshes.par_iter().enumerate().for_each(|(i, mesh)| {
-        let mesh_path = ModelHeader::mesh_path(out, i);
-        fs::create_dir_all(&mesh_path).unwrap();
-        save_mesh(args, &mesh_path, &mesh);
-    });
+    meshes
+        .into_par_iter()
+        .enumerate()
+        .map(|(i, mesh)| {
+            let mesh_path = ModelHeader::mesh_path(out, i);
+            fs::create_dir_all(&mesh_path).unwrap();
+            save_mesh(args, &mesh_path, mesh)
+        })
+        .collect()
 }
 
-fn save_mesh(args: &Args, out: &Path, mesh: &GltfMesh) {
-    rayon::join(
-        // Save indices
-        || {
-            let indices_path = MeshHeader::index_path(out);
-            let index_data = IndexData::new(&mesh.indices);
-            fs::write(&indices_path, bincode::serialize(&index_data).unwrap()).unwrap();
-        },
-        // Save vertices
-        || {
-            let vertices_path = MeshHeader::vertex_path(out);
+fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
+    let mesh_data_path = MeshHeader::mesh_data_path(out);
 
-            let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
+    let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
 
-            if mesh.tangents.is_some() {
-                vertex_layout |= VertexLayout::TANGENT;
-            }
+    if mesh.tangents.is_some() {
+        vertex_layout |= VertexLayout::TANGENT;
+    }
 
-            if mesh.colors.is_some() {
-                vertex_layout |= VertexLayout::COLOR;
-            }
+    if mesh.uv0.is_some() {
+        vertex_layout |= VertexLayout::UV0;
+    }
 
-            if mesh.uv0.is_some() {
-                vertex_layout |= VertexLayout::UV0;
-            }
+    if mesh.uv1.is_some() {
+        vertex_layout |= VertexLayout::UV1;
+    }
 
-            if mesh.uv1.is_some() {
-                vertex_layout |= VertexLayout::UV1;
-            }
+    // Build vertex data
+    let mut mesh_data =
+        MeshDataBuilder::new(vertex_layout, mesh.positions.len(), mesh.indices.len());
 
-            if mesh.uv2.is_some() {
-                vertex_layout |= VertexLayout::UV2;
-            }
+    mesh_data = mesh_data
+        .add_positions(&mesh.positions)
+        .add_indices(&mesh.indices);
+    mesh.positions = Vec::default();
+    mesh.indices = Vec::default();
 
-            if mesh.uv3.is_some() {
-                vertex_layout |= VertexLayout::UV3;
-            }
+    mesh_data = match &mesh.normals {
+        Some(normals) => mesh_data.add_vec4_normals(normals),
+        None => {
+            println!("WARNING: Vertices at {mesh_data_path:?} are missing normals. Generating dummy normals...");
+            mesh_data.add_vec4_normals(&vec![Vec4::new(0.0, 0.0, 1.0, 0.0); mesh.positions.len()])
+        }
+    };
+    mesh.normals = None;
 
-            // Build vertex data
-            let mut vertices = VertexDataBuilder::new(vertex_layout, mesh.positions.len());
+    // Check if we can compute tangents
+    if args.compute_tangents {
+        if let Some(uvs) = &mesh.uv0 {
+            let tangents = compute_tangents(&mesh.positions, uvs, &mesh.indices);
+            mesh_data = mesh_data.add_vec4_tangents(&tangents);
+        }
+    } else {
+        if let Some(tangents) = &mesh.tangents {
+            mesh_data = mesh_data.add_vec4_tangents(&tangents);
+        }
+    }
+    mesh.tangents = None;
 
-            vertices = vertices.add_positions(&mesh.positions);
+    if let Some(uv0) = &mesh.uv0 {
+        mesh_data = mesh_data.add_vec2_uvs(&uv0, 0);
+    }
+    mesh.uv0 = None;
 
-            vertices = match &mesh.normals {
-                Some(normals) => vertices.add_vec4_normals(normals),
-                None => {
-                    println!("WARNING: Vertices at {vertices_path:?} are missing normals. Generating dummy normals...");
-                    vertices.add_vec4_normals(&vec![
-                        Vec4::new(0.0, 0.0, 1.0, 0.0);
-                        mesh.positions.len()
-                    ])
-                }
-            };
+    if let Some(uv1) = &mesh.uv1 {
+        mesh_data = mesh_data.add_vec2_uvs(&uv1, 1);
+    }
+    mesh.uv1 = None;
 
-            // Check if we can compute tangents
-            if args.compute_tangents {
-                if let Some(uvs) = &mesh.uv0 {
-                    let tangents = compute_tangents(&mesh.positions, uvs, &mesh.indices);
-                    vertices = vertices.add_vec4_tangents(&tangents);
-                }
-            } else {
-                if let Some(tangents) = &mesh.tangents {
-                    vertices = vertices.add_vec4_tangents(&tangents);
-                }
-            }
+    // Save the buffer
+    let data = mesh_data.build();
+    let mut f = BufWriter::new(fs::File::create(&mesh_data_path).unwrap());
+    bincode::serialize_into(&mut f, &data).unwrap();
 
-            if let Some(colors) = &mesh.colors {
-                vertices = vertices.add_vec4_colors(&colors);
-            }
-
-            if let Some(uv0) = &mesh.uv0 {
-                vertices = vertices.add_vec2_uvs(&uv0, 0);
-            }
-
-            if let Some(uv1) = &mesh.uv1 {
-                vertices = vertices.add_vec2_uvs(&uv1, 1);
-            }
-
-            if let Some(uv2) = &mesh.uv2 {
-                vertices = vertices.add_vec2_uvs(&uv2, 2);
-            }
-
-            if let Some(uv3) = &mesh.uv3 {
-                vertices = vertices.add_vec2_uvs(&uv3, 3);
-            }
-
-            // Save the buffer
-            let raw = bincode::serialize(&vertices.build()).unwrap();
-            fs::write(&vertices_path, raw).unwrap();
-        },
-    );
+    MeshHeader {
+        index_count: data.index_count() as u32,
+        vertex_count: data.vertex_count() as u32,
+        meshlet_count: data.meshlet_count() as u32,
+        vertex_layout,
+    }
 }
 
 fn save_textures(
     args: &Args,
     out: &Path,
-    textures: &[GltfTexture],
+    textures: Vec<GltfTexture>,
     texture_is_unorm: &[AtomicBool],
 ) {
     use rayon::prelude::*;
-    textures.par_iter().enumerate().for_each(|(i, texture)| {
-        // println!("Saving texture {i}");
+    textures
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(i, mut texture)| {
+            // println!("Saving texture {i}");
 
-        // Path to the folder for the texture
-        let tex_path = ModelHeader::texture_path(out, i);
+            // Path to the folder for the texture
+            let tex_path = ModelHeader::texture_path(out, i);
 
-        // Create the texture path if it doesn't exist
-        fs::create_dir_all(&tex_path).unwrap();
+            // Create the texture path if it doesn't exist
+            fs::create_dir_all(&tex_path).unwrap();
 
-        // Parse the image
-        let image_fmt = match texture.src_format {
-            ard_gltf::TextureSourceFormat::Png => image::ImageFormat::Png,
-            ard_gltf::TextureSourceFormat::Jpeg => image::ImageFormat::Jpeg,
-        };
-        let mut image = image::load_from_memory_with_format(&texture.data, image_fmt).unwrap();
+            // Parse the image
+            let image_fmt = match texture.src_format {
+                ard_gltf::TextureSourceFormat::Png => image::ImageFormat::Png,
+                ard_gltf::TextureSourceFormat::Jpeg => image::ImageFormat::Jpeg,
+            };
+            let mut image = image::load_from_memory_with_format(&texture.data, image_fmt).unwrap();
+            texture.data = Vec::default();
 
-        let compress = args.compress_textures && texture_needs_compression(&image);
-        let mip_count = texture_mip_count(&image, compress);
-        let format = if compress {
-            if texture_is_unorm[i].load(Ordering::Relaxed) {
-                Format::BC7Unorm
+            let compress = args.compress_textures && texture_needs_compression(&image);
+            let mip_count = texture_mip_count(&image, compress);
+            let format = if compress {
+                if texture_is_unorm[i].load(Ordering::Relaxed) {
+                    Format::BC7Unorm
+                } else {
+                    Format::BC7Srgb
+                }
             } else {
-                Format::BC7Srgb
+                Format::Rgba8Srgb
+            };
+
+            // Compute each mip and save to disc
+            for mip in 0..mip_count {
+                // Convert the image into a byte array
+                let (width, height) = image.dimensions();
+                let mut bytes = image.to_rgba8().to_vec();
+
+                // Compress if requested
+                if compress {
+                    let surface = intel_tex_2::RgbaSurface {
+                        width,
+                        height,
+                        stride: width * 4,
+                        data: &bytes,
+                    };
+                    bytes = intel_tex_2::bc7::compress_blocks(
+                        &intel_tex_2::bc7::alpha_ultra_fast_settings(),
+                        &surface,
+                    );
+                }
+
+                let tex_data = TextureData::new(bytes, width, height, format);
+
+                // Save the file to disk
+                let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
+                let mut f = BufWriter::new(fs::File::create(&mip_path).unwrap());
+                bincode::serialize_into(&mut f, &tex_data).unwrap();
+
+                // Downsample the image for the next mip
+                if mip != mip_count - 1 {
+                    image = image.resize(
+                        width.div(2).max(1),
+                        height.div(2).max(1),
+                        image::imageops::FilterType::Gaussian,
+                    );
+                }
             }
-        } else {
-            Format::Rgba8Srgb
-        };
-
-        // Compute each mip and save to disc
-        for mip in 0..mip_count {
-            // Convert the image into a byte array
-            let (width, height) = image.dimensions();
-            let mut bytes = image.to_rgba8().to_vec();
-
-            // Compress if requested
-            if compress {
-                let surface = intel_tex_2::RgbaSurface {
-                    width,
-                    height,
-                    stride: width * 4,
-                    data: &bytes,
-                };
-                bytes = intel_tex_2::bc7::compress_blocks(
-                    &intel_tex_2::bc7::alpha_ultra_fast_settings(),
-                    &surface,
-                );
-            }
-
-            let tex_data = TextureData::new(bytes, width, height, format);
-
-            // Save the file to disk
-            let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
-            fs::write(mip_path, bincode::serialize(&tex_data).unwrap()).unwrap();
-
-            // Downsample the image for the next mip
-            if mip != mip_count - 1 {
-                image = image.resize(
-                    width.div(2).max(1),
-                    height.div(2).max(1),
-                    image::imageops::FilterType::Gaussian,
-                );
-            }
-        }
-    });
+        });
 }
 
 /// Helper to determine if a texture needs compression.

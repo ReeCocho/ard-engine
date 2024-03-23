@@ -2,6 +2,8 @@ use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_si::bindings::*;
 
+use crate::highz::HzbImage;
+
 pub struct DepthPrepassSets {
     sets: Vec<DescriptorSet>,
 }
@@ -22,6 +24,15 @@ impl DepthPrepassSets {
             .collect();
 
         Self { sets }
+    }
+
+    pub fn update_hzb_binding<const FIF: usize>(&mut self, frame: Frame, image: &HzbImage<FIF>) {
+        let set = &mut self.sets[usize::from(frame)];
+        set.update(&[DescriptorSetUpdate {
+            binding: DEPTH_PREPASS_SET_HZB_IMAGE_BINDING,
+            array_element: 0,
+            value: image.descriptor_value(),
+        }]);
     }
 
     pub fn update_object_data_bindings(
