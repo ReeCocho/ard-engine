@@ -2,8 +2,10 @@ use ard_render_material::factory::{MaterialFactory, PassDefinition, PassId};
 use ard_render_si::bindings::Layouts;
 
 pub mod color;
-pub mod depth_only;
 pub mod depth_prepass;
+pub mod hzb;
+pub mod shadow;
+pub mod transparent;
 
 /// The depth only pass is used for high-z occlusion culling depth generation.
 pub const HIGH_Z_PASS_ID: PassId = PassId::new(0);
@@ -36,7 +38,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             HIGH_Z_PASS_ID,
             PassDefinition {
                 layouts: vec![
-                    layouts.depth_only_pass.clone(),
+                    layouts.hzb_pass.clone(),
                     layouts.camera.clone(),
                     layouts.mesh_data.clone(),
                     layouts.textures.clone(),
@@ -53,7 +55,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             SHADOW_OPAQUE_PASS_ID,
             PassDefinition {
                 layouts: vec![
-                    layouts.depth_only_pass.clone(),
+                    layouts.shadow_pass.clone(),
                     layouts.camera.clone(),
                     layouts.mesh_data.clone(),
                     layouts.textures.clone(),
@@ -70,7 +72,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             SHADOW_ALPHA_CUTOFF_PASS_ID,
             PassDefinition {
                 layouts: vec![
-                    layouts.depth_only_pass.clone(),
+                    layouts.shadow_pass.clone(),
                     layouts.camera.clone(),
                     layouts.mesh_data.clone(),
                     layouts.textures.clone(),
@@ -155,7 +157,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
             TRANSPARENT_PASS_ID,
             PassDefinition {
                 layouts: vec![
-                    layouts.color_pass.clone(),
+                    layouts.transparent_pass.clone(),
                     layouts.camera.clone(),
                     layouts.mesh_data.clone(),
                     layouts.textures.clone(),

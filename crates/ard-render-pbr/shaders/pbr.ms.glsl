@@ -12,33 +12,69 @@
 #include "pbr_common.glsl"
 #include "utils.glsl"
 
+shared mat4 s_model_mat;
+shared mat3 s_normal_mat;
+shared uint s_material;
+shared uint s_vertex_offset;
+shared uint s_index_offset;
+shared uint s_vert_prim_counts;
+
+#if ARD_VS_HAS_UV0
+shared uint s_color_slot;
+shared uint s_met_rough_slot;
+#if ARD_VS_HAS_TANGENT
+shared uint s_normal_slot;
+#endif
+#endif
+
 void main() {
+    // Read in everything for the workgroup.
+    if (gl_LocalInvocationIndex == 0) {
+        // Meshlet info
+        const uint meshlet_id = uint(output_ids[payload.meshlet_base + gl_WorkGroupID.x]);
+        const uvec3 meshlet = v_meshlets[payload.meshlet_info_base + meshlet_id].data.xyz;
+
+        s_vertex_offset = meshlet.x;
+        s_index_offset = meshlet.y;
+        s_vert_prim_counts = meshlet.z;
+
+        // Shading properties
+        s_model_mat = payload.model;
+        s_normal_mat = payload.normal;
+        s_material = payload.material;
+#if ARD_VS_HAS_UV0
+        s_color_slot = payload.color_tex;
+        s_met_rough_slot = payload.met_rough_tex;
+#if ARD_VS_HAS_TANGENT
+        s_normal_slot = payload.normal_tex;
+#endif
+#endif
+    }
+
+    barrier();
+
     // Extract shared values
-    const uint object_id = payload.object_ids[gl_WorkGroupID.x];
-    const uint index_offset = payload.index_offsets[gl_WorkGroupID.x];
-    const uint vertex_offset = payload.vertex_offsets[gl_WorkGroupID.x];
-    const uint vp_count = payload.counts[gl_WorkGroupID.x];
+    const mat4 model = s_model_mat;
+    const mat3 normal_mat = s_normal_mat;
+    const uint materials_slot = s_material;
+    const uint index_offset = s_index_offset;
+    const uint vertex_offset = s_vertex_offset;
+    const uint vp_count = s_vert_prim_counts & 0xFFFF;
     const uint vert_count = vp_count & 0xFF;
     const uint prim_count = (vp_count >> 8) & 0xFF;
+
+#if ARD_VS_HAS_UV0
+    const uint color_slot = s_color_slot;
+    const uint met_rough_slot = s_met_rough_slot;
+#if ARD_VS_HAS_TANGENT
+    const uint normal_slot = s_normal_slot;
+#endif
+#endif
 
     // Allocate outputs
     if (gl_LocalInvocationIndex == 0) {
         SetMeshOutputsEXT(vert_count, prim_count);
     }
-
-    // Fetch properties
-    const mat4 model = object_data[object_id].model;
-    const mat3 normal_mat = mat3(object_data[object_id].normal);
-    const uint materials_slot = object_data[object_id].material;
-
-#if ARD_VS_HAS_UV0
-    const uint textures_slot = object_data[object_id].textures;
-    const uint color_slot = texture_slots[textures_slot][0];
-#if ARD_VS_HAS_TANGENT
-    const uint normal_slot = texture_slots[textures_slot][1];
-#endif
-    const uint met_rough_slot = texture_slots[textures_slot][2];
-#endif
 
     // Generate primitives
     [[unroll]]
@@ -51,17 +87,11 @@ void main() {
 
         // Read in indices
         const uint base = index_offset + (prim_idx * 3);
-        const uint i1 = v_indices[base];
-        const uint i2 = v_indices[base + 1];
-        const uint i3 = v_indices[base + 2];
-
-        const uvec3 prim = uvec3(
-            i1 - vertex_offset,
-            i2 - vertex_offset,
-            i3 - vertex_offset
+        gl_PrimitiveTriangleIndicesEXT[prim_idx] = uvec3(
+            v_indices[base],
+            v_indices[base + 1],
+            v_indices[base + 2]
         );
-
-        gl_PrimitiveTriangleIndicesEXT[prim_idx] = prim;
     }
 
     // Generate vertices

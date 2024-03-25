@@ -1,7 +1,7 @@
 [
-    // Pass used for rendering depth only images.
+    // Pass for rendering shadows.
     (
-        name: "DepthOnlyPass",
+        name: "ShadowPass",
         bindings: [
             (
                 name: "GlobalObjectData",
@@ -15,14 +15,64 @@
                 )
             ),
             (
-                name: "ObjectIds",
+                name: "InputIds",
                 stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
+                )
+            ),
+        ]
+    ),
+    // Pass used for rendering the HZB.
+    (
+        name: "HzbPass",
+        bindings: [
+            (
+                name: "GlobalObjectData",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "InputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
                 )
             ),
         ]
@@ -43,14 +93,25 @@
                 )
             ),
             (
-                name: "ObjectIds",
+                name: "InputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
                 stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadWrite,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
                 )
             ),
             (
@@ -77,15 +138,145 @@
                 )
             ),
             (
-                name: "ObjectIds",
+                name: "InputIds",
                 stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "object_ids", ty: Struct("ObjectId"))),
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
                 )
+            ),
+            (
+                name: "OutputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
+                )
+            ),
+            // Shadows
+            (
+                name: "ShadowCascades",
+                stage: AllGraphics,
+                count: "MAX_SHADOW_CASCADES",
+                data: ShadowTextureArray("shadow_cascades")
+            ),
+            (
+                name: "SunShadowInfo",
+                stage: AllGraphics,
+                count: "1",
+                data: Ubo((
+                    name: "sun_shadow_info",
+                    ty: Struct("SunShadows"),
+                ))
+            ),
+            // Lighting.
+            (
+                name: "GlobalLightingInfo",
+                stage: AllGraphics,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "Lights",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "lights", ty: Struct("Light"))),
+                )
+            ),
+            (
+                name: "LightClusters",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "light_table", ty: Struct("LightTable"))),
+                    unbounded_array: None,
+                )
+            ),
+            // Screen images.
+            (
+                name: "AoImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("ao_image")
+            ),
+            // IBL.
+            (
+                name: "DiMap",
+                stage: AllGraphics,
+                count: "1",
+                data: CubeMap("di_map"),
+            ),
+            (
+                name: "EnvMap",
+                stage: AllGraphics,
+                count: "1",
+                data: CubeMap("env_map"),
+            ),
+            (
+                name: "BrdfLut",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("brdf_lut"),
+            )
+        ]
+    ),
+    // Pass used for rendering transparent geometry.
+    (
+        name: "TransparentPass",
+        bindings: [
+            (
+                name: "GlobalObjectData",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "InputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
+                )
+            ),
+            (
+                name: "HzbImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("hzb_image"),
             ),
             // Shadows
             (
@@ -175,7 +366,7 @@
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "v_indices", ty: U32)),
+                    unbounded_array: Some((name: "v_indices", ty: U16)),
                 )
             ),
             (
@@ -374,217 +565,6 @@
             )
         ]
     ),
-    // Draw call generation.
-    (
-        name: "DrawGen",
-        bindings: [
-            (
-                name: "DrawGroups",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "draw_groups", ty: Struct("DrawGroup"))),
-                )
-            ),
-            (
-                name: "InstanceCounts",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "instance_counts", ty: U32)),
-                )
-            ),
-            (
-                name: "Objects",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "objects", ty: Struct("ObjectData"))),
-                )
-            ),
-            (
-                name: "InputIds",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
-                )
-            ),
-            (
-                name: "OutputIds",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: WriteOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "output_ids", ty: U32)),
-                )
-            ),
-            (
-                name: "MeshInfoLookup",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
-                )
-            ),
-            (
-                name: "HzbImage",
-                stage: Compute,
-                count: "1",
-                data: Texture("hzb_image"),
-            )
-        ]
-    ),
-    // Draw call generation WITHOUT hzb culling.
-    (
-        name: "DrawGenNoHzb",
-        bindings: [
-            (
-                name: "DrawGroups",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "draw_groups", ty: Struct("DrawGroup"))),
-                )
-            ),
-            (
-                name: "InstanceCounts",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "instance_counts", ty: U32)),
-                )
-            ),
-            (
-                name: "Objects",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "objects", ty: Struct("ObjectData"))),
-                )
-            ),
-            (
-                name: "InputIds",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
-                )
-            ),
-            (
-                name: "OutputIds",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: WriteOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "output_ids", ty: U32)),
-                )
-            ),
-            (
-                name: "MeshInfoLookup",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
-                )
-            )
-        ]
-    ),
-    // Draw call compaction.
-    (
-        name: "DrawCompact",
-        bindings: [
-            (
-                name: "DrawGroupsSrc",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "draw_groups_src", ty: Struct("DrawGroup"))),
-                )
-            ),
-            (
-                name: "InstanceCountsSrc",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "instance_counts", ty: U32)),
-                )
-            ),
-            (
-                name: "DrawCallsDst",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "draw_calls_dst", ty: Struct("DrawCall"))),
-                )
-            ),
-            (
-                name: "DrawCounts",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadWrite,
-                    inner: None,
-                    unbounded_array: Some((name: "draw_counts", ty: U32)),
-                )
-            ),
-            (
-                name: "MeshInfoLookup",
-                stage: Compute,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "mesh_info", ty: Struct("MeshInfo"))),
-                )
-            )
-        ],
-    ),
     // Light clustering.
     (
         name: "LightClustering",
@@ -714,56 +694,6 @@
                 stage: Fragment,
                 count: "1",
                 data: Texture("screen_tex")
-            )
-        ]
-    ),
-    // Sun shafts.
-    (
-        name: "SunShafts",
-        bindings: [
-            (
-                name: "SourceDepth",
-                stage: Compute,
-                count: "1",
-                data: Texture("depth_tex")
-            ),
-            (
-                name: "OutputTex",
-                stage: Compute,
-                count: "1",
-                data: StorageImage(
-                    field_name: "output_tex",
-                    restrict: true,
-                    access: WriteOnly,
-                    format: Rgba16F,
-                )
-            ),
-            // Global lighting data (sun).
-            (
-                name: "GlobalLightingInfo",
-                stage: Compute,
-                count: "1",
-                data: Ubo((
-                    name: "global_lighting",
-                    ty: Struct("GlobalLighting"),
-                ))
-            ),
-            // Shadow cascades
-            (
-                name: "ShadowCascades",
-                stage: Compute,
-                count: "MAX_SHADOW_CASCADES",
-                data: ShadowTextureArray("shadow_cascades")
-            ),
-            // Sun shadowing info
-            (
-                name: "SunShadowInfo",
-                stage: Compute,
-                count: "1",
-                data: Ubo((
-                    name: "sun_shadow_info",
-                    ty: Struct("SunShadows"),
-                ))
             )
         ]
     ),

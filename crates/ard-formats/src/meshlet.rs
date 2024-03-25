@@ -15,8 +15,8 @@ pub struct Meshlet {
 }
 
 impl Meshlet {
-    const MAX_VERTICES: usize = 64;
-    const MAX_PRIMITIVES: usize = 126;
+    pub const MAX_VERTICES: usize = 64;
+    pub const MAX_PRIMITIVES: usize = 126;
 }
 
 pub struct MeshClustifier {

@@ -29,20 +29,19 @@ struct BoundingBox {
 };
 
 /// Transforms the bounding box via the given model matrix.
-BoundingBox transform_bounding_box(mat4 model, vec3 min_pt, vec3 max_pt) {
+BoundingBox transform_bounding_box(mat4 view_model, vec3 min_pt, vec3 max_pt) {
     BoundingBox bb;
 
     // Compute all eight corners
     const mat4 proj = camera[0].projection;
-    const mat4 vm = camera[0].view * model;
-    bb.corners[0] = vm * vec4(min_pt.x, min_pt.y, min_pt.z, 1.0);
-    bb.corners[1] = vm * vec4(max_pt.x, min_pt.y, min_pt.z, 1.0);
-    bb.corners[2] = vm * vec4(min_pt.x, max_pt.y, min_pt.z, 1.0);
-    bb.corners[3] = vm * vec4(min_pt.x, min_pt.y, max_pt.z, 1.0);
-    bb.corners[4] = vm * vec4(max_pt.x, max_pt.y, min_pt.z, 1.0);
-    bb.corners[5] = vm * vec4(min_pt.x, max_pt.y, max_pt.z, 1.0);
-    bb.corners[6] = vm * vec4(max_pt.x, min_pt.y, max_pt.z, 1.0);
-    bb.corners[7] = vm * vec4(max_pt.x, max_pt.y, max_pt.z, 1.0);
+    bb.corners[0] = view_model * vec4(min_pt.x, min_pt.y, min_pt.z, 1.0);
+    bb.corners[1] = view_model * vec4(max_pt.x, min_pt.y, min_pt.z, 1.0);
+    bb.corners[2] = view_model * vec4(min_pt.x, max_pt.y, min_pt.z, 1.0);
+    bb.corners[3] = view_model * vec4(min_pt.x, min_pt.y, max_pt.z, 1.0);
+    bb.corners[4] = view_model * vec4(max_pt.x, max_pt.y, min_pt.z, 1.0);
+    bb.corners[5] = view_model * vec4(min_pt.x, max_pt.y, max_pt.z, 1.0);
+    bb.corners[6] = view_model * vec4(max_pt.x, min_pt.y, max_pt.z, 1.0);
+    bb.corners[7] = view_model * vec4(max_pt.x, max_pt.y, max_pt.z, 1.0);
 
     // Then find the min and max points in screen space
     bb.min_pt = vec2(uintBitsToFloat(0x7F800000));
@@ -65,125 +64,265 @@ BoundingBox transform_bounding_box(mat4 model, vec3 min_pt, vec3 max_pt) {
     return bb;
 }
 
-void main() {
-    // Stop if we're OOB
-    if (gl_GlobalInvocationID.x >= consts.object_id_count) {
-        return;
-    }
-
-    // Fetch data to send to mesh shader
-    const uint object_idx = consts.object_id_offset + gl_GlobalInvocationID.x;
-    const ObjectId id = object_ids[object_idx];
-    const uint data_idx = id.data_idx & 0x7FFFFFFF;
-    const Meshlet meshlet = v_meshlets[id.meshlet];
-
-    // Extract properties from the meshlet
-    const uint vertex_offset = meshlet.data.x;
-    const uint index_offset = meshlet.data.y;
-    const uint vertex_prim_counts = meshlet.data.z & 0xFFFF;
-
-    // If this is the depth prepass or a shader pass we perform culling.
-#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS)
-    bool visible = true;
-
-    const mat4 model_mat = object_data[data_idx].model;
-    const uint mesh_id = object_data[data_idx].mesh;
-    const ObjectBounds obj_bounds = mesh_info[mesh_id].bounds;
-    const vec3 scale = vec3(
-        dot(model_mat[0].xyz, model_mat[0].xyz),
-        dot(model_mat[1].xyz, model_mat[1].xyz),
-        dot(model_mat[2].xyz, model_mat[2].xyz)
-    );
-
-    // Extract relative min and max AABB points
-    const vec3 bounds_range = obj_bounds.max_pt.xyz - obj_bounds.min_pt.xyz;
-    const vec4 zunpacked = unpackUnorm4x8(meshlet.data.z);
-    const vec4 wunpacked = unpackUnorm4x8(meshlet.data.w);
-    const vec3 meshlet_min_pt = obj_bounds.min_pt.xyz 
-        + (bounds_range * vec3(zunpacked.z, zunpacked.w, wunpacked.x));
-    const vec3 meshlet_max_pt = obj_bounds.min_pt.xyz 
-        + (bounds_range * vec3(wunpacked.y, wunpacked.z, wunpacked.w));
-
-    // Frustum culling based on bounding sphere.
-    vec3 meshlet_center = (meshlet_max_pt + meshlet_min_pt) * 0.5;
-    const float meshlet_radius = -length(meshlet_max_pt - meshlet_center) 
-        * sqrt(max(scale.x, max(scale.y, scale.z)));
-    meshlet_center = (model_mat * vec4(meshlet_center, 1.0)).xyz;
-
+bool is_visible(vec3 center, float radius, vec3 min_pt, vec3 max_pt, mat4 view_model) {
     // NOTE: We are only checking the first five planes because we're using an infinite perspective
     // matrix, meaning all objects are always within the final plane. If that should ever change,
     // make sure to add back in the check for the final plane.
     [[unroll]]
     for (int i = 0; i < 5; i++) { 
-        const float dist = dot(vec4(meshlet_center, 1.0), camera[0].frustum.planes[i]);
-        if (dist < meshlet_radius) {
-            visible = false;
-            break;
+        const float dist = dot(vec4(center, 1.0), camera[0].frustum.planes[i]);
+        if (dist < radius) {
+            return false;
         }
     }
 
-    // Perform occlusion culling in the depth prepass only
-#if defined(DEPTH_PREPASS)
-    if (visible) {
-        BoundingBox bb = transform_bounding_box(
-            model_mat,
-            meshlet_min_pt,
-            meshlet_max_pt
+    // Only the depth prepass and transparent pass have occlusion culling.
+#if defined(DEPTH_PREPASS) || defined(TRANSPARENT_PASS)
+    BoundingBox bb = transform_bounding_box(view_model, min_pt, max_pt);
+
+    // Determine the appropriate mip level to sample the HZB image
+    vec2 dbl_pixel_size = vec2(
+        bb.max_pt.x - bb.min_pt.x,
+        bb.max_pt.y - bb.min_pt.y
+    ) * consts.render_area;
+    float level = floor(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
+
+    // Clip space to UV
+    bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);
+    bb.max_pt.y = 1.0 - bb.max_pt.y;
+
+    bb.min_pt = (bb.min_pt * 0.5) + vec2(0.5);
+    bb.min_pt.y = 1.0 - bb.min_pt.y;
+
+    // Determine depth (in world space)
+    float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
+    depth = camera[0].near_clip / depth;
+
+    // Check for visibility
+    return bb.depth <= depth;
+#else
+    return true;
+#endif
+}
+
+void manual_payload(const ObjectId id) {
+    const uint textures_slot = object_data[id.data_idx].textures;
+    payload.meshlet_base = 1 + id.meshlet_base;
+    payload.meshlet_info_base = mesh_info[object_data[id.data_idx].mesh].meshlet_offset;
+    payload.model = object_data[id.data_idx].model;
+    payload.normal = mat3(object_data[id.data_idx].normal);
+    payload.material = object_data[id.data_idx].material;
+#if ARD_VS_HAS_UV0
+    payload.color_tex = texture_slots[textures_slot][0];
+    payload.met_rough_tex = texture_slots[textures_slot][2];
+#if ARD_VS_HAS_TANGENT
+    payload.normal_tex = texture_slots[textures_slot][1];
+#endif
+#endif
+}
+
+// Shared variables used by all invocations when culling is required.
+#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS)
+    shared bool s_visible;
+    shared mat4 s_model_mat;
+    shared mat3 s_normal_mat;
+    shared uint s_material;
+    shared mat4 s_view_model;
+    shared ObjectBounds s_obj_bounds;
+    shared uint s_data_idx;
+    shared uint s_meshlet_offset;
+    shared uint s_meshlet_count;
+    shared uint s_output_base;
+    shared float s_max_scale_axis;
+#if ARD_VS_HAS_UV0
+    shared uint s_color_tex;
+    shared uint s_met_rough_tex;
+#if ARD_VS_HAS_TANGENT
+    shared uint s_normal_tex;
+#endif
+#endif
+#endif
+
+void main() {
+    // Stop if we're OOB.
+    if (gl_WorkGroupID.x >= consts.object_id_count) {
+        return;
+    }
+
+    const uint object_idx = consts.object_id_offset + gl_WorkGroupID.x;
+
+    // If this is the depth prepass or shadow shaders, we need to decide visibility ourselves.
+#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS)
+
+    // Check for culling lock.
+    if (consts.lock_culling == 1) {
+        if (gl_LocalInvocationIndex == 0) {
+            const ObjectId id = input_ids[object_idx];
+            const uint meshlet_count = uint(output_ids[id.meshlet_base]);
+            manual_payload(id);
+            EmitMeshTasksEXT(meshlet_count, 1, 1);
+        }
+        return;
+    }
+
+    // Invocation 0 does whole object culling first.
+    if (gl_LocalInvocationIndex == 0) {
+        // Read in mesh information
+        const ObjectId id = input_ids[object_idx];
+        const mat4 model_mat = object_data[id.data_idx].model;
+        const mat3 normal_mat = mat3(object_data[id.data_idx].normal);
+        const uint material = object_data[id.data_idx].material;
+        const uint textures_slot = object_data[id.data_idx].textures;
+        const uint mesh_id = object_data[id.data_idx].mesh;
+        const uint meshlet_offset = mesh_info[mesh_id].meshlet_offset;
+        const uint meshlet_count = mesh_info[mesh_id].meshlet_count;
+        const mat4 view_model = camera[0].view * model_mat;
+
+        // Compute bounds
+        const ObjectBounds obj_bounds = mesh_info[mesh_id].bounds;
+        const vec3 scale = vec3(
+            dot(model_mat[0].xyz, model_mat[0].xyz),
+            dot(model_mat[1].xyz, model_mat[1].xyz),
+            dot(model_mat[2].xyz, model_mat[2].xyz)
         );
 
-        // Determine the appropriate mip level to sample the HZB image
-        vec2 dbl_pixel_size = vec2(
-            bb.max_pt.x - bb.min_pt.x,
-            bb.max_pt.y - bb.min_pt.y
-        ) * consts.render_area;
-        float level = floor(log2(max(dbl_pixel_size.x, dbl_pixel_size.y) * 0.5));
+        // Figure out required bounds for culling
+        const vec3 bounds_range = obj_bounds.max_pt.xyz - obj_bounds.min_pt.xyz;
+        const float max_scale_axis = sqrt(max(scale.x, max(scale.y, scale.z)));
+        vec3 obj_center = (obj_bounds.max_pt.xyz + obj_bounds.min_pt.xyz) * 0.5;
+        const float obj_radius = 
+            (-max_scale_axis * length(obj_bounds.max_pt.xyz - obj_center)) - 0.05;
+        obj_center = (model_mat * vec4(obj_center, 1.0)).xyz;
 
-        // Clip space to UV
-        bb.max_pt = (bb.max_pt * 0.5) + vec2(0.5);
-        bb.max_pt.y = 1.0 - bb.max_pt.y;
+        // Do culling
+        s_visible = is_visible(
+            obj_center, 
+            obj_radius, 
+            obj_bounds.min_pt.xyz, 
+            obj_bounds.max_pt.xyz, 
+            view_model
+        );
 
-        bb.min_pt = (bb.min_pt * 0.5) + vec2(0.5);
-        bb.min_pt.y = 1.0 - bb.min_pt.y;
+        // If we aren't visible, write out that we have 0 objects
+        if (!s_visible) {
+            output_ids[id.meshlet_base] = uint16_t(0);
+        }
 
-        // Determine depth (in world space)
-        float depth = textureLod(hzb_image, (bb.max_pt + bb.min_pt) * 0.5, level).x;
-        depth = camera[0].near_clip / depth;
-
-        // Check for visibility
-        visible = bb.depth <= depth;
+        // Write shared variables
+        s_model_mat = model_mat;
+        s_normal_mat = normal_mat;
+        s_view_model = view_model;
+        s_output_base = id.meshlet_base;
+        s_obj_bounds = obj_bounds;
+        s_data_idx = id.data_idx;
+        s_meshlet_offset = meshlet_offset;
+        s_meshlet_count = meshlet_count;
+        s_max_scale_axis = max_scale_axis;
+        s_material = material;
+#if ARD_VS_HAS_UV0
+        s_color_tex = texture_slots[textures_slot][0];
+        s_met_rough_tex = texture_slots[textures_slot][2];
+#if ARD_VS_HAS_TANGENT
+        s_normal_tex = texture_slots[textures_slot][1];
+#endif
+#endif
     }
-#endif
 
-    // If this is a shadow pass, we don't actually need to write back the object ID since we don't
-    // reused culling results between frames.
-#if !defined(SHADOW_PASS)
-    // Write visibility flag into object ID
-    uint new_data_idx = data_idx;
-    if (visible) {
-        new_data_idx |= 1 << 31;
-    } 
-    object_ids[object_idx].data_idx = new_data_idx;
-#endif
-#else
-    // Otherwise, we extract the visibility value from the data index
-    bool visible = (id.data_idx >> 31) > 0;
-#endif
-
-    // Vote on visibility
-    uvec4 valid_votes = subgroupBallot(visible);
-
-    // If we are visible, write our data into the payload
-    if (visible) {
-        const uint index = subgroupBallotExclusiveBitCount(valid_votes);
-        payload.object_ids[index] = data_idx;
-        payload.index_offsets[index] = index_offset;
-        payload.vertex_offsets[index] = vertex_offset;
-        payload.counts[index] = vertex_prim_counts;
-    }
+    barrier();
     
-    // Generate mesh tasks if we are ID 0
+    // If we are not visible, stop early
+    if (!s_visible) {
+        return;
+    }
+
+    // Read in shared variables
+    const mat4 model_mat = s_model_mat;
+    const mat4 view_model = s_view_model;
+    const ObjectBounds obj_bounds = s_obj_bounds;
+    const uint meshlet_offset = s_meshlet_offset;
+    const uint meshlet_count = s_meshlet_count;
+    const uint output_base = s_output_base;
+    const float max_scale_axis = s_max_scale_axis;
+    const vec3 bounds_range = obj_bounds.max_pt.xyz - obj_bounds.min_pt.xyz;
+
+    uint output_meshlet_count = 0;
+
+    // Distribute meshlets over all invocations
+    const uint iters = (meshlet_count + (TS_INVOCATIONS - 1)) / TS_INVOCATIONS;
+    for (uint i = 0; i < iters; i++) {
+        // Determine meshlet index. Skip if OOB.
+        const uint meshlet_idx = (i * TS_INVOCATIONS) + gl_LocalInvocationIndex;
+        if (meshlet_idx >= meshlet_count) {
+            continue;
+        }
+
+        // Read in the meshlet this invocation is looking at.
+        const uvec2 bounds_packed = v_meshlets[meshlet_offset + meshlet_idx].data.zw;
+
+        // Unpack meshlet bounds.
+        const vec4 xunpacked = unpackUnorm4x8(bounds_packed.x);
+        const vec4 yunpacked = unpackUnorm4x8(bounds_packed.y);
+        const vec3 meshlet_min_pt = obj_bounds.min_pt.xyz 
+            + (bounds_range * vec3(xunpacked.z, xunpacked.w, yunpacked.x));
+        const vec3 meshlet_max_pt = obj_bounds.min_pt.xyz 
+            + (bounds_range * vec3(yunpacked.y, yunpacked.z, yunpacked.w));
+
+        // Compute meshlet bounds
+        vec3 meshlet_center = (meshlet_max_pt + meshlet_min_pt) * 0.5;
+        const float meshlet_radius = 
+            (-max_scale_axis * length(meshlet_max_pt - meshlet_center)) - 0.05;
+        meshlet_center = (model_mat * vec4(meshlet_center, 1.0)).xyz;
+
+        // Perform culling
+        const bool visible = is_visible(
+            meshlet_center, 
+            meshlet_radius, 
+            meshlet_min_pt, 
+            meshlet_max_pt, 
+            view_model
+        );
+        
+        // Vote on visibility
+        uvec4 valid_votes = subgroupBallot(visible);
+        const uint visible_count = subgroupBallotBitCount(valid_votes);
+        const uint out_idx = subgroupBallotExclusiveBitCount(valid_votes);
+
+        // Write out meshlet ID if visible
+        if (visible) {
+            output_ids[1 + output_base + output_meshlet_count + out_idx] = uint16_t(meshlet_idx);
+        }
+
+        // Update output counter
+        output_meshlet_count += visible_count;
+    }
+
+    // Write to payload and emit tasks
     if (gl_LocalInvocationIndex == 0) {
-        const uint meshlet_count = subgroupBallotBitCount(valid_votes);
+        output_ids[output_base] = uint16_t(output_meshlet_count);
+
+        payload.meshlet_base = 1 + output_base;
+        payload.meshlet_info_base = meshlet_offset;  
+        payload.model = model_mat;
+        payload.normal = s_normal_mat;
+        payload.material = s_material;
+#if ARD_VS_HAS_UV0
+        payload.color_tex = s_color_tex;
+        payload.met_rough_tex = s_met_rough_tex;
+#if ARD_VS_HAS_TANGENT
+        payload.normal_tex = s_normal_tex;
+#endif
+#endif
+
+        EmitMeshTasksEXT(output_meshlet_count, 1, 1);
+    }
+
+#else
+    // Otherwise, we just do a simple lookup to see how many meshlets are visible
+    if (gl_LocalInvocationIndex == 0) {
+        const ObjectId id = input_ids[object_idx];
+        const uint meshlet_count = uint(output_ids[id.meshlet_base]);
+        manual_payload(id);
         EmitMeshTasksEXT(meshlet_count, 1, 1);
     }
+#endif
 }

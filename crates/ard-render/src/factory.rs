@@ -8,7 +8,7 @@ use crate::{
     FRAMES_IN_FLIGHT,
 };
 use ard_ecs::prelude::*;
-use ard_formats::{mesh::MeshData, texture::TextureSource};
+use ard_formats::{mesh::MeshData, meshlet::Meshlet, texture::TextureSource};
 use ard_pal::prelude::{Buffer, Context, QueueType};
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_material::{
@@ -80,8 +80,9 @@ impl Factory {
                 layouts,
                 // TODO: Load this from a config file
                 MeshFactoryConfig {
-                    base_vertex_block_len: 64,
-                    base_index_block_len: 256,
+                    // Smallest base indices are for a single meshlet.
+                    base_vertex_block_len: Meshlet::MAX_VERTICES,
+                    base_index_block_len: Meshlet::MAX_PRIMITIVES * 3,
                     base_meshlet_block_len: 8,
                     default_vertex_buffer_len: 65536,
                     default_index_buffer_len: 65536,

@@ -13,7 +13,7 @@ use ard_render_image_effects::{
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
 
-use crate::MsaaSettings;
+use crate::{DebugSettings, MsaaSettings};
 
 /// Information used by the render system to draw things. This data is persisted between frames
 /// for reuse.
@@ -37,6 +37,7 @@ pub struct FrameDataInner {
     pub sun_shafts_settings: SunShaftsSettings,
     pub smaa_settings: SmaaSettings,
     pub msaa_settings: MsaaSettings,
+    pub debug_settings: DebugSettings,
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.

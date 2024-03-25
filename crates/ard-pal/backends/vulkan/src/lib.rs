@@ -715,6 +715,7 @@ impl VulkanBackend {
 
         let mut features11 = vk::PhysicalDeviceVulkan11Features::builder()
             .multiview(true)
+            .storage_buffer16_bit_access(true)
             .build();
 
         let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()

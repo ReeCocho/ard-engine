@@ -27,6 +27,7 @@ pub struct GpuStructField {
 pub enum GpuStructFieldType {
     Struct(String),
     USize,
+    U16,
     U32,
     I32,
     U64,
@@ -91,6 +92,7 @@ impl GpuStructFieldType {
             GpuStructFieldType::Struct(_) => usize::MAX,
             GpuStructFieldType::U64 => 8,
             GpuStructFieldType::USize => 4,
+            GpuStructFieldType::U16 => 2,
             GpuStructFieldType::U32 => 4,
             GpuStructFieldType::I32 => 4,
             GpuStructFieldType::F32 => 4,

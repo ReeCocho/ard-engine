@@ -44,8 +44,8 @@ unsafe impl Pod for ObjectBounds {}
 unsafe impl Zeroable for ObjectBounds {}
 
 impl MeshData {
-    pub const INDEX_TYPE: IndexType = IndexType::U32;
-    pub const INDEX_SIZE: usize = std::mem::size_of::<u32>();
+    pub const INDEX_TYPE: IndexType = IndexType::U16;
+    pub const INDEX_SIZE: usize = std::mem::size_of::<u16>();
 
     #[inline(always)]
     pub fn layout(&self) -> VertexLayout {
@@ -119,7 +119,7 @@ impl MeshData {
         (staging, offsets)
     }
 
-    pub fn index_staging(&self, ctx: &Context, global_vertex_offset: u32) -> Buffer {
+    pub fn index_staging(&self, ctx: &Context) -> Buffer {
         let mut staging = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -136,7 +136,7 @@ impl MeshData {
 
         // Copy in indices
         let mut view = staging.write(0).unwrap();
-        let idx_slice = bytemuck::cast_slice_mut::<_, u32>(view.deref_mut());
+        let idx_slice = bytemuck::cast_slice_mut::<_, u16>(view.deref_mut());
 
         // Loop over every meshlet
         self.meshlets.iter().for_each(|meshlet| {
@@ -144,8 +144,8 @@ impl MeshData {
             let index_count = meshlet.primitive_count as usize * 3;
             for i in 0..index_count {
                 let src_idx = meshlet.index_offset as usize + i;
-                let meshlet_rel_idx = self.indices[src_idx] as u32;
-                idx_slice[src_idx] = global_vertex_offset + meshlet.vertex_offset + meshlet_rel_idx;
+                let meshlet_rel_idx = self.indices[src_idx] as u16;
+                idx_slice[src_idx] = meshlet_rel_idx;
             }
         });
 

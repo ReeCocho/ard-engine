@@ -24,7 +24,7 @@ impl Default for AoSettings {
         Self {
             radius: 0.5,
             effect_falloff_range: 0.615,
-            final_value_power: 2.2,
+            final_value_power: 2.7,
             denoise_blur_beta: 1.2,
             sample_distribution_power: 2.0,
             thin_occluder_compensation: 0.0,

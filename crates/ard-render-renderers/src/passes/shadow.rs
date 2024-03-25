@@ -2,19 +2,21 @@ use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_si::bindings::*;
 
-pub struct DepthOnlyPassSets {
+use crate::ids::RenderIds;
+
+pub struct ShadowPassSets {
     sets: Vec<DescriptorSet>,
 }
 
-impl DepthOnlyPassSets {
+impl ShadowPassSets {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let sets = (0..frames_in_flight)
             .map(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
-                        layout: layouts.depth_only_pass.clone(),
-                        debug_name: Some(format!("depth_only_pass_set_{frame_idx}")),
+                        layout: layouts.shadow_pass.clone(),
+                        debug_name: Some(format!("shadow_pass_set_{frame_idx}")),
                     },
                 )
                 .unwrap()
@@ -28,12 +30,12 @@ impl DepthOnlyPassSets {
         &mut self,
         frame: Frame,
         object_data: &Buffer,
-        object_ids: &Buffer,
+        object_ids: &RenderIds,
     ) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: DEPTH_ONLY_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
+                binding: SHADOW_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_data,
@@ -41,10 +43,18 @@ impl DepthOnlyPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: DEPTH_ONLY_PASS_SET_OBJECT_IDS_BINDING,
+                binding: SHADOW_PASS_SET_INPUT_IDS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
-                    buffer: object_ids,
+                    buffer: object_ids.input(),
+                    array_element: usize::from(frame),
+                },
+            },
+            DescriptorSetUpdate {
+                binding: SHADOW_PASS_SET_OUTPUT_IDS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: object_ids.output(),
                     array_element: 0,
                 },
             },

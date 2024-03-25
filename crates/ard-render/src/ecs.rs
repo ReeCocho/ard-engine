@@ -136,7 +136,15 @@ impl RenderEcs {
                 .update_sun_shadow_bindings(frame, &sun_shadows_renderer);
 
             scene_renderer
+                .transparent_pass_sets_mut()
+                .update_sun_shadow_bindings(frame, &sun_shadows_renderer);
+
+            scene_renderer
                 .color_pass_sets_mut()
+                .update_sky_box_bindings(frame, &proc_skybox);
+
+            scene_renderer
+                .transparent_pass_sets_mut()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
             scene_renderer
@@ -144,7 +152,15 @@ impl RenderEcs {
                 .update_ao_image_binding(frame, canvas.ao().texture());
 
             scene_renderer
+                .transparent_pass_sets_mut()
+                .update_ao_image_binding(frame, canvas.ao().texture());
+
+            scene_renderer
                 .color_pass_sets_mut()
+                .update_light_clusters_binding(frame, &lighting);
+
+            scene_renderer
+                .transparent_pass_sets_mut()
                 .update_light_clusters_binding(frame, &lighting);
         }
 
@@ -202,6 +218,9 @@ impl RenderEcs {
                 self.scene_renderer
                     .color_pass_sets_mut()
                     .update_ao_image_binding(frame, self.canvas.ao().texture());
+                self.scene_renderer
+                    .transparent_pass_sets_mut()
+                    .update_ao_image_binding(frame, self.canvas.ao().texture());
             }
         }
 
@@ -219,6 +238,9 @@ impl RenderEcs {
                 self.scene_renderer
                     .color_pass_sets_mut()
                     .update_sun_shadow_bindings(frame, &self.sun_shadows_renderer);
+                self.scene_renderer
+                    .transparent_pass_sets_mut()
+                    .update_sun_shadow_bindings(frame, &self.sun_shadows_renderer);
             }
         }
 
@@ -226,6 +248,9 @@ impl RenderEcs {
         if frame.lights.buffer_expanded() || new_shadow_cascades {
             self.scene_renderer
                 .color_pass_sets_mut()
+                .update_lights_binding(frame.frame, &frame.lights);
+            self.scene_renderer
+                .transparent_pass_sets_mut()
                 .update_lights_binding(frame.frame, &frame.lights);
         }
 
@@ -554,6 +579,7 @@ impl RenderEcs {
                         camera: &self.camera,
                         pass,
                         render_area,
+                        lock_culling: false,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -649,6 +675,7 @@ impl RenderEcs {
                         pass,
                         camera,
                         render_area,
+                        lock_culling: frame_data.debug_settings.lock_culling,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -751,6 +778,7 @@ impl RenderEcs {
                         pass,
                         camera,
                         render_area,
+                        lock_culling: false,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,
@@ -799,6 +827,7 @@ impl RenderEcs {
                         pass,
                         camera,
                         render_area,
+                        lock_culling: frame_data.debug_settings.lock_culling,
                         static_dirty: frame_data.object_data.static_dirty(),
                         mesh_factory,
                         material_factory,

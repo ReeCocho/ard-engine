@@ -15,7 +15,7 @@ pub struct GlobalLighting {
 impl Default for GlobalLighting {
     fn default() -> Self {
         Self {
-            ambient_color_intensity: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            ambient_color_intensity: Vec4::new(1.0, 1.0, 1.0, 0.25),
             sun_color_intensity: Vec4::new(1.0, 0.98, 0.92, 32.0),
             sun_direction: Vec4::new(1.0, -1.0, 1.0, 0.0).normalize(),
             cascades: vec![
@@ -23,7 +23,7 @@ impl Default for GlobalLighting {
                     min_depth_bias: 0.0,
                     max_depth_bias: 0.005,
                     normal_bias: 0.1,
-                    filter_size: 1.3,
+                    filter_size: 2.0,
                     resolution: 4096,
                     end_distance: 15.0,
                 },
@@ -31,7 +31,7 @@ impl Default for GlobalLighting {
                     min_depth_bias: 0.005,
                     max_depth_bias: 0.05,
                     normal_bias: 0.1,
-                    filter_size: 1.3,
+                    filter_size: 2.0,
                     resolution: 4096,
                     end_distance: 40.0,
                 },
@@ -39,7 +39,7 @@ impl Default for GlobalLighting {
                     min_depth_bias: 0.005,
                     max_depth_bias: 0.05,
                     normal_bias: 0.1,
-                    filter_size: 1.3,
+                    filter_size: 2.0,
                     resolution: 4096,
                     end_distance: 100.0,
                 },
@@ -47,7 +47,7 @@ impl Default for GlobalLighting {
                     min_depth_bias: 0.005,
                     max_depth_bias: 0.05,
                     normal_bias: 0.25,
-                    filter_size: 1.3,
+                    filter_size: 2.0,
                     resolution: 4096,
                     end_distance: 300.0,
                 },

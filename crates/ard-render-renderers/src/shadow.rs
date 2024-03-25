@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use ard_ecs::resource::Resource;
 use ard_math::{Vec2, Vec3, Vec3A};
 use ard_pal::prelude::*;
@@ -13,13 +11,14 @@ use ard_render_objects::{
     set::{RenderableSet, RenderableSetUpdate},
     Model,
 };
-use ard_render_si::{bindings::Layouts, types::*};
+use ard_render_si::bindings::Layouts;
 use ard_render_textures::factory::TextureFactory;
 use ordered_float::NotNan;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
-    passes::{depth_only::DepthOnlyPassSets, SHADOW_ALPHA_CUTOFF_PASS_ID, SHADOW_OPAQUE_PASS_ID},
+    ids::RenderIds,
+    passes::{shadow::ShadowPassSets, SHADOW_ALPHA_CUTOFF_PASS_ID, SHADOW_OPAQUE_PASS_ID},
 };
 
 pub const DEFAULT_INPUT_ID_CAP: usize = 1;
@@ -45,7 +44,7 @@ pub(crate) const SHADOW_SAMPLER: Sampler = Sampler {
 #[derive(Resource)]
 pub struct SunShadowsRenderer {
     ctx: Context,
-    input_ids: Buffer,
+    ids: RenderIds,
     set: RenderableSet,
     empty_shadow: Texture,
     ubo: Vec<SunShadowsUbo>,
@@ -66,7 +65,7 @@ pub struct ShadowRenderArgs<'a, 'b, const FIF: usize> {
 struct ShadowCascadeRenderData {
     image: Texture,
     camera: CameraUbo,
-    sets: DepthOnlyPassSets,
+    sets: ShadowPassSets,
 }
 
 impl SunShadowsRenderer {
@@ -131,19 +130,7 @@ impl SunShadowsRenderer {
 
         Self {
             ctx: ctx.clone(),
-            input_ids: Buffer::new(
-                ctx.clone(),
-                BufferCreateInfo {
-                    size: (DEFAULT_INPUT_ID_CAP * std::mem::size_of::<GpuObjectId>()) as u64,
-                    array_elements: frames_in_flight,
-                    buffer_usage: BufferUsage::STORAGE_BUFFER,
-                    memory_usage: MemoryUsage::CpuToGpu,
-                    queue_types: QueueTypes::COMPUTE,
-                    sharing_mode: SharingMode::Exclusive,
-                    debug_name: Some("sun_shadow_input_ids".to_owned()),
-                },
-            )
-            .unwrap(),
+            ids: RenderIds::new(ctx, frames_in_flight),
             set: RenderableSet::default(),
             ubo,
             bins: DrawBins::new(frames_in_flight),
@@ -188,36 +175,8 @@ impl SunShadowsRenderer {
             .with_alpha_cutout()
             .update(view_location, objects, meshes, |_| true, |_| true, |_| true);
 
-        // Expand ID buffers if needed
-        let input_id_buffer_size = std::mem::size_of_val(self.set.ids()) as u64;
-        let input_id_buffer_expanded =
-            match Buffer::expand(&self.input_ids, input_id_buffer_size, false) {
-                Some(mut new_buffer) => {
-                    std::mem::swap(&mut self.input_ids, &mut new_buffer);
-                    true
-                }
-                None => false,
-            };
-
-        // Write in object IDs
-        let mut id_view = self.input_ids.write(usize::from(frame)).unwrap();
-        let id_slice = bytemuck::cast_slice_mut::<_, GpuObjectId>(id_view.deref_mut());
-
-        // Write in static ids if they were modified
-        if input_id_buffer_expanded || objects.static_dirty() {
-            id_slice[self.set.static_object_ranges().opaque.clone()]
-                .copy_from_slice(&self.set.ids()[self.set.static_object_ranges().opaque.clone()]);
-            id_slice[self.set.static_object_ranges().alpha_cutout.clone()].copy_from_slice(
-                &self.set.ids()[self.set.static_object_ranges().alpha_cutout.clone()],
-            );
-        }
-
-        // Write in dynamic object IDs
-        id_slice[self.set.dynamic_object_ranges().opaque.clone()]
-            .copy_from_slice(&self.set.ids()[self.set.dynamic_object_ranges().opaque.clone()]);
-        id_slice[self.set.dynamic_object_ranges().alpha_cutout.clone()].copy_from_slice(
-            &self.set.ids()[self.set.dynamic_object_ranges().alpha_cutout.clone()],
-        );
+        // Upload IDs
+        let _buffer_expanded = self.ids.upload(frame, objects.static_dirty(), &self.set);
 
         // Generate bins
         self.bins.gen_bins(
@@ -266,7 +225,7 @@ impl SunShadowsRenderer {
         self.cascades.iter_mut().for_each(|cascade| {
             cascade
                 .sets
-                .update_object_data_bindings(frame, objects.object_data(), &self.input_ids);
+                .update_object_data_bindings(frame, objects.object_data(), &self.ids);
         });
     }
 
@@ -330,6 +289,7 @@ impl SunShadowsRenderer {
                     pass_id: SHADOW_OPAQUE_PASS_ID,
                     frame,
                     render_area,
+                    lock_culling: false,
                     camera: &cascade.camera,
                     global_set: cascade.sets.get_set(frame),
                     pass,
@@ -345,6 +305,7 @@ impl SunShadowsRenderer {
                     pass_id: SHADOW_OPAQUE_PASS_ID,
                     frame,
                     render_area,
+                    lock_culling: false,
                     camera: &cascade.camera,
                     global_set: cascade.sets.get_set(frame),
                     pass,
@@ -359,6 +320,7 @@ impl SunShadowsRenderer {
                     ctx: &self.ctx,
                     pass_id: SHADOW_ALPHA_CUTOFF_PASS_ID,
                     frame,
+                    lock_culling: false,
                     render_area,
                     camera: &cascade.camera,
                     global_set: cascade.sets.get_set(frame),
@@ -374,6 +336,7 @@ impl SunShadowsRenderer {
                     ctx: &self.ctx,
                     pass_id: SHADOW_ALPHA_CUTOFF_PASS_ID,
                     frame,
+                    lock_culling: false,
                     render_area,
                     camera: &cascade.camera,
                     global_set: cascade.sets.get_set(frame),
@@ -394,7 +357,7 @@ impl ShadowCascadeRenderData {
         Self {
             image: Self::create_image(ctx, resolution),
             camera: CameraUbo::new(ctx, frames_in_flight, false, layouts),
-            sets: DepthOnlyPassSets::new(ctx, layouts, frames_in_flight),
+            sets: ShadowPassSets::new(ctx, layouts, frames_in_flight),
         }
     }
 

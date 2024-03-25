@@ -94,7 +94,7 @@ impl MeshResource {
 
         // Create staging buffers
         let (vertex_staging, vertex_offsets) = data.vertex_staging(ctx);
-        let index_staging = data.index_staging(ctx, block.vertex_block().base());
+        let index_staging = data.index_staging(ctx);
         let meshlet_staging = Self::meshlet_staging(ctx, data.bounds(), &block, data.meshlets());
 
         let bounds = *data.bounds();
@@ -124,6 +124,8 @@ impl MeshResource {
                 },
                 first_index: block.index_block().base(),
                 vertex_offset: block.vertex_block().base() as i32,
+                meshlet_offset: block.meshlet_block().base(),
+                meshlet_count: data.meshlet_count() as u32,
                 index_count: data.index_count() as u32,
             },
         ))

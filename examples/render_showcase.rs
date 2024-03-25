@@ -7,7 +7,8 @@ use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
 use ard_render::{
-    factory::Factory, system::PostRender, MsaaSettings, RenderPlugin, RendererSettings,
+    factory::Factory, system::PostRender, DebugSettings, MsaaSettings, RenderPlugin,
+    RendererSettings,
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
 use ard_render_camera::{Camera, CameraClearColor};
@@ -184,6 +185,7 @@ impl GuiView for TestingGui {
         let mut sun_shafts = res.get_mut::<SunShaftsSettings>().unwrap();
         let mut smaa = res.get_mut::<SmaaSettings>().unwrap();
         let mut msaa = res.get_mut::<MsaaSettings>().unwrap();
+        let mut debug = res.get_mut::<DebugSettings>().unwrap();
 
         if self.ui_visible {
             egui::Window::new("Welcome").open(&mut self.welcome_open).show(ctx, |ui| {
@@ -451,6 +453,14 @@ impl GuiView for TestingGui {
                             });
                         },
                     );
+
+                    egui::CollapsingHeader::new("Debug Settings").show_unindented(ui, |ui| {
+                        egui::Grid::new("_debug_settings_grid").show(ui, |ui| {
+                            ui.label("Lock Culling");
+                            ui.add(egui::Checkbox::new(&mut debug.lock_culling, ""));
+                            ui.end_row();
+                        });
+                    });
                 });
         }
 
@@ -503,7 +513,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: None,
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
@@ -520,9 +530,9 @@ fn setup(app: &mut App) {
 
     // Load in models
     let bistro_model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    // let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
+    let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
     assets.wait_for_load(&bistro_model);
-    // assets.wait_for_load(&sphere_model);
+    assets.wait_for_load(&sphere_model);
 
     // Instantiate models
     let instance = assets.get(&bistro_model).unwrap().instantiate();
@@ -547,7 +557,6 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
-    /*
     let sphere = assets.get(&sphere_model).unwrap();
     let offset = Vec3::new(0.0, 25.0, 0.0);
     const SPHERE_X: usize = 8;
@@ -587,7 +596,6 @@ fn setup(app: &mut App) {
     }
 
     app.world.entities().commands().create(pack, &mut []);
-    */
 
     /*
     app.world.entities().commands().create(

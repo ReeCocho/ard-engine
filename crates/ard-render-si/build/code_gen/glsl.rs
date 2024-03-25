@@ -54,6 +54,7 @@ impl<W: Write> GlslStructCodeGen<W> {
             GpuStructFieldType::Struct(name) => name.clone(),
             GpuStructFieldType::U32 | GpuStructFieldType::USize => "uint".into(),
             GpuStructFieldType::I32 => "int".into(),
+            GpuStructFieldType::U16 => "uint16_t".into(),
             GpuStructFieldType::U64 => "uint".into(),
             GpuStructFieldType::F32 => "float".into(),
             GpuStructFieldType::Bool => "uint".into(),

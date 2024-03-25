@@ -38,6 +38,11 @@ pub struct RendererSettings {
     pub canvas_size: Option<(u32, u32)>,
 }
 
+#[derive(Resource, Default, Clone, Copy)]
+pub struct DebugSettings {
+    pub lock_culling: bool,
+}
+
 #[derive(Resource, Clone, Copy)]
 pub struct MsaaSettings {
     pub samples: MultiSamples,
@@ -59,6 +64,7 @@ impl Plugin for RenderPlugin {
         app.add_resource(SunShaftsSettings::default());
         app.add_resource(SmaaSettings::default());
         app.add_resource(MsaaSettings::default());
+        app.add_resource(DebugSettings::default());
         app.add_resource(Gui::default());
         app.add_system(GuiInputCaptureSystem);
         app.add_startup_function(late_render_init);

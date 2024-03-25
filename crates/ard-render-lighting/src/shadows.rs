@@ -23,7 +23,7 @@ pub struct ShadowCascadeSettings {
 
 impl SunShadowsUbo {
     pub fn new(ctx: &Context) -> Self {
-        Self {
+        let mut res = Self {
             ubo: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
@@ -54,7 +54,16 @@ impl SunShadowsUbo {
                 far_clip: 1.0,
                 cluster_scale_bias: Vec2::ONE,
             }),
-        }
+        };
+
+        // Write in shadow kernel
+        let mut buff_view = res.ubo.write(0).unwrap();
+        let ubo = &mut bytemuck::cast_slice_mut::<_, GpuSunShadows>(buff_view.deref_mut())[0];
+        ubo.kernel = SHADOW_KERNEL;
+
+        std::mem::drop(buff_view);
+
+        res
     }
 
     #[inline(always)]
@@ -201,3 +210,11 @@ impl SunShadowsUbo {
         }
     }
 }
+
+// i16 snorm values packed into u32s.
+const SHADOW_KERNEL: [u32; 32] = [
+    0, 1240255496, 3343704717, 958525605, 1085448965, 2277561536, 1044466142, 1764293411,
+    2399213932, 393166890, 3808701840, 2903816909, 565674008, 3679292662, 3981333771, 556931443,
+    4153856112, 1942146958, 3591288734, 2397456569, 273739313, 1015116575, 1282217977, 69049475,
+    3082438817, 2738811899, 247623087, 3428478922, 3134464094, 463846664, 3724149500, 1722235603,
+];

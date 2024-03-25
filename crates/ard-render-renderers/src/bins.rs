@@ -48,6 +48,7 @@ pub struct RenderArgs<'a, 'b, const FIF: usize> {
     pub ctx: &'a Context,
     pub pass_id: PassId,
     pub frame: Frame,
+    pub lock_culling: bool,
     pub render_area: Vec2,
     pub pass: &'b mut RenderPass<'a>,
     pub camera: &'a CameraUbo,
@@ -311,13 +312,6 @@ impl DrawBins {
         bin_offset: usize,
         bin_count: usize,
     ) {
-        let invocations_per_task = args
-            .ctx
-            .properties()
-            .mesh_shading
-            .preferred_task_work_group_invocations
-            .min(32);
-
         let mut mesh_vertex_layout = VertexLayout::empty();
         let mut mat_id = ResourceId::from(usize::MAX);
         let mut variant_id = u32::MAX;
@@ -422,10 +416,10 @@ impl DrawBins {
                 object_id_offset: bin.offset as u32,
                 object_id_count: bin.count as u32,
                 render_area: args.render_area,
+                lock_culling: args.lock_culling as u32,
             }];
             args.pass.push_constants(bytemuck::cast_slice(&constants));
-            args.pass
-                .draw_mesh_tasks((bin.count as u32).div_ceil(invocations_per_task), 1, 1);
+            args.pass.draw_mesh_tasks(bin.count as u32, 1, 1);
         }
     }
 }

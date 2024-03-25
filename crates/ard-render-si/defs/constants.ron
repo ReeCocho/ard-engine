@@ -12,6 +12,7 @@
     (name: "MaxTaskShaderInvocations", value: UInt(32)),
     (name: "MaxPrimitives", value: UInt(126)),
     (name: "MaxVertices", value: UInt(64)),
+    (name: "SunShadowKernelSize", value: USize(32)),
     /// Must be a power of 2.
     (name: "HzbGenKernelSize", value: USize(8)),
     (name: "DiReduceBlockSize", value: UInt(128)),

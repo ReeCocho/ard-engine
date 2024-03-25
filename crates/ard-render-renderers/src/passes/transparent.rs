@@ -8,23 +8,24 @@ use ard_render_lighting::{
 use ard_render_si::{bindings::*, consts::*};
 
 use crate::{
+    highz::HzbImage,
     ids::RenderIds,
     shadow::{SunShadowsRenderer, SHADOW_SAMPLER},
 };
 
-pub struct ColorPassSets {
+pub struct TransparentPassSets {
     sets: Vec<DescriptorSet>,
 }
 
-impl ColorPassSets {
+impl TransparentPassSets {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let sets = (0..frames_in_flight)
             .map(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
-                        layout: layouts.color_pass.clone(),
-                        debug_name: Some(format!("color_pass_set_{frame_idx}")),
+                        layout: layouts.transparent_pass.clone(),
+                        debug_name: Some(format!("transparent_pass_set_{frame_idx}")),
                     },
                 )
                 .unwrap()
@@ -40,7 +41,7 @@ impl ColorPassSets {
         let shadow_cascades_update: [_; MAX_SHADOW_CASCADES + 1] = std::array::from_fn(|i| {
             if i < MAX_SHADOW_CASCADES {
                 DescriptorSetUpdate {
-                    binding: COLOR_PASS_SET_SHADOW_CASCADES_BINDING,
+                    binding: TRANSPARENT_PASS_SET_SHADOW_CASCADES_BINDING,
                     array_element: i,
                     value: DescriptorValue::Texture {
                         texture: sun_shadows
@@ -54,7 +55,7 @@ impl ColorPassSets {
                 }
             } else {
                 DescriptorSetUpdate {
-                    binding: COLOR_PASS_SET_SUN_SHADOW_INFO_BINDING,
+                    binding: TRANSPARENT_PASS_SET_SUN_SHADOW_INFO_BINDING,
                     array_element: 0,
                     value: DescriptorValue::UniformBuffer {
                         buffer: sun_shadows.sun_shadow_info(frame),
@@ -71,7 +72,7 @@ impl ColorPassSets {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_DI_MAP_BINDING,
+                binding: TRANSPARENT_PASS_SET_DI_MAP_BINDING,
                 array_element: 0,
                 value: DescriptorValue::CubeMap {
                     cube_map: proc_skybox.di_map(),
@@ -82,7 +83,7 @@ impl ColorPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_ENV_MAP_BINDING,
+                binding: TRANSPARENT_PASS_SET_ENV_MAP_BINDING,
                 array_element: 0,
                 value: DescriptorValue::CubeMap {
                     cube_map: proc_skybox.prefiltered_env_map(),
@@ -93,7 +94,7 @@ impl ColorPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_BRDF_LUT_BINDING,
+                binding: TRANSPARENT_PASS_SET_BRDF_LUT_BINDING,
                 array_element: 0,
                 value: DescriptorValue::Texture {
                     texture: proc_skybox.brdf_lut(),
@@ -109,7 +110,7 @@ impl ColorPassSets {
     pub fn update_ao_image_binding(&mut self, frame: Frame, ao_image: &Texture) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: COLOR_PASS_SET_AO_IMAGE_BINDING,
+            binding: TRANSPARENT_PASS_SET_AO_IMAGE_BINDING,
             array_element: 0,
             value: DescriptorValue::Texture {
                 texture: ao_image,
@@ -124,7 +125,7 @@ impl ColorPassSets {
     pub fn update_light_clusters_binding(&mut self, frame: Frame, clusters: &LightClusters) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: COLOR_PASS_SET_LIGHT_CLUSTERS_BINDING,
+            binding: TRANSPARENT_PASS_SET_LIGHT_CLUSTERS_BINDING,
             array_element: 0,
             value: DescriptorValue::StorageBuffer {
                 buffer: clusters.clusters(),
@@ -137,7 +138,7 @@ impl ColorPassSets {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_LIGHTS_BINDING,
+                binding: TRANSPARENT_PASS_SET_LIGHTS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: lights.buffer(),
@@ -145,7 +146,7 @@ impl ColorPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_GLOBAL_LIGHTING_INFO_BINDING,
+                binding: TRANSPARENT_PASS_SET_GLOBAL_LIGHTING_INFO_BINDING,
                 array_element: 0,
                 value: DescriptorValue::UniformBuffer {
                     buffer: lights.global_buffer(),
@@ -164,7 +165,7 @@ impl ColorPassSets {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
+                binding: TRANSPARENT_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_data,
@@ -172,7 +173,7 @@ impl ColorPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_INPUT_IDS_BINDING,
+                binding: TRANSPARENT_PASS_SET_INPUT_IDS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_ids.input(),
@@ -180,7 +181,7 @@ impl ColorPassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: COLOR_PASS_SET_OUTPUT_IDS_BINDING,
+                binding: TRANSPARENT_PASS_SET_OUTPUT_IDS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_ids.output(),
@@ -188,6 +189,15 @@ impl ColorPassSets {
                 },
             },
         ]);
+    }
+
+    pub fn update_hzb_binding<const FIF: usize>(&mut self, frame: Frame, image: &HzbImage<FIF>) {
+        let set = &mut self.sets[usize::from(frame)];
+        set.update(&[DescriptorSetUpdate {
+            binding: TRANSPARENT_PASS_SET_HZB_IMAGE_BINDING,
+            array_element: 0,
+            value: image.descriptor_value(),
+        }]);
     }
 
     #[inline(always)]

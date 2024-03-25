@@ -427,6 +427,16 @@ pub fn create_pbr_material(
     // Compile variants
     let mut variant_shaders = HashMap::<ShaderVariant, Shader>::default();
     for (variant, code) in variant_code.iter() {
+        let task_invocs = match variant.pass {
+            // Shadow and depth prepasses have to have more than one task invocations to accelerate
+            // culling.
+            SHADOW_OPAQUE_PASS_ID
+            | SHADOW_ALPHA_CUTOFF_PASS_ID
+            | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
+            | DEPTH_OPAQUE_PREPASS_PASS_ID => invocations_per_task(properties),
+            _ => 1,
+        };
+
         variant_shaders.insert(
             *variant,
             create_shader(ShaderCreateInfo {
@@ -440,25 +450,8 @@ pub fn create_pbr_material(
                 texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
                 data_size: std::mem::size_of::<GpuPbrMaterial>(),
                 work_group_size: match variant.stage {
-                    // Task shader can't have more invocations that we have support for subgroup
-                    // ballots. On the implementations we care about, this is 32.
-                    ShaderStage::Task => (
-                        properties
-                            .mesh_shading
-                            .preferred_task_work_group_invocations
-                            .min(32),
-                        1,
-                        1,
-                    ),
-                    // For mesh shaders, we never want to dispatch more than we have primitives per meshlet.
-                    ShaderStage::Mesh => (
-                        properties
-                            .mesh_shading
-                            .preferred_mesh_work_group_invocations
-                            .min(MAX_PRIMITIVES),
-                        1,
-                        1,
-                    ),
+                    ShaderStage::Task => (task_invocs, 1, 1),
+                    ShaderStage::Mesh => (invocations_per_mesh(properties), 1, 1),
                     _ => (0, 0, 0),
                 },
             }),
@@ -717,4 +710,20 @@ pub fn create_pbr_material(
         data_size: std::mem::size_of::<GpuPbrMaterial>() as u32,
         texture_slots: PBR_MATERIAL_TEXTURE_COUNT as u32,
     })
+}
+
+#[inline(always)]
+pub fn invocations_per_task(props: &GraphicsProperties) -> u32 {
+    props
+        .mesh_shading
+        .preferred_task_work_group_invocations
+        .min(MAX_TASK_SHADER_INVOCATIONS)
+}
+
+#[inline(always)]
+pub fn invocations_per_mesh(props: &GraphicsProperties) -> u32 {
+    props
+        .mesh_shading
+        .preferred_mesh_work_group_invocations
+        .min(MAX_PRIMITIVES)
 }

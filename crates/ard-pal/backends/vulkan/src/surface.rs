@@ -21,8 +21,6 @@ use crate::{
     VulkanBackend,
 };
 
-pub struct SurfaceId(pub(crate) usize);
-
 pub struct Surface {
     pub(crate) surface: vk::SurfaceKHR,
     pub(crate) swapchain: vk::SwapchainKHR,

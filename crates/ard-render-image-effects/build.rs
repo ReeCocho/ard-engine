@@ -84,13 +84,6 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/sun_shafts.comp",
-        PathBuf::from(&out_dir).join("sun_shafts.comp.spv"),
-        &["./shaders/"],
-        &[],
-    );
-
-    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/sun_shafts/shafts_gen_lines.comp",
         PathBuf::from(&out_dir).join("shafts_gen_lines.comp.spv"),
         &["./shaders/"],

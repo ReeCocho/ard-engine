@@ -24,7 +24,7 @@ use crate::{
     ecs::RenderEcs,
     factory::Factory,
     frame::{FrameData, FrameDataInner},
-    MsaaSettings, RenderPlugin, FRAMES_IN_FLIGHT,
+    DebugSettings, MsaaSettings, RenderPlugin, FRAMES_IN_FLIGHT,
 };
 
 #[derive(SystemState)]
@@ -77,6 +77,7 @@ impl RenderSystem {
                     gui_output: GuiRunOutput::default(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
+                    debug_settings: DebugSettings::default(),
                     tonemapping_settings: TonemappingSettings::default(),
                     ao_settings: AoSettings::default(),
                     sun_shafts_settings: SunShaftsSettings::default(),
@@ -212,6 +213,7 @@ impl RenderSystem {
         frame.sun_shafts_settings = *res.get::<SunShaftsSettings>().unwrap();
         frame.smaa_settings = *res.get::<SmaaSettings>().unwrap();
         frame.msaa_settings = *res.get::<MsaaSettings>().unwrap();
+        frame.debug_settings = *res.get::<DebugSettings>().unwrap();
 
         self.last_frame_time = now;
 

@@ -185,19 +185,6 @@ impl CommandSorting {
                     })
                     .collect();
 
-                memory_barriers.push(
-                    vk::MemoryBarrier2::builder()
-                        .dst_access_mask(
-                            vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
-                        )
-                        .dst_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
-                        .src_access_mask(
-                            vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
-                        )
-                        .src_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE)
-                        .build(),
-                );
-
                 let dep = vk::DependencyInfo::builder()
                     .dependency_flags(vk::DependencyFlags::BY_REGION)
                     .memory_barriers(&memory_barriers)

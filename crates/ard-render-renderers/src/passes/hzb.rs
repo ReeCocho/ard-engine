@@ -2,21 +2,21 @@ use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_si::bindings::*;
 
-use crate::{highz::HzbImage, ids::RenderIds};
+use crate::ids::RenderIds;
 
-pub struct DepthPrepassSets {
+pub struct HzbPassSets {
     sets: Vec<DescriptorSet>,
 }
 
-impl DepthPrepassSets {
+impl HzbPassSets {
     pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
         let sets = (0..frames_in_flight)
             .map(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
-                        layout: layouts.depth_prepass.clone(),
-                        debug_name: Some(format!("depth_prepass_set_{frame_idx}")),
+                        layout: layouts.hzb_pass.clone(),
+                        debug_name: Some(format!("hzb_pass_set_{frame_idx}")),
                     },
                 )
                 .unwrap()
@@ -24,15 +24,6 @@ impl DepthPrepassSets {
             .collect();
 
         Self { sets }
-    }
-
-    pub fn update_hzb_binding<const FIF: usize>(&mut self, frame: Frame, image: &HzbImage<FIF>) {
-        let set = &mut self.sets[usize::from(frame)];
-        set.update(&[DescriptorSetUpdate {
-            binding: DEPTH_PREPASS_SET_HZB_IMAGE_BINDING,
-            array_element: 0,
-            value: image.descriptor_value(),
-        }]);
     }
 
     pub fn update_object_data_bindings(
@@ -44,7 +35,7 @@ impl DepthPrepassSets {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[
             DescriptorSetUpdate {
-                binding: DEPTH_PREPASS_SET_GLOBAL_OBJECT_DATA_BINDING,
+                binding: HZB_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_data,
@@ -52,7 +43,7 @@ impl DepthPrepassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: DEPTH_PREPASS_SET_INPUT_IDS_BINDING,
+                binding: HZB_PASS_SET_INPUT_IDS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_ids.input(),
@@ -60,7 +51,7 @@ impl DepthPrepassSets {
                 },
             },
             DescriptorSetUpdate {
-                binding: DEPTH_PREPASS_SET_OUTPUT_IDS_BINDING,
+                binding: HZB_PASS_SET_OUTPUT_IDS_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
                     buffer: object_ids.output(),

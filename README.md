@@ -29,7 +29,8 @@ A game engine designed for open world 3D games.
 - Forward rendering with a Z-prepass.
 - Clustered lighting.
 - Hierarchical Z-buffer occlusion culling.
-- PBR rendering with image based lighting.
+- PBR rendering with realtime image based lighting.
+- Mesh shading.
 
 ## Directory Structure
 
@@ -49,9 +50,9 @@ Before following the build instructions, install the following dependencies.
 
 | Dependency | Tested Version |
 | - | - |
-| [Rust](https://rustup.rs/) | 1.67.0 |
+| [Rust](https://rustup.rs/) | 1.77.0 |
 | [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.36.4 |
-| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.236.0 |
+| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.275.0 |
 
 ### Instructions
 

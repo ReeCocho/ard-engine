@@ -24,6 +24,10 @@ pub struct RenderableSet {
     object_instances: Vec<ObjectInstance>,
     /// Resulting object IDs for each object/meshlet pair.
     object_ids: Vec<GpuObjectId>,
+    /// The number of meshlets in the static region.
+    static_meshlet_count: u32,
+    /// The maximum number of possible meshlets that could be generated.
+    meshlet_count: u32,
     /// Draw groups to render.
     groups: Vec<DrawGroup>,
     static_object_ranges: RenderableRanges,
@@ -66,6 +70,11 @@ impl RenderableSet {
     #[inline(always)]
     pub fn ids(&self) -> &[GpuObjectId] {
         &self.object_ids
+    }
+
+    #[inline(always)]
+    pub fn max_meshlet_count(&self) -> u32 {
+        self.meshlet_count
     }
 
     #[inline(always)]
@@ -148,6 +157,7 @@ impl<'a> RenderableSetUpdate<'a> {
 
         // Either reset everything or ignore static objects and groups
         if objects.static_dirty() {
+            self.set.static_meshlet_count = 0;
             ids.clear();
             groups.clear();
 
@@ -211,6 +221,7 @@ impl<'a> RenderableSetUpdate<'a> {
                 &instances[self.set.static_object_ranges.opaque.clone()],
                 ids,
                 groups,
+                &mut self.set.static_meshlet_count,
                 meshes,
             );
             self.set.static_object_ranges.opaque = Range {
@@ -223,6 +234,7 @@ impl<'a> RenderableSetUpdate<'a> {
                 &mut instances[self.set.static_object_ranges.alpha_cutout.clone()],
                 ids,
                 groups,
+                &mut self.set.static_meshlet_count,
                 meshes,
             );
             self.set.static_object_ranges.alpha_cutout = Range {
@@ -239,6 +251,9 @@ impl<'a> RenderableSetUpdate<'a> {
                     + self.set.static_group_ranges.alpha_cutout.len(),
             );
         }
+
+        // Reset current meshlet counter
+        self.set.meshlet_count = self.set.static_meshlet_count;
 
         // Add in dynamic opaque and dynamic alpha cutout objects
         let base = objects.dynamic_objects().block.base();
@@ -280,6 +295,7 @@ impl<'a> RenderableSetUpdate<'a> {
             &mut instances[self.set.dynamic_object_ranges.opaque.clone()],
             ids,
             groups,
+            &mut self.set.meshlet_count,
             meshes,
         );
         self.set.dynamic_object_ranges.opaque = Range {
@@ -292,6 +308,7 @@ impl<'a> RenderableSetUpdate<'a> {
             &mut instances[self.set.dynamic_object_ranges.alpha_cutout.clone()],
             ids,
             groups,
+            &mut self.set.meshlet_count,
             meshes,
         );
         self.set.dynamic_object_ranges.alpha_cutout = Range {
@@ -336,6 +353,7 @@ impl<'a> RenderableSetUpdate<'a> {
                 &mut instances[self.set.transparent_object_range.clone()],
                 ids,
                 groups,
+                &mut self.set.meshlet_count,
                 meshes,
             );
             self.set.transparent_object_range = Range {
@@ -377,6 +395,7 @@ impl<'a> RenderableSetUpdate<'a> {
         instances: &[ObjectInstance],
         ids: &mut Vec<GpuObjectId>,
         groups: &mut Vec<DrawGroup>,
+        meshlet_count: &mut u32,
         meshes: &ResourceAllocator<MeshResource, FIF>,
     ) -> Range<usize> {
         let start = groups.len();
@@ -406,17 +425,14 @@ impl<'a> RenderableSetUpdate<'a> {
 
             // Update the draw count
             let draw_idx = groups.len() - 1;
-            groups[draw_idx].len += cur_mesh.meshlet_count;
+            groups[draw_idx].len += 1;
 
-            // Create IDs
-            for i in 0..(cur_mesh.meshlet_count) {
-                ids.push(GpuObjectId {
-                    // The highest bit of data idx is reserved as a visibility flag for objects.
-                    // New objects are always considered visible.
-                    data_idx: instance.id | (1 << 31),
-                    meshlet: cur_mesh.block.meshlet_block().base() + i as u32,
-                });
-            }
+            // Create ID
+            ids.push(GpuObjectId {
+                data_idx: instance.id,
+                meshlet_base: (ids.len() as u32) + *meshlet_count,
+            });
+            *meshlet_count += cur_mesh.meshlet_count as u32;
         });
 
         Range {

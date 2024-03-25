@@ -1,17 +1,28 @@
 #ifndef _ARD_PBR_COMMON
 #define _ARD_PBR_COMMON
 
+#extension GL_EXT_shader_16bit_storage : require
+
 ///////////////
 /// SET DEF ///
 ///////////////
 
-#if defined(COLOR_PASS) || defined (TRANSPARENT_PASS)
+#if defined(COLOR_PASS)
     #define ARD_SET_COLOR_PASS 0
     #define COLOR_PASS
 #endif
 
-#if defined(SHADOW_PASS) || defined(HIGH_Z_PASS)
-    #define ARD_SET_DEPTH_ONLY_PASS 0
+#if defined(TRANSPARENT_PASS)
+    #define ARD_SET_TRANSPARENT_PASS 0
+    #define COLOR_PASS
+#endif
+
+#if defined(SHADOW_PASS)
+    #define ARD_SET_SHADOW_PASS 0
+#endif
+
+#if defined(HIGH_Z_PASS)
+    #define ARD_SET_HZB_PASS 0
 #endif
 
 #if defined(DEPTH_PREPASS)
@@ -30,10 +41,18 @@
 ///////////////
 
 struct MsPayload {
-    uint object_ids[MAX_TASK_SHADER_INVOCATIONS];
-    uint index_offsets[MAX_TASK_SHADER_INVOCATIONS];
-    uint vertex_offsets[MAX_TASK_SHADER_INVOCATIONS];
-    uint counts[MAX_TASK_SHADER_INVOCATIONS];
+    mat4 model;
+    mat3 normal;
+    uint material;
+    uint meshlet_base;
+    uint meshlet_info_base;
+#if ARD_VS_HAS_UV0
+    uint color_tex;
+    uint met_rough_tex;
+#if ARD_VS_HAS_TANGENT
+    uint normal_tex;
+#endif
+#endif
 };
 
 ////////////////
@@ -58,9 +77,6 @@ struct MsPayload {
 /// CONSTANTS ///
 /////////////////
 
-const int SHADOW_KERNEL_SIZE = 2;
-const int SHADOW_SAMPLE_COUNT = (1 + (2 * SHADOW_KERNEL_SIZE)) * (1 + (2 * SHADOW_KERNEL_SIZE));
-
 // Intensity of lighting attenuation we consider to be "close enough" to 0.
 const float ATTENUATION_EPSILON = 0.001;
 
@@ -78,7 +94,7 @@ float light_attenuation(float x, float range) {
     return pow(clamp(1.0 - pow(x / range, 4.0), 0.0, 1.0), 2.0) / ((x * x) + 1.0);
 }
 
-#if defined(ARD_SET_COLOR_PASS) && defined(FRAGMENT_SHADER)
+#if defined(COLOR_PASS) && defined(FRAGMENT_SHADER)
 /// Samples the shadow cascade at a given UV.
 ///
 /// `cascade` - Index of the shadow cascade to sample.
@@ -93,14 +109,26 @@ float sample_shadow_map(int layer, vec2 uv, float bias, vec2 filter_radius_uv, f
     const vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
     const float shadow_bias = z_receiver - bias;
 
-    for (int x = -SHADOW_KERNEL_SIZE; x <= SHADOW_KERNEL_SIZE; x++) {
-        for (int y = -SHADOW_KERNEL_SIZE; y <= SHADOW_KERNEL_SIZE; y++) {
-            vec2 offset = filter_radius_uv * (vec2(x, y) * vec2(1.0 / float(SHADOW_KERNEL_SIZE))) * 1.5;
-            shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r;
-        }
+    // Take half the shadow samples first
+    for (uint i = 0; i < SUN_SHADOW_KERNEL_SIZE / 2; i++) {
+        const vec2 kernel_off = unpackSnorm2x16(sun_shadow_info.kernel[i]);
+        vec2 offset = filter_radius_uv * kernel_off;
+        shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r;
     }
 
-    return shadow / float(SHADOW_SAMPLE_COUNT);
+    // If we have a full dark shadow, early out
+    if (shadow == 0.0) {
+        return 0.0;
+    }
+
+    // Take the rest of the samples
+    for (uint i = SUN_SHADOW_KERNEL_SIZE / 2; i < SUN_SHADOW_KERNEL_SIZE; i++) {
+        const vec2 kernel_off = unpackSnorm2x16(sun_shadow_info.kernel[i]);
+        vec2 offset = filter_radius_uv * kernel_off;
+        shadow += texture(shadow_cascades[layer], vec3(uv + offset, shadow_bias)).r;
+    }
+
+    return shadow / float(SUN_SHADOW_KERNEL_SIZE);
 }
 
 /// Calculates the shadowing factor of the fragment with the given surface normal.

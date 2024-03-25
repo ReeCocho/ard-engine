@@ -83,11 +83,10 @@
         no_mangle: true,
         fields: [
             /// Index within the object data buffer for the object.
-            /// The highest bit in the data index is reserved for 
-            /// a visibility flag used by culling.
             (name: "data_idx", ty: U32),
-            /// ID of the meshlet for this object.
-            (name: "meshlet", ty: U32),
+            /// The base index within the `output_meshlets` buffer to write meshlet IDs after
+            /// culling. Element 0 is the number of meshlets.
+            (name: "meshlet_base", ty: U32),
         ]
     ),
     // Per instance object data.
@@ -102,34 +101,6 @@
             (name: "textures", ty: U32),     // Texture table ID
             (name: "entity_id", ty: U32),    // ECS entity ID
             (name: "entity_ver", ty: U32),   // ECS entity version
-        ]
-    ),
-    // Draw group used by culling.
-    (
-        name: "DrawGroup",
-        no_mangle: false,
-        fields: [
-            // Mesh ID for objects within this group.
-            (name: "mesh", ty: U32),
-            // The "first instance" passed to the generated draw call.
-            (name: "first_instance", ty: U32),
-            // The number of instances in the group.
-            (name: "instance_count", ty: U32),
-            // The draw bin this group exists within.
-            (name: "draw_bin", ty: U32),
-            // The offset within the bin this group lives in.
-            (name: "bin_offset", ty: U32),
-        ]
-    ),
-    // Draw bin used for culling.
-    (
-        name: "DrawBinCount",
-        no_mangle: true,
-        fields: [
-            // Number of groups in the bin.
-            (name: "count", ty: U32),
-            // The offset within the groups buffer for the start of this bin.
-            (name: "start", ty: U32),
         ]
     ),
     // Indirect indexed draw call.
@@ -162,6 +133,8 @@
             (name: "index_count", ty: U32),
             (name: "first_index", ty: U32),
             (name: "vertex_offset", ty: I32),
+            (name: "meshlet_offset", ty: U32),
+            (name: "meshlet_count", ty: U32),
             (name: "bounds", ty: Struct("ObjectBounds")),
         ]
     ),
@@ -220,6 +193,7 @@
         fields: [
             (name: "cascades", ty: Array(ty: Struct("ShadowCascade"), len: "MAX_SHADOW_CASCADES")),
             (name: "count", ty: U32),
+            (name: "kernel", ty: Array(len: "SUN_SHADOW_KERNEL_SIZE", ty: U32)),
         ]
     ),
     // PBR material info.
@@ -283,6 +257,7 @@
             (name: "object_id_offset", ty: U32),
             (name: "object_id_count", ty: U32),
             (name: "render_area", ty: Vec2),
+            (name: "lock_culling", ty: U32),
         ]
     ),
     // Push constants for HZB generation.
@@ -295,44 +270,12 @@
             (name: "inv_output_size", ty: Vec2),
         ]
     ),
-    // Push constants for draw call generation.
-    (
-        name: "DrawGenPushConstants",
-        no_mangle: false,
-        fields: [
-            (name: "render_area", ty: Vec2),
-            (name: "object_count", ty: U32),
-            (name: "transparent_start", ty: U32),
-        ]
-    ),
-    // Push constants for draw call compaction.
-    (
-        name: "DrawCompactPushConstants",
-        no_mangle: false,
-        fields: [
-            (name: "base_draw_call", ty: U32),
-            (name: "draw_call_count", ty: U32),
-            (name: "transparent_start", ty: U32),
-        ]
-    ),
     // Push constants used for light binning/clustering.
     (
         name: "LightClusteringPushConstants",
         no_mangle: false,
         fields: [
             (name: "total_lights", ty: U32),
-        ]
-    ),
-    // Push constants for generating the AO image.
-    (
-        name: "AoConstructPushConstants",
-        no_mangle: false,
-        fields: [
-            (name: "render_area", ty: Vec2),
-            (name: "inv_render_area", ty: Vec2),
-            (name: "noise_scale", ty: Vec2),
-            (name: "radius", ty: F32),
-            (name: "bias", ty: F32),
         ]
     ),
     // Push constants for adaptive luminance histogram generation.
@@ -362,14 +305,6 @@
         fields: [
             (name: "exposure", ty: F32),
             (name: "gamma", ty: F32),
-        ]
-    ),
-    // Push constants used for sun shafts.
-    (
-        name: "SunShaftsPushConstants",
-        no_mangle: false,
-        fields: [
-            (name: "output_dims", ty: IVec2),
         ]
     ),
     // Push constants for sun shaft generation setup.
