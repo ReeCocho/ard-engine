@@ -15,7 +15,7 @@ pub struct GlobalLighting {
 impl Default for GlobalLighting {
     fn default() -> Self {
         Self {
-            ambient_color_intensity: Vec4::new(1.0, 1.0, 1.0, 0.25),
+            ambient_color_intensity: Vec4::new(1.0, 1.0, 1.0, 0.2),
             sun_color_intensity: Vec4::new(1.0, 0.98, 0.92, 32.0),
             sun_direction: Vec4::new(1.0, -1.0, 1.0, 0.0).normalize(),
             cascades: vec![

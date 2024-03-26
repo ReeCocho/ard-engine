@@ -10,8 +10,8 @@ use crate::{
     surface::SurfaceImage,
     texture::{Blit, Texture},
     types::{
-        BufferUsage, CubeFace, Filter, IndexType, QueueType, Scissor, ShaderStage, SharingMode,
-        TextureUsage,
+        BufferUsage, BuildAccelerationStructureFlags, CubeFace, Filter, IndexType, QueueType,
+        Scissor, ShaderStage, SharingMode, TextureUsage,
     },
     Backend,
 };
@@ -241,6 +241,11 @@ pub enum Command<'a, B: Backend> {
         blas: &'a BottomLevelAccelerationStructure<B>,
         scratch: &'a Buffer<B>,
         scratch_array_element: usize,
+    },
+    WriteBlasCompactSize(&'a BottomLevelAccelerationStructure<B>),
+    CompactBlas {
+        src: &'a BottomLevelAccelerationStructure<B>,
+        dst: &'a BottomLevelAccelerationStructure<B>,
     },
 }
 
@@ -659,5 +664,28 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             scratch: scratch_buffer,
             scratch_array_element: scratch_buffer_array_element,
         });
+
+        if acceleration_structure
+            .build_flags()
+            .contains(BuildAccelerationStructureFlags::ALLOW_COMPACTION)
+        {
+            self.commands
+                .push(Command::WriteBlasCompactSize(acceleration_structure));
+        }
+    }
+
+    #[inline(always)]
+    pub fn compact_acceleration_structure(
+        &mut self,
+        src: &'a BottomLevelAccelerationStructure<B>,
+        dst: &'a BottomLevelAccelerationStructure<B>,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
+            "queue `{:?}` does not support compute commands",
+            self.queue_ty
+        );
+
+        self.commands.push(Command::CompactBlas { src, dst });
     }
 }

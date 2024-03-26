@@ -63,6 +63,7 @@ impl<W: Write> GlslStructCodeGen<W> {
             GpuStructFieldType::IVec2 => "ivec2".into(),
             GpuStructFieldType::Vec2 => "vec2".into(),
             GpuStructFieldType::Vec4 => "vec4".into(),
+            GpuStructFieldType::Mat3x4 => "mat3x4".into(),
             GpuStructFieldType::Mat4 => "mat4".into(),
             GpuStructFieldType::Array { ty: inner_ty, .. } => {
                 // Find the type stored in the array and put it first

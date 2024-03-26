@@ -94,7 +94,7 @@ impl SunShadowsUbo {
         let mut last_cascade_end = camera.near;
         for (i, cascade) in cascades.iter().enumerate() {
             let lin_near = last_cascade_end;
-            let lin_far = cascade.end_distance.max(lin_near + 0.01);
+            let lin_far = cascade.end_distance.max(lin_near + 0.0001);
             last_cascade_end = lin_far;
 
             // Bounding view matrix of the camera for the cascade

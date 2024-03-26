@@ -43,7 +43,7 @@ use surface::{
     SurfaceImageAcquireError, SurfacePresentSuccess, SurfaceUpdateError,
 };
 use texture::{TextureCreateError, TextureCreateInfo};
-use types::{JobStatus, QueueType};
+use types::{BuildAccelerationStructureFlags, JobStatus, QueueType};
 
 /// TODO:
 /// - Describe [normative terminology](https://www.ietf.org/rfc/rfc2119.txt).
@@ -177,6 +177,11 @@ pub trait Backend: Sized + 'static {
     unsafe fn texture_size(&self, id: &Self::Texture) -> u64;
     unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64;
     unsafe fn blas_scratch_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
+    unsafe fn blas_compacted_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
+    unsafe fn blas_build_flags(
+        &self,
+        id: &Self::BottomLevelAccelerationStructure,
+    ) -> BuildAccelerationStructureFlags;
 
     // Descriptor set
     unsafe fn update_descriptor_sets(

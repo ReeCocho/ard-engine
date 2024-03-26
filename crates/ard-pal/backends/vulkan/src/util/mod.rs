@@ -8,6 +8,7 @@ pub mod fast_int_hasher;
 pub mod garbage_collector;
 pub mod id_gen;
 pub mod pipeline_cache;
+pub mod queries;
 pub mod sampler_cache;
 pub mod semaphores;
 pub mod usage;

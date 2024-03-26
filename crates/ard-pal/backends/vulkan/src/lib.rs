@@ -55,6 +55,7 @@ use util::{
     garbage_collector::{GarbageCleanupArgs, GarbageCollector, TimelineValues},
     id_gen::IdGenerator,
     pipeline_cache::PipelineCache,
+    queries::Queries,
     sampler_cache::SamplerCache,
     semaphores::{SemaphoreTracker, WaitInfo},
     usage::GlobalResourceUsage,
@@ -119,6 +120,7 @@ pub struct VulkanBackend {
     pub(crate) render_passes: RenderPassCache,
     pub(crate) framebuffers: FramebufferCache,
     pub(crate) garbage: GarbageCollector,
+    pub(crate) queries: Mutex<Queries>,
     pub(crate) buffer_ids: IdGenerator,
     pub(crate) image_ids: IdGenerator,
     pub(crate) set_ids: IdGenerator,
@@ -463,16 +465,7 @@ impl Backend for VulkanBackend {
         create_info: BottomLevelAccelerationStructureCreateInfo<Self>,
     ) -> Result<Self::BottomLevelAccelerationStructure, BottomLevelAccelerationStructureCreateError>
     {
-        BottomLevelAccelerationStructure::new(
-            &self.device,
-            &self.queue_family_indices,
-            self.debug.as_ref().map(|(utils, _)| utils),
-            self.garbage.sender(),
-            &self.buffer_ids,
-            &mut self.allocator.lock().unwrap(),
-            &self.as_loader,
-            create_info,
-        )
+        BottomLevelAccelerationStructure::new(self, create_info)
     }
 
     #[inline(always)]
@@ -536,6 +529,19 @@ impl Backend for VulkanBackend {
     #[inline(always)]
     unsafe fn blas_scratch_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64 {
         id.scratch_size()
+    }
+
+    #[inline(always)]
+    unsafe fn blas_compacted_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        id.compacted_size(self)
+    }
+
+    #[inline(always)]
+    unsafe fn blas_build_flags(
+        &self,
+        id: &Self::BottomLevelAccelerationStructure,
+    ) -> BuildAccelerationStructureFlags {
+        id.flags
     }
 
     #[inline(always)]
@@ -767,6 +773,7 @@ impl VulkanBackend {
             .runtime_descriptor_array(true)
             .draw_indirect_count(true)
             .uniform_buffer_standard_layout(true)
+            .host_query_reset(true)
             .build();
 
         let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
@@ -921,6 +928,7 @@ impl VulkanBackend {
             render_passes: RenderPassCache::default(),
             framebuffers: FramebufferCache::default(),
             garbage: GarbageCollector::new(),
+            queries: Mutex::new(Queries::default()),
             resource_state: ShardedLock::new(GlobalResourceUsage::default()),
             pools: Mutex::new(DescriptorPools::default()),
             pipelines: Mutex::new(PipelineCache::default()),
@@ -952,6 +960,7 @@ impl VulkanBackend {
         let mut compute = self.compute.write().unwrap();
         let mut present = self.present.write().unwrap();
         let mut sorting = self.cmd_sort.lock().unwrap();
+        let mut queries = self.queries.lock().unwrap();
 
         // State
         let next_target_value = match queue {
@@ -1011,6 +1020,7 @@ impl VulkanBackend {
                     device,
                     &self.mesh_shading_loader,
                     &self.as_loader,
+                    &queries,
                     idx,
                     commands,
                     &self.render_passes,
@@ -1111,6 +1121,7 @@ impl VulkanBackend {
             pools: &mut pools,
             pipelines: &mut pipelines,
             global_usage: &mut resc_state,
+            queries: &mut queries,
             current: current_values,
             target: target_values,
             override_ref_counter: false,
@@ -1127,6 +1138,7 @@ impl VulkanBackend {
         device: &ash::Device,
         mesh_shading: &ash::extensions::ext::MeshShader,
         as_loader: &ash::extensions::khr::AccelerationStructure,
+        queries: &Queries,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
@@ -1471,6 +1483,21 @@ impl VulkanBackend {
             } => {
                 blas.internal()
                     .build(device, cb, as_loader, scratch, *scratch_array_element);
+            }
+            Command::WriteBlasCompactSize(blas) => {
+                blas.internal().write_compact_size(cb, as_loader, queries);
+            }
+            Command::CompactBlas { src, dst } => {
+                // Copy buffer references
+                *src.internal().buffer_refs.lock().unwrap() =
+                    dst.internal().buffer_refs.lock().unwrap().clone();
+
+                // Copy acceleration structure
+                let copy_info = vk::CopyAccelerationStructureInfoKHR::builder()
+                    .src(src.internal().acceleration_struct)
+                    .dst(dst.internal().acceleration_struct)
+                    .mode(vk::CopyAccelerationStructureModeKHR::COMPACT);
+                as_loader.cmd_copy_acceleration_structure(cb, &copy_info);
             }
             _ => unreachable!(),
         }
@@ -2060,6 +2087,7 @@ impl Drop for VulkanBackend {
             let mut pools = self.pools.lock().unwrap();
             let mut pipelines = self.pipelines.lock().unwrap();
             let mut samplers = self.samplers.lock().unwrap();
+            let mut queries = self.queries.lock().unwrap();
 
             loop {
                 let current = TimelineValues {
@@ -2083,6 +2111,7 @@ impl Drop for VulkanBackend {
                     allocator: &mut allocator,
                     pools: &mut pools,
                     pipelines: &mut pipelines,
+                    queries: &mut queries,
                     global_usage: resc_state,
                     current,
                     target,
@@ -2093,6 +2122,7 @@ impl Drop for VulkanBackend {
                 }
             }
 
+            queries.release(&self.device);
             pools.release(&self.device);
             pipelines.release_all(&self.device);
             samplers.release(&self.device);

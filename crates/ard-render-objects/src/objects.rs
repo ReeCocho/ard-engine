@@ -291,7 +291,7 @@ impl RenderObjects {
 
         // Write the object ID and data to the appropriate list based on the rendering mode
         let data = GpuObjectData {
-            model: mdl.0,
+            model: [mdl.0.row(0), mdl.0.row(1), mdl.0.row(2)],
             normal: mdl.0.inverse().transpose(),
             entity_id: entity.id(),
             entity_ver: entity.ver(),

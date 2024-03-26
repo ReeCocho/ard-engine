@@ -12,7 +12,7 @@
 #include "pbr_common.glsl"
 #include "utils.glsl"
 
-shared mat4 s_model_mat;
+shared mat4x3 s_model_mat;
 shared mat3 s_normal_mat;
 shared uint s_material;
 shared uint s_vertex_offset;
@@ -54,7 +54,7 @@ void main() {
     barrier();
 
     // Extract shared values
-    const mat4 model = s_model_mat;
+    const mat4x3 model = s_model_mat;
     const mat3 normal_mat = s_normal_mat;
     const uint materials_slot = s_material;
     const uint index_offset = s_index_offset;
@@ -150,7 +150,7 @@ void main() {
 #if ARD_VS_HAS_UV0
         const vec2 ard_uv0 = unpackHalf2x16(ard_uv0_raw);
 #endif
-        const vec4 ws_frag_pos = model * ard_position;
+        const vec4 ws_frag_pos = vec4(model * ard_position, 1.0);
         const vec4 position = camera[gl_ViewIndex].vp * ws_frag_pos;
 #ifdef COLOR_PASS
         vs_ViewSpacePosition[vert_idx] = camera[gl_ViewIndex].view * ws_frag_pos;

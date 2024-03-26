@@ -101,4 +101,6 @@ pub mod prelude {
         api::acceleration_structure::AccelerationStructureGeometry<'a, crate::Backend>;
     pub type BottomLevelAccelerationStructureCreateInfo<'a> =
         api::acceleration_structure::BottomLevelAccelerationStructureCreateInfo<'a, crate::Backend>;
+    pub type BottomLevelAccelerationStructureData<'a> =
+        api::acceleration_structure::BottomLevelAccelerationStructureData<'a, crate::Backend>;
 }

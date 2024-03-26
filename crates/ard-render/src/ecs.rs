@@ -292,7 +292,7 @@ impl RenderEcs {
         let materials = self.factory.inner.materials.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
-        let pending_blas = self.factory.inner.pending_blas.lock().unwrap();
+        let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
 
         // Upload object data to renderers
         self.scene_renderer.upload(
@@ -350,7 +350,7 @@ impl RenderEcs {
         // let mut compute_cb = self.ctx.main().command_buffer();
 
         // Build BLAS'
-        pending_blas.current().iter().for_each(|blas| {
+        pending_blas.to_build().iter().for_each(|blas| {
             let mesh = match meshes.get(blas.mesh_id) {
                 Some(mesh) => mesh,
                 None => return,
@@ -358,6 +358,24 @@ impl RenderEcs {
 
             main_cb.build_acceleration_structure(&mesh.blas, &blas.scratch, 0);
         });
+
+        // Compact BLAS'
+        pending_blas
+            .to_compact(frame.frame)
+            .iter()
+            .for_each(|blas| {
+                let src = match meshes.get(blas.mesh_id) {
+                    Some(src) => &src.blas,
+                    None => return,
+                };
+
+                let dst = match blas.dst.as_ref() {
+                    Some(dst) => dst,
+                    None => return,
+                };
+
+                main_cb.compact_acceleration_structure(src, dst);
+            });
 
         // Render the high-z depth image
         self.render_hzb(
@@ -379,6 +397,9 @@ impl RenderEcs {
         self.gui_renderer.update_textures(&mut main_cb);
 
         self.ctx().main().submit(Some("Phase 1"), main_cb);
+
+        // Setup BLAS building/compacting for next frame
+        pending_blas.build_next_frame_lists(frame.frame);
 
         // Phase 2:
         //      Main: Render shadows.

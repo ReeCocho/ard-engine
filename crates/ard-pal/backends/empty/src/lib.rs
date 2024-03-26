@@ -221,4 +221,15 @@ impl Backend for EmptyBackend {
     unsafe fn blas_scratch_size(&self, _id: &Self::BottomLevelAccelerationStructure) -> u64 {
         todo!()
     }
+
+    unsafe fn blas_compacted_size(&self, _id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        todo!()
+    }
+
+    unsafe fn blas_build_flags(
+        &self,
+        _id: &Self::BottomLevelAccelerationStructure,
+    ) -> api::types::BuildAccelerationStructureFlags {
+        todo!()
+    }
 }

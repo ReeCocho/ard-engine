@@ -9,6 +9,11 @@ use crate::{
     Backend,
 };
 
+pub enum BottomLevelAccelerationStructureData<'a, B: Backend> {
+    Geometry(Vec<AccelerationStructureGeometry<'a, B>>),
+    CompactDst(u64),
+}
+
 pub struct AccelerationStructureGeometry<'a, B: Backend> {
     pub flags: GeometryFlags,
     pub vertex_format: Format,
@@ -26,7 +31,7 @@ pub struct AccelerationStructureGeometry<'a, B: Backend> {
 
 pub struct BottomLevelAccelerationStructureCreateInfo<'a, B: Backend> {
     pub flags: BuildAccelerationStructureFlags,
-    pub geometries: Vec<AccelerationStructureGeometry<'a, B>>,
+    pub data: BottomLevelAccelerationStructureData<'a, B>,
     pub queue_types: QueueTypes,
     pub sharing_mode: SharingMode,
     pub debug_name: Option<String>,
@@ -56,8 +61,19 @@ impl<B: Backend> BottomLevelAccelerationStructure<B> {
         Ok(Self { ctx, id })
     }
 
+    #[inline(always)]
     pub fn scratch_buffer_size(&self) -> u64 {
         unsafe { self.ctx.0.blas_scratch_size(&self.id) }
+    }
+
+    #[inline(always)]
+    pub fn compacted_size(&self) -> u64 {
+        unsafe { self.ctx.0.blas_compacted_size(&self.id) }
+    }
+
+    #[inline(always)]
+    pub fn build_flags(&self) -> BuildAccelerationStructureFlags {
+        unsafe { self.ctx.0.blas_build_flags(&self.id) }
     }
 
     #[inline(always)]

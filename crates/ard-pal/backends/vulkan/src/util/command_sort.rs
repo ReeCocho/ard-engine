@@ -357,6 +357,14 @@ impl CommandSorting {
                 self.inspect_blas_build(info, command_idx, blas, scratch, *scratch_array_element);
                 command_idx + 1
             }
+            Command::WriteBlasCompactSize(blas) => {
+                self.inspect_blas_get_compact_size(info, command_idx, blas);
+                command_idx + 1
+            }
+            Command::CompactBlas { src, dst } => {
+                self.inspect_blas_compact(info, command_idx, src, dst);
+                command_idx + 1
+            }
             _ => command_idx + 1,
         }
     }
@@ -2115,10 +2123,8 @@ impl CommandSorting {
         );
 
         // Inspect all the dependent vertex and index buffers
-        blas.internal()
-            .buffer_refs
-            .iter()
-            .for_each(|((buff, array_elem), buff_info)| {
+        blas.internal().buffer_refs.lock().unwrap().iter().for_each(
+            |((buff, array_elem), buff_info)| {
                 let new_dst_usage = GlobalBufferUsage {
                     queue: Some(QueueUsage {
                         queue: info.queue,
@@ -2157,7 +2163,8 @@ impl CommandSorting {
                     &mut info.wait_queues,
                     (info.queue, info.timeline_value),
                 );
-            });
+            },
+        );
 
         // Inspect the scratch buffer
         let new_dst_usage = GlobalBufferUsage {
@@ -2191,6 +2198,140 @@ impl CommandSorting {
             scratch.internal().sharing_mode,
             scratch.internal().aligned_size,
             scratch.internal().offset(scratch_array_element),
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+    }
+
+    fn inspect_blas_get_compact_size(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        blas: &BottomLevelAccelerationStructure<crate::VulkanBackend>,
+    ) {
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: blas.internal().id,
+                array_elem: 0,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            blas.internal().buffer,
+            blas.internal().sharing_mode,
+            blas.internal().buffer_size,
+            0,
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+    }
+
+    fn inspect_blas_compact(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        src: &BottomLevelAccelerationStructure<crate::VulkanBackend>,
+        dst: &BottomLevelAccelerationStructure<crate::VulkanBackend>,
+    ) {
+        // Source inspect
+        let new_src_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_COPY_KHR,
+            },
+        };
+
+        let old_src_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: src.internal().id,
+                array_elem: 0,
+            },
+            &new_src_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_src_usage,
+            &new_src_usage,
+            src.internal().buffer,
+            src.internal().sharing_mode,
+            src.internal().buffer_size,
+            0,
+        );
+
+        self.dependency_check(
+            old_src_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+
+        // Destination inspect
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_COPY_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: dst.internal().id,
+                array_elem: 0,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            dst.internal().buffer,
+            dst.internal().sharing_mode,
+            dst.internal().buffer_size,
+            0,
         );
 
         self.dependency_check(

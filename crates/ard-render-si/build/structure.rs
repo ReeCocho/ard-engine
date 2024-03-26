@@ -39,6 +39,7 @@ pub enum GpuStructFieldType {
     Vec2,
     Vec4,
     Mat4,
+    Mat3x4,
     Array {
         ty: Box<GpuStructFieldType>,
         /// NOTE: The length of the array is a string and not a `usize` to support global constants
@@ -102,6 +103,7 @@ impl GpuStructFieldType {
             GpuStructFieldType::IVec2 => 8,
             GpuStructFieldType::Vec2 => 8,
             GpuStructFieldType::Vec4 => 16,
+            GpuStructFieldType::Mat3x4 => 48,
             GpuStructFieldType::Mat4 => 64,
             // NOTE: We say arrays are of length 16 because std140 layout forces all arrays
             // of any type to be 16 byte aligned

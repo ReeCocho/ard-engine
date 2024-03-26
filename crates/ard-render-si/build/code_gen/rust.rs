@@ -62,6 +62,7 @@ impl<W: Write> RustStructCodeGen<W> {
             GpuStructFieldType::Vec2 => "Vec2".into(),
             GpuStructFieldType::Vec4 => "Vec4".into(),
             GpuStructFieldType::Mat4 => "Mat4".into(),
+            GpuStructFieldType::Mat3x4 => "[Vec4; 3]".into(),
             GpuStructFieldType::Array { ty, len } => format!("[{}; {len}]", Self::field_name(ty)),
         }
     }

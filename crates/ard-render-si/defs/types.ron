@@ -94,7 +94,7 @@
         name: "ObjectData",
         no_mangle: false,
         fields: [
-            (name: "model", ty: Mat4),       // Object instance model matrix
+            (name: "model", ty: Mat3x4),     // Object instance model matrix
             (name: "normal", ty: Mat4),      // inv(transpose(model))
             (name: "mesh", ty: U32),         // Mesh ID
             (name: "material", ty: U32),     // Material ID for properties lookup

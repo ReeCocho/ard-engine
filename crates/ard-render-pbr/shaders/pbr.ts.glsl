@@ -109,7 +109,7 @@ void manual_payload(const ObjectId id) {
     const uint textures_slot = object_data[id.data_idx].textures;
     payload.meshlet_base = 1 + id.meshlet_base;
     payload.meshlet_info_base = mesh_info[object_data[id.data_idx].mesh].meshlet_offset;
-    payload.model = object_data[id.data_idx].model;
+    payload.model = transpose(object_data[id.data_idx].model);
     payload.normal = mat3(object_data[id.data_idx].normal);
     payload.material = object_data[id.data_idx].material;
 #if ARD_VS_HAS_UV0
@@ -124,7 +124,7 @@ void manual_payload(const ObjectId id) {
 // Shared variables used by all invocations when culling is required.
 #if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS)
     shared bool s_visible;
-    shared mat4 s_model_mat;
+    shared mat4x3 s_model_mat;
     shared mat3 s_normal_mat;
     shared uint s_material;
     shared mat4 s_view_model;
@@ -169,14 +169,19 @@ void main() {
     if (gl_LocalInvocationIndex == 0) {
         // Read in mesh information
         const ObjectId id = input_ids[object_idx];
-        const mat4 model_mat = object_data[id.data_idx].model;
+        const mat4x3 model_mat = transpose(object_data[id.data_idx].model);
         const mat3 normal_mat = mat3(object_data[id.data_idx].normal);
         const uint material = object_data[id.data_idx].material;
         const uint textures_slot = object_data[id.data_idx].textures;
         const uint mesh_id = object_data[id.data_idx].mesh;
         const uint meshlet_offset = mesh_info[mesh_id].meshlet_offset;
         const uint meshlet_count = mesh_info[mesh_id].meshlet_count;
-        const mat4 view_model = camera[0].view * model_mat;
+        const mat4 view_model = camera[0].view * mat4(
+            vec4(model_mat[0], 0.0),
+            vec4(model_mat[1], 0.0),
+            vec4(model_mat[2], 0.0),
+            vec4(model_mat[3], 1.0)
+        );
 
         // Compute bounds
         const ObjectBounds obj_bounds = mesh_info[mesh_id].bounds;
@@ -236,7 +241,7 @@ void main() {
     }
 
     // Read in shared variables
-    const mat4 model_mat = s_model_mat;
+    const mat4x3 model_mat = s_model_mat;
     const mat4 view_model = s_view_model;
     const ObjectBounds obj_bounds = s_obj_bounds;
     const uint meshlet_offset = s_meshlet_offset;
@@ -271,7 +276,7 @@ void main() {
         vec3 meshlet_center = (meshlet_max_pt + meshlet_min_pt) * 0.5;
         const float meshlet_radius = 
             (-max_scale_axis * length(meshlet_max_pt - meshlet_center)) - 0.05;
-        meshlet_center = (model_mat * vec4(meshlet_center, 1.0)).xyz;
+        meshlet_center = model_mat * vec4(meshlet_center, 1.0);
 
         // Perform culling
         const bool visible = is_visible(

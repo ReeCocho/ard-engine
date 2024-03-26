@@ -41,7 +41,7 @@
 ///////////////
 
 struct MsPayload {
-    mat4 model;
+    mat4x3 model;
     mat3 normal;
     uint material;
     uint meshlet_base;

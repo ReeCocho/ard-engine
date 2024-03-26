@@ -36,7 +36,6 @@ void main() {
         min_depth_as_uint[i] = floatBitsToUint(1.0);
     }
 
-    memoryBarrierShared();
     barrier();
 
     // Fetch a 2x2 texel region
@@ -58,7 +57,6 @@ void main() {
         floatBitsToUint(min_depth)
     );
 
-    memoryBarrierShared();
     barrier();
 
     const int i = int(gl_LocalInvocationIndex);

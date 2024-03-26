@@ -21,6 +21,7 @@ use super::{
     fast_int_hasher::FIHashMap,
     id_gen::{IdGenerator, ResourceId},
     pipeline_cache::PipelineCache,
+    queries::{Queries, Query},
     usage::GlobalResourceUsage,
 };
 
@@ -47,6 +48,7 @@ pub(crate) enum Garbage {
         id: ResourceId,
         allocation: Allocation,
         ref_counter: BufferRefCounter,
+        compact_size_query: Option<Query>,
     },
     Texture {
         image: vk::Image,
@@ -80,6 +82,7 @@ pub(crate) struct GarbageCleanupArgs<'a> {
     pub pools: &'a mut DescriptorPools,
     pub pipelines: &'a mut PipelineCache,
     pub global_usage: &'a mut GlobalResourceUsage,
+    pub queries: &'a mut Queries,
     pub current: TimelineValues,
     pub target: TimelineValues,
     pub override_ref_counter: bool,
@@ -185,8 +188,12 @@ impl GarbageCollector {
                     buffer,
                     allocation,
                     id,
+                    compact_size_query,
                     ..
                 } => {
+                    if let Some(query) = compact_size_query {
+                        args.queries.free_accel_struct_compact(args.device, query);
+                    }
                     args.as_loader
                         .destroy_acceleration_structure(accelleration_struct, None);
                     args.device.destroy_buffer(buffer, None);

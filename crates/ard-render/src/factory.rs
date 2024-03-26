@@ -165,8 +165,15 @@ impl Factory {
             }
         });
 
+        // Swap out BLAS' that are fully ready
+        for blas in pending_blas.to_swap(frame) {
+            if let Some(mesh) = static_meshes.get_mut(blas.mesh_id) {
+                mesh.blas = blas.new_blas;
+            }
+        }
+
         // Build the updated pending BLAS build list
-        pending_blas.build_current_list();
+        pending_blas.build_current_lists(frame, &self.inner.ctx, &static_meshes);
 
         // Flush modified material data and uploaded meshes
         material_factory.flush(
