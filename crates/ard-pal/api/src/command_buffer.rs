@@ -1,4 +1,5 @@
 use crate::{
+    acceleration_structure::BottomLevelAccelerationStructure,
     buffer::Buffer,
     compute_pass::{ComputePass, ComputePassDispatch},
     compute_pipeline::ComputePipeline,
@@ -235,6 +236,11 @@ pub enum Command<'a, B: Backend> {
         array_elem: usize,
         base_mip: u32,
         mip_count: usize,
+    },
+    BuildBlas {
+        blas: &'a BottomLevelAccelerationStructure<B>,
+        scratch: &'a Buffer<B>,
+        scratch_array_element: usize,
     },
 }
 
@@ -633,6 +639,25 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             array_elem,
             base_mip,
             mip_count,
+        });
+    }
+
+    #[inline(always)]
+    pub fn build_acceleration_structure(
+        &mut self,
+        acceleration_structure: &'a BottomLevelAccelerationStructure<B>,
+        scratch_buffer: &'a Buffer<B>,
+        scratch_buffer_array_element: usize,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
+            "queue `{:?}` does not support compute commands",
+            self.queue_ty
+        );
+        self.commands.push(Command::BuildBlas {
+            blas: acceleration_structure,
+            scratch: scratch_buffer,
+            scratch_array_element: scratch_buffer_array_element,
         });
     }
 }

@@ -203,7 +203,7 @@ void main() {
             view_model
         );
 
-        // If we aren't visible, write out that we have 0 objects
+        // If we aren't visible, write out that we have 0 meshlets
         if (!s_visible) {
             output_ids[id.meshlet_base] = uint16_t(0);
         }

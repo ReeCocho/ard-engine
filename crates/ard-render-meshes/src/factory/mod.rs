@@ -81,7 +81,9 @@ impl MeshFactory {
         let index_allocator = BufferBlockAllocator::new(
             ctx.clone(),
             Some("index_buffer".into()),
-            BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
+            BufferUsage::STORAGE_BUFFER
+                | BufferUsage::ACCELERATION_STRUCTURE_READ
+                | BufferUsage::TRANSFER_DST,
             config.base_index_block_len,
             config.default_index_buffer_len,
             MeshData::INDEX_SIZE,
@@ -90,7 +92,9 @@ impl MeshFactory {
         let meshlet_allocator = BufferBlockAllocator::new(
             ctx.clone(),
             Some("meshlet_buffer".into()),
-            BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST | BufferUsage::TRANSFER_SRC,
+            BufferUsage::STORAGE_BUFFER
+                | BufferUsage::ACCELERATION_STRUCTURE_READ
+                | BufferUsage::TRANSFER_DST,
             config.base_meshlet_block_len,
             config.default_meshlet_buffer_len,
             std::mem::size_of::<GpuMeshlet>(),
@@ -177,33 +181,42 @@ impl MeshFactory {
         let vb = match self.vertex_allocator.allocate(vertex_count) {
             Some(vb) => vb,
             None => {
+                panic!("ran out of vertex memory");
+                /*
                 self.needs_rebind.iter_mut().for_each(|r| *r = true);
                 self.vertex_allocator.reserve(vertex_count);
                 self.vertex_allocator
                     .allocate(vertex_count)
                     .expect("vertex buffer reservation should allow for further allocation")
+                */
             }
         };
 
         let ib = match self.index_allocator.allocate(index_count) {
             Some(ib) => ib,
             None => {
+                panic!("ran out of index memory");
+                /*
                 self.needs_rebind.iter_mut().for_each(|r| *r = true);
                 self.index_allocator.reserve(index_count);
                 self.index_allocator
                     .allocate(index_count)
                     .expect("index buffer reservation should allow for further allocation")
+                */
             }
         };
 
         let mb = match self.meshlet_allocator.allocate(meshlet_count) {
             Some(ib) => ib,
             None => {
+                panic!("ran out of meshlet memory");
+                /*
                 self.needs_rebind.iter_mut().for_each(|r| *r = true);
                 self.meshlet_allocator.reserve(meshlet_count);
                 self.meshlet_allocator
                     .allocate(meshlet_count)
                     .expect("meshlet buffer reservation should allow for further allocation")
+                */
             }
         };
 

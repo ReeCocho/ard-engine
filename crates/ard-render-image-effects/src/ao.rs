@@ -29,7 +29,7 @@ impl Default for AoSettings {
             sample_distribution_power: 2.0,
             thin_occluder_compensation: 0.0,
             depth_mip_sampling_offset: 3.3,
-            bilateral_filter_d: 10.0,
+            bilateral_filter_d: 9.0,
             bilateral_filter_r: 0.2,
         }
     }

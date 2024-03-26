@@ -41,6 +41,13 @@ pub(crate) enum Garbage {
         allocation: Allocation,
         ref_counter: BufferRefCounter,
     },
+    AccelerationStructure {
+        buffer: vk::Buffer,
+        accelleration_struct: vk::AccelerationStructureKHR,
+        id: ResourceId,
+        allocation: Allocation,
+        ref_counter: BufferRefCounter,
+    },
     Texture {
         image: vk::Image,
         id: ResourceId,
@@ -65,6 +72,7 @@ pub(crate) struct TimelineValues {
 
 pub(crate) struct GarbageCleanupArgs<'a> {
     pub device: &'a ash::Device,
+    pub as_loader: &'a ash::extensions::khr::AccelerationStructure,
     pub buffer_ids: &'a IdGenerator,
     pub image_ids: &'a IdGenerator,
     pub set_ids: &'a IdGenerator,
@@ -133,6 +141,11 @@ impl GarbageCollector {
                             continue;
                         }
                     }
+                    Garbage::AccelerationStructure { ref_counter, .. } => {
+                        if !ref_counter.is_last() {
+                            continue;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -162,6 +175,20 @@ impl GarbageCollector {
                     id,
                     ..
                 } => {
+                    args.device.destroy_buffer(buffer, None);
+                    args.allocator.free(allocation).unwrap();
+                    args.buffer_ids.free(id);
+                    args.global_usage.remove_buffer(id);
+                }
+                Garbage::AccelerationStructure {
+                    accelleration_struct,
+                    buffer,
+                    allocation,
+                    id,
+                    ..
+                } => {
+                    args.as_loader
+                        .destroy_acceleration_structure(accelleration_struct, None);
                     args.device.destroy_buffer(buffer, None);
                     args.allocator.free(allocation).unwrap();
                     args.buffer_ids.free(id);

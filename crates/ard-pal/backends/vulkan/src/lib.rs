@@ -1,4 +1,7 @@
 use api::{
+    acceleration_structure::{
+        BottomLevelAccelerationStructureCreateError, BottomLevelAccelerationStructureCreateInfo,
+    },
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
     command_buffer::{BlitDestination, BlitSource, Command},
     compute_pass::ComputePassDispatch,
@@ -22,6 +25,7 @@ use api::{
     Backend,
 };
 use ash::vk::{self, DebugUtilsMessageSeverityFlagsEXT};
+use blas::BottomLevelAccelerationStructure;
 use buffer::Buffer;
 use compute_pipeline::{ComputePipeline, DispatchIndirect};
 use crossbeam_utils::sync::ShardedLock;
@@ -58,6 +62,7 @@ use util::{
 
 use crate::util::command_sort::CommandSortingInfo;
 
+pub mod blas;
 pub mod buffer;
 pub mod compute_pipeline;
 pub mod cube_map;
@@ -93,16 +98,19 @@ pub enum VulkanBackendCreateError {
 pub struct VulkanBackend {
     pub(crate) entry: ash::Entry,
     pub(crate) instance: ash::Instance,
-    pub(crate) mesh_shading: ash::extensions::ext::MeshShader,
     pub(crate) debug: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
     pub(crate) physical_device: vk::PhysicalDevice,
     pub(crate) queue_family_indices: QueueFamilyIndices,
     pub(crate) properties: vk::PhysicalDeviceProperties,
+    pub(crate) accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
     pub(crate) graphics_properties: GraphicsProperties,
     pub(crate) _features: vk::PhysicalDeviceFeatures,
     pub(crate) device: ash::Device,
     pub(crate) surface_loader: ash::extensions::khr::Surface,
     pub(crate) swapchain_loader: ash::extensions::khr::Swapchain,
+    pub(crate) mesh_shading_loader: ash::extensions::ext::MeshShader,
+    pub(crate) rt_loader: ash::extensions::khr::RayTracingPipeline,
+    pub(crate) as_loader: ash::extensions::khr::AccelerationStructure,
     pub(crate) main: ShardedLock<VkQueue>,
     pub(crate) transfer: ShardedLock<VkQueue>,
     pub(crate) present: ShardedLock<VkQueue>,
@@ -140,6 +148,7 @@ struct PhysicalDeviceQuery {
     pub device: vk::PhysicalDevice,
     pub queue_family_indices: QueueFamilyIndices,
     pub properties: vk::PhysicalDeviceProperties2,
+    pub accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
     pub mesh_shading_properties: vk::PhysicalDeviceMeshShaderPropertiesEXT,
     pub features: vk::PhysicalDeviceFeatures,
 }
@@ -155,6 +164,7 @@ impl Backend for VulkanBackend {
     type ComputePipeline = ComputePipeline;
     type DescriptorSetLayout = DescriptorSetLayout;
     type DescriptorSet = DescriptorSet;
+    type BottomLevelAccelerationStructure = BottomLevelAccelerationStructure;
     type Job = Job;
     type DrawIndexedIndirect = DrawIndexedIndirect;
     type DispatchIndirect = DispatchIndirect;
@@ -359,6 +369,7 @@ impl Backend for VulkanBackend {
             &self.buffer_ids,
             &mut self.allocator.lock().unwrap(),
             &self.properties.limits,
+            &self.accel_struct_props,
             create_info,
         )
     }
@@ -447,6 +458,23 @@ impl Backend for VulkanBackend {
         )
     }
 
+    unsafe fn create_bottom_level_acceleration_structure(
+        &self,
+        create_info: BottomLevelAccelerationStructureCreateInfo<Self>,
+    ) -> Result<Self::BottomLevelAccelerationStructure, BottomLevelAccelerationStructureCreateError>
+    {
+        BottomLevelAccelerationStructure::new(
+            &self.device,
+            &self.queue_family_indices,
+            self.debug.as_ref().map(|(utils, _)| utils),
+            self.garbage.sender(),
+            &self.buffer_ids,
+            &mut self.allocator.lock().unwrap(),
+            &self.as_loader,
+            create_info,
+        )
+    }
+
     #[inline(always)]
     unsafe fn create_descriptor_set_layout(
         &self,
@@ -488,6 +516,13 @@ impl Backend for VulkanBackend {
         // Not needed
     }
 
+    unsafe fn destroy_bottom_level_acceleration_structure(
+        &self,
+        _id: &mut Self::BottomLevelAccelerationStructure,
+    ) {
+        // Handled in drop
+    }
+
     #[inline(always)]
     unsafe fn texture_size(&self, id: &Self::Texture) -> u64 {
         id.size
@@ -496,6 +531,11 @@ impl Backend for VulkanBackend {
     #[inline(always)]
     unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64 {
         id.size
+    }
+
+    #[inline(always)]
+    unsafe fn blas_scratch_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        id.scratch_size()
     }
 
     #[inline(always)]
@@ -591,6 +631,9 @@ impl VulkanBackend {
             let mut extensions = vec![
                 ash::extensions::khr::Swapchain::name(),
                 ash::extensions::ext::MeshShader::name(),
+                ash::extensions::khr::AccelerationStructure::name(),
+                ash::extensions::khr::RayTracingPipeline::name(),
+                ash::extensions::khr::DeferredHostOperations::name(),
             ];
             if create_info.debug {
                 extensions.push(CStr::from_bytes_with_nul(b"VK_EXT_robustness2\0").unwrap());
@@ -737,12 +780,22 @@ impl VulkanBackend {
             .multiview_mesh_shader(true)
             .build();
 
+        let mut rt_features = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
+            .ray_tracing_pipeline(true)
+            .build();
+
+        let mut as_features = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::builder()
+            .acceleration_structure(true)
+            .build();
+
         let mut features2 = vk::PhysicalDeviceFeatures2::builder()
             .features(features)
             .push_next(&mut features11)
             .push_next(&mut features12)
             .push_next(&mut features13)
             .push_next(&mut ms_features)
+            .push_next(&mut rt_features)
+            .push_next(&mut as_features)
             .build();
 
         let create_info = vk::DeviceCreateInfo::builder()
@@ -778,8 +831,10 @@ impl VulkanBackend {
             .expect("unable to create GPU memory allocator"),
         ));
 
-        // Mesh shading functions
-        let mesh_shading = ash::extensions::ext::MeshShader::new(&instance, &device);
+        // Device loaders
+        let mesh_shading_loader = ash::extensions::ext::MeshShader::new(&instance, &device);
+        let rt_loader = ash::extensions::khr::RayTracingPipeline::new(&instance, &device);
+        let as_loader = ash::extensions::khr::AccelerationStructure::new(&instance, &device);
 
         // Create queues
         let main = unsafe {
@@ -846,15 +901,18 @@ impl VulkanBackend {
             entry,
             instance,
             debug,
-            mesh_shading,
             physical_device: pd_query.device,
             queue_family_indices: pd_query.queue_family_indices,
             properties: pd_query.properties.properties,
+            accel_struct_props: pd_query.accel_struct_props,
             graphics_properties,
             _features: pd_query.features,
             device,
             surface_loader,
             swapchain_loader,
+            mesh_shading_loader,
+            rt_loader,
+            as_loader,
             main: ShardedLock::new(main),
             transfer: ShardedLock::new(transfer),
             present: ShardedLock::new(present),
@@ -951,7 +1009,8 @@ impl VulkanBackend {
                 VulkanBackend::execute_command(
                     cb,
                     device,
-                    &self.mesh_shading,
+                    &self.mesh_shading_loader,
+                    &self.as_loader,
                     idx,
                     commands,
                     &self.render_passes,
@@ -1044,6 +1103,7 @@ impl VulkanBackend {
 
         self.garbage.cleanup(GarbageCleanupArgs {
             device: &self.device,
+            as_loader: &self.as_loader,
             buffer_ids: &self.buffer_ids,
             image_ids: &self.image_ids,
             set_ids: &self.set_ids,
@@ -1066,6 +1126,7 @@ impl VulkanBackend {
         cb: vk::CommandBuffer,
         device: &ash::Device,
         mesh_shading: &ash::extensions::ext::MeshShader,
+        as_loader: &ash::extensions::khr::AccelerationStructure,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
@@ -1402,6 +1463,14 @@ impl VulkanBackend {
             }
             Command::SetTextureUsage { .. } => {
                 // Handled in barrier
+            }
+            Command::BuildBlas {
+                blas,
+                scratch,
+                scratch_array_element,
+            } => {
+                blas.internal()
+                    .build(device, cb, as_loader, scratch, *scratch_array_element);
             }
             _ => unreachable!(),
         }
@@ -2007,6 +2076,7 @@ impl Drop for VulkanBackend {
 
                 self.garbage.cleanup(GarbageCleanupArgs {
                     device: &self.device,
+                    as_loader: &self.as_loader,
                     buffer_ids: &self.buffer_ids,
                     image_ids: &self.image_ids,
                     set_ids: &self.set_ids,
@@ -2182,6 +2252,9 @@ impl QueueFamilyIndices {
     }
 }
 
+unsafe impl Send for VulkanBackend {}
+unsafe impl Sync for VulkanBackend {}
+
 unsafe fn pick_physical_device(
     instance: &ash::Instance,
     surface: vk::SurfaceKHR,
@@ -2197,8 +2270,14 @@ unsafe fn pick_physical_device(
     let mut query = None;
     for device in devices {
         let mut mesh_shading_properties = vk::PhysicalDeviceMeshShaderPropertiesEXT::default();
+        let mut ray_tracing = vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
+        let mut accel_struct_props =
+            vk::PhysicalDeviceAccelerationStructurePropertiesKHR::default();
+
         let mut properties = vk::PhysicalDeviceProperties2::builder()
             .push_next(&mut mesh_shading_properties)
+            .push_next(&mut ray_tracing)
+            .push_next(&mut accel_struct_props)
             .build();
 
         instance.get_physical_device_properties2(device, &mut properties);
@@ -2238,6 +2317,7 @@ unsafe fn pick_physical_device(
                 device,
                 features,
                 properties,
+                accel_struct_props,
                 mesh_shading_properties,
                 queue_family_indices: qfi.unwrap(),
             });

@@ -1,4 +1,5 @@
 use api::{
+    acceleration_structure::BottomLevelAccelerationStructure,
     buffer::Buffer,
     command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
@@ -346,6 +347,14 @@ impl CommandSorting {
                     *base_mip,
                     *mip_count,
                 );
+                command_idx + 1
+            }
+            Command::BuildBlas {
+                blas,
+                scratch,
+                scratch_array_element,
+            } => {
+                self.inspect_blas_build(info, command_idx, blas, scratch, *scratch_array_element);
                 command_idx + 1
             }
             _ => command_idx + 1,
@@ -2051,6 +2060,141 @@ impl CommandSorting {
 
         self.dependency_check(
             old_dst_usage[0].queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+    }
+
+    fn inspect_blas_build(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        blas: &BottomLevelAccelerationStructure<crate::VulkanBackend>,
+        scratch: &Buffer<crate::VulkanBackend>,
+        scratch_array_element: usize,
+    ) {
+        // Inspect the BLAS' internal buffer
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: blas.internal().id,
+                array_elem: 0,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            blas.internal().buffer,
+            blas.internal().sharing_mode,
+            blas.internal().buffer_size,
+            0,
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+
+        // Inspect all the dependent vertex and index buffers
+        blas.internal()
+            .buffer_refs
+            .iter()
+            .for_each(|((buff, array_elem), buff_info)| {
+                let new_dst_usage = GlobalBufferUsage {
+                    queue: Some(QueueUsage {
+                        queue: info.queue,
+                        timeline_value: info.timeline_value,
+                        command_idx,
+                        is_async: info.is_async,
+                    }),
+                    sub_resource: SubResourceUsage {
+                        access: vk::AccessFlags2::SHADER_READ,
+                        stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+                    },
+                };
+
+                let old_dst_usage = info.global.use_buffer(
+                    &BufferRegion {
+                        id: buff_info.id,
+                        array_elem: *array_elem as u32,
+                    },
+                    &new_dst_usage,
+                );
+
+                self.buffer_barrier_check(
+                    info.queue_families,
+                    info.queue_families.to_index(info.queue),
+                    &old_dst_usage,
+                    &new_dst_usage,
+                    *buff,
+                    buff_info.sharing_mode,
+                    buff_info.aligned_size,
+                    buff_info.aligned_size * (*array_elem as u64),
+                );
+
+                self.dependency_check(
+                    old_dst_usage.queue.as_ref(),
+                    command_idx,
+                    &mut info.wait_queues,
+                    (info.queue, info.timeline_value),
+                );
+            });
+
+        // Inspect the scratch buffer
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                    | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: scratch.internal().id,
+                array_elem: scratch_array_element as u32,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            scratch.internal().buffer,
+            scratch.internal().sharing_mode,
+            scratch.internal().aligned_size,
+            scratch.internal().offset(scratch_array_element),
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
             command_idx,
             &mut info.wait_queues,
             (info.queue, info.timeline_value),

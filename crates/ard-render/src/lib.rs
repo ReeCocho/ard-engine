@@ -13,6 +13,7 @@ use ard_window::prelude::*;
 use ard_winit::windows::WinitWindows;
 use system::RenderSystem;
 
+pub mod blas;
 pub mod canvas;
 pub mod ecs;
 pub mod factory;

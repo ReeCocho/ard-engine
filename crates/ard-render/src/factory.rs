@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    blas::PendingBlasBuilder,
     staging::{Staging, StagingRequest, StagingResource},
     FRAMES_IN_FLIGHT,
 };
@@ -60,6 +61,7 @@ pub(crate) struct FactoryInner {
     pub(crate) mesh_factory: Mutex<MeshFactory>,
     pub(crate) texture_factory: Mutex<TextureFactory>,
     pub(crate) material_factory: Mutex<MaterialFactory<FRAMES_IN_FLIGHT>>,
+    pub(crate) pending_blas: Mutex<PendingBlasBuilder>,
     ctx: Context,
 }
 
@@ -86,7 +88,7 @@ impl Factory {
                     base_meshlet_block_len: 8,
                     default_vertex_buffer_len: 65536,
                     default_index_buffer_len: 65536,
-                    default_meshlet_buffer_len: 65536,
+                    default_meshlet_buffer_len: 16384,
                 },
                 MAX_MESHES,
                 FRAMES_IN_FLIGHT,
@@ -102,6 +104,7 @@ impl Factory {
                     fallback_materials_cap: 32,
                 },
             )),
+            pending_blas: Mutex::new(PendingBlasBuilder::default()),
             ctx: ctx.clone(),
         });
 
@@ -136,6 +139,7 @@ impl Factory {
         let mut mesh_factory = self.inner.mesh_factory.lock().unwrap();
         let mut texture_factory = self.inner.texture_factory.lock().unwrap();
         let mut material_factory = self.inner.material_factory.lock().unwrap();
+        let mut pending_blas = self.inner.pending_blas.lock().unwrap();
 
         // Check for new upload requests
         staging.upload(&mut mesh_factory, &textures);
@@ -143,9 +147,10 @@ impl Factory {
         // Check if any uploads are complete, and if they are, handle them appropriately
         staging.flush_complete_uploads(false, |resc| match resc {
             StagingResource::StaticMesh(id) => {
-                // Flag mesh as being ready for rendering
+                // Flag mesh as being ready for rendering and pending BLAS construction
                 if let Some(mesh) = static_meshes.get_mut(id) {
                     mesh.ready = true;
+                    pending_blas.append(id, mesh.blas_scratch.take().unwrap());
                 }
             }
             StagingResource::Texture(id) => texture_factory.texture_ready(id),
@@ -159,6 +164,9 @@ impl Factory {
                 }
             }
         });
+
+        // Build the updated pending BLAS build list
+        pending_blas.build_current_list();
 
         // Flush modified material data and uploaded meshes
         material_factory.flush(

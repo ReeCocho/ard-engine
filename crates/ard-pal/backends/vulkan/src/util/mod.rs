@@ -370,6 +370,16 @@ pub(crate) fn to_vk_buffer_usage(bu: BufferUsage) -> vk::BufferUsageFlags {
     if bu.contains(BufferUsage::INDIRECT_BUFFER) {
         out |= vk::BufferUsageFlags::INDIRECT_BUFFER;
     }
+    if bu.contains(BufferUsage::DEVICE_ADDRESS) {
+        out |= vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+    }
+    if bu.contains(BufferUsage::ACCELERATION_STRUCTURE_SCRATCH) {
+        out |= vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+    }
+    if bu.contains(BufferUsage::ACCELERATION_STRUCTURE_READ) {
+        out |= vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
+            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+    }
     out
 }
 
@@ -414,6 +424,41 @@ pub(crate) const fn to_gpu_allocator_memory_location(mu: MemoryUsage) -> MemoryL
         MemoryUsage::CpuToGpu => MemoryLocation::CpuToGpu,
         MemoryUsage::GpuToCpu => MemoryLocation::GpuToCpu,
     }
+}
+
+#[inline(always)]
+pub(crate) fn to_vk_geometry_flags(ty: GeometryFlags) -> vk::GeometryFlagsKHR {
+    let mut out = vk::GeometryFlagsKHR::empty();
+    if ty.contains(GeometryFlags::OPAQUE) {
+        out |= vk::GeometryFlagsKHR::OPAQUE;
+    }
+    if ty.contains(GeometryFlags::NO_DUPLICATE_ANY_HIT) {
+        out |= vk::GeometryFlagsKHR::NO_DUPLICATE_ANY_HIT_INVOCATION;
+    }
+    out
+}
+
+#[inline(always)]
+pub(crate) fn to_vk_as_build_flags(
+    ty: BuildAccelerationStructureFlags,
+) -> vk::BuildAccelerationStructureFlagsKHR {
+    let mut out = vk::BuildAccelerationStructureFlagsKHR::empty();
+    if ty.contains(BuildAccelerationStructureFlags::ALLOW_COMPACTION) {
+        out |= vk::BuildAccelerationStructureFlagsKHR::ALLOW_COMPACTION;
+    }
+    if ty.contains(BuildAccelerationStructureFlags::ALLOW_UPDATE) {
+        out |= vk::BuildAccelerationStructureFlagsKHR::ALLOW_UPDATE;
+    }
+    if ty.contains(BuildAccelerationStructureFlags::LOW_MEMORY) {
+        out |= vk::BuildAccelerationStructureFlagsKHR::LOW_MEMORY;
+    }
+    if ty.contains(BuildAccelerationStructureFlags::PREFER_FAST_BUILD) {
+        out |= vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD;
+    }
+    if ty.contains(BuildAccelerationStructureFlags::PREFER_FAST_TRACE) {
+        out |= vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE;
+    }
+    out
 }
 
 #[inline(always)]

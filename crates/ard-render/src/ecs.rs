@@ -198,6 +198,9 @@ impl RenderEcs {
         puffin::GlobalProfiler::lock().new_frame();
         puffin::profile_function!();
 
+        // Upload factory resources
+        self.factory.process(frame.frame);
+
         // Update the canvas size and acquire a new swap chain image
         if self.canvas.resize(
             &self.ctx,
@@ -271,9 +274,6 @@ impl RenderEcs {
 
         self.canvas.acquire_image();
 
-        // Upload factory resources
-        self.factory.process(frame.frame);
-
         // Update the camera
         let main_camera = match frame.active_cameras.main_camera() {
             Some(camera) => {
@@ -292,6 +292,7 @@ impl RenderEcs {
         let materials = self.factory.inner.materials.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
+        let pending_blas = self.factory.inner.pending_blas.lock().unwrap();
 
         // Upload object data to renderers
         self.scene_renderer.upload(
@@ -347,6 +348,16 @@ impl RenderEcs {
         //      Comp: Bin lights, generate shadow draw calls.
         let mut main_cb = self.ctx.main().command_buffer();
         // let mut compute_cb = self.ctx.main().command_buffer();
+
+        // Build BLAS'
+        pending_blas.current().iter().for_each(|blas| {
+            let mesh = match meshes.get(blas.mesh_id) {
+                Some(mesh) => mesh,
+                None => return,
+            };
+
+            main_cb.build_acceleration_structure(&mesh.blas, &blas.scratch, 0);
+        });
 
         // Render the high-z depth image
         self.render_hzb(

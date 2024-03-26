@@ -336,13 +336,16 @@ bitflags! {
     #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
     #[serde(transparent)]
     pub struct BufferUsage: u32 {
-        const TRANSFER_SRC    = 0b0000001;
-        const TRANSFER_DST    = 0b0000010;
-        const UNIFORM_BUFFER  = 0b0000100;
-        const STORAGE_BUFFER  = 0b0001000;
-        const VERTEX_BUFFER   = 0b0010000;
-        const INDEX_BUFFER    = 0b0100000;
-        const INDIRECT_BUFFER = 0b1000000;
+        const TRANSFER_SRC                    = 0b0000_0000_0001;
+        const TRANSFER_DST                    = 0b0000_0000_0010;
+        const UNIFORM_BUFFER                  = 0b0000_0000_0100;
+        const STORAGE_BUFFER                  = 0b0000_0000_1000;
+        const VERTEX_BUFFER                   = 0b0000_0001_0000;
+        const INDEX_BUFFER                    = 0b0000_0010_0000;
+        const INDIRECT_BUFFER                 = 0b0000_0100_0000;
+        const DEVICE_ADDRESS                  = 0b0000_1000_0000;
+        const ACCELERATION_STRUCTURE_SCRATCH  = 0b0001_0000_0000;
+        const ACCELERATION_STRUCTURE_READ     = 0b0010_0000_0000;
     }
 }
 
@@ -386,6 +389,27 @@ pub struct Scissor {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+}
+
+bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
+    pub struct GeometryFlags: u8 {
+        const OPAQUE                = 0b0001;
+        const NO_DUPLICATE_ANY_HIT  = 0b0010;
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[serde(transparent)]
+    pub struct BuildAccelerationStructureFlags: u8 {
+        const ALLOW_UPDATE      = 0b0000_0001;
+        const ALLOW_COMPACTION  = 0b0000_0010;
+        const PREFER_FAST_TRACE = 0b0000_0100;
+        const PREFER_FAST_BUILD = 0b0000_1000;
+        const LOW_MEMORY        = 0b0001_0000;
+    }
 }
 
 impl Format {

@@ -4,6 +4,7 @@
 //! To start using Pal, you must first choose a [`Backend`] and then create a
 //! [`Context`](struct@context::Context).
 
+pub mod acceleration_structure;
 pub mod buffer;
 pub mod command_buffer;
 pub mod compute_pass;
@@ -21,6 +22,9 @@ pub mod types;
 
 use std::{ptr::NonNull, time::Duration};
 
+use acceleration_structure::{
+    BottomLevelAccelerationStructureCreateError, BottomLevelAccelerationStructureCreateInfo,
+};
 use buffer::{BufferCreateError, BufferCreateInfo, BufferViewError};
 use command_buffer::Command;
 use compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
@@ -58,11 +62,13 @@ pub trait Backend: Sized + 'static {
     type DescriptorSetLayout;
     type DescriptorSet;
     type Job;
+    type BottomLevelAccelerationStructure;
     type DrawIndexedIndirect: Copy + Clone;
     type DispatchIndirect: Copy + Clone;
 
     unsafe fn properties(&self) -> &GraphicsProperties;
 
+    // Surface
     unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
         &self,
         create_info: SurfaceCreateInfo<W>,
@@ -80,6 +86,7 @@ pub trait Backend: Sized + 'static {
     ) -> Result<Self::SurfaceImage, SurfaceImageAcquireError>;
     unsafe fn destroy_surface_image(&self, id: &mut Self::SurfaceImage);
 
+    // Command submit
     unsafe fn submit_commands(
         &self,
         queue: QueueType,
@@ -99,9 +106,12 @@ pub trait Backend: Sized + 'static {
         surface: &Self::Surface,
         image: &mut Self::SurfaceImage,
     ) -> Result<SurfacePresentSuccess, SurfacePresentFailure>;
+
+    // Jobs
     unsafe fn wait_on(&self, job: &Self::Job, timeout: Option<Duration>) -> JobStatus;
     unsafe fn poll_status(&self, job: &Self::Job) -> JobStatus;
 
+    // Creating resources
     unsafe fn create_buffer(
         &self,
         create_info: BufferCreateInfo,
@@ -134,6 +144,12 @@ pub trait Backend: Sized + 'static {
         &self,
         create_info: DescriptorSetLayoutCreateInfo,
     ) -> Result<Self::DescriptorSetLayout, DescriptorSetLayoutCreateError>;
+    unsafe fn create_bottom_level_acceleration_structure(
+        &self,
+        create_info: BottomLevelAccelerationStructureCreateInfo<Self>,
+    ) -> Result<Self::BottomLevelAccelerationStructure, BottomLevelAccelerationStructureCreateError>;
+
+    // Destroying resources
     unsafe fn destroy_buffer(&self, id: &mut Self::Buffer);
     unsafe fn destroy_texture(&self, id: &mut Self::Texture);
     unsafe fn destroy_cube_map(&self, id: &mut Self::CubeMap);
@@ -142,7 +158,12 @@ pub trait Backend: Sized + 'static {
     unsafe fn destroy_compute_pipeline(&self, id: &mut Self::ComputePipeline);
     unsafe fn destroy_descriptor_set(&self, id: &mut Self::DescriptorSet);
     unsafe fn destroy_descriptor_set_layout(&self, id: &mut Self::DescriptorSetLayout);
+    unsafe fn destroy_bottom_level_acceleration_structure(
+        &self,
+        id: &mut Self::BottomLevelAccelerationStructure,
+    );
 
+    // Memory management
     unsafe fn map_memory(
         &self,
         id: &Self::Buffer,
@@ -152,9 +173,12 @@ pub trait Backend: Sized + 'static {
     unsafe fn flush_range(&self, id: &Self::Buffer, idx: usize);
     unsafe fn invalidate_range(&self, id: &Self::Buffer, idx: usize);
 
+    // Getters
     unsafe fn texture_size(&self, id: &Self::Texture) -> u64;
     unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64;
+    unsafe fn blas_scratch_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
 
+    // Descriptor set
     unsafe fn update_descriptor_sets(
         &self,
         id: &mut Self::DescriptorSet,

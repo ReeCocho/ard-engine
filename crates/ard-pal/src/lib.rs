@@ -93,4 +93,12 @@ pub mod prelude {
         DescriptorSetLayoutCreateError, DescriptorSetLayoutCreateInfo, DescriptorSetUpdate,
         DescriptorType,
     };
+
+    // Acceleration structure
+    pub type BottomLevelAccelerationStructure =
+        api::acceleration_structure::BottomLevelAccelerationStructure<crate::Backend>;
+    pub type AccelerationStructureGeometry<'a> =
+        api::acceleration_structure::AccelerationStructureGeometry<'a, crate::Backend>;
+    pub type BottomLevelAccelerationStructureCreateInfo<'a> =
+        api::acceleration_structure::BottomLevelAccelerationStructureCreateInfo<'a, crate::Backend>;
 }

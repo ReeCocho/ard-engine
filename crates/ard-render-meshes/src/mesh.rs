@@ -4,9 +4,9 @@ use ard_ecs::prelude::Component;
 use ard_formats::{
     mesh::{MeshData, ObjectBounds},
     meshlet::Meshlet,
-    vertex::VertexLayout,
+    vertex::{VertexAttribute, VertexLayout},
 };
-use ard_math::{UVec4, Vec4Swizzles};
+use ard_math::{UVec4, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
 use ard_render_base::resource::{ResourceHandle, ResourceId};
 use ard_render_si::types::{GpuMeshInfo, GpuMeshlet, GpuObjectBounds};
@@ -37,13 +37,15 @@ pub struct Mesh {
     handle: ResourceHandle,
 }
 
-#[derive(Debug)]
 pub struct MeshResource {
     pub block: MeshBlock,
     pub bounds: ObjectBounds,
     pub index_count: usize,
     pub vertex_count: usize,
     pub meshlet_count: usize,
+    /// Bottom level acceleration structure for this mesh.
+    pub blas: BottomLevelAccelerationStructure,
+    pub blas_scratch: Option<Box<Buffer>>,
     /// Indicates tht the mesh has been uploaded to the GPU and is ready to be rendered.
     pub ready: bool,
 }
@@ -99,6 +101,42 @@ impl MeshResource {
 
         let bounds = *data.bounds();
 
+        // Initialize BLAS
+        let blas = BottomLevelAccelerationStructure::new(
+            ctx.clone(),
+            BottomLevelAccelerationStructureCreateInfo {
+                flags: BuildAccelerationStructureFlags::PREFER_FAST_TRACE,
+                geometries: data.blas_geometries(
+                    factory.vertex_buffer().buffer(VertexAttribute::Position),
+                    0,
+                    block.vertex_block().base() as u64 * std::mem::size_of::<Vec4>() as u64,
+                    factory.index_buffer(),
+                    0,
+                    block.index_block().base() as u64 * std::mem::size_of::<u16>() as u64,
+                ),
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("mesh_blas".into()),
+            },
+        )
+        .unwrap();
+
+        let scratch = Box::new(
+            Buffer::new(
+                ctx.clone(),
+                BufferCreateInfo {
+                    size: blas.scratch_buffer_size(),
+                    array_elements: 1,
+                    buffer_usage: BufferUsage::ACCELERATION_STRUCTURE_SCRATCH,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("mesh_blas_scratch".into()),
+                },
+            )
+            .unwrap(),
+        );
+
         Ok((
             MeshResource {
                 block,
@@ -106,6 +144,8 @@ impl MeshResource {
                 vertex_count: data.vertex_count(),
                 meshlet_count: data.meshlet_count(),
                 bounds,
+                blas,
+                blas_scratch: Some(scratch),
                 ready: false,
             },
             MeshUpload {

@@ -47,6 +47,7 @@ impl Buffer {
         id_gen: &IdGenerator,
         allocator: &mut Allocator,
         limits: &vk::PhysicalDeviceLimits,
+        accel_struct_props: &vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
         create_info: BufferCreateInfo,
     ) -> Result<Self, BufferCreateError> {
         // Determine memory alignment requirements
@@ -65,6 +66,13 @@ impl Buffer {
             .contains(BufferUsage::STORAGE_BUFFER)
         {
             alignment_req = alignment_req.max(limits.min_storage_buffer_offset_alignment);
+        }
+        if create_info
+            .buffer_usage
+            .contains(BufferUsage::ACCELERATION_STRUCTURE_SCRATCH)
+        {
+            alignment_req = alignment_req
+                .max(accel_struct_props.min_acceleration_structure_scratch_offset_alignment as u64);
         }
 
         // Round size to a multiple of the alignment
@@ -184,6 +192,32 @@ impl Buffer {
         let map =
             NonNull::new_unchecked((map.as_ptr() as *mut u8).add(self.aligned_size as usize * idx));
         Ok((map, self.size))
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn device_address(
+        &self,
+        device: &ash::Device,
+        array_elem: usize,
+    ) -> vk::DeviceOrHostAddressKHR {
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.buffer);
+        let base = device.get_buffer_device_address(&info);
+        let mut res = vk::DeviceOrHostAddressKHR::default();
+        res.device_address = base + self.offset(array_elem);
+        res
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn device_address_const(
+        &self,
+        device: &ash::Device,
+        array_elem: usize,
+    ) -> vk::DeviceOrHostAddressConstKHR {
+        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.buffer);
+        let base = device.get_buffer_device_address(&info);
+        let mut res = vk::DeviceOrHostAddressConstKHR::default();
+        res.device_address = base + self.offset(array_elem);
+        res
     }
 }
 

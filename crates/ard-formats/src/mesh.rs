@@ -153,6 +153,37 @@ impl MeshData {
 
         staging
     }
+
+    pub fn blas_geometries<'a>(
+        &'a self,
+        vertex_data: &'a Buffer,
+        vertex_data_array_element: usize,
+        vertex_data_base: u64,
+        index_data: &'a Buffer,
+        index_data_array_element: usize,
+        index_data_base: u64,
+    ) -> Vec<AccelerationStructureGeometry> {
+        self.meshlets
+            .iter()
+            .map(|meshlet| {
+                AccelerationStructureGeometry {
+                    // TODO: Make configurable
+                    flags: GeometryFlags::OPAQUE,
+                    vertex_format: Format::Rgba32SFloat,
+                    vertex_data,
+                    vertex_data_array_element,
+                    vertex_data_offset: vertex_data_base + meshlet.vertex_offset as u64,
+                    vertex_count: meshlet.vertex_count as usize,
+                    vertex_stride: std::mem::size_of::<Vec4>() as u64,
+                    index_type: IndexType::U16,
+                    index_data,
+                    index_data_array_element,
+                    index_data_offset: index_data_base + meshlet.index_offset as u64,
+                    triangle_count: meshlet.primitive_count as usize,
+                }
+            })
+            .collect()
+    }
 }
 
 impl MeshDataBuilder {

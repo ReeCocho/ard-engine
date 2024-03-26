@@ -19,7 +19,9 @@ impl VertexBuffers {
             BufferBlockAllocator::new(
                 ctx.clone(),
                 Some(format!("vb_{attribute:?}")),
-                BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
+                BufferUsage::STORAGE_BUFFER
+                    | BufferUsage::ACCELERATION_STRUCTURE_READ
+                    | BufferUsage::TRANSFER_DST,
                 base_block_len,
                 block_count,
                 attribute.size(),

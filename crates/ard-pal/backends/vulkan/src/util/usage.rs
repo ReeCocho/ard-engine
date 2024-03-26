@@ -455,7 +455,9 @@ impl SubResourceUsage {
                 | vk::AccessFlags2::HOST_READ.as_raw()
                 | vk::AccessFlags2::MEMORY_READ.as_raw()
                 | vk::AccessFlags2::SHADER_SAMPLED_READ.as_raw()
-                | vk::AccessFlags2::SHADER_STORAGE_READ.as_raw(),
+                | vk::AccessFlags2::SHADER_STORAGE_READ.as_raw()
+                | vk::AccessFlags2::SHADER_BINDING_TABLE_READ_KHR.as_raw()
+                | vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR.as_raw(),
         );
 
         READ_ACCESSES | self.access != READ_ACCESSES

@@ -15,6 +15,7 @@ impl Backend for EmptyBackend {
     type DescriptorSetLayout = ();
     type DescriptorSet = ();
     type Job = ();
+    type BottomLevelAccelerationStructure = ();
     type DrawIndexedIndirect = ();
     type DispatchIndirect = ();
 
@@ -198,5 +199,26 @@ impl Backend for EmptyBackend {
 
     unsafe fn cube_map_size(&self, _id: &Self::CubeMap) -> u64 {
         0
+    }
+
+    unsafe fn create_bottom_level_acceleration_structure(
+        &self,
+        _build_info: api::acceleration_structure::BottomLevelAccelerationStructureCreateInfo<Self>,
+    ) -> Result<
+        Self::BottomLevelAccelerationStructure,
+        api::acceleration_structure::BottomLevelAccelerationStructureCreateError,
+    > {
+        todo!()
+    }
+
+    unsafe fn destroy_bottom_level_acceleration_structure(
+        &self,
+        _id: &mut Self::BottomLevelAccelerationStructure,
+    ) {
+        todo!()
+    }
+
+    unsafe fn blas_scratch_size(&self, _id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        todo!()
     }
 }
