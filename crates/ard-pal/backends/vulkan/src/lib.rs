@@ -1,5 +1,5 @@
 use api::{
-    acceleration_structure::{
+    blas::{
         BottomLevelAccelerationStructureCreateError, BottomLevelAccelerationStructureCreateInfo,
     },
     buffer::{BufferCreateError, BufferCreateInfo, BufferViewError},
@@ -21,6 +21,7 @@ use api::{
         SurfaceImageAcquireError, SurfacePresentSuccess, SurfaceUpdateError,
     },
     texture::{TextureCreateError, TextureCreateInfo},
+    tlas::{TopLevelAccelerationStructureCreateError, TopLevelAccelerationStructureCreateInfo},
     types::*,
     Backend,
 };
@@ -49,6 +50,7 @@ use std::{
 use surface::{Surface, SurfaceImage};
 use texture::Texture;
 use thiserror::Error;
+use tlas::TopLevelAccelerationStructure;
 use util::{
     command_sort::CommandSorting,
     descriptor_pool::DescriptorPools,
@@ -75,6 +77,7 @@ pub mod render_pass;
 pub mod shader;
 pub mod surface;
 pub mod texture;
+pub mod tlas;
 pub mod util;
 
 pub struct VulkanBackendCreateInfo<'a, W: HasRawWindowHandle + HasRawDisplayHandle> {
@@ -167,6 +170,7 @@ impl Backend for VulkanBackend {
     type DescriptorSetLayout = DescriptorSetLayout;
     type DescriptorSet = DescriptorSet;
     type BottomLevelAccelerationStructure = BottomLevelAccelerationStructure;
+    type TopLevelAccelerationStructure = TopLevelAccelerationStructure;
     type Job = Job;
     type DrawIndexedIndirect = DrawIndexedIndirect;
     type DispatchIndirect = DispatchIndirect;
@@ -460,6 +464,13 @@ impl Backend for VulkanBackend {
         )
     }
 
+    unsafe fn create_top_level_acceleration_structure(
+        &self,
+        create_info: TopLevelAccelerationStructureCreateInfo,
+    ) -> Result<Self::TopLevelAccelerationStructure, TopLevelAccelerationStructureCreateError> {
+        TopLevelAccelerationStructure::new(self, create_info)
+    }
+
     unsafe fn create_bottom_level_acceleration_structure(
         &self,
         create_info: BottomLevelAccelerationStructureCreateInfo<Self>,
@@ -516,6 +527,19 @@ impl Backend for VulkanBackend {
         // Handled in drop
     }
 
+    unsafe fn destroy_top_level_acceleration_structure(
+        &self,
+        _id: &mut Self::TopLevelAccelerationStructure,
+    ) {
+        // Handled in drop
+    }
+
+    #[inline(always)]
+    unsafe fn buffer_device_ref(&self, id: &Self::Buffer, array_element: usize) -> u64 {
+        id.device_address(&self.device, array_element)
+            .device_address
+    }
+
     #[inline(always)]
     unsafe fn texture_size(&self, id: &Self::Texture) -> u64 {
         id.size
@@ -524,6 +548,27 @@ impl Backend for VulkanBackend {
     #[inline(always)]
     unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64 {
         id.size
+    }
+
+    #[inline(always)]
+    unsafe fn tlas_scratch_size(&self, id: &Self::TopLevelAccelerationStructure) -> u64 {
+        id.scratch_size()
+    }
+
+    #[inline(always)]
+    unsafe fn tlas_build_flags(
+        &self,
+        id: &Self::TopLevelAccelerationStructure,
+    ) -> BuildAccelerationStructureFlags {
+        id.flags
+    }
+
+    #[inline(always)]
+    unsafe fn blas_device_ref(&self, id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        let info = vk::AccelerationStructureDeviceAddressInfoKHR::builder()
+            .acceleration_structure(id.acceleration_struct);
+        self.as_loader
+            .get_acceleration_structure_device_address(&info)
     }
 
     #[inline(always)]
@@ -760,6 +805,7 @@ impl VulkanBackend {
             .depth_clamp(true)
             .sample_rate_shading(true)
             .sampler_anisotropy(true)
+            .shader_int64(true)
             .build();
 
         let mut features11 = vk::PhysicalDeviceVulkan11Features::builder()
@@ -1483,6 +1529,25 @@ impl VulkanBackend {
             } => {
                 blas.internal()
                     .build(device, cb, as_loader, scratch, *scratch_array_element);
+            }
+            Command::BuildTlas {
+                tlas,
+                instance_count,
+                scratch,
+                scratch_array_element,
+                src,
+                src_array_element,
+            } => {
+                tlas.internal().build(
+                    device,
+                    cb,
+                    as_loader,
+                    *instance_count,
+                    scratch,
+                    *scratch_array_element,
+                    src,
+                    *src_array_element,
+                );
             }
             Command::WriteBlasCompactSize(blas) => {
                 blas.internal().write_compact_size(cb, as_loader, queries);
@@ -2314,7 +2379,8 @@ unsafe fn pick_physical_device(
         let features = instance.get_physical_device_features(device);
 
         // Must support requested extensions
-        if check_device_extensions(instance, device, extensions).is_some() {
+        if let Some(missing) = check_device_extensions(instance, device, extensions) {
+            ard_log::info!("Missing ext {missing}");
             continue;
         }
 

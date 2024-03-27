@@ -16,6 +16,7 @@ impl Backend for EmptyBackend {
     type DescriptorSet = ();
     type Job = ();
     type BottomLevelAccelerationStructure = ();
+    type TopLevelAccelerationStructure = ();
     type DrawIndexedIndirect = ();
     type DispatchIndirect = ();
 
@@ -203,10 +204,10 @@ impl Backend for EmptyBackend {
 
     unsafe fn create_bottom_level_acceleration_structure(
         &self,
-        _build_info: api::acceleration_structure::BottomLevelAccelerationStructureCreateInfo<Self>,
+        _build_info: api::blas::BottomLevelAccelerationStructureCreateInfo<Self>,
     ) -> Result<
         Self::BottomLevelAccelerationStructure,
-        api::acceleration_structure::BottomLevelAccelerationStructureCreateError,
+        api::blas::BottomLevelAccelerationStructureCreateError,
     > {
         todo!()
     }
@@ -218,6 +219,10 @@ impl Backend for EmptyBackend {
         todo!()
     }
 
+    unsafe fn blas_device_ref(&self, _id: &Self::BottomLevelAccelerationStructure) -> u64 {
+        todo!()
+    }
+
     unsafe fn blas_scratch_size(&self, _id: &Self::BottomLevelAccelerationStructure) -> u64 {
         todo!()
     }
@@ -226,9 +231,41 @@ impl Backend for EmptyBackend {
         todo!()
     }
 
+    unsafe fn buffer_device_ref(&self, _id: &Self::Buffer, _array_element: usize) -> u64 {
+        todo!()
+    }
+
     unsafe fn blas_build_flags(
         &self,
         _id: &Self::BottomLevelAccelerationStructure,
+    ) -> api::types::BuildAccelerationStructureFlags {
+        todo!()
+    }
+
+    unsafe fn create_top_level_acceleration_structure(
+        &self,
+        _create_info: api::tlas::TopLevelAccelerationStructureCreateInfo,
+    ) -> Result<
+        Self::TopLevelAccelerationStructure,
+        api::tlas::TopLevelAccelerationStructureCreateError,
+    > {
+        todo!()
+    }
+
+    unsafe fn destroy_top_level_acceleration_structure(
+        &self,
+        _id: &mut Self::TopLevelAccelerationStructure,
+    ) {
+        todo!()
+    }
+
+    unsafe fn tlas_scratch_size(&self, _id: &Self::TopLevelAccelerationStructure) -> u64 {
+        todo!()
+    }
+
+    unsafe fn tlas_build_flags(
+        &self,
+        _id: &Self::TopLevelAccelerationStructure,
     ) -> api::types::BuildAccelerationStructureFlags {
         todo!()
     }

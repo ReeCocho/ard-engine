@@ -4,7 +4,7 @@
 //! To start using Pal, you must first choose a [`Backend`] and then create a
 //! [`Context`](struct@context::Context).
 
-pub mod acceleration_structure;
+pub mod blas;
 pub mod buffer;
 pub mod command_buffer;
 pub mod compute_pass;
@@ -18,11 +18,12 @@ pub mod render_pass;
 pub mod shader;
 pub mod surface;
 pub mod texture;
+pub mod tlas;
 pub mod types;
 
 use std::{ptr::NonNull, time::Duration};
 
-use acceleration_structure::{
+use blas::{
     BottomLevelAccelerationStructureCreateError, BottomLevelAccelerationStructureCreateInfo,
 };
 use buffer::{BufferCreateError, BufferCreateInfo, BufferViewError};
@@ -43,6 +44,7 @@ use surface::{
     SurfaceImageAcquireError, SurfacePresentSuccess, SurfaceUpdateError,
 };
 use texture::{TextureCreateError, TextureCreateInfo};
+use tlas::{TopLevelAccelerationStructureCreateError, TopLevelAccelerationStructureCreateInfo};
 use types::{BuildAccelerationStructureFlags, JobStatus, QueueType};
 
 /// TODO:
@@ -63,6 +65,7 @@ pub trait Backend: Sized + 'static {
     type DescriptorSet;
     type Job;
     type BottomLevelAccelerationStructure;
+    type TopLevelAccelerationStructure;
     type DrawIndexedIndirect: Copy + Clone;
     type DispatchIndirect: Copy + Clone;
 
@@ -148,6 +151,10 @@ pub trait Backend: Sized + 'static {
         &self,
         create_info: BottomLevelAccelerationStructureCreateInfo<Self>,
     ) -> Result<Self::BottomLevelAccelerationStructure, BottomLevelAccelerationStructureCreateError>;
+    unsafe fn create_top_level_acceleration_structure(
+        &self,
+        create_info: TopLevelAccelerationStructureCreateInfo,
+    ) -> Result<Self::TopLevelAccelerationStructure, TopLevelAccelerationStructureCreateError>;
 
     // Destroying resources
     unsafe fn destroy_buffer(&self, id: &mut Self::Buffer);
@@ -162,6 +169,10 @@ pub trait Backend: Sized + 'static {
         &self,
         id: &mut Self::BottomLevelAccelerationStructure,
     );
+    unsafe fn destroy_top_level_acceleration_structure(
+        &self,
+        id: &mut Self::TopLevelAccelerationStructure,
+    );
 
     // Memory management
     unsafe fn map_memory(
@@ -174,8 +185,15 @@ pub trait Backend: Sized + 'static {
     unsafe fn invalidate_range(&self, id: &Self::Buffer, idx: usize);
 
     // Getters
+    unsafe fn buffer_device_ref(&self, id: &Self::Buffer, array_element: usize) -> u64;
     unsafe fn texture_size(&self, id: &Self::Texture) -> u64;
     unsafe fn cube_map_size(&self, id: &Self::CubeMap) -> u64;
+    unsafe fn tlas_scratch_size(&self, id: &Self::TopLevelAccelerationStructure) -> u64;
+    unsafe fn tlas_build_flags(
+        &self,
+        id: &Self::TopLevelAccelerationStructure,
+    ) -> BuildAccelerationStructureFlags;
+    unsafe fn blas_device_ref(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
     unsafe fn blas_scratch_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
     unsafe fn blas_compacted_size(&self, id: &Self::BottomLevelAccelerationStructure) -> u64;
     unsafe fn blas_build_flags(

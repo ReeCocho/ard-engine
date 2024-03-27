@@ -20,6 +20,7 @@ use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
+    raytrace::RaytracedRenderer,
     scene::{SceneRenderArgs, SceneRenderer},
     shadow::{ShadowRenderArgs, SunShadowsRenderer},
 };
@@ -35,12 +36,13 @@ pub(crate) struct RenderEcs {
     camera: CameraUbo,
     scene_renderer: SceneRenderer,
     sun_shadows_renderer: SunShadowsRenderer,
+    hzb_render: HzbRenderer,
+    rt_render: RaytracedRenderer,
     gui_renderer: GuiRenderer,
     lighting: LightClusters,
     froxels: FroxelGenPipeline,
     _fxaa: Fxaa,
     smaa: Smaa,
-    hzb_render: HzbRenderer,
     bloom: Bloom<FRAMES_IN_FLIGHT>,
     sun_shafts: SunShafts,
     tonemapping: Tonemapping,
@@ -118,6 +120,7 @@ impl RenderEcs {
         let sun_shadows_renderer =
             SunShadowsRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES);
         let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let rt_render = RaytracedRenderer::new(&ctx, FRAMES_IN_FLIGHT);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
@@ -171,6 +174,7 @@ impl RenderEcs {
                 camera: CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts),
                 scene_renderer,
                 sun_shadows_renderer,
+                rt_render,
                 gui_renderer,
                 lighting,
                 hzb_render,
@@ -294,6 +298,9 @@ impl RenderEcs {
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
 
+        // Check objects for uploaded BLAS'
+        frame.object_data.check_for_blas(&meshes);
+
         // Upload object data to renderers
         self.scene_renderer.upload(
             frame.frame,
@@ -310,6 +317,9 @@ impl RenderEcs {
             &materials,
             view_location,
         );
+
+        self.rt_render
+            .upload(frame.frame, view_location, &frame.object_data, &meshes);
 
         // Update sets and bindings
         self.lighting.update_set(frame.frame, &frame.lights);
@@ -356,7 +366,7 @@ impl RenderEcs {
                 None => return,
             };
 
-            main_cb.build_acceleration_structure(&mesh.blas, &blas.scratch, 0);
+            main_cb.build_bottom_level_acceleration_structure(&mesh.blas, &blas.scratch, 0);
         });
 
         // Compact BLAS'
@@ -376,6 +386,9 @@ impl RenderEcs {
 
                 main_cb.compact_acceleration_structure(src, dst);
             });
+
+        // Build TLAS
+        self.rt_render.build(&mut main_cb, frame.frame);
 
         // Render the high-z depth image
         self.render_hzb(

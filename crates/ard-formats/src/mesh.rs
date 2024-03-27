@@ -172,13 +172,15 @@ impl MeshData {
                     vertex_format: Format::Rgba32SFloat,
                     vertex_data,
                     vertex_data_array_element,
-                    vertex_data_offset: vertex_data_base + meshlet.vertex_offset as u64,
+                    vertex_data_offset: vertex_data_base
+                        + (meshlet.vertex_offset as u64 * std::mem::size_of::<Vec4>() as u64),
                     vertex_count: meshlet.vertex_count as usize,
                     vertex_stride: std::mem::size_of::<Vec4>() as u64,
                     index_type: IndexType::U16,
                     index_data,
                     index_data_array_element,
-                    index_data_offset: index_data_base + meshlet.index_offset as u64,
+                    index_data_offset: index_data_base
+                        + (meshlet.index_offset as u64 * std::mem::size_of::<u16>() as u64),
                     triangle_count: meshlet.primitive_count as usize,
                 }
             })

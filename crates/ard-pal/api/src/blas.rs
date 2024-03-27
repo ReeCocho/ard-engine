@@ -62,6 +62,11 @@ impl<B: Backend> BottomLevelAccelerationStructure<B> {
     }
 
     #[inline(always)]
+    pub fn device_ref(&self) -> u64 {
+        unsafe { self.ctx.0.blas_device_ref(&self.id) }
+    }
+
+    #[inline(always)]
     pub fn scratch_buffer_size(&self) -> u64 {
         unsafe { self.ctx.0.blas_scratch_size(&self.id) }
     }

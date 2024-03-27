@@ -71,6 +71,11 @@ impl SceneRenderer {
     }
 
     #[inline(always)]
+    pub fn object_set(&self) -> &RenderableSet {
+        &self.set
+    }
+
+    #[inline(always)]
     pub fn color_pass_sets_mut(&mut self) -> &mut ColorPassSets {
         &mut self.color_sets
     }

@@ -146,6 +146,11 @@ impl<B: Backend> Buffer<B> {
     }
 
     #[inline(always)]
+    pub fn device_ref(&self, array_element: usize) -> u64 {
+        unsafe { self.ctx.0.buffer_device_ref(&self.id, array_element) }
+    }
+
+    #[inline(always)]
     pub fn queue_types(&self) -> QueueTypes {
         self.queue_types
     }

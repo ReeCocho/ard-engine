@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 
 use crate::{
@@ -149,7 +149,7 @@ impl Factory {
             StagingResource::StaticMesh(id) => {
                 // Flag mesh as being ready for rendering and pending BLAS construction
                 if let Some(mesh) = static_meshes.get_mut(id) {
-                    mesh.ready = true;
+                    mesh.mesh_ready = true;
                     pending_blas.append(id, mesh.blas_scratch.take().unwrap());
                 }
             }
@@ -168,7 +168,10 @@ impl Factory {
         // Swap out BLAS' that are fully ready
         for blas in pending_blas.to_swap(frame) {
             if let Some(mesh) = static_meshes.get_mut(blas.mesh_id) {
+                mesh.blas_ref
+                    .store(blas.new_blas.device_ref(), Ordering::Relaxed);
                 mesh.blas = blas.new_blas;
+                mesh.blas_ready = true;
             }
         }
 
@@ -301,6 +304,7 @@ impl FactoryInner {
 
         // Create the resource handle
         let layout = mesh.block.layout();
+        let blas_ref = mesh.blas_ref.clone();
         let handle = static_meshes.insert(mesh);
 
         // Upload info
@@ -312,7 +316,7 @@ impl FactoryInner {
             upload,
         });
 
-        Ok(Mesh::new(handle, layout))
+        Ok(Mesh::new(handle, layout, blas_ref))
     }
 
     fn create_texture<T: TextureSource>(

@@ -1,5 +1,5 @@
 use api::{
-    acceleration_structure::BottomLevelAccelerationStructure,
+    blas::BottomLevelAccelerationStructure,
     buffer::Buffer,
     command_buffer::{
         BlitDestination, BlitSource, BufferCubeMapCopy, BufferTextureCopy, Command,
@@ -12,6 +12,7 @@ use api::{
         ColorAttachmentDestination, DepthStencilAttachmentDestination, RenderPassDescriptor,
     },
     texture::{Blit, Texture},
+    tlas::TopLevelAccelerationStructure,
     types::{BufferUsage, CubeFace, LoadOp, QueueType, SharingMode, StoreOp, TextureUsage},
 };
 use arrayvec::ArrayVec;
@@ -355,6 +356,25 @@ impl CommandSorting {
                 scratch_array_element,
             } => {
                 self.inspect_blas_build(info, command_idx, blas, scratch, *scratch_array_element);
+                command_idx + 1
+            }
+            Command::BuildTlas {
+                tlas,
+                scratch,
+                scratch_array_element,
+                src,
+                src_array_element,
+                ..
+            } => {
+                self.inspect_tlas_build(
+                    info,
+                    command_idx,
+                    tlas,
+                    scratch,
+                    *scratch_array_element,
+                    src,
+                    *src_array_element,
+                );
                 command_idx + 1
             }
             Command::WriteBlasCompactSize(blas) => {
@@ -2164,6 +2184,149 @@ impl CommandSorting {
                     (info.queue, info.timeline_value),
                 );
             },
+        );
+
+        // Inspect the scratch buffer
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                    | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: scratch.internal().id,
+                array_elem: scratch_array_element as u32,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            scratch.internal().buffer,
+            scratch.internal().sharing_mode,
+            scratch.internal().aligned_size,
+            scratch.internal().offset(scratch_array_element),
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+    }
+
+    fn inspect_tlas_build(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        tlas: &TopLevelAccelerationStructure<crate::VulkanBackend>,
+        scratch: &Buffer<crate::VulkanBackend>,
+        scratch_array_element: usize,
+        src: &Buffer<crate::VulkanBackend>,
+        src_array_element: usize,
+    ) {
+        // Inspect the BLAS' internal buffer
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: tlas.internal().id,
+                array_elem: 0,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            tlas.internal().buffer,
+            tlas.internal().sharing_mode,
+            tlas.internal().buffer_size,
+            0,
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
+        );
+
+        // Wait on BLAS build if requested
+        // TODO: Make optional :^)
+        self.memory_barriers.push(MemoryBarrier {
+            src_stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            src_access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+            dst_stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            dst_access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+        });
+
+        // Inspect source buffer
+        let new_dst_usage = GlobalBufferUsage {
+            queue: Some(QueueUsage {
+                queue: info.queue,
+                timeline_value: info.timeline_value,
+                command_idx,
+                is_async: info.is_async,
+            }),
+            sub_resource: SubResourceUsage {
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR,
+                stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            },
+        };
+
+        let old_dst_usage = info.global.use_buffer(
+            &BufferRegion {
+                id: src.internal().id,
+                array_elem: src_array_element as u32,
+            },
+            &new_dst_usage,
+        );
+
+        self.buffer_barrier_check(
+            info.queue_families,
+            info.queue_families.to_index(info.queue),
+            &old_dst_usage,
+            &new_dst_usage,
+            src.internal().buffer,
+            src.internal().sharing_mode,
+            src.internal().aligned_size,
+            src.internal().offset(src_array_element),
+        );
+
+        self.dependency_check(
+            old_dst_usage.queue.as_ref(),
+            command_idx,
+            &mut info.wait_queues,
+            (info.queue, info.timeline_value),
         );
 
         // Inspect the scratch buffer

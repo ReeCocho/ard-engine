@@ -45,6 +45,11 @@ impl<W: Write> GlslStructCodeGen<W> {
         writeln!(code_gen.writer, "#include \"ard_consts.glsl\"\n").unwrap();
         writeln!(code_gen.writer, "#ifndef _TYPES_GLSL").unwrap();
         writeln!(code_gen.writer, "#define _TYPES_GLSL\n").unwrap();
+        writeln!(
+            code_gen.writer,
+            "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\n"
+        )
+        .unwrap();
 
         code_gen
     }
@@ -55,7 +60,7 @@ impl<W: Write> GlslStructCodeGen<W> {
             GpuStructFieldType::U32 | GpuStructFieldType::USize => "uint".into(),
             GpuStructFieldType::I32 => "int".into(),
             GpuStructFieldType::U16 => "uint16_t".into(),
-            GpuStructFieldType::U64 => "uint".into(),
+            GpuStructFieldType::U64 => "uint64_t".into(),
             GpuStructFieldType::F32 => "float".into(),
             GpuStructFieldType::Bool => "uint".into(),
             GpuStructFieldType::UVec2 => "uvec2".into(),

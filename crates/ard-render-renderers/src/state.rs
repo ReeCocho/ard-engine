@@ -47,7 +47,7 @@ impl RenderStateTracker {
         };
 
         // Skip if the mesh is not ready
-        if !mesh.ready {
+        if !mesh.mesh_ready {
             delta.skip = true;
             return delta;
         }

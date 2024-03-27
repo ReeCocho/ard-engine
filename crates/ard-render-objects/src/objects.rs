@@ -10,8 +10,9 @@ use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, BufferWriteView, Context, MemoryUsage, QueueTypes,
     SharingMode,
 };
+use ard_render_base::resource::{ResourceAllocator, ResourceId};
 use ard_render_material::material_instance::MaterialInstance;
-use ard_render_meshes::mesh::Mesh;
+use ard_render_meshes::mesh::{Mesh, MeshResource};
 use rustc_hash::FxHashMap;
 
 use crate::{keys::DrawKey, Model, RenderFlags, RenderingMode};
@@ -41,6 +42,7 @@ pub struct RenderObjects {
 /// An object set represents a logical group of objects, with a list for each rendering mode.
 pub struct ObjectSet {
     pub data: Vec<GpuObjectData>,
+    pub missing_blas: Vec<usize>,
     pub block: BuddyBlock,
     pub opaque: ObjectList<OpaqueObjectIndex>,
     pub alpha_cutout: ObjectList<AlphaCutoutObjectIndex>,
@@ -89,7 +91,7 @@ impl RenderObjects {
                         * BASE_BLOCK_COUNT
                         * std::mem::size_of::<GpuObjectData>()) as u64,
                     array_elements: 1,
-                    buffer_usage: BufferUsage::STORAGE_BUFFER,
+                    buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::DEVICE_ADDRESS,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
                     sharing_mode: SharingMode::Concurrent,
@@ -142,6 +144,7 @@ impl RenderObjects {
         self.any_dirty_static
     }
 
+    // Takes objects from the primary ECS and converts them to the format used by the renderer.
     pub fn upload_objects<'a>(
         &mut self,
         static_objs: impl ExactSizeIterator<
@@ -265,6 +268,18 @@ impl RenderObjects {
             .flush_to_buffer(&mut view, &mut self.alloc, &mut self.buffer_expanded);
     }
 
+    // Looks to see if any objects that were flagged as missing a BLAS can have the BLAS set.
+    pub fn check_for_blas<const FIF: usize>(
+        &mut self,
+        meshes: &ResourceAllocator<MeshResource, FIF>,
+    ) {
+        let mut view = self.object_data.write(0).unwrap();
+        self.dynamic_objects.check_for_blas(&mut view, meshes);
+        self.static_objects
+            .values_mut()
+            .for_each(|set| set.check_for_blas(&mut view, meshes));
+    }
+
     #[inline(always)]
     pub fn static_objects(&self) -> &FxHashMap<StaticObjectGroup, ObjectSet> {
         &self.static_objects
@@ -289,16 +304,30 @@ impl RenderObjects {
     ) {
         let (mesh, mat, mdl, mode, flags) = query;
 
+        let blas = mesh.blas();
+
         // Write the object ID and data to the appropriate list based on the rendering mode
         let data = GpuObjectData {
+            // VkAccelerationStructureInstanceKHR
             model: [mdl.0.row(0), mdl.0.row(1), mdl.0.row(2)],
+            // The object ID is written to the instance field later.
+            instance_mask: (0xFF << 24),
+            // TODO: Put in SBT offset when that's added.
+            shader_flags: 0,
+            blas,
+            // Our stuff
             normal: mdl.0.inverse().transpose(),
             entity_id: entity.id(),
-            entity_ver: entity.ver(),
             mesh: usize::from(mesh.id()) as u32,
             material: mat.data_slot().map(|slot| slot.into()).unwrap_or_default(),
             textures: mat.tex_slot().map(|slot| slot.into()).unwrap_or_default(),
         };
+
+        // If the mesh being used is missing it's final BLAS, we mark the entity for a later update
+        // when the BLAS is ready.
+        if blas == 0 {
+            set.missing_blas.push(set.data.len());
+        }
 
         match *mode {
             RenderingMode::Opaque => {
@@ -339,6 +368,7 @@ impl ObjectSet {
         Self {
             block,
             data: Vec::default(),
+            missing_blas: Vec::default(),
             opaque: ObjectList::default(),
             alpha_cutout: ObjectList::default(),
             transparent: ObjectList::default(),
@@ -348,6 +378,7 @@ impl ObjectSet {
     #[inline]
     pub fn clear(&mut self) {
         self.data.clear();
+        self.missing_blas.clear();
         self.opaque.clear();
         self.alpha_cutout.clear();
         self.transparent.clear();
@@ -419,9 +450,43 @@ impl ObjectSet {
         }
 
         // Write in all object data into the view
-        self.data
-            .iter()
-            .enumerate()
-            .for_each(|(i, data)| view.set_as_array(*data, self.block.base() as usize + i));
+        self.data.iter_mut().enumerate().for_each(|(i, data)| {
+            let object_id = self.block.base() + i as u32;
+            data.instance_mask |= object_id & 0xFFFFFF;
+            view.set_as_array(*data, object_id as usize);
+        });
+    }
+
+    pub fn check_for_blas<const FIF: usize>(
+        &mut self,
+        view: &mut BufferWriteView,
+        meshes: &ResourceAllocator<MeshResource, FIF>,
+    ) {
+        if self.missing_blas.is_empty() {
+            return;
+        }
+
+        // Loop backwards over the list and swap elements from the rear into spots that
+        // are removed (this is fine since the ordering doesn't matter).
+        let mut i = self.missing_blas.len() - 1;
+        loop {
+            // Get the object and the mesh we are checking
+            let idx = self.missing_blas[i];
+            let data = &mut self.data[idx];
+            let mesh = meshes.get(ResourceId::from(data.mesh as usize)).unwrap();
+
+            // If the BLAS is ready now, write it in and remove this element from the pending list
+            if mesh.blas_ready {
+                data.blas = mesh.blas.device_ref();
+                view.set_as_array(*data, (data.instance_mask & 0xFFFF) as usize);
+                self.missing_blas.swap_remove(i);
+            }
+
+            if i == 0 {
+                break;
+            } else {
+                i -= 1;
+            }
+        }
     }
 }

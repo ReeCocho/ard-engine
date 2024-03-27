@@ -94,13 +94,18 @@ pub mod prelude {
         DescriptorType,
     };
 
-    // Acceleration structure
+    // BLAS
     pub type BottomLevelAccelerationStructure =
-        api::acceleration_structure::BottomLevelAccelerationStructure<crate::Backend>;
+        api::blas::BottomLevelAccelerationStructure<crate::Backend>;
     pub type AccelerationStructureGeometry<'a> =
-        api::acceleration_structure::AccelerationStructureGeometry<'a, crate::Backend>;
+        api::blas::AccelerationStructureGeometry<'a, crate::Backend>;
     pub type BottomLevelAccelerationStructureCreateInfo<'a> =
-        api::acceleration_structure::BottomLevelAccelerationStructureCreateInfo<'a, crate::Backend>;
+        api::blas::BottomLevelAccelerationStructureCreateInfo<'a, crate::Backend>;
     pub type BottomLevelAccelerationStructureData<'a> =
-        api::acceleration_structure::BottomLevelAccelerationStructureData<'a, crate::Backend>;
+        api::blas::BottomLevelAccelerationStructureData<'a, crate::Backend>;
+
+    // TLAS
+    pub use api::tlas::TopLevelAccelerationStructureCreateInfo;
+    pub type TopLevelAccelerationStructure =
+        api::tlas::TopLevelAccelerationStructure<crate::Backend>;
 }

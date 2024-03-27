@@ -1,5 +1,5 @@
 use crate::{
-    acceleration_structure::BottomLevelAccelerationStructure,
+    blas::BottomLevelAccelerationStructure,
     buffer::Buffer,
     compute_pass::{ComputePass, ComputePassDispatch},
     compute_pipeline::ComputePipeline,
@@ -9,6 +9,7 @@ use crate::{
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
     surface::SurfaceImage,
     texture::{Blit, Texture},
+    tlas::TopLevelAccelerationStructure,
     types::{
         BufferUsage, BuildAccelerationStructureFlags, CubeFace, Filter, IndexType, QueueType,
         Scissor, ShaderStage, SharingMode, TextureUsage,
@@ -241,6 +242,14 @@ pub enum Command<'a, B: Backend> {
         blas: &'a BottomLevelAccelerationStructure<B>,
         scratch: &'a Buffer<B>,
         scratch_array_element: usize,
+    },
+    BuildTlas {
+        tlas: &'a TopLevelAccelerationStructure<B>,
+        instance_count: usize,
+        scratch: &'a Buffer<B>,
+        scratch_array_element: usize,
+        src: &'a Buffer<B>,
+        src_array_element: usize,
     },
     WriteBlasCompactSize(&'a BottomLevelAccelerationStructure<B>),
     CompactBlas {
@@ -648,7 +657,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
     }
 
     #[inline(always)]
-    pub fn build_acceleration_structure(
+    pub fn build_bottom_level_acceleration_structure(
         &mut self,
         acceleration_structure: &'a BottomLevelAccelerationStructure<B>,
         scratch_buffer: &'a Buffer<B>,
@@ -672,6 +681,31 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
             self.commands
                 .push(Command::WriteBlasCompactSize(acceleration_structure));
         }
+    }
+
+    #[inline(always)]
+    pub fn build_top_level_acceleration_structure(
+        &mut self,
+        acceleration_structure: &'a TopLevelAccelerationStructure<B>,
+        instance_count: usize,
+        scratch_buffer: &'a Buffer<B>,
+        scratch_buffer_array_element: usize,
+        src_buffer: &'a Buffer<B>,
+        src_buffer_array_element: usize,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
+            "queue `{:?}` does not support compute commands",
+            self.queue_ty
+        );
+        self.commands.push(Command::BuildTlas {
+            tlas: acceleration_structure,
+            instance_count,
+            scratch: scratch_buffer,
+            scratch_array_element: scratch_buffer_array_element,
+            src: src_buffer,
+            src_array_element: src_buffer_array_element,
+        });
     }
 
     #[inline(always)]

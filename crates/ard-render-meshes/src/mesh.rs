@@ -1,4 +1,10 @@
-use std::ops::DerefMut;
+use std::{
+    ops::DerefMut,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use ard_ecs::prelude::Component;
 use ard_formats::{
@@ -34,6 +40,7 @@ pub enum MeshCreateError {
 #[derive(Clone, Component)]
 pub struct Mesh {
     layout: VertexLayout,
+    blas: Arc<AtomicU64>,
     handle: ResourceHandle,
 }
 
@@ -44,14 +51,20 @@ pub struct MeshResource {
     pub vertex_count: usize,
     pub meshlet_count: usize,
     pub blas: BottomLevelAccelerationStructure,
+    pub blas_ref: Arc<AtomicU64>,
     pub blas_scratch: Option<Box<Buffer>>,
     /// Indicates tht the mesh has been uploaded to the GPU and is ready to be rendered.
-    pub ready: bool,
+    pub mesh_ready: bool,
+    pub blas_ready: bool,
 }
 
 impl Mesh {
-    pub fn new(handle: ResourceHandle, layout: VertexLayout) -> Self {
-        Mesh { layout, handle }
+    pub fn new(handle: ResourceHandle, layout: VertexLayout, blas: Arc<AtomicU64>) -> Self {
+        Mesh {
+            layout,
+            handle,
+            blas,
+        }
     }
 
     #[inline(always)]
@@ -62,6 +75,11 @@ impl Mesh {
     #[inline(always)]
     pub fn id(&self) -> ResourceId {
         self.handle.id()
+    }
+
+    #[inline(always)]
+    pub fn blas(&self) -> u64 {
+        self.blas.load(Ordering::Relaxed)
     }
 }
 
@@ -145,8 +163,10 @@ impl MeshResource {
                 meshlet_count: data.meshlet_count(),
                 bounds,
                 blas,
+                blas_ref: Arc::new(AtomicU64::new(0)),
                 blas_scratch: Some(scratch),
-                ready: false,
+                mesh_ready: false,
+                blas_ready: false,
             },
             MeshUpload {
                 vertex_staging,

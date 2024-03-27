@@ -92,15 +92,20 @@
     // Per instance object data.
     (
         name: "ObjectData",
-        no_mangle: false,
+        no_mangle: true,
         fields: [
-            (name: "model", ty: Mat3x4),     // Object instance model matrix
-            (name: "normal", ty: Mat4),      // inv(transpose(model))
-            (name: "mesh", ty: U32),         // Mesh ID
-            (name: "material", ty: U32),     // Material ID for properties lookup
-            (name: "textures", ty: U32),     // Texture table ID
-            (name: "entity_id", ty: U32),    // ECS entity ID
-            (name: "entity_ver", ty: U32),   // ECS entity version
+            // NOTE: The beginning of this structure must line up with
+            // VkAccelerationStructureInstanceKHR for raytracing.
+            (name: "model", ty: Mat3x4),        // Object instance model matrix
+            (name: "instance_mask", ty: U32),   // 24-bits for custom idx. 8 for mask.
+            (name: "shader_flags", ty: U32),    // 24-bits for shader binding table ofset. 8 for flags.
+            (name: "blas", ty: U64),
+            // Everything past here is up for us to decide.
+            (name: "normal", ty: Mat4),         // inv(transpose(model))
+            (name: "mesh", ty: U32),            // Mesh ID
+            (name: "material", ty: U32),        // Material ID for properties lookup
+            (name: "textures", ty: U32),        // Texture table ID
+            (name: "entity_id", ty: U32),       // ECS entity ID
         ]
     ),
     // Indirect indexed draw call.

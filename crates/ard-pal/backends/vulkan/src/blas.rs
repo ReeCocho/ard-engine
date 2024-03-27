@@ -1,7 +1,7 @@
 use std::{ffi::CString, mem::ManuallyDrop, sync::Mutex};
 
 use api::{
-    acceleration_structure::{
+    blas::{
         BottomLevelAccelerationStructureCreateError, BottomLevelAccelerationStructureCreateInfo,
         BottomLevelAccelerationStructureData,
     },
