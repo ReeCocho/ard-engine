@@ -1,0 +1,42 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_ray_tracing : enable
+
+#define ARD_SET_CAMERA 0
+#define ARD_SET_RT_TEST 1
+
+#include "ard_bindings.glsl"
+
+layout(location = 0) rayPayloadEXT vec3 hitValue;
+
+void main() {
+	const vec2 pixel_center = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	const vec2 in_uv = pixel_center / vec2(gl_LaunchSizeEXT.xy);
+	const vec2 d = in_uv * 2.0 - 1.0;
+
+    const vec3 center = camera[0].position.xyz;
+    vec4 pos = camera[0].projection_inv * vec4(d, 0.0, 1.0);
+    vec4 dir = camera[0].view_inv * vec4(normalize(pos.xyz), 0.0);
+
+    float tmin = 0.001;
+	float tmax = 10000.0;
+    hitValue = vec3(0.0);
+
+    traceRayEXT(
+        tlas, 
+        gl_RayFlagsOpaqueEXT, 
+        0xff, 
+        0, 
+        0, 
+        0, 
+        center.xyz, 
+        tmin, 
+        dir.xyz, 
+        tmax, 
+        0
+    );
+
+	imageStore(out_tex, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 1.0));
+}

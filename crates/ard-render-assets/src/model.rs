@@ -9,9 +9,10 @@ use ard_formats::{
 };
 use ard_math::Mat4;
 use ard_render::factory::Factory;
+use ard_render_base::RenderingMode;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::{Mesh, MeshCreateInfo};
-use ard_render_objects::{Model, RenderFlags, RenderingMode};
+use ard_render_objects::{Model, RenderFlags};
 use ard_render_pbr::{
     PbrMaterialData, PBR_MATERIAL_DIFFUSE_SLOT, PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT,
     PBR_MATERIAL_NORMAL_SLOT,

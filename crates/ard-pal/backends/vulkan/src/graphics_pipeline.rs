@@ -24,7 +24,11 @@ impl GraphicsPipeline {
             [vk::PushConstantRange {
                 stage_flags: vk::ShaderStageFlags::ALL_GRAPHICS
                     | vk::ShaderStageFlags::MESH_EXT
-                    | vk::ShaderStageFlags::TASK_EXT,
+                    | vk::ShaderStageFlags::TASK_EXT
+                    | vk::ShaderStageFlags::RAYGEN_KHR
+                    | vk::ShaderStageFlags::MISS_KHR
+                    | vk::ShaderStageFlags::ANY_HIT_KHR
+                    | vk::ShaderStageFlags::CLOSEST_HIT_KHR,
                 offset: 0,
                 size,
             }]

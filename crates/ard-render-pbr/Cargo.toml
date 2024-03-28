@@ -10,6 +10,7 @@ ard-formats = { path = "../ard-formats" }
 ard-render-renderers = { path = "../ard-render-renderers" }
 ard-render-material = { path = "../ard-render-material" }
 ard-render-si = { path = "../ard-render-si" }
+ard-render-base = { path = "../ard-render-base" }
 bytemuck.workspace = true
 
 [build-dependencies]

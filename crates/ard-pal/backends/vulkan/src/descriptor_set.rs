@@ -93,6 +93,13 @@ pub(crate) enum BoundValue {
         mip_count: u32,
         array_element: usize,
     },
+    Tlas {
+        _ref_counter: BufferRefCounter,
+        buffer: vk::Buffer,
+        id: ResourceId,
+        sharing_mode: SharingMode,
+        aligned_size: usize,
+    },
 }
 
 impl DescriptorSetLayout {
@@ -176,6 +183,7 @@ impl DescriptorSet {
         let mut writes = Vec::with_capacity(updates.len());
         let mut buffers = Vec::with_capacity(updates.len());
         let mut images = Vec::with_capacity(updates.len());
+        let mut tlas_writes = Vec::with_capacity(updates.len());
 
         for update in updates {
             // Deal with the old value
@@ -217,6 +225,9 @@ impl DescriptorSet {
                         }
                     },
                     DescriptorType::CubeMap => vk::AccessFlags2::SHADER_READ,
+                    DescriptorType::TopLevelAccelerationStructure => {
+                        vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                    }
                 };
                 let stage = match binding.stage {
                     ShaderStage::Vertex => vk::PipelineStageFlags2::VERTEX_SHADER,
@@ -230,13 +241,20 @@ impl DescriptorSet {
                             | vk::PipelineStageFlags2::COMPUTE_SHADER
                             | vk::PipelineStageFlags2::MESH_SHADER_EXT
                             | vk::PipelineStageFlags2::TASK_SHADER_EXT
+                            | vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR
                     }
                     ShaderStage::AllGraphics => {
                         vk::PipelineStageFlags2::VERTEX_SHADER
                             | vk::PipelineStageFlags2::FRAGMENT_SHADER
                             | vk::PipelineStageFlags2::MESH_SHADER_EXT
                             | vk::PipelineStageFlags2::TASK_SHADER_EXT
+                            | vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR
                     }
+                    ShaderStage::RayTracing => vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    ShaderStage::RayGeneration => vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    ShaderStage::RayMiss => vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    ShaderStage::RayClosestHit => vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    ShaderStage::RayAnyHit => vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
                 };
 
                 match &update.value {
@@ -507,6 +525,38 @@ impl DescriptorSet {
                                 mip_count: *mip_count as u32,
                                 base_mip: *base_mip as u32,
                                 array_element: *array_element,
+                            },
+                        }
+                    }
+                    DescriptorValue::TopLevelAccelerationStructure(tlas) => {
+                        tlas_writes.push(
+                            vk::WriteDescriptorSetAccelerationStructureKHR::builder()
+                                .acceleration_structures(std::slice::from_ref(
+                                    &tlas.internal().acceleration_struct,
+                                )),
+                        );
+                        let idx = tlas_writes.len() - 1;
+
+                        writes.push({
+                            let mut write = vk::WriteDescriptorSet::builder()
+                                .push_next(&mut tlas_writes[idx])
+                                .dst_set(self.set)
+                                .dst_binding(update.binding)
+                                .dst_array_element(update.array_element as u32)
+                                .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR);
+                            write.descriptor_count = 1;
+                            write.build()
+                        });
+
+                        Binding {
+                            access,
+                            stage,
+                            value: BoundValue::Tlas {
+                                _ref_counter: tlas.internal().ref_counter.clone(),
+                                buffer: tlas.internal().buffer,
+                                id: tlas.internal().id,
+                                sharing_mode: tlas.sharing_mode(),
+                                aligned_size: tlas.internal().buffer_size as usize,
                             },
                         }
                     }

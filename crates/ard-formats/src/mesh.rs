@@ -329,4 +329,10 @@ impl ObjectBounds {
             max_pt: Vec4::from((max.xyz(), 0.0)),
         }
     }
+
+    #[inline(always)]
+    pub fn bounding_sphere(&self) -> Vec4 {
+        let center = (self.max_pt.xyz() + self.min_pt.xyz()) * 0.5;
+        Vec4::from((center, (self.max_pt.xyz() - center).length()))
+    }
 }

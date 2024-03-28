@@ -4,6 +4,7 @@ pub mod highz;
 pub mod ids;
 pub mod passes;
 pub mod raytrace;
+pub mod reflections;
 pub mod scene;
 pub mod shadow;
 pub mod state;

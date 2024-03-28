@@ -6,15 +6,16 @@ use ard_pal::prelude::{
     CullMode, DepthStencilState, FrontFace, GraphicsProperties, PolygonMode, RasterizationState,
     ShaderStage,
 };
+use ard_render_base::RenderingMode;
 use ard_render_material::{
     factory::PassId,
-    material::{Material, MaterialCreateInfo, MaterialVariantDescriptor},
+    material::{Material, MaterialCreateInfo, MaterialVariantDescriptor, RtVariantDescriptor},
     material_instance::TextureSlot,
     shader::{Shader, ShaderCreateInfo},
 };
 use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
-    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
+    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, RT_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
     SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 use ard_render_si::{consts::*, types::GpuPbrMaterial};
@@ -38,6 +39,7 @@ pub fn create_pbr_material(
         pass: PassId,
         vertex_layout: VertexLayout,
         stage: ShaderStage,
+        rendering_mode: RenderingMode,
     }
 
     #[derive(Clone)]
@@ -56,6 +58,7 @@ pub fn create_pbr_material(
             pass: HIGH_Z_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.high_z.spv")),
     );
@@ -64,6 +67,7 @@ pub fn create_pbr_material(
             pass: HIGH_Z_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.high_z.spv")),
     );
@@ -74,6 +78,7 @@ pub fn create_pbr_material(
             pass: SHADOW_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow.spv")),
     );
@@ -82,6 +87,7 @@ pub fn create_pbr_material(
             pass: SHADOW_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow.spv")),
     );
@@ -91,6 +97,7 @@ pub fn create_pbr_material(
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow_ac.spv")),
     );
@@ -99,6 +106,7 @@ pub fn create_pbr_material(
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow_ac.spv")),
     );
@@ -108,6 +116,7 @@ pub fn create_pbr_material(
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.shadow_ac.uv0.spv")),
     );
@@ -116,6 +125,7 @@ pub fn create_pbr_material(
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.shadow_ac.uv0.spv")),
     );
@@ -124,6 +134,7 @@ pub fn create_pbr_material(
             pass: SHADOW_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.shadow_ac.uv0.spv")),
     );
@@ -134,6 +145,7 @@ pub fn create_pbr_material(
             pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.depth_prepass.spv")),
     );
@@ -142,6 +154,7 @@ pub fn create_pbr_material(
             pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass.spv")),
     );
@@ -151,6 +164,7 @@ pub fn create_pbr_material(
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.depth_prepass_ac.spv")),
     );
@@ -159,6 +173,7 @@ pub fn create_pbr_material(
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass_ac.spv")),
     );
@@ -168,6 +183,7 @@ pub fn create_pbr_material(
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -179,6 +195,7 @@ pub fn create_pbr_material(
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -190,6 +207,7 @@ pub fn create_pbr_material(
             pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -203,6 +221,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.spv")),
     );
@@ -211,6 +230,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.spv")),
     );
@@ -219,6 +239,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color.spv")),
     );
@@ -228,6 +249,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.uv0.spv")),
     );
@@ -236,6 +258,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.uv0.spv")),
     );
@@ -244,6 +267,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color.uv0.spv")),
     );
@@ -253,6 +277,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color.tuv0.spv")),
     );
@@ -261,6 +286,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color.tuv0.spv")),
     );
@@ -269,6 +295,7 @@ pub fn create_pbr_material(
             pass: COLOR_OPAQUE_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color.tuv0.spv")),
     );
@@ -278,6 +305,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.spv")),
     );
@@ -286,6 +314,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.spv")),
     );
@@ -294,6 +323,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color_ac.spv")),
     );
@@ -303,6 +333,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.uv0.spv")),
     );
@@ -311,6 +342,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.uv0.spv")),
     );
@@ -319,6 +351,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color_ac.uv0.spv")),
     );
@@ -328,6 +361,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.color_ac.tuv0.spv")),
     );
@@ -336,6 +370,7 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.color_ac.tuv0.spv")),
     );
@@ -344,6 +379,17 @@ pub fn create_pbr_material(
             pass: COLOR_ALPHA_CUTOFF_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color_ac.tuv0.spv")),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: COLOR_ALPHA_CUTOFF_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.color_ac.tuv0.spv")),
     );
@@ -354,6 +400,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.spv")),
     );
@@ -362,6 +409,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.spv")),
     );
@@ -370,6 +418,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.transparent.spv")),
     );
@@ -379,6 +428,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.uv0.spv")),
     );
@@ -387,6 +437,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.uv0.spv")),
     );
@@ -395,6 +446,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.transparent.uv0.spv")),
     );
@@ -404,6 +456,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.transparent.tuv0.spv")),
     );
@@ -412,6 +465,7 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.transparent.tuv0.spv")),
     );
@@ -420,8 +474,40 @@ pub fn create_pbr_material(
             pass: TRANSPARENT_PASS_ID,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Transparent,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.transparent.tuv0.spv")),
+    );
+
+    // Ray tracing
+    variant_code.insert(
+        ShaderVariant {
+            pass: RT_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: RT_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Transparent,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: RT_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
     );
 
     // Compile variants
@@ -445,6 +531,7 @@ pub fn create_pbr_material(
                     ShaderStage::Task => "pbr_task".into(),
                     ShaderStage::Mesh => "pbr_mesh".into(),
                     ShaderStage::Fragment => "pbr_frag".into(),
+                    ShaderStage::RayClosestHit => "pbr_rchit".into(),
                     _ => String::default(),
                 }),
                 texture_slots: PBR_MATERIAL_TEXTURE_COUNT,
@@ -585,10 +672,7 @@ pub fn create_pbr_material(
             color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     blend: false,
-                    write_mask: ColorComponents::R
-                        | ColorComponents::G
-                        | ColorComponents::B
-                        | ColorComponents::A,
+                    write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                     ..Default::default()
                 }],
             },
@@ -615,10 +699,7 @@ pub fn create_pbr_material(
             color_blend: ColorBlendState {
                 attachments: vec![ColorBlendAttachment {
                     blend: false,
-                    write_mask: ColorComponents::R
-                        | ColorComponents::G
-                        | ColorComponents::B
-                        | ColorComponents::A,
+                    write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                     ..Default::default()
                 }],
             },
@@ -663,12 +744,37 @@ pub fn create_pbr_material(
 
     // Construct variants
     let mut variants = Vec::default();
+    let mut rt_variants = Vec::default();
 
-    for (variant, tshader) in variant_shaders.iter() {
+    for (variant, ray_shader) in variant_shaders.iter() {
+        // If this is a ray tracing shader, create the variant
+        if variant.stage == ShaderStage::RayClosestHit || variant.stage == ShaderStage::RayAnyHit {
+            rt_variants.push(RtVariantDescriptor {
+                pass_id: variant.pass,
+                vertex_layout: VertexLayout::POSITION
+                    | VertexLayout::NORMAL
+                    | variant.vertex_layout,
+                rendering_mode: variant.rendering_mode,
+                shader: variant_shaders
+                    .get(&ShaderVariant {
+                        pass: variant.pass,
+                        vertex_layout: variant.vertex_layout,
+                        stage: variant.stage,
+                        rendering_mode: variant.rendering_mode,
+                    })
+                    .unwrap()
+                    .clone(),
+                stage: variant.stage,
+            });
+            continue;
+        }
+
         // Skip if this is not a task shader
         if variant.stage != ShaderStage::Task {
             continue;
         }
+
+        let tshader = ray_shader;
 
         // Get associated mesh shader
         let mshader = variant_shaders
@@ -676,6 +782,7 @@ pub fn create_pbr_material(
                 pass: variant.pass,
                 vertex_layout: variant.vertex_layout,
                 stage: ShaderStage::Mesh,
+                rendering_mode: variant.rendering_mode,
             })
             .unwrap();
 
@@ -685,6 +792,7 @@ pub fn create_pbr_material(
                 pass: variant.pass,
                 vertex_layout: variant.vertex_layout,
                 stage: ShaderStage::Fragment,
+                rendering_mode: variant.rendering_mode,
             })
             .map(|s| s.clone());
 
@@ -707,6 +815,7 @@ pub fn create_pbr_material(
     // Actual material creation info
     create_material(MaterialCreateInfo {
         variants,
+        rt_variants,
         data_size: std::mem::size_of::<GpuPbrMaterial>() as u32,
         texture_slots: PBR_MATERIAL_TEXTURE_COUNT as u32,
     })

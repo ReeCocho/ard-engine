@@ -11,6 +11,7 @@ use ard_render::{
     RendererSettings,
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
+use ard_render_base::RenderingMode;
 use ard_render_camera::{Camera, CameraClearColor};
 use ard_render_gui::{view::GuiView, Gui};
 use ard_render_image_effects::{
@@ -19,7 +20,7 @@ use ard_render_image_effects::{
 };
 use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
-use ard_render_objects::{Model, RenderFlags, RenderingMode};
+use ard_render_objects::{Model, RenderFlags};
 use ard_render_pbr::PbrMaterialData;
 use ard_window::prelude::*;
 use ard_winit::prelude::*;

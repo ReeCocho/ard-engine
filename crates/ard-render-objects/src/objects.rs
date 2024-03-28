@@ -5,17 +5,20 @@ use ard_core::{
 };
 use ard_ecs::prelude::Entity;
 use ard_log::info;
-use ard_math::Vec3A;
+use ard_math::{Vec3A, Vec4, Vec4Swizzles};
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, BufferWriteView, Context, MemoryUsage, QueueTypes,
     SharingMode,
 };
-use ard_render_base::resource::{ResourceAllocator, ResourceId};
+use ard_render_base::{
+    resource::{ResourceAllocator, ResourceId},
+    RenderingMode,
+};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::{Mesh, MeshResource};
 use rustc_hash::FxHashMap;
 
-use crate::{keys::DrawKey, Model, RenderFlags, RenderingMode};
+use crate::{keys::DrawKey, Model, RenderFlags};
 use ard_render_si::types::GpuObjectData;
 
 const BASE_BLOCK_COUNT: usize = 64;
@@ -44,9 +47,9 @@ pub struct ObjectSet {
     pub data: Vec<GpuObjectData>,
     pub missing_blas: Vec<usize>,
     pub block: BuddyBlock,
-    pub opaque: ObjectList<OpaqueObjectIndex>,
-    pub alpha_cutout: ObjectList<AlphaCutoutObjectIndex>,
-    pub transparent: ObjectList<TransparentObjectIndex>,
+    pub opaque: ObjectList<ObjectIndex>,
+    pub alpha_cutout: ObjectList<ObjectIndex>,
+    pub transparent: ObjectList<ObjectIndex>,
 }
 
 /// An object list is a sequence of object indices.
@@ -54,23 +57,11 @@ pub struct ObjectList<T> {
     pub indices: Vec<T>,
 }
 
-pub struct OpaqueObjectIndex {
+pub struct ObjectIndex {
     pub key: DrawKey,
     pub flags: RenderFlags,
     pub idx: u32,
-}
-
-pub struct AlphaCutoutObjectIndex {
-    pub key: DrawKey,
-    pub flags: RenderFlags,
-    pub idx: u32,
-}
-
-pub struct TransparentObjectIndex {
-    pub key: DrawKey,
-    pub flags: RenderFlags,
-    pub idx: u32,
-    pub position: Vec3A,
+    pub bounding_sphere: Vec4,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -303,8 +294,23 @@ impl RenderObjects {
         set: &mut ObjectSet,
     ) {
         let (mesh, mat, mdl, mode, flags) = query;
+        let mdl_inv = mdl.0.inverse();
 
+        // Transform the bounding sphere to be in world space
+        let mut bounding_sphere = mesh.bounding_sphere();
+        let new_center = mdl.0 * Vec4::from((bounding_sphere.xyz(), 1.0));
+        let new_radius = bounding_sphere.w * mdl.scale().max_element();
+        bounding_sphere = Vec4::from((new_center.xyz(), new_radius));
+
+        // Lookup BLAS (might not be ready yet, but 0 values are allowed by the spec).
         let blas = mesh.blas();
+
+        // Lookup SBT offset. Not sure if it's ok to provide an OOB index for invalid bindings.
+        let sbt = mat
+            .material()
+            .rt_variants()
+            .offset_of(mesh.layout(), *mode)
+            .unwrap();
 
         // Write the object ID and data to the appropriate list based on the rendering mode
         let data = GpuObjectData {
@@ -313,10 +319,10 @@ impl RenderObjects {
             // The object ID is written to the instance field later.
             instance_mask: (0xFF << 24),
             // TODO: Put in SBT offset when that's added.
-            shader_flags: 0,
+            shader_flags: sbt & 0xFFFFFF,
             blas,
             // Our stuff
-            normal: mdl.0.inverse().transpose(),
+            model_inv: [mdl_inv.row(0), mdl_inv.row(1), mdl_inv.row(2)],
             entity_id: entity.id(),
             mesh: usize::from(mesh.id()) as u32,
             material: mat.data_slot().map(|slot| slot.into()).unwrap_or_default(),
@@ -331,13 +337,13 @@ impl RenderObjects {
 
         match *mode {
             RenderingMode::Opaque => {
-                set.push_opaque(data, DrawKey::new(mat, mesh), *flags);
+                set.push_opaque(data, DrawKey::new(mat, mesh), *flags, bounding_sphere);
             }
             RenderingMode::AlphaCutout => {
-                set.push_alpha_cutout(data, DrawKey::new(mat, mesh), *flags);
+                set.push_alpha_cutout(data, DrawKey::new(mat, mesh), *flags, bounding_sphere);
             }
             RenderingMode::Transparent => {
-                set.push_transparent(data, DrawKey::new(mat, mesh), *flags, mdl.position());
+                set.push_transparent(data, DrawKey::new(mat, mesh), *flags, bounding_sphere);
             }
         };
     }
@@ -385,20 +391,34 @@ impl ObjectSet {
     }
 
     #[inline]
-    pub fn push_opaque(&mut self, data: GpuObjectData, key: DrawKey, flags: RenderFlags) {
-        self.opaque.indices.push(OpaqueObjectIndex {
+    pub fn push_opaque(
+        &mut self,
+        data: GpuObjectData,
+        key: DrawKey,
+        flags: RenderFlags,
+        bounding_sphere: Vec4,
+    ) {
+        self.opaque.indices.push(ObjectIndex {
             key,
             flags,
+            bounding_sphere,
             idx: self.data.len() as u32,
         });
         self.data.push(data);
     }
 
     #[inline]
-    pub fn push_alpha_cutout(&mut self, data: GpuObjectData, key: DrawKey, flags: RenderFlags) {
-        self.alpha_cutout.indices.push(AlphaCutoutObjectIndex {
+    pub fn push_alpha_cutout(
+        &mut self,
+        data: GpuObjectData,
+        key: DrawKey,
+        flags: RenderFlags,
+        bounding_sphere: Vec4,
+    ) {
+        self.alpha_cutout.indices.push(ObjectIndex {
             key,
             flags,
+            bounding_sphere,
             idx: self.data.len() as u32,
         });
         self.data.push(data);
@@ -410,12 +430,12 @@ impl ObjectSet {
         data: GpuObjectData,
         key: DrawKey,
         flags: RenderFlags,
-        position: Vec3A,
+        bounding_sphere: Vec4,
     ) {
-        self.transparent.indices.push(TransparentObjectIndex {
+        self.transparent.indices.push(ObjectIndex {
             key,
             flags,
-            position,
+            bounding_sphere,
             idx: self.data.len() as u32,
         });
         self.data.push(data);

@@ -6,6 +6,7 @@ use crate::ecs::Frame;
 
 pub struct ResourceAllocator<R, const FRAMES_IN_FLIGHT: usize> {
     max: usize,
+    ignore_drop: bool,
     resources: Vec<Option<R>>,
     free: Vec<ResourceId>,
     dropped: Receiver<ResourceId>,
@@ -33,7 +34,7 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
     ///
     /// `latency` is the number of calls to `drop_pending` must be performed before a resource
     /// is actually destroyed.
-    pub fn new(max: usize, latency: usize) -> Self {
+    pub fn new(max: usize, latency: usize, ignore_drop: bool) -> Self {
         let (on_drop, dropped) = crossbeam_channel::bounded(max);
         let resources = Vec::with_capacity(max);
 
@@ -42,6 +43,7 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
         Self {
             max,
             resources,
+            ignore_drop,
             free: Vec::default(),
             on_drop,
             dropped,
@@ -55,6 +57,10 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
         mut on_drop: impl FnMut(ResourceId, R),
         mut on_found: impl FnMut(ResourceId, &mut R),
     ) {
+        if self.ignore_drop {
+            return;
+        }
+
         let frame = usize::from(frame);
 
         // Drop everything that needs dropping now

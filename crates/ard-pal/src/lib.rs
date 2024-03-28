@@ -70,6 +70,16 @@ pub mod prelude {
     pub use api::compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
     pub type ComputePass<'a> = api::compute_pass::ComputePass<'a, crate::Backend>;
 
+    // Raytracing pipeline
+    pub type RayTracingPipeline = api::rt_pipeline::RayTracingPipeline<crate::Backend>;
+    pub type RayTracingPipelineCreateInfo =
+        api::rt_pipeline::RayTracingPipelineCreateInfo<crate::Backend>;
+    pub type RayTracingDispatch<'a> = api::rt_pass::RayTracingDispatch<'a, crate::Backend>;
+    pub use api::rt_pipeline::{
+        RayTracingPipelineCreateError, RayTracingShaderGroup, RayTracingShaderStage,
+        ShaderBindingTableData,
+    };
+
     // Buffer
     pub type Buffer = api::buffer::Buffer<crate::Backend>;
     pub type BufferReadView<'a> = api::buffer::BufferReadView<'a, crate::Backend>;

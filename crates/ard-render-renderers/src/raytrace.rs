@@ -1,4 +1,4 @@
-use ard_math::Vec3A;
+use ard_math::{Vec3A, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_meshes::mesh::MeshResource;
@@ -39,6 +39,11 @@ impl RaytracedRenderer {
         }
     }
 
+    #[inline(always)]
+    pub fn tlas(&self) -> &TopLevelAccelerationStructure {
+        &self.tlas
+    }
+
     pub fn upload<const FIF: usize>(
         &mut self,
         frame: Frame,
@@ -46,12 +51,37 @@ impl RaytracedRenderer {
         objects: &RenderObjects,
         meshes: &ResourceAllocator<MeshResource, FIF>,
     ) {
+        fn is_visible(bounding_sphere: Vec4, view_location: Vec3A) -> bool {
+            const EPSILON: f32 = 0.00001;
+
+            // TODO: Make this configurable
+            let ang_cutoff = (10.0_f32).to_radians().tan();
+
+            let d = (view_location - Vec3A::from(bounding_sphere.xyz())).length();
+            let r = bounding_sphere.w;
+
+            if d.abs() <= EPSILON {
+                return true;
+            }
+
+            let tan_theta = r / d;
+
+            tan_theta > ang_cutoff
+        }
+
         // Update the set
         RenderableSetUpdate::new(&mut self.set)
             .with_opaque()
             .with_alpha_cutout()
             .with_transparent()
-            .update(view_location, objects, meshes, |_| true, |_| true, |_| true);
+            .update(
+                view_location,
+                objects,
+                meshes,
+                |idx| is_visible(idx.bounding_sphere, view_location),
+                |idx| is_visible(idx.bounding_sphere, view_location),
+                |idx| is_visible(idx.bounding_sphere, view_location),
+            );
 
         // Resize if we're over capacity
         if self.set.ids().len() > self.capacity {
@@ -131,8 +161,7 @@ impl RaytracedRenderer {
         TopLevelAccelerationStructure::new(
             ctx.clone(),
             TopLevelAccelerationStructureCreateInfo {
-                flags: BuildAccelerationStructureFlags::PREFER_FAST_BUILD
-                    | BuildAccelerationStructureFlags::ALLOW_UPDATE,
+                flags: BuildAccelerationStructureFlags::PREFER_FAST_TRACE,
                 capacity: cap,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,

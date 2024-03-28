@@ -198,6 +198,14 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
                 )
                 .unwrap();
             }
+            GpuBindingData::Tlas(_) => {
+                write!(
+                    self.writer,
+                    "layout(set = {}, binding = {}) ",
+                    self.set_id_define, self.binding_idx
+                )
+                .unwrap();
+            }
         }
 
         // Write in body
@@ -297,6 +305,11 @@ impl<W: Write> DescriptorSetCodeGen for GlslSetsCodeGen<W> {
 
                 writeln!(self.writer, "image2D {field_name};\n").unwrap();
             }
+            GpuBindingData::Tlas(field_name) => writeln!(
+                self.writer,
+                "uniform accelerationStructureEXT {field_name};\n"
+            )
+            .unwrap(),
         }
 
         self.binding_idx += 1;

@@ -101,7 +101,7 @@
             (name: "shader_flags", ty: U32),    // 24-bits for shader binding table ofset. 8 for flags.
             (name: "blas", ty: U64),
             // Everything past here is up for us to decide.
-            (name: "normal", ty: Mat4),         // inv(transpose(model))
+            (name: "model_inv", ty: Mat3x4),    // inv(model). Transpose is the normal matrix.
             (name: "mesh", ty: U32),            // Mesh ID
             (name: "material", ty: U32),        // Material ID for properties lookup
             (name: "textures", ty: U32),        // Texture table ID

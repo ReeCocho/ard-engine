@@ -15,6 +15,8 @@ pub mod descriptor_set;
 pub mod graphics_pipeline;
 pub mod queue;
 pub mod render_pass;
+pub mod rt_pass;
+pub mod rt_pipeline;
 pub mod shader;
 pub mod surface;
 pub mod texture;
@@ -38,6 +40,9 @@ use descriptor_set::{
 use graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo};
 use queue::SurfacePresentFailure;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use rt_pipeline::{
+    RayTracingPipelineCreateError, RayTracingPipelineCreateInfo, ShaderBindingTableData,
+};
 use shader::{ShaderCreateError, ShaderCreateInfo};
 use surface::{
     SurfaceCapabilities, SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo,
@@ -61,6 +66,7 @@ pub trait Backend: Sized + 'static {
     type Shader;
     type GraphicsPipeline;
     type ComputePipeline;
+    type RayTracingPipeline;
     type DescriptorSetLayout;
     type DescriptorSet;
     type Job;
@@ -139,6 +145,10 @@ pub trait Backend: Sized + 'static {
         &self,
         create_info: ComputePipelineCreateInfo<Self>,
     ) -> Result<Self::ComputePipeline, ComputePipelineCreateError>;
+    unsafe fn create_ray_tracing_pipeline(
+        &self,
+        create_info: RayTracingPipelineCreateInfo<Self>,
+    ) -> Result<Self::RayTracingPipeline, RayTracingPipelineCreateError>;
     unsafe fn create_descriptor_set(
         &self,
         create_info: DescriptorSetCreateInfo<Self>,
@@ -163,6 +173,7 @@ pub trait Backend: Sized + 'static {
     unsafe fn destroy_shader(&self, id: &mut Self::Shader);
     unsafe fn destroy_graphics_pipeline(&self, id: &mut Self::GraphicsPipeline);
     unsafe fn destroy_compute_pipeline(&self, id: &mut Self::ComputePipeline);
+    unsafe fn destroy_ray_tracing_pipeline(&self, id: &mut Self::RayTracingPipeline);
     unsafe fn destroy_descriptor_set(&self, id: &mut Self::DescriptorSet);
     unsafe fn destroy_descriptor_set_layout(&self, id: &mut Self::DescriptorSetLayout);
     unsafe fn destroy_bottom_level_acceleration_structure(
@@ -200,6 +211,10 @@ pub trait Backend: Sized + 'static {
         &self,
         id: &Self::BottomLevelAccelerationStructure,
     ) -> BuildAccelerationStructureFlags;
+    unsafe fn shader_binding_table_data(
+        &self,
+        id: &Self::RayTracingPipeline,
+    ) -> ShaderBindingTableData;
 
     // Descriptor set
     unsafe fn update_descriptor_sets(

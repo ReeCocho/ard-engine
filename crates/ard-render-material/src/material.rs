@@ -1,17 +1,24 @@
-use std::sync::Mutex;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use ard_formats::vertex::VertexLayout;
 use ard_pal::prelude::{
     ColorBlendState, Context, DepthStencilState, GraphicsPipeline, GraphicsPipelineCreateError,
-    GraphicsPipelineCreateInfo, MeshShadingShader, RasterizationState, ShaderStages,
+    GraphicsPipelineCreateInfo, MeshShadingShader, RasterizationState, ShaderStage, ShaderStages,
     VertexInputState,
 };
-use ard_render_base::resource::{ResourceAllocator, ResourceHandle, ResourceId};
+use ard_render_base::{
+    resource::{ResourceAllocator, ResourceHandle, ResourceId},
+    RenderingMode,
+};
 use ard_render_si::types::*;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
+    binding_table::BindingTableOffset,
     factory::{MaterialFactory, PassId},
     shader::{Shader, ShaderResource},
 };
@@ -19,6 +26,7 @@ use crate::{
 pub struct MaterialCreateInfo {
     /// Variants of this material.
     pub variants: Vec<MaterialVariantDescriptor>,
+    pub rt_variants: Vec<RtVariantDescriptor>,
     /// The size of the properties data structure used for this material type.
     pub data_size: u32,
     /// The number of textures this material supports.
@@ -44,6 +52,21 @@ pub struct MaterialVariantDescriptor {
     pub color_blend: ColorBlendState,
     /// Helpful debugging name for this variant.
     pub debug_name: Option<String>,
+}
+
+pub struct RtMaterialVariants {
+    /// Maps from the vertex layout and rendering mode to the offset in the SBT.
+    offsets: BTreeMap<(VertexLayout, RenderingMode), u32>,
+    /// Maps from a given pass to another map from the SBT offset to the variant.
+    pass_to_variant: BTreeMap<PassId, BTreeMap<u32, RtMaterialVariant>>,
+}
+
+pub struct RtVariantDescriptor {
+    pub pass_id: PassId,
+    pub vertex_layout: VertexLayout,
+    pub rendering_mode: RenderingMode,
+    pub shader: Shader,
+    pub stage: ShaderStage,
 }
 
 #[derive(Debug, Error)]
@@ -76,6 +99,7 @@ pub struct Material {
     data_size: u32,
     texture_slots: u32,
     handle: ResourceHandle,
+    rt_variants: Arc<Mutex<RtMaterialVariants>>,
 }
 
 pub struct MaterialVariant {
@@ -89,9 +113,22 @@ pub struct MaterialVariant {
     pub vertex_layout: VertexLayout,
 }
 
+pub struct RtMaterialVariant {
+    pub shader: Shader,
+    pub stage: ShaderStage,
+}
+
 /// Requests a variant from a material.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MaterialVariantRequest {
+    /// The pass we want.
+    pub pass_id: PassId,
+    /// The vertex attributes we require.
+    pub vertex_layout: VertexLayout,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RtMaterialVariantRequest {
     /// The pass we want.
     pub pass_id: PassId,
     /// The vertex attributes we require.
@@ -103,16 +140,23 @@ pub struct MaterialResource {
     pub texture_slots: u32,
     /// Variants the material supports.
     pub variants: Vec<MaterialVariant>,
+    pub rt_variants: Arc<Mutex<RtMaterialVariants>>,
     /// Lookup table for pipelines based on their variant.
     pub variant_lookup: Mutex<FxHashMap<MaterialVariantRequest, usize>>,
 }
 
 impl Material {
-    pub fn new(handle: ResourceHandle, data_size: u32, texture_slots: u32) -> Material {
+    pub fn new(
+        handle: ResourceHandle,
+        data_size: u32,
+        texture_slots: u32,
+        rt_variants: Arc<Mutex<RtMaterialVariants>>,
+    ) -> Material {
         Material {
             handle,
             data_size,
             texture_slots,
+            rt_variants,
         }
     }
 
@@ -130,6 +174,11 @@ impl Material {
     pub fn texture_slots(&self) -> u32 {
         self.texture_slots
     }
+
+    #[inline(always)]
+    pub fn rt_variants(&self) -> MutexGuard<RtMaterialVariants> {
+        self.rt_variants.lock().unwrap()
+    }
 }
 
 impl MaterialResource {
@@ -137,6 +186,7 @@ impl MaterialResource {
         ctx: &Context,
         factory: &MaterialFactory<FRAMES_IN_FLIGHT>,
         shaders: &ResourceAllocator<ShaderResource, FRAMES_IN_FLIGHT>,
+        bt_offsets: &mut BindingTableOffset,
         create_info: MaterialCreateInfo,
     ) -> Result<Self, MaterialCreateError> {
         // Must have at least one variant
@@ -222,9 +272,13 @@ impl MaterialResource {
             }
         }
 
+        // TODO: RT variant verification.
+        let rt_variants = RtMaterialVariants::new(create_info.rt_variants, bt_offsets);
+
         // Create each variant
         let mut resource = MaterialResource {
             variants: Vec::with_capacity(create_info.variants.len()),
+            rt_variants: Arc::new(Mutex::new(rt_variants)),
             variant_lookup: Mutex::new(FxHashMap::default()),
             data_size: create_info.data_size,
             texture_slots: create_info.texture_slots,
@@ -332,6 +386,98 @@ impl MaterialResource {
     #[inline(always)]
     pub fn get_variant_by_id(&self, id: u32) -> Option<&MaterialVariant> {
         self.variants.get(id as usize)
+    }
+}
+
+impl RtMaterialVariants {
+    pub fn new(variants: Vec<RtVariantDescriptor>, bt_offsets: &mut BindingTableOffset) -> Self {
+        // Acquire a unique offset for each vertex layout/rendering mode pair
+        let mut offsets = BTreeMap::default();
+        variants.iter().for_each(|variant| {
+            let pair = (variant.vertex_layout, variant.rendering_mode);
+            offsets.entry(pair).or_insert_with(|| bt_offsets.register());
+        });
+
+        // Construct variants
+        let mut pass_to_variant = BTreeMap::<PassId, BTreeMap<u32, RtMaterialVariant>>::default();
+        for variant in variants {
+            let entry = pass_to_variant.entry(variant.pass_id).or_default();
+
+            // Get the offset for this variant
+            // NOTE: Safe to unwrap since we just constructed an offset for each unique pair
+            let pair = (variant.vertex_layout, variant.rendering_mode);
+            let offset = *offsets.get(&pair).unwrap();
+
+            // Construct the variant
+            entry.insert(
+                offset,
+                RtMaterialVariant {
+                    shader: variant.shader,
+                    stage: variant.stage,
+                },
+            );
+        }
+
+        Self {
+            offsets,
+            pass_to_variant,
+        }
+    }
+
+    // Get the variants for a given pass.
+    #[inline(always)]
+    pub fn variants_of(&self, pass_id: PassId) -> &BTreeMap<u32, RtMaterialVariant> {
+        self.pass_to_variant.get(&pass_id).unwrap()
+    }
+
+    // Get the offset for the given vertex layout and rendering mode.
+    #[inline(always)]
+    pub fn offset_of(
+        &mut self,
+        vertex_layout: VertexLayout,
+        rendering_mode: RenderingMode,
+    ) -> Option<u32> {
+        // Try to lookup the pair in the map
+        let pair = (vertex_layout, rendering_mode);
+        if let Some(offset) = self.offsets.get(&pair) {
+            return Some(*offset);
+        }
+
+        // If we didn't find it, it might be possible to find one that supports a subset of
+        // our attributes.
+        let mut new_variant = None;
+        let mut supported_attributes = 0;
+
+        self.offsets
+            .iter()
+            .for_each(|((new_vertex_layout, new_mode), offset)| {
+                // Rendering modes must match
+                if *new_mode != rendering_mode {
+                    return;
+                }
+
+                // Only compatible if the variant requires a subset of the requested vertex
+                // attributes
+                if !new_vertex_layout.subset_of(vertex_layout) {
+                    return;
+                }
+
+                // Replace the selected variant if this variants vertex attributes are more
+                // specialized
+                let attributes = new_vertex_layout.into_iter().count();
+                if attributes > supported_attributes {
+                    supported_attributes = attributes;
+                    new_variant = Some(*offset);
+                }
+            });
+
+        // If we still haven't found it, error out
+        let offset = new_variant?;
+
+        // Register new offset for next time
+        self.offsets.insert(pair, offset);
+
+        Some(offset)
     }
 }
 

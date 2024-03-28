@@ -1291,4 +1291,27 @@
             ),
         ]
     ),
+    // Raytracing
+    (
+        name: "RtTest",
+        bindings: [
+            (
+                name: "Tlas",
+                stage: RayTracing,
+                count: "1",
+                data: Tlas("tlas"),
+            ),
+            (
+                name: "OutputTex",
+                stage: RayTracing,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba8UNorm,
+                )
+            ),
+        ]
+    ),
 ]

@@ -13,6 +13,7 @@ use ard_formats::{mesh::MeshData, meshlet::Meshlet, texture::TextureSource};
 use ard_pal::prelude::{Buffer, Context, QueueType};
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_material::{
+    binding_table::BindingTableOffset,
     factory::{MaterialFactory, MaterialFactoryConfig},
     material::{Material, MaterialCreateError, MaterialCreateInfo, MaterialResource},
     material_instance::{
@@ -62,6 +63,7 @@ pub(crate) struct FactoryInner {
     pub(crate) texture_factory: Mutex<TextureFactory>,
     pub(crate) material_factory: Mutex<MaterialFactory<FRAMES_IN_FLIGHT>>,
     pub(crate) pending_blas: Mutex<PendingBlasBuilder>,
+    pub(crate) bt_offset: Mutex<BindingTableOffset>,
     ctx: Context,
 }
 
@@ -69,13 +71,14 @@ impl Factory {
     pub(crate) fn new(ctx: Context, layouts: &Layouts) -> Self {
         let inner = Arc::new(FactoryInner {
             staging: Mutex::new(Staging::new(ctx.clone())),
-            meshes: Mutex::new(ResourceAllocator::new(MAX_MESHES, DROP_LATENCY)),
-            textures: Mutex::new(ResourceAllocator::new(MAX_TEXTURES, DROP_LATENCY)),
-            shaders: Mutex::new(ResourceAllocator::new(MAX_SHADERS, DROP_LATENCY)),
-            materials: Mutex::new(ResourceAllocator::new(MAX_MATERIALS, DROP_LATENCY)),
+            meshes: Mutex::new(ResourceAllocator::new(MAX_MESHES, DROP_LATENCY, false)),
+            textures: Mutex::new(ResourceAllocator::new(MAX_TEXTURES, DROP_LATENCY, false)),
+            shaders: Mutex::new(ResourceAllocator::new(MAX_SHADERS, DROP_LATENCY, false)),
+            materials: Mutex::new(ResourceAllocator::new(MAX_MATERIALS, DROP_LATENCY, true)),
             material_instances: Mutex::new(ResourceAllocator::new(
                 MAX_MATERIAL_INSTANCES,
                 DROP_LATENCY,
+                false,
             )),
             mesh_factory: Mutex::new(MeshFactory::new(
                 ctx.clone(),
@@ -105,6 +108,7 @@ impl Factory {
                 },
             )),
             pending_blas: Mutex::new(PendingBlasBuilder::default()),
+            bt_offset: Mutex::new(BindingTableOffset::default()),
             ctx: ctx.clone(),
         });
 
@@ -305,6 +309,7 @@ impl FactoryInner {
         // Create the resource handle
         let layout = mesh.block.layout();
         let blas_ref = mesh.blas_ref.clone();
+        let bounding_sphere = mesh.bounds.bounding_sphere();
         let handle = static_meshes.insert(mesh);
 
         // Upload info
@@ -316,7 +321,7 @@ impl FactoryInner {
             upload,
         });
 
-        Ok(Mesh::new(handle, layout, blas_ref))
+        Ok(Mesh::new(handle, layout, blas_ref, bounding_sphere))
     }
 
     fn create_texture<T: TextureSource>(
@@ -360,14 +365,22 @@ impl FactoryInner {
         let shaders = self.shaders.lock().unwrap();
         let mut materials = self.materials.lock().unwrap();
         let material_factory = self.material_factory.lock().unwrap();
+        let mut bt_offset = self.bt_offset.lock().unwrap();
 
         let data_size = create_info.data_size;
         let texture_slots = create_info.texture_slots;
-        let material = MaterialResource::new(&self.ctx, &material_factory, &shaders, create_info)?;
+        let material = MaterialResource::new(
+            &self.ctx,
+            &material_factory,
+            &shaders,
+            &mut bt_offset,
+            create_info,
+        )?;
 
+        let rt_variants = material.rt_variants.clone();
         let handle = materials.insert(material);
 
-        Ok(Material::new(handle, data_size, texture_slots))
+        Ok(Material::new(handle, data_size, texture_slots, rt_variants))
     }
 
     fn create_material_instance(

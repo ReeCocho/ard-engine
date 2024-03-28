@@ -141,6 +141,7 @@ impl<W: Write> RustSetsCodeGen<W> {
                     access.to_pal_access_type()
                 )
             }
+            GpuBindingData::Tlas(_) => "DescriptorType::TopLevelAccelerationStructure".to_owned(),
         };
 
         writeln!(writer, "DescriptorBinding {{").unwrap();

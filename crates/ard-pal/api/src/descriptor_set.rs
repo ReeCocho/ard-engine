@@ -6,6 +6,7 @@ use crate::{
     context::Context,
     cube_map::CubeMap,
     texture::{Sampler, Texture},
+    tlas::TopLevelAccelerationStructure,
     types::{AccessType, ShaderStage},
     Backend,
 };
@@ -41,6 +42,8 @@ pub enum DescriptorType {
     Texture,
     /// A read-only sampled cube map.
     CubeMap,
+    /// A read-only top level acceleration structure.
+    TopLevelAccelerationStructure,
     /// A read-only uniform buffer object.
     UniformBuffer,
     /// A read-only or read-write storage buffer object.
@@ -123,6 +126,7 @@ pub enum DescriptorValue<'a, B: Backend> {
         /// The number of mip levels to bind.
         mip_count: usize,
     },
+    TopLevelAccelerationStructure(&'a TopLevelAccelerationStructure<B>),
 }
 
 pub(crate) struct DescriptorSetLayoutInner<B: Backend> {

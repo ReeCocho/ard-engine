@@ -48,6 +48,7 @@ impl Buffer {
         allocator: &mut Allocator,
         limits: &vk::PhysicalDeviceLimits,
         accel_struct_props: &vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
         create_info: BufferCreateInfo,
     ) -> Result<Self, BufferCreateError> {
         // Determine memory alignment requirements
@@ -74,15 +75,15 @@ impl Buffer {
             alignment_req = alignment_req
                 .max(accel_struct_props.min_acceleration_structure_scratch_offset_alignment as u64);
         }
+        if create_info
+            .buffer_usage
+            .contains(BufferUsage::SHADER_BINDING_TABLE)
+        {
+            alignment_req = alignment_req.max(rt_props.shader_group_base_alignment as u64);
+        }
 
         // Round size to a multiple of the alignment
-        let aligned_size = match alignment_req {
-            0 => create_info.size,
-            align => {
-                let align_mask = align - 1;
-                (create_info.size + align_mask) & !align_mask
-            }
-        };
+        let aligned_size = create_info.size.next_multiple_of(alignment_req);
 
         // Create the buffer
         let qfi = qfi.queue_types_to_indices(create_info.queue_types);

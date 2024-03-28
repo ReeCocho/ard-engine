@@ -21,6 +21,7 @@ use ard_render_renderers::{
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
     raytrace::RaytracedRenderer,
+    reflections::Reflections,
     scene::{SceneRenderArgs, SceneRenderer},
     shadow::{ShadowRenderArgs, SunShadowsRenderer},
 };
@@ -47,6 +48,7 @@ pub(crate) struct RenderEcs {
     sun_shafts: SunShafts,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
+    reflections: Reflections,
     proc_skybox: ProceduralSkyBox,
     factory: Factory,
     ctx: Context,
@@ -121,6 +123,14 @@ impl RenderEcs {
             SunShadowsRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES);
         let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let rt_render = RaytracedRenderer::new(&ctx, FRAMES_IN_FLIGHT);
+        let reflections = Reflections::new(
+            &ctx,
+            &layouts,
+            &factory.inner.materials.lock().unwrap(),
+            &factory.inner.shaders.lock().unwrap(),
+            &factory.inner.bt_offset.lock().unwrap(),
+            window_size,
+        );
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
@@ -178,6 +188,7 @@ impl RenderEcs {
                 gui_renderer,
                 lighting,
                 hzb_render,
+                reflections,
                 _fxaa: fxaa,
                 smaa,
                 sun_shafts,
@@ -216,6 +227,7 @@ impl RenderEcs {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
             self.sun_shafts.resize(&self.ctx, frame.canvas_size);
             self.smaa.resize(&self.ctx, frame.canvas_size);
+            self.reflections.resize(&self.ctx, frame.canvas_size);
 
             for frame in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(frame);
@@ -293,13 +305,19 @@ impl RenderEcs {
 
         let meshes = self.factory.inner.meshes.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
+        let shaders = self.factory.inner.shaders.lock().unwrap();
         let materials = self.factory.inner.materials.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
+        let bt_offset = self.factory.inner.bt_offset.lock().unwrap();
 
         // Check objects for uploaded BLAS'
         frame.object_data.check_for_blas(&meshes);
+
+        // Check if any RT pipelines need to be rebuilt
+        self.reflections
+            .check_for_rebuild(&self.ctx, &bt_offset, &materials, &shaders);
 
         // Upload object data to renderers
         self.scene_renderer.upload(
@@ -347,11 +365,15 @@ impl RenderEcs {
 
         self.bloom
             .bind_images(frame.frame, self.canvas.render_target().final_color());
+
         self.tonemapping.bind_images(
             frame.frame,
             self.canvas.render_target().final_color(),
             self.canvas.render_target().final_depth(),
         );
+
+        self.reflections
+            .update_set(frame.frame, self.rt_render.tlas());
 
         // Phase 1:
         //      Main: Render the HZB and skybox for diffuse irradiance.
@@ -389,6 +411,9 @@ impl RenderEcs {
 
         // Build TLAS
         self.rt_render.build(&mut main_cb, frame.frame);
+
+        self.reflections
+            .trace(frame.frame, &mut main_cb, &self.camera);
 
         // Render the high-z depth image
         self.render_hzb(

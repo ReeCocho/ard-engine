@@ -23,6 +23,7 @@ pub enum TopLevelAccelerationStructureCreateError {
 pub struct TopLevelAccelerationStructure<B: Backend> {
     ctx: Context<B>,
     id: B::TopLevelAccelerationStructure,
+    sharing_mode: SharingMode,
 }
 
 impl<B: Backend> TopLevelAccelerationStructure<B> {
@@ -30,14 +31,24 @@ impl<B: Backend> TopLevelAccelerationStructure<B> {
         ctx: Context<B>,
         create_info: TopLevelAccelerationStructureCreateInfo,
     ) -> Result<Self, TopLevelAccelerationStructureCreateError> {
+        let sharing_mode = create_info.sharing_mode;
         let id = unsafe { ctx.0.create_top_level_acceleration_structure(create_info)? };
 
-        Ok(Self { ctx, id })
+        Ok(Self {
+            ctx,
+            id,
+            sharing_mode,
+        })
     }
 
     #[inline(always)]
     pub fn scratch_buffer_size(&self) -> u64 {
         unsafe { self.ctx.0.tlas_scratch_size(&self.id) }
+    }
+
+    #[inline(always)]
+    pub fn sharing_mode(&self) -> SharingMode {
+        self.sharing_mode
     }
 
     #[inline(always)]

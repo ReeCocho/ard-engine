@@ -1,13 +1,13 @@
 use std::ops::Range;
 
-use ard_math::Vec3A;
+use ard_math::{Vec3A, Vec4Swizzles};
 use ard_render_base::resource::ResourceAllocator;
 use ard_render_meshes::mesh::MeshResource;
 use ordered_float::OrderedFloat;
 
 use crate::{
     keys::DrawKey,
-    objects::{AlphaCutoutObjectIndex, OpaqueObjectIndex, RenderObjects, TransparentObjectIndex},
+    objects::{ObjectIndex, RenderObjects},
 };
 use ard_render_si::types::GpuObjectId;
 
@@ -143,9 +143,9 @@ impl<'a> RenderableSetUpdate<'a> {
         view_location: Vec3A,
         objects: &RenderObjects,
         meshes: &ResourceAllocator<MeshResource, FIF>,
-        filter_opaque: impl Fn(&OpaqueObjectIndex) -> bool,
-        filter_alpha_cut: impl Fn(&AlphaCutoutObjectIndex) -> bool,
-        filter_transparent: impl Fn(&TransparentObjectIndex) -> bool,
+        filter_opaque: impl Fn(&ObjectIndex) -> bool,
+        filter_alpha_cut: impl Fn(&ObjectIndex) -> bool,
+        filter_transparent: impl Fn(&ObjectIndex) -> bool,
     ) {
         let instances = &mut self.set.object_instances;
         let ids = &mut self.set.object_ids;
@@ -342,7 +342,9 @@ impl<'a> RenderableSetUpdate<'a> {
                             obj.key,
                             base + obj.idx,
                             // Fill the padding in with the distance from the view...
-                            (-(view_location - obj.position).length_squared()).into(),
+                            (-(view_location - Vec3A::from(obj.bounding_sphere.xyz()))
+                                .length_squared())
+                            .into(),
                         )
                     }),
                 |id| id.distance,

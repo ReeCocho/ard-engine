@@ -21,17 +21,6 @@ bitflags! {
     }
 }
 
-/// Describes what type of rendering is required for a particular entity.
-#[derive(Component, Copy, Clone)]
-pub enum RenderingMode {
-    /// The entity is fully opaque.
-    Opaque,
-    /// The entity is opaque, but might have holes in the geometry from alpha masking.
-    AlphaCutout,
-    /// The entity is transparent,
-    Transparent,
-}
-
 impl Model {
     #[inline(always)]
     pub fn position(&self) -> Vec3A {

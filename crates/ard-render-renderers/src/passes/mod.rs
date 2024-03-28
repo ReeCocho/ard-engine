@@ -31,6 +31,9 @@ pub const COLOR_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(6);
 /// The transparent pass renders only transparent materials.
 pub const TRANSPARENT_PASS_ID: PassId = PassId::new(7);
 
+/// Pass used for ray tracing.
+pub const RT_PASS_ID: PassId = PassId::new(8);
+
 /// Defines primary passes.
 pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layouts: &Layouts) {
     factory

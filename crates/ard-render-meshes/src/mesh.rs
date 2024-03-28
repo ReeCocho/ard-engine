@@ -40,6 +40,7 @@ pub enum MeshCreateError {
 #[derive(Clone, Component)]
 pub struct Mesh {
     layout: VertexLayout,
+    bounding_sphere: Vec4,
     blas: Arc<AtomicU64>,
     handle: ResourceHandle,
 }
@@ -59,17 +60,28 @@ pub struct MeshResource {
 }
 
 impl Mesh {
-    pub fn new(handle: ResourceHandle, layout: VertexLayout, blas: Arc<AtomicU64>) -> Self {
+    pub fn new(
+        handle: ResourceHandle,
+        layout: VertexLayout,
+        blas: Arc<AtomicU64>,
+        bounding_sphere: Vec4,
+    ) -> Self {
         Mesh {
             layout,
             handle,
             blas,
+            bounding_sphere,
         }
     }
 
     #[inline(always)]
     pub fn layout(&self) -> VertexLayout {
         self.layout
+    }
+
+    #[inline(always)]
+    pub fn bounding_sphere(&self) -> Vec4 {
+        self.bounding_sphere
     }
 
     #[inline(always)]

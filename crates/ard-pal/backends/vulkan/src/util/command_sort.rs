@@ -231,6 +231,7 @@ impl CommandSorting {
         match command {
             Command::BeginRenderPass(desc, _) => self.inspect_render_pass(info, command_idx, desc),
             Command::BeginComputePass(_, _) => self.inspect_compute_pass(info, command_idx),
+            Command::BeginRayTracingPass(_, _) => self.inspect_rt_pass(info, command_idx),
             Command::TransferBufferOwnership {
                 buffer,
                 array_element,
@@ -440,6 +441,17 @@ impl CommandSorting {
         loop {
             i += 1;
             if !self.inspect_compute_pass_command(info, command_idx, &info.commands[i]) {
+                break;
+            }
+        }
+        i + 1
+    }
+
+    fn inspect_rt_pass(&mut self, info: &mut CommandSortingInfo, command_idx: usize) -> usize {
+        let mut i = command_idx;
+        loop {
+            i += 1;
+            if !self.inspect_rt_pass_command(info, command_idx, &info.commands[i]) {
                 break;
             }
         }
@@ -1073,6 +1085,71 @@ impl CommandSorting {
         }
     }
 
+    fn inspect_rt_pass_command(
+        &mut self,
+        info: &mut CommandSortingInfo,
+        command_idx: usize,
+        rtp_command: &Command<'_, crate::VulkanBackend>,
+    ) -> bool {
+        match rtp_command {
+            Command::BindDescriptorSets { sets, .. } => {
+                for set in sets {
+                    self.inspect_descriptor_set(
+                        info,
+                        command_idx,
+                        vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                        set,
+                    );
+                }
+                true
+            }
+            Command::EndRayTracingPass(dispatch, _) => {
+                // Inspect the SBT
+                let new_usage = GlobalBufferUsage {
+                    queue: Some(QueueUsage {
+                        queue: info.queue,
+                        timeline_value: info.timeline_value,
+                        command_idx,
+                        is_async: info.is_async,
+                    }),
+                    sub_resource: SubResourceUsage {
+                        access: vk::AccessFlags2::SHADER_BINDING_TABLE_READ_KHR,
+                        stage: vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR,
+                    },
+                };
+
+                let old_usage = info.global.use_buffer(
+                    &BufferRegion {
+                        id: dispatch.shader_binding_table.internal().id,
+                        array_elem: 0,
+                    },
+                    &new_usage,
+                );
+
+                self.buffer_barrier_check(
+                    info.queue_families,
+                    info.queue_families.to_index(info.queue),
+                    &old_usage,
+                    &new_usage,
+                    dispatch.shader_binding_table.internal().buffer,
+                    dispatch.shader_binding_table.internal().sharing_mode,
+                    dispatch.shader_binding_table.internal().aligned_size,
+                    dispatch.shader_binding_table.internal().offset(0),
+                );
+
+                self.dependency_check(
+                    old_usage.queue.as_ref(),
+                    command_idx,
+                    &mut info.wait_queues,
+                    (info.queue, info.timeline_value),
+                );
+
+                false
+            }
+            _ => true,
+        }
+    }
+
     fn inspect_descriptor_set(
         &mut self,
         info: &mut CommandSortingInfo,
@@ -1366,6 +1443,52 @@ impl CommandSorting {
                             );
                         }
                     }
+                }
+                BoundValue::Tlas {
+                    _ref_counter,
+                    buffer,
+                    id,
+                    sharing_mode,
+                    aligned_size,
+                } => {
+                    let new_usage = GlobalBufferUsage {
+                        queue: Some(QueueUsage {
+                            queue: info.queue,
+                            timeline_value: info.timeline_value,
+                            command_idx,
+                            is_async: info.is_async,
+                        }),
+                        sub_resource: SubResourceUsage {
+                            access: elem.access,
+                            stage: elem.stage & valid_stages,
+                        },
+                    };
+
+                    let old_usage = info.global.use_buffer(
+                        &BufferRegion {
+                            id: *id,
+                            array_elem: 0,
+                        },
+                        &new_usage,
+                    );
+
+                    self.buffer_barrier_check(
+                        info.queue_families,
+                        info.queue_families.to_index(info.queue),
+                        &old_usage,
+                        &new_usage,
+                        *buffer,
+                        *sharing_mode,
+                        *aligned_size as u64,
+                        0 as u64,
+                    );
+
+                    self.dependency_check(
+                        old_usage.queue.as_ref(),
+                        command_idx,
+                        &mut info.wait_queues,
+                        (info.queue, info.timeline_value),
+                    );
                 }
             });
     }

@@ -26,4 +26,18 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/rt_test.rgen",
+        PathBuf::from(&out_dir).join("rt_test.rgen.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/rt_test.rmiss",
+        PathBuf::from(&out_dir).join("rt_test.rmiss.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

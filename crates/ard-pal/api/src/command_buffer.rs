@@ -7,6 +7,8 @@ use crate::{
     descriptor_set::DescriptorSet,
     graphics_pipeline::GraphicsPipeline,
     render_pass::{RenderPass, RenderPassDescriptor, VertexBind},
+    rt_pass::{RayTracingDispatch, RayTracingPass},
+    rt_pipeline::RayTracingPipeline,
     surface::SurfaceImage,
     texture::{Blit, Texture},
     tlas::TopLevelAccelerationStructure,
@@ -120,6 +122,8 @@ pub enum Command<'a, B: Backend> {
     EndRenderPass(Option<&'a str>),
     BeginComputePass(ComputePipeline<B>, Option<&'a str>),
     EndComputePass(ComputePassDispatch<'a, B>, Option<&'a str>),
+    BeginRayTracingPass(RayTracingPipeline<B>, Option<&'a str>),
+    EndRayTracingPass(RayTracingDispatch<'a, B>, Option<&'a str>),
     BindGraphicsPipeline(GraphicsPipeline<B>),
     PushConstants {
         stage: ShaderStage,
@@ -328,6 +332,29 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         self.commands.extend(compute_pass.commands);
         self.commands
             .push(Command::EndComputePass(dispatch, debug_name));
+    }
+
+    pub fn ray_trace_pass(
+        &mut self,
+        pipeline: &RayTracingPipeline<B>,
+        debug_name: Option<&'a str>,
+        pass: impl FnOnce(&mut RayTracingPass<'a, B>) -> RayTracingDispatch<'a, B>,
+    ) {
+        assert!(
+            self.queue_ty == QueueType::Main || self.queue_ty == QueueType::Compute,
+            "queue `{:?}` does not support ray tracing passes",
+            self.queue_ty
+        );
+
+        self.commands
+            .push(Command::BeginRayTracingPass(pipeline.clone(), debug_name));
+        let mut rt_pass = RayTracingPass {
+            commands: Vec::default(),
+        };
+        let dispatch = pass(&mut rt_pass);
+        self.commands.extend(rt_pass.commands);
+        self.commands
+            .push(Command::EndRayTracingPass(dispatch, debug_name));
     }
 
     /// Relinquishes ownership of a buffer by the current queue for another queue type.

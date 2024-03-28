@@ -145,6 +145,9 @@ pub(crate) const fn to_vk_descriptor_type(ty: DescriptorType) -> vk::DescriptorT
         DescriptorType::StorageBuffer(_) => vk::DescriptorType::STORAGE_BUFFER,
         DescriptorType::StorageImage(_) => vk::DescriptorType::STORAGE_IMAGE,
         DescriptorType::CubeMap => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        DescriptorType::TopLevelAccelerationStructure => {
+            vk::DescriptorType::ACCELERATION_STRUCTURE_KHR
+        }
     }
 }
 
@@ -163,6 +166,10 @@ pub(crate) fn to_vk_shader_stage(ss: ShaderStage) -> vk::ShaderStageFlags {
             vk::ShaderStageFlags::ALL_GRAPHICS
                 | vk::ShaderStageFlags::MESH_EXT
                 | vk::ShaderStageFlags::TASK_EXT
+                | vk::ShaderStageFlags::RAYGEN_KHR
+                | vk::ShaderStageFlags::ANY_HIT_KHR
+                | vk::ShaderStageFlags::CLOSEST_HIT_KHR
+                | vk::ShaderStageFlags::MISS_KHR
         }
         ShaderStage::Vertex => vk::ShaderStageFlags::VERTEX,
         ShaderStage::Fragment => vk::ShaderStageFlags::FRAGMENT,
@@ -170,6 +177,16 @@ pub(crate) fn to_vk_shader_stage(ss: ShaderStage) -> vk::ShaderStageFlags {
         ShaderStage::Mesh => vk::ShaderStageFlags::MESH_EXT,
         ShaderStage::Task => vk::ShaderStageFlags::TASK_EXT,
         ShaderStage::AllStages => vk::ShaderStageFlags::ALL,
+        ShaderStage::RayTracing => {
+            vk::ShaderStageFlags::RAYGEN_KHR
+                | vk::ShaderStageFlags::ANY_HIT_KHR
+                | vk::ShaderStageFlags::CLOSEST_HIT_KHR
+                | vk::ShaderStageFlags::MISS_KHR
+        }
+        ShaderStage::RayGeneration => vk::ShaderStageFlags::RAYGEN_KHR,
+        ShaderStage::RayMiss => vk::ShaderStageFlags::MISS_KHR,
+        ShaderStage::RayClosestHit => vk::ShaderStageFlags::CLOSEST_HIT_KHR,
+        ShaderStage::RayAnyHit => vk::ShaderStageFlags::ANY_HIT_KHR,
     }
 }
 
@@ -379,6 +396,10 @@ pub(crate) fn to_vk_buffer_usage(bu: BufferUsage) -> vk::BufferUsageFlags {
     }
     if bu.contains(BufferUsage::ACCELERATION_STRUCTURE_READ) {
         out |= vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
+            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
+    }
+    if bu.contains(BufferUsage::SHADER_BINDING_TABLE) {
+        out |= vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR
             | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
     }
     out

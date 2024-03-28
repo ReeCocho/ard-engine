@@ -1,4 +1,7 @@
-use api::{context::GraphicsProperties, surface::SurfaceCapabilities, Backend};
+use api::{
+    context::GraphicsProperties, rt_pipeline::ShaderBindingTableData, surface::SurfaceCapabilities,
+    Backend,
+};
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct EmptyBackend(GraphicsProperties);
@@ -12,6 +15,7 @@ impl Backend for EmptyBackend {
     type Shader = ();
     type GraphicsPipeline = ();
     type ComputePipeline = ();
+    type RayTracingPipeline = ();
     type DescriptorSetLayout = ();
     type DescriptorSet = ();
     type Job = ();
@@ -267,6 +271,24 @@ impl Backend for EmptyBackend {
         &self,
         _id: &Self::TopLevelAccelerationStructure,
     ) -> api::types::BuildAccelerationStructureFlags {
+        todo!()
+    }
+
+    unsafe fn create_ray_tracing_pipeline(
+        &self,
+        _create_info: api::rt_pipeline::RayTracingPipelineCreateInfo<Self>,
+    ) -> Result<Self::RayTracingPipeline, api::rt_pipeline::RayTracingPipelineCreateError> {
+        todo!()
+    }
+
+    unsafe fn destroy_ray_tracing_pipeline(&self, _id: &mut Self::RayTracingPipeline) {
+        todo!()
+    }
+
+    unsafe fn shader_binding_table_data(
+        &self,
+        _id: &Self::RayTracingPipeline,
+    ) -> ShaderBindingTableData {
         todo!()
     }
 }

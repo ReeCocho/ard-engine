@@ -291,6 +291,11 @@ pub enum ShaderStage {
     Compute,
     Mesh,
     Task,
+    RayTracing,
+    RayGeneration,
+    RayMiss,
+    RayClosestHit,
+    RayAnyHit,
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -346,6 +351,7 @@ bitflags! {
         const DEVICE_ADDRESS                  = 0b0000_1000_0000;
         const ACCELERATION_STRUCTURE_SCRATCH  = 0b0001_0000_0000;
         const ACCELERATION_STRUCTURE_READ     = 0b0010_0000_0000;
+        const SHADER_BINDING_TABLE            = 0b0100_0000_0000;
     }
 }
 

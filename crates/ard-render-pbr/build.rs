@@ -17,6 +17,7 @@ enum Pass {
     Color,
     ColorAc,
     Transparent,
+    RayTrace,
 }
 
 fn main() {
@@ -96,6 +97,11 @@ fn main() {
             pass: Pass::Transparent,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
         },
+        // Ray tracing
+        ShaderVariant {
+            pass: Pass::RayTrace,
+            vertex_layout: VertexLayout::empty(),
+        },
     ];
 
     for variant in variants {
@@ -124,10 +130,6 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
         ext.push_str(&vl);
     }
 
-    let ts_name = format!("pbr.task{}.spv", ext);
-    let ms_name = format!("pbr.mesh{}.spv", ext);
-    let frag_name = format!("pbr.frag{}.spv", ext);
-
     let mut defines = Vec::default();
 
     defines.push(
@@ -137,6 +139,7 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
             Pass::DepthPrepass | Pass::DepthPrepassAc => "DEPTH_PREPASS",
             Pass::Color | Pass::ColorAc => "COLOR_PASS",
             Pass::Transparent => "TRANSPARENT_PASS",
+            Pass::RayTrace => "RT_PASS",
         }
         .into(),
     );
@@ -161,24 +164,42 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
         variant.vertex_layout.contains(VertexLayout::UV1) as u32
     ));
 
-    ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/pbr.ms.glsl",
-        PathBuf::from(&out_dir).join(ms_name),
-        &["./shaders/", "../ard-render/shaders/"],
-        &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-    );
-    ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/pbr.ts.glsl",
-        PathBuf::from(&out_dir).join(ts_name),
-        &["./shaders/", "../ard-render/shaders/"],
-        &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-    );
-    ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/pbr.frag",
-        PathBuf::from(&out_dir).join(frag_name),
-        &["./shaders/", "../ard-render/shaders/"],
-        &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-    );
+    match variant.pass {
+        Pass::RayTrace => {
+            let rchit_name = format!("pbr.rchit{}.spv", ext);
+
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.rchit",
+                PathBuf::from(&out_dir).join(rchit_name),
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+        }
+        _ => {
+            let ts_name = format!("pbr.task{}.spv", ext);
+            let ms_name = format!("pbr.mesh{}.spv", ext);
+            let frag_name = format!("pbr.frag{}.spv", ext);
+
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.ms.glsl",
+                PathBuf::from(&out_dir).join(ms_name),
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.ts.glsl",
+                PathBuf::from(&out_dir).join(ts_name),
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.frag",
+                PathBuf::from(&out_dir).join(frag_name),
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+        }
+    }
 }
 
 impl std::fmt::Display for Pass {
@@ -192,6 +213,7 @@ impl std::fmt::Display for Pass {
             Pass::Color => write!(f, "color"),
             Pass::ColorAc => write!(f, "color_ac"),
             Pass::Transparent => write!(f, "transparent"),
+            Pass::RayTrace => write!(f, "rt"),
         }
     }
 }

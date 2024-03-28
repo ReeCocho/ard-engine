@@ -15,6 +15,9 @@ use api::{
     graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo},
     queue::SurfacePresentFailure,
     render_pass::{ColorAttachmentDestination, DepthStencilAttachmentDestination},
+    rt_pipeline::{
+        RayTracingPipelineCreateError, RayTracingPipelineCreateInfo, ShaderBindingTableData,
+    },
     shader::{ShaderCreateError, ShaderCreateInfo},
     surface::{
         SurfaceCapabilities, SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo,
@@ -38,6 +41,7 @@ use job::Job;
 use queue::VkQueue;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use render_pass::{DrawIndexedIndirect, FramebufferCache, RenderPassCache, VkRenderPass};
+use rt_pipeline::RayTracingPipeline;
 use shader::Shader;
 use std::{
     borrow::Cow,
@@ -74,6 +78,7 @@ pub mod graphics_pipeline;
 pub mod job;
 pub mod queue;
 pub mod render_pass;
+pub mod rt_pipeline;
 pub mod shader;
 pub mod surface;
 pub mod texture;
@@ -107,6 +112,7 @@ pub struct VulkanBackend {
     pub(crate) queue_family_indices: QueueFamilyIndices,
     pub(crate) properties: vk::PhysicalDeviceProperties,
     pub(crate) accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+    pub(crate) rt_props: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
     pub(crate) graphics_properties: GraphicsProperties,
     pub(crate) _features: vk::PhysicalDeviceFeatures,
     pub(crate) device: ash::Device,
@@ -154,6 +160,7 @@ struct PhysicalDeviceQuery {
     pub queue_family_indices: QueueFamilyIndices,
     pub properties: vk::PhysicalDeviceProperties2,
     pub accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+    rt_props: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
     pub mesh_shading_properties: vk::PhysicalDeviceMeshShaderPropertiesEXT,
     pub features: vk::PhysicalDeviceFeatures,
 }
@@ -167,6 +174,7 @@ impl Backend for VulkanBackend {
     type Shader = Shader;
     type GraphicsPipeline = GraphicsPipeline;
     type ComputePipeline = ComputePipeline;
+    type RayTracingPipeline = RayTracingPipeline;
     type DescriptorSetLayout = DescriptorSetLayout;
     type DescriptorSet = DescriptorSet;
     type BottomLevelAccelerationStructure = BottomLevelAccelerationStructure;
@@ -376,6 +384,7 @@ impl Backend for VulkanBackend {
             &mut self.allocator.lock().unwrap(),
             &self.properties.limits,
             &self.accel_struct_props,
+            &self.rt_props,
             create_info,
         )
     }
@@ -450,6 +459,14 @@ impl Backend for VulkanBackend {
     }
 
     #[inline(always)]
+    unsafe fn create_ray_tracing_pipeline(
+        &self,
+        create_info: RayTracingPipelineCreateInfo<Self>,
+    ) -> Result<Self::RayTracingPipeline, RayTracingPipelineCreateError> {
+        RayTracingPipeline::new(self, create_info)
+    }
+
+    #[inline(always)]
     unsafe fn create_descriptor_set(
         &self,
         create_info: DescriptorSetCreateInfo<Self>,
@@ -509,6 +526,10 @@ impl Backend for VulkanBackend {
     }
 
     unsafe fn destroy_compute_pipeline(&self, _pipeline: &mut Self::ComputePipeline) {
+        // Handled in drop
+    }
+
+    unsafe fn destroy_ray_tracing_pipeline(&self, _pipeline: &mut Self::RayTracingPipeline) {
         // Handled in drop
     }
 
@@ -587,6 +608,14 @@ impl Backend for VulkanBackend {
         id: &Self::BottomLevelAccelerationStructure,
     ) -> BuildAccelerationStructureFlags {
         id.flags
+    }
+
+    #[inline(always)]
+    unsafe fn shader_binding_table_data(
+        &self,
+        id: &Self::RayTracingPipeline,
+    ) -> ShaderBindingTableData {
+        id.shader_binding_table_data(self)
     }
 
     #[inline(always)]
@@ -835,6 +864,7 @@ impl VulkanBackend {
 
         let mut rt_features = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
             .ray_tracing_pipeline(true)
+            .ray_traversal_primitive_culling(true)
             .build();
 
         let mut as_features = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::builder()
@@ -958,6 +988,7 @@ impl VulkanBackend {
             queue_family_indices: pd_query.queue_family_indices,
             properties: pd_query.properties.properties,
             accel_struct_props: pd_query.accel_struct_props,
+            rt_props: pd_query.rt_props,
             graphics_properties,
             _features: pd_query.features,
             device,
@@ -1066,6 +1097,8 @@ impl VulkanBackend {
                     device,
                     &self.mesh_shading_loader,
                     &self.as_loader,
+                    &self.rt_loader,
+                    &self.rt_props,
                     &queries,
                     idx,
                     commands,
@@ -1184,6 +1217,8 @@ impl VulkanBackend {
         device: &ash::Device,
         mesh_shading: &ash::extensions::ext::MeshShader,
         as_loader: &ash::extensions::khr::AccelerationStructure,
+        rt_loader: &ash::extensions::khr::RayTracingPipeline,
+        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
         queries: &Queries,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
@@ -1207,6 +1242,15 @@ impl VulkanBackend {
             Command::BeginComputePass(_, _) => {
                 Self::execute_compute_pass(cb, device, command_idx, commands, debug)
             }
+            Command::BeginRayTracingPass(_, _) => Self::execute_rt_pass(
+                cb,
+                device,
+                rt_loader,
+                rt_props,
+                command_idx,
+                commands,
+                debug,
+            ),
             Command::CopyBufferToBuffer(copy) => {
                 let src = copy.src.internal();
                 let dst = copy.dst.internal();
@@ -2137,6 +2181,121 @@ impl VulkanBackend {
             }
         }
     }
+
+    unsafe fn execute_rt_pass<'a>(
+        cb: vk::CommandBuffer,
+        device: &ash::Device,
+        rt_loader: &ash::extensions::khr::RayTracingPipeline,
+        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+        command_idx: usize,
+        commands: &[Command<'a, crate::VulkanBackend>],
+        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    ) {
+        let mut active_layout = vk::PipelineLayout::default();
+
+        for command in &commands[command_idx..] {
+            match command {
+                Command::BeginRayTracingPass(pipeline, debug_name) => {
+                    if let Some(name) = debug_name {
+                        if let Some((debug, _)) = debug {
+                            let name = CString::new(*name).unwrap();
+                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
+                            debug.cmd_begin_debug_utils_label(cb, &label);
+                        }
+                    }
+
+                    active_layout = pipeline.internal().layout;
+                    device.cmd_bind_pipeline(
+                        cb,
+                        vk::PipelineBindPoint::RAY_TRACING_KHR,
+                        pipeline.internal().pipeline,
+                    );
+                }
+                Command::EndRayTracingPass(dispatch, debug_name) => {
+                    let entry_size = rt_props
+                        .shader_group_handle_size
+                        .next_multiple_of(rt_props.shader_group_handle_alignment)
+                        as u64;
+
+                    let sbt_base = dispatch.shader_binding_table.device_ref(0);
+
+                    let raygen_region = vk::StridedDeviceAddressRegionKHR::builder()
+                        .device_address(sbt_base + dispatch.raygen_offset)
+                        .stride(entry_size)
+                        .size(entry_size)
+                        .build();
+
+                    let miss_region = vk::StridedDeviceAddressRegionKHR::builder()
+                        .device_address(sbt_base + dispatch.miss_offset)
+                        .stride(entry_size)
+                        .size(entry_size)
+                        .build();
+
+                    let hit_region = vk::StridedDeviceAddressRegionKHR::builder()
+                        .device_address(sbt_base + dispatch.hit_range.start)
+                        .stride(entry_size)
+                        .size(dispatch.hit_range.end - dispatch.hit_range.start)
+                        .build();
+
+                    rt_loader.cmd_trace_rays(
+                        cb,
+                        &raygen_region,
+                        &miss_region,
+                        &hit_region,
+                        &vk::StridedDeviceAddressRegionKHR::default(),
+                        dispatch.dims.0,
+                        dispatch.dims.1,
+                        dispatch.dims.2,
+                    );
+
+                    if debug_name.is_some() {
+                        if let Some((debug, _)) = debug {
+                            debug.cmd_end_debug_utils_label(cb);
+                        }
+                    }
+                    break;
+                }
+                Command::PushConstants { stage, data } => device.cmd_push_constants(
+                    cb,
+                    active_layout,
+                    crate::util::to_vk_shader_stage(*stage),
+                    0,
+                    data,
+                ),
+                Command::BindDescriptorSets { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::RAY_TRACING_KHR,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                Command::BindDescriptorSetsUnchecked { sets, first, .. } => {
+                    let mut vk_sets = Vec::with_capacity(sets.len());
+                    for set in sets {
+                        vk_sets.push(set.internal().set);
+                    }
+
+                    device.cmd_bind_descriptor_sets(
+                        cb,
+                        vk::PipelineBindPoint::RAY_TRACING_KHR,
+                        active_layout,
+                        *first as u32,
+                        &vk_sets,
+                        &[],
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
 }
 
 impl Drop for VulkanBackend {
@@ -2365,13 +2524,13 @@ unsafe fn pick_physical_device(
     let mut query = None;
     for device in devices {
         let mut mesh_shading_properties = vk::PhysicalDeviceMeshShaderPropertiesEXT::default();
-        let mut ray_tracing = vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
+        let mut rt_props = vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
         let mut accel_struct_props =
             vk::PhysicalDeviceAccelerationStructurePropertiesKHR::default();
 
         let mut properties = vk::PhysicalDeviceProperties2::builder()
             .push_next(&mut mesh_shading_properties)
-            .push_next(&mut ray_tracing)
+            .push_next(&mut rt_props)
             .push_next(&mut accel_struct_props)
             .build();
 
@@ -2414,6 +2573,7 @@ unsafe fn pick_physical_device(
                 features,
                 properties,
                 accel_struct_props,
+                rt_props,
                 mesh_shading_properties,
                 queue_family_indices: qfi.unwrap(),
             });

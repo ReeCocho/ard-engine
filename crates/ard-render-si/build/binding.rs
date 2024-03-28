@@ -37,6 +37,7 @@ pub enum GpuBindingData {
         access: GpuSsboAccessType,
         format: GpuStorageImageFormat,
     },
+    Tlas(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

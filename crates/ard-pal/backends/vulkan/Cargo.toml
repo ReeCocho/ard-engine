@@ -21,4 +21,4 @@ smallvec.workspace = true
 puffin.workspace = true
 ash = "0.37.1"
 ash-window = "0.12"
-gpu-allocator = "0.24"
+gpu-allocator = "0.25"
