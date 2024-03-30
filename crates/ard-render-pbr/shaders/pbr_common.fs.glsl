@@ -7,21 +7,21 @@
 /// VS INPUTS ///
 /////////////////
 
-// layout(location = 0) in vec3 vs_Color;
-layout(location = 1) flat in uvec4 vs_Slots;
-
-#if ARD_VS_HAS_UV0
-layout(location = 2) in vec2 vs_Uv;
-#endif
-
+layout(location = 0) in DataBlock {
+    flat uvec4 slots;
 #ifdef COLOR_PASS
-    layout(location = 3) in vec3 vs_Normal;
-    layout(location = 4) in vec4 vs_Position;
-    layout(location = 5) in vec3 vs_WorldSpaceFragPos;
-    layout(location = 6) in vec4 vs_ViewSpacePosition;
-    #if ARD_VS_HAS_TANGENT
-        layout(location = 7) in mat3 vs_TBN;
-    #endif
+    vec4 ndc_position;
+    vec4 view_space_position;
 #endif
+    vec3 world_space_position;
+    vec3 normal;
+#if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
+    vec3 tangent;
+    vec3 bitangent;
+#endif
+#if ARD_VS_HAS_UV0
+    vec2 uv;
+#endif
+} vs_in;
 
 #endif

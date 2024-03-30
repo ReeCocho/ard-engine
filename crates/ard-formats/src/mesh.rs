@@ -234,7 +234,7 @@ impl MeshDataBuilder {
             .iter_mut()
             .zip(src.iter())
             .for_each(|(dst, src)| {
-                *dst = Self::vec3_vector_to_16snorm(src.xyz());
+                *dst = Self::vec4_vector_to_16snorm(*src);
             });
         self
     }
@@ -266,11 +266,23 @@ impl MeshDataBuilder {
     fn vec3_vector_to_16snorm(vec: Vec3) -> [i16; 4] {
         let vec = vec.try_normalize().unwrap_or(Vec3::Z);
 
-        let x = (vec.x * 32727.0).round().clamp(-32727.0, 32727.0) as i16;
-        let y = (vec.y * 32727.0).round().clamp(-32727.0, 32727.0) as i16;
-        let z = (vec.z * 32727.0).round().clamp(-32727.0, 32727.0) as i16;
+        let x = (vec.x.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        let y = (vec.y.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        let z = (vec.z.clamp(-1.0, 1.0) * 32767.0).round() as i16;
 
         [x, y, z, 0]
+    }
+
+    fn vec4_vector_to_16snorm(vec: Vec4) -> [i16; 4] {
+        let vec_w = vec.w;
+        let vec = vec.xyz().try_normalize().unwrap_or(Vec3::X);
+
+        let x = (vec.x.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        let y = (vec.y.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        let z = (vec.z.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        let w = (vec_w.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+
+        [x, y, z, w]
     }
 }
 

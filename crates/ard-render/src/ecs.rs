@@ -123,7 +123,7 @@ impl RenderEcs {
             SunShadowsRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES);
         let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
         let rt_render = RaytracedRenderer::new(&ctx, FRAMES_IN_FLIGHT);
-        let reflections = Reflections::new(
+        let mut reflections = Reflections::new(
             &ctx,
             &layouts,
             &factory.inner.materials.lock().unwrap(),
@@ -158,6 +158,10 @@ impl RenderEcs {
 
             scene_renderer
                 .transparent_pass_sets_mut()
+                .update_sky_box_bindings(frame, &proc_skybox);
+
+            reflections
+                .sets()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
             scene_renderer
@@ -271,6 +275,9 @@ impl RenderEcs {
             self.scene_renderer
                 .transparent_pass_sets_mut()
                 .update_lights_binding(frame.frame, &frame.lights);
+            self.reflections
+                .sets()
+                .update_lights_binding(frame.frame, &frame.lights);
         }
 
         self.sun_shafts.update_binds(
@@ -348,6 +355,9 @@ impl RenderEcs {
         self.sun_shadows_renderer
             .update_bindings::<FRAMES_IN_FLIGHT>(frame.frame, &frame.object_data);
 
+        self.reflections
+            .update_bindings(frame.frame, self.rt_render.tlas());
+
         self.sun_shadows_renderer.update_cascade_views(
             frame.frame,
             &main_camera.camera,
@@ -371,9 +381,6 @@ impl RenderEcs {
             self.canvas.render_target().final_color(),
             self.canvas.render_target().final_depth(),
         );
-
-        self.reflections
-            .update_set(frame.frame, self.rt_render.tlas());
 
         // Phase 1:
         //      Main: Render the HZB and skybox for diffuse irradiance.

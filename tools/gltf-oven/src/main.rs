@@ -265,7 +265,7 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
 
     let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
 
-    if mesh.tangents.is_some() {
+    if mesh.tangents.is_some() || (args.compute_tangents && mesh.uv0.is_some()) {
         vertex_layout |= VertexLayout::TANGENT;
     }
 
@@ -284,8 +284,6 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
     mesh_data = mesh_data
         .add_positions(&mesh.positions)
         .add_indices(&mesh.indices);
-    mesh.positions = Vec::default();
-    mesh.indices = Vec::default();
 
     mesh_data = match &mesh.normals {
         Some(normals) => mesh_data.add_vec4_normals(normals),
@@ -308,6 +306,10 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
         }
     }
     mesh.tangents = None;
+
+    // Clear these here since it's possible they might be used to compute tangents
+    mesh.positions = Vec::default();
+    mesh.indices = Vec::default();
 
     if let Some(uv0) = &mesh.uv0 {
         mesh_data = mesh_data.add_vec2_uvs(&uv0, 0);
@@ -368,14 +370,25 @@ fn save_textures(
                     Format::BC7Srgb
                 }
             } else {
-                Format::Rgba8Srgb
+                if texture_is_unorm[i].load(Ordering::Relaxed) {
+                    Format::Rgba8Unorm
+                } else {
+                    Format::Rgba8Srgb
+                }
             };
 
             // Compute each mip and save to disc
             for mip in 0..mip_count {
+                // Resize the image base on the mip count
+                let (mut width, mut height) = image.dimensions();
+                width = (width >> mip).max(1);
+                height = (height >> mip).max(1);
+
+                let downsampled =
+                    image.resize(width, height, image::imageops::FilterType::Lanczos3);
+
                 // Convert the image into a byte array
-                let (width, height) = image.dimensions();
-                let mut bytes = image.to_rgba8().to_vec();
+                let mut bytes = downsampled.to_rgba8().to_vec();
 
                 // Compress if requested
                 if compress {
@@ -397,15 +410,6 @@ fn save_textures(
                 let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
                 let mut f = BufWriter::new(fs::File::create(&mip_path).unwrap());
                 bincode::serialize_into(&mut f, &tex_data).unwrap();
-
-                // Downsample the image for the next mip
-                if mip != mip_count - 1 {
-                    image = image.resize(
-                        width.div(2).max(1),
-                        height.div(2).max(1),
-                        image::imageops::FilterType::Gaussian,
-                    );
-                }
             }
         });
 }
@@ -432,9 +436,10 @@ fn texture_mip_count(image: &image::DynamicImage, compressed: bool) -> usize {
 
 /// Helper to compute tangents from UVs and positions
 fn compute_tangents(positions: &[Vec4], uvs: &[Vec2], indices: &[u32]) -> Vec<Vec4> {
-    assert!(positions.len() == uvs.len() && !positions.is_empty());
+    assert!(!positions.is_empty());
+    assert!(positions.len() == uvs.len());
 
-    let mut tangents = Vec::with_capacity(positions.len());
+    let mut tangents = vec![Vec4::Z; positions.len()];
 
     for tri in indices.chunks_exact(3) {
         let p0 = &positions[tri[0] as usize];
@@ -453,15 +458,17 @@ fn compute_tangents(positions: &[Vec4], uvs: &[Vec2], indices: &[u32]) -> Vec<Ve
 
         let f = 1.0 / ((delta_uv1.x * delta_uv2.y) - (delta_uv2.x * delta_uv1.y));
 
-        tangents.push(
-            Vec4::new(
-                f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x),
-                f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y),
-                f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z),
-                0.0,
-            )
-            .normalize(),
-        );
+        let t = Vec4::new(
+            f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x),
+            f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y),
+            f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z),
+            0.0,
+        )
+        .normalize();
+
+        tangents[tri[0] as usize] = t;
+        tangents[tri[1] as usize] = t;
+        tangents[tri[2] as usize] = t;
     }
 
     tangents

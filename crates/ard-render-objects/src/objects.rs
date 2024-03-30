@@ -5,7 +5,7 @@ use ard_core::{
 };
 use ard_ecs::prelude::Entity;
 use ard_log::info;
-use ard_math::{Vec3A, Vec4, Vec4Swizzles};
+use ard_math::{Vec4, Vec4Swizzles};
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, BufferWriteView, Context, MemoryUsage, QueueTypes,
     SharingMode,
@@ -318,8 +318,9 @@ impl RenderObjects {
             model: [mdl.0.row(0), mdl.0.row(1), mdl.0.row(2)],
             // The object ID is written to the instance field later.
             instance_mask: (0xFF << 24),
-            // TODO: Put in SBT offset when that's added.
-            shader_flags: sbt & 0xFFFFFF,
+            // SBT Offset and geometry flags.
+            // NOTE: The flags come from `VkGeometryInstanceFlagBitsKHR`
+            shader_flags: (sbt & 0xFFFFFF) | (1 << 24),
             blas,
             // Our stuff
             model_inv: [mdl_inv.row(0), mdl_inv.row(1), mdl_inv.row(2)],

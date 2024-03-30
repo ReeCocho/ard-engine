@@ -52,12 +52,24 @@ fn main() {
             vertex_layout: VertexLayout::empty(),
         },
         ShaderVariant {
+            pass: Pass::DepthPrepass,
+            vertex_layout: VertexLayout::UV0,
+        },
+        ShaderVariant {
+            pass: Pass::DepthPrepass,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+        },
+        ShaderVariant {
             pass: Pass::DepthPrepassAc,
             vertex_layout: VertexLayout::empty(),
         },
         ShaderVariant {
             pass: Pass::DepthPrepassAc,
             vertex_layout: VertexLayout::UV0,
+        },
+        ShaderVariant {
+            pass: Pass::DepthPrepassAc,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
         },
         // Color passes
         ShaderVariant {

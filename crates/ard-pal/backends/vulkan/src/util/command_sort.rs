@@ -2266,8 +2266,11 @@ impl CommandSorting {
         );
 
         // Inspect all the dependent vertex and index buffers
-        blas.internal().buffer_refs.lock().unwrap().iter().for_each(
-            |((buff, array_elem), buff_info)| {
+        blas.internal()
+            .buffer_refs
+            .load()
+            .iter()
+            .for_each(|((buff, array_elem), buff_info)| {
                 let new_dst_usage = GlobalBufferUsage {
                     queue: Some(QueueUsage {
                         queue: info.queue,
@@ -2306,8 +2309,7 @@ impl CommandSorting {
                     &mut info.wait_queues,
                     (info.queue, info.timeline_value),
                 );
-            },
-        );
+            });
 
         // Inspect the scratch buffer
         let new_dst_usage = GlobalBufferUsage {

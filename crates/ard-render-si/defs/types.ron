@@ -254,6 +254,18 @@
             (name: "inv_total_sample_weight", ty: F32),
         ]
     ),
+    // Payload for RT reflections.
+    (
+        name: "ReflectionRayPayload",
+        no_mangle: false,
+        fields: [
+            // 16-bit color encoded in a UVec2.
+            (name: "color", ty: UVec2),
+            (name: "location", ty: Vec4),
+            // Flag indicating the ray hit.
+            (name: "hit", ty: Bool),
+        ]
+    ),
     // Push constants for mesh shadering rendering.
     (
         name: "DrawPushConstants",

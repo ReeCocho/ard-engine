@@ -4,6 +4,7 @@ use ard_render_si::bindings::Layouts;
 pub mod color;
 pub mod depth_prepass;
 pub mod hzb;
+pub mod reflections;
 pub mod shadow;
 pub mod transparent;
 
@@ -99,7 +100,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 0,
+                color_attachment_count: 1,
             },
         )
         .unwrap();
@@ -116,7 +117,7 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                     layouts.materials.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 0,
+                color_attachment_count: 1,
             },
         )
         .unwrap();

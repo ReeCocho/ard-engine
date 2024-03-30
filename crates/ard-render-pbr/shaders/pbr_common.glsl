@@ -104,7 +104,9 @@ float light_attenuation(float x, float range) {
 /// `z_receiver` - Z coordinate in light space for the shadow receiver.
 float sample_shadow_map(int layer, vec2 uv, float bias, vec2 filter_radius_uv, float z_receiver) {
     float shadow = 0.0;
-    const vec3 jcoord = vec3((vs_WorldSpaceFragPos.xz + vec2(vs_WorldSpaceFragPos.yy)) * 100.0, 0.0);
+    const vec3 jcoord = vec3(
+        (vs_in.world_space_position.xz + vec2(vs_in.world_space_position.yy)) * 100.0, 0.0
+    );
     const vec2 sm_coord = uv;
     const vec4 fr_uv2 = vec4(filter_radius_uv, filter_radius_uv);
     const float shadow_bias = z_receiver - bias;
@@ -141,7 +143,7 @@ float compute_shadow_factor(vec3 normal) {
     // Determine which cascade to use
     int layer = int(sun_shadow_info.count);
     for (int i = 0; i < sun_shadow_info.count; ++i) {
-        if (vs_ViewSpacePosition.z < sun_shadow_info.cascades[i].far_plane) {
+        if (vs_in.view_space_position.z < sun_shadow_info.cascades[i].far_plane) {
             layer = i;
             break;
         }
@@ -154,7 +156,8 @@ float compute_shadow_factor(vec3 normal) {
 
     const vec4 frag_pos_light_space = sun_shadow_info.cascades[layer].vp 
         * vec4(
-            vs_WorldSpaceFragPos + (sun_shadow_info.cascades[layer].normal_bias * normalize(vs_Normal)),
+            vs_in.world_space_position 
+            + (sun_shadow_info.cascades[layer].normal_bias * normalize(vs_in.normal)),
             1.0
         );
 
@@ -229,26 +232,17 @@ uvec3 get_cluster_id(vec2 uv, float depth) {
 }
 #endif
 
-#ifdef VERTEX_SHADER
-    #define ard_ObjectId (object_ids[gl_InstanceIndex])
-#endif
-
-#define ard_ModelMatrix(ID) (object_data[ID].model)
-#define ard_NormalMatrix(ID) (object_data[ID].normal)
-#define ard_TextureSlot(ID) (object_data[ID].textures)
-#define ard_MaterialSlot(ID) (object_data[ID].material)
-
 /// Bindless texture sampling.
 #ifdef ARD_TEXTURE_COUNT
 
-/// Samples a texture at a given texture ID. If the texture is unbound, the provided default will 
+/// Samples a texture at a given texture ID. If the texture is unbound, the provided default will
 /// be returned.
 vec4 sample_texture_default(uint id, vec2 uv, vec4 def) {
-    return mix(
-        texture(textures[min(id, MAX_TEXTURES - 1)], uv), 
-        def, 
-        float(id == EMPTY_TEXTURE_ID)
-    );
+    if (id == EMPTY_TEXTURE_ID) {
+        return def;
+    } else {
+        return texture(textures[min(id, MAX_TEXTURES - 1)], uv);
+    }
 }
 
 /// Samples a texture at a given slot. Will return `vec4(0)` if the texture is unbound.

@@ -68,7 +68,7 @@ impl Triangle {
 impl WorkingMeshlet {
     #[inline(always)]
     fn is_empty(&self) -> bool {
-        self.triangles.is_empty() && self.vertices.is_empty()
+        self.triangles.is_empty() || self.vertices.is_empty()
     }
 
     #[inline]
@@ -294,9 +294,31 @@ impl MeshClustifier {
                 }
             }
 
-            // Now that our meshlet is full, we add it to the output list
+            // Now that our meshlet is full, we add it to the output list. But first, we check
+            // to see if there is an unused triangle on its border than we can use as a starting
+            // point for the next meshlet.
             let mut meshlet = std::mem::take(&mut self.meshlet);
+
+            let mut starting_tri = None;
+            for tri in meshlet.border {
+                if !self.used_tri_lookup[tri.0 as usize] {
+                    starting_tri = Some(tri);
+                    break;
+                }
+            }
             meshlet.border = Vec::default();
+
+            if let Some(tri) = starting_tri {
+                if self.meshlet.add(
+                    tri,
+                    &self.indices,
+                    self.vertices.positions(),
+                    &self.triangle_neighbours,
+                ) {
+                    self.use_tri(tri);
+                }
+            }
+
             output_meshlets.push(meshlet);
         }
 

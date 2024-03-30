@@ -158,6 +158,80 @@ pub fn create_pbr_material(
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass.spv")),
     );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.depth_prepass.spv")),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.task.depth_prepass.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass.uv0.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.depth_prepass.uv0.spv")),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.task.depth_prepass.tuv0.spv"
+        )),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.mesh.depth_prepass.tuv0.spv"
+        )),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.frag.depth_prepass.tuv0.spv"
+        )),
+    );
 
     variant_code.insert(
         ShaderVariant {
@@ -176,6 +250,15 @@ pub fn create_pbr_material(
             rendering_mode: RenderingMode::AlphaCutout,
         },
         include_bytes!(concat!(env!("OUT_DIR"), "./pbr.mesh.depth_prepass_ac.spv")),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.frag.depth_prepass_ac.spv")),
     );
 
     variant_code.insert(
@@ -212,6 +295,43 @@ pub fn create_pbr_material(
         include_bytes!(concat!(
             env!("OUT_DIR"),
             "./pbr.frag.depth_prepass_ac.uv0.spv"
+        )),
+    );
+
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Task,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.task.depth_prepass_ac.tuv0.spv"
+        )),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Mesh,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.mesh.depth_prepass_ac.tuv0.spv"
+        )),
+    );
+    variant_code.insert(
+        ShaderVariant {
+            pass: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::Fragment,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "./pbr.frag.depth_prepass_ac.tuv0.spv"
         )),
     );
 
@@ -514,12 +634,13 @@ pub fn create_pbr_material(
     let mut variant_shaders = HashMap::<ShaderVariant, Shader>::default();
     for (variant, code) in variant_code.iter() {
         let task_invocs = match variant.pass {
-            // Shadow and depth prepasses have to have more than one task invocations to accelerate
-            // culling.
+            // Shadow, pre-depth, and transparent passes have to have more than one task
+            // invocations to accelerate culling.
             SHADOW_OPAQUE_PASS_ID
             | SHADOW_ALPHA_CUTOFF_PASS_ID
             | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
-            | DEPTH_OPAQUE_PREPASS_PASS_ID => invocations_per_task(properties),
+            | DEPTH_OPAQUE_PREPASS_PASS_ID
+            | TRANSPARENT_PASS_ID => invocations_per_task(properties),
             _ => 1,
         };
 
@@ -623,11 +744,20 @@ pub fn create_pbr_material(
                 depth_clamp: false,
                 depth_test: true,
                 depth_write: true,
-                depth_compare: CompareOp::Greater,
+                depth_compare: CompareOp::GreaterOrEqual,
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState::default(),
+            color_blend: ColorBlendState {
+                attachments: vec![ColorBlendAttachment {
+                    blend: false,
+                    write_mask: ColorComponents::R
+                        | ColorComponents::G
+                        | ColorComponents::B
+                        | ColorComponents::A,
+                    ..Default::default()
+                }],
+            },
             debug_name: "pbr_depth_opaque_prepass_pipeline".into(),
         },
     );
@@ -644,11 +774,20 @@ pub fn create_pbr_material(
                 depth_clamp: false,
                 depth_test: true,
                 depth_write: true,
-                depth_compare: CompareOp::Greater,
+                depth_compare: CompareOp::GreaterOrEqual,
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState::default(),
+            color_blend: ColorBlendState {
+                attachments: vec![ColorBlendAttachment {
+                    blend: false,
+                    write_mask: ColorComponents::R
+                        | ColorComponents::G
+                        | ColorComponents::B
+                        | ColorComponents::A,
+                    ..Default::default()
+                }],
+            },
             debug_name: "pbr_depth_alpha_cutoff_prepass_pipeline".into(),
         },
     );

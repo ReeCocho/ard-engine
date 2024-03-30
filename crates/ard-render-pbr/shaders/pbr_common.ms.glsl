@@ -11,30 +11,21 @@ taskPayloadSharedEXT MsPayload payload;
 
 layout(triangles, max_vertices = MAX_VERTICES, max_primitives = MAX_PRIMITIVES) out;
 
-
-
-// layout(location = 0) out vec3 vs_Color[];
-layout(location = 1) flat out uvec4 vs_Slots[];
-
-#if ARD_VS_HAS_UV0
-layout(location = 2) out vec2 vs_Uv[];
-#endif
-
+layout(location = 0) out DataBlock {
+    flat uvec4 slots;
 #ifdef COLOR_PASS
-layout(location = 3) out vec3 vs_Normal[];
-
-// Proj * View * Model * Position;
-layout(location = 4) out vec4 vs_Position[];
-
-// Model * Position;
-layout(location = 5) out vec3 vs_WorldSpaceFragPos[];
-
-// View * Model * Position;
-layout(location = 6) out vec4 vs_ViewSpacePosition[];
-
-#if ARD_VS_HAS_TANGENT
-layout(location = 7) out mat3 vs_TBN[];
+    vec4 ndc_position;
+    vec4 view_space_position;
 #endif
+    vec3 world_space_position;
+    vec3 normal;
+#if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
+    vec3 tangent;
+    vec3 bitangent;
 #endif
+#if ARD_VS_HAS_UV0
+    vec2 uv;
+#endif
+} vs_out[];
 
 #endif

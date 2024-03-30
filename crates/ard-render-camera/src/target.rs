@@ -15,11 +15,14 @@ struct Attachments {
     color_resolve: Texture,
     depth_target: Texture,
     depth_resolve: Texture,
+    thin_g_target: Texture,
+    thin_g_resolve: Texture,
     linear_color: Texture,
 }
 
 impl RenderTarget {
     pub const COLOR_TARGET_FORMAT: Format = Format::Rgba16SFloat;
+    pub const THIN_G_TARGET_FORMAT: Format = Format::Rgba8Snorm;
     pub const FINAL_COLOR_FORMAT: Format = Format::Rgba8Unorm;
     pub const DEPTH_FORMAT: Format = Format::D32Sfloat;
 
@@ -55,10 +58,8 @@ impl RenderTarget {
 
     pub fn depth_prepass(&self) -> RenderPassDescriptor {
         let (load_op, dsra) = match self.samples {
-            MultiSamples::Count1 => {
-                // We can load the result of the HZB render when not using multi-sampling.
-                (LoadOp::Load, None)
-            }
+            // We can load the result of the HZB render when not using multi-sampling.
+            MultiSamples::Count1 => (LoadOp::Load, None),
             _ => (
                 LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
                 Some(DepthStencilResolveAttachment {
@@ -75,9 +76,35 @@ impl RenderTarget {
             ),
         };
 
+        let (store_op, tgra) = match self.samples {
+            MultiSamples::Count1 => (StoreOp::Store, Vec::default()),
+            _ => (
+                StoreOp::DontCare,
+                vec![ColorResolveAttachment {
+                    src: 0,
+                    dst: ColorAttachmentDestination::Texture {
+                        texture: &self.attachments.thin_g_resolve,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
+                    load_op: LoadOp::DontCare,
+                    store_op: StoreOp::Store,
+                }],
+            ),
+        };
+
         RenderPassDescriptor {
-            color_attachments: Vec::default(),
-            color_resolve_attachments: Vec::default(),
+            color_attachments: vec![ColorAttachment {
+                load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, -1.0)),
+                store_op,
+                samples: self.samples,
+                dst: ColorAttachmentDestination::Texture {
+                    texture: &self.attachments.thin_g_target,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+            }],
+            color_resolve_attachments: tgra,
             depth_stencil_attachment: Some(DepthStencilAttachment {
                 dst: DepthStencilAttachmentDestination::Texture {
                     texture: &self.attachments.depth_target,
@@ -313,6 +340,48 @@ impl RenderTarget {
                     queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
                     sharing_mode: SharingMode::Exclusive,
                     debug_name: Some("depth_resolve".to_owned()),
+                },
+            )
+            .unwrap(),
+            thin_g_target: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::THIN_G_TARGET_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: samples,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("thin_g_target".to_owned()),
+                },
+            )
+            .unwrap(),
+            thin_g_resolve: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::THIN_G_TARGET_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT
+                        | TextureUsage::SAMPLED
+                        | TextureUsage::TRANSFER_SRC,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("thin_g_resolve".to_owned()),
                 },
             )
             .unwrap(),

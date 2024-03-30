@@ -1597,16 +1597,7 @@ impl VulkanBackend {
                 blas.internal().write_compact_size(cb, as_loader, queries);
             }
             Command::CompactBlas { src, dst } => {
-                // Copy buffer references
-                *src.internal().buffer_refs.lock().unwrap() =
-                    dst.internal().buffer_refs.lock().unwrap().clone();
-
-                // Copy acceleration structure
-                let copy_info = vk::CopyAccelerationStructureInfoKHR::builder()
-                    .src(src.internal().acceleration_struct)
-                    .dst(dst.internal().acceleration_struct)
-                    .mode(vk::CopyAccelerationStructureModeKHR::COMPACT);
-                as_loader.cmd_copy_acceleration_structure(cb, &copy_info);
+                dst.internal().copy_from(cb, as_loader, src.internal());
             }
             _ => unreachable!(),
         }

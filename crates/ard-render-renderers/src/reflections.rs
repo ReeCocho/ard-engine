@@ -9,12 +9,12 @@ use ard_render_raytracing::pipeline::{
 };
 use ard_render_si::bindings::*;
 
-use crate::passes::RT_PASS_ID;
+use crate::passes::{reflections::ReflectionPassSets, RT_PASS_ID};
 
 pub struct Reflections {
     pipeline: RayTracingMaterialPipeline,
     image: Texture,
-    sets: Vec<DescriptorSet>,
+    sets: ReflectionPassSets,
 }
 
 impl Reflections {
@@ -27,19 +27,11 @@ impl Reflections {
         dims: (u32, u32),
     ) -> Self {
         let image = Self::create_texture(ctx, dims);
+        let mut sets = ReflectionPassSets::new(ctx, layouts, FIF);
 
-        let sets = (0..FIF)
-            .map(|_| {
-                DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.rt_test.clone(),
-                        debug_name: Some("rt_set".into()),
-                    },
-                )
-                .unwrap()
-            })
-            .collect();
+        for i in 0..FIF {
+            sets.update_output(Frame::from(i), &image);
+        }
 
         let raygen = Shader::new(
             ctx.clone(),
@@ -64,7 +56,7 @@ impl Reflections {
                 ctx,
                 RayTracingMaterialPipelineCreateInfo {
                     pass: RT_PASS_ID,
-                    layouts: vec![layouts.camera.clone(), layouts.rt_test.clone()],
+                    layouts: vec![layouts.camera.clone(), layouts.reflection_rt_pass.clone()],
                     materials,
                     shaders,
                     offset,
@@ -80,27 +72,18 @@ impl Reflections {
         }
     }
 
+    #[inline(always)]
+    pub fn sets(&mut self) -> &mut ReflectionPassSets {
+        &mut self.sets
+    }
+
     pub fn resize(&mut self, ctx: &Context, dims: (u32, u32)) {
         self.image = Self::create_texture(ctx, dims);
     }
 
-    pub fn update_set(&mut self, frame: Frame, tlas: &TopLevelAccelerationStructure) {
-        self.sets[usize::from(frame)].update(&[
-            DescriptorSetUpdate {
-                binding: RT_TEST_SET_TLAS_BINDING,
-                array_element: 0,
-                value: DescriptorValue::TopLevelAccelerationStructure(tlas),
-            },
-            DescriptorSetUpdate {
-                binding: RT_TEST_SET_OUTPUT_TEX_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageImage {
-                    texture: &self.image,
-                    array_element: 0,
-                    mip: 0,
-                },
-            },
-        ]);
+    pub fn update_bindings(&mut self, frame: Frame, tlas: &TopLevelAccelerationStructure) {
+        self.sets.update_tlas(frame, tlas);
+        self.sets.update_output(frame, &self.image);
     }
 
     pub fn check_for_rebuild<const FIF: usize>(
@@ -121,10 +104,7 @@ impl Reflections {
         camera: &'a CameraUbo,
     ) {
         commands.ray_trace_pass(self.pipeline.pipeline(), Some("ray_trace"), |pass| {
-            pass.bind_sets(
-                0,
-                vec![camera.get_set(frame), &self.sets[usize::from(frame)]],
-            );
+            pass.bind_sets(0, vec![camera.get_set(frame), &self.sets.get_set(frame)]);
 
             RayTracingDispatch {
                 dims: self.image.dims(),
@@ -140,7 +120,7 @@ impl Reflections {
         Texture::new(
             ctx.clone(),
             TextureCreateInfo {
-                format: Format::Rgba8Unorm,
+                format: Format::Rgba16SFloat,
                 ty: TextureType::Type2D,
                 width: dims.0,
                 height: dims.1,

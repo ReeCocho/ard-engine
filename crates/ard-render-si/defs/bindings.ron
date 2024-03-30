@@ -354,6 +354,44 @@
             )
         ]
     ),
+    // Pass used for rendering RT reflections.
+    (
+        name: "ReflectionRtPass",
+        bindings: [
+            (
+                name: "Tlas",
+                stage: RayTracing,
+                count: "1",
+                data: Tlas("tlas"),
+            ),
+            (
+                name: "OutputTex",
+                stage: RayTracing,
+                count: "1",
+                data: StorageImage(
+                    field_name: "out_tex",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba16F,
+                )
+            ),
+            (
+                name: "GlobalLightingInfo",
+                stage: RayTracing,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "EnvMap",
+                stage: RayTracing,
+                count: "1",
+                data: CubeMap("env_map"),
+            ),
+        ]
+    ),
     // Mesh data.
     (
         name: "MeshData",
@@ -1288,29 +1326,6 @@
                 stage: Fragment,
                 count: "1",
                 data: Texture("blend_tex"),
-            ),
-        ]
-    ),
-    // Raytracing
-    (
-        name: "RtTest",
-        bindings: [
-            (
-                name: "Tlas",
-                stage: RayTracing,
-                count: "1",
-                data: Tlas("tlas"),
-            ),
-            (
-                name: "OutputTex",
-                stage: RayTracing,
-                count: "1",
-                data: StorageImage(
-                    field_name: "out_tex",
-                    restrict: true,
-                    access: WriteOnly,
-                    format: Rgba8UNorm,
-                )
             ),
         ]
     ),

@@ -120,11 +120,9 @@ void main() {
 
         // Read attributes
         const vec4 ard_position = v_positions[vertex_offset + vert_idx];
-#ifdef COLOR_PASS
         const uvec2 ard_normal_raw = v_normals[vertex_offset + vert_idx];
 #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0    
         const uvec2 ard_tangent_raw = v_tangents[vertex_offset + vert_idx];
-#endif
 #endif
         
 #if ARD_VS_HAS_UV0
@@ -132,19 +130,15 @@ void main() {
 #endif
 
         // Format conversion
-#ifdef COLOR_PASS
         vec4 ard_normal = vec4(
             unpackSnorm2x16(ard_normal_raw.x),
             unpackSnorm2x16(ard_normal_raw.y)
         );
-        ard_normal = normalize(ard_normal);
 #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0    
         vec4 ard_tangent = vec4(
             unpackSnorm2x16(ard_tangent_raw.x),
             unpackSnorm2x16(ard_tangent_raw.y)
         );
-        ard_tangent = normalize(ard_tangent);
-#endif
 #endif
         
 #if ARD_VS_HAS_UV0
@@ -153,39 +147,39 @@ void main() {
         const vec4 ws_frag_pos = vec4(model * ard_position, 1.0);
         const vec4 position = camera[gl_ViewIndex].vp * ws_frag_pos;
 #ifdef COLOR_PASS
-        vs_ViewSpacePosition[vert_idx] = camera[gl_ViewIndex].view * ws_frag_pos;
+        vs_out[vert_idx].view_space_position = camera[gl_ViewIndex].view * ws_frag_pos;
 #endif
 
         gl_MeshVerticesEXT[vert_idx].gl_Position = position;
 #ifdef COLOR_PASS
-        vs_Position[vert_idx] = position;
-        vs_WorldSpaceFragPos[vert_idx] = ws_frag_pos.xyz;
+        vs_out[vert_idx].ndc_position = position;
 #endif
+        vs_out[vert_idx].world_space_position = ws_frag_pos.xyz;
 
-        // Compute TBN if we have tangents and UVs (UVs are required as well because the TBN is 
-        // only used when doing normal mapping.
-#ifdef COLOR_PASS
+        // Send tangents if we have them and UVs (UVs are required as well because the TBN is 
+        // only used when doing normal mapping).
 #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
-        vec3 T = normalize(vec3(model * ard_tangent));
-        vec3 N = normalize(vec3(model * ard_normal));
-        T = normalize(T - dot(T, N) * N);
-        vec3 B = cross(N, T);
-        
-        vs_TBN[vert_idx] = mat3(T, B, N);
-#endif
-        // Output corrected normal
-        vs_Normal[vert_idx] = normalize(normal_mat * ard_normal.xyz);
+        vec3 tangentW = normalize(normal_mat * ard_tangent.xyz);
+        vec3 normalW = normalize(normal_mat * ard_normal.xyz);
+        tangentW = normalize(tangentW - dot(tangentW, normalW) * normalW);
+        vec3 bitangentW = normalize(cross(normalW, tangentW) * ard_tangent.w);
+
+        vs_out[vert_idx].tangent = tangentW;
+        vs_out[vert_idx].bitangent = bitangentW;
+        vs_out[vert_idx].normal = normalW;
+#else
+        vs_out[vert_idx].normal = normalize(normal_mat * ard_normal.xyz);
 #endif
 
 #if ARD_VS_HAS_UV0
-        vs_Uv[vert_idx] = ard_uv0;
+        vs_out[vert_idx].uv = ard_uv0;
 #if ARD_VS_HAS_TANGENT
-        vs_Slots[vert_idx] = uvec4(color_slot, met_rough_slot, normal_slot, materials_slot);
+        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, normal_slot, materials_slot);
 #else
-        vs_Slots[vert_idx] = uvec4(color_slot, met_rough_slot, EMPTY_TEXTURE_ID, materials_slot);
+        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, EMPTY_TEXTURE_ID, materials_slot);
 #endif
 #else
-        vs_Slots[vert_idx] = uvec4(EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, materials_slot);
+        vs_out[vert_idx].slots = uvec4(EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, materials_slot);
 #endif
     }
 }
