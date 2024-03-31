@@ -11,6 +11,7 @@ use ard_pal::prelude::{
     SharingMode,
 };
 use ard_render_base::{
+    ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
     RenderingMode,
 };
@@ -138,6 +139,7 @@ impl RenderObjects {
     // Takes objects from the primary ECS and converts them to the format used by the renderer.
     pub fn upload_objects<'a>(
         &mut self,
+        frame: Frame,
         static_objs: impl ExactSizeIterator<
             Item = (
                 Entity,
@@ -226,6 +228,7 @@ impl RenderObjects {
                 }
 
                 Self::write_renderable(
+                    frame,
                     e,
                     (mesh, mat, mdl, mode, flags),
                     self.static_objects.get_mut(&group).unwrap(),
@@ -252,7 +255,12 @@ impl RenderObjects {
                 continue;
             }
 
-            Self::write_renderable(e, (mesh, mat, mdl, mode, flags), &mut self.dynamic_objects);
+            Self::write_renderable(
+                frame,
+                e,
+                (mesh, mat, mdl, mode, flags),
+                &mut self.dynamic_objects,
+            );
         }
 
         self.dynamic_objects
@@ -280,6 +288,7 @@ impl RenderObjects {
 
     #[inline]
     fn write_renderable(
+        frame: Frame,
         entity: Entity,
         query: (
             &Mesh,
@@ -318,10 +327,16 @@ impl RenderObjects {
             blas,
             // Our stuff
             model_inv: [mdl_inv.row(0), mdl_inv.row(1), mdl_inv.row(2)],
+            mesh: usize::from(mesh.id()) as u16,
+            textures: mat
+                .tex_slot()
+                .map(|slot| u16::from(slot))
+                .unwrap_or_default(),
             entity_id: entity.id(),
-            mesh: usize::from(mesh.id()) as u32,
-            material: mat.data_slot().map(|slot| slot.into()).unwrap_or_default(),
-            textures: mat.tex_slot().map(|slot| slot.into()).unwrap_or_default(),
+            material: mat
+                .data_ptrs()
+                .map(|ptrs| ptrs[usize::from(frame)])
+                .unwrap_or_default(),
         };
 
         // If the mesh being used is missing it's final BLAS, we mark the entity for a later update

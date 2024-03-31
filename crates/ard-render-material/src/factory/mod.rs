@@ -3,7 +3,10 @@ pub mod set;
 
 use std::collections::HashMap;
 
-use ard_pal::prelude::{Context, DescriptorSet, DescriptorSetLayout};
+use ard_pal::prelude::{
+    Context, DescriptorSet, DescriptorSetCreateInfo, DescriptorSetLayout, DescriptorSetUpdate,
+    DescriptorValue,
+};
 use ard_render_base::ecs::Frame;
 use ard_render_base::resource::ResourceAllocator;
 use ard_render_base::FRAMES_IN_FLIGHT;
@@ -13,10 +16,13 @@ use thiserror::Error;
 
 use crate::material_instance::MaterialInstance;
 use crate::material_instance::{MaterialInstanceResource, TextureSlot};
-use ard_render_si::consts::{EMPTY_TEXTURE_ID, MAX_TEXTURES_PER_MATERIAL};
+use ard_render_si::{
+    bindings::*,
+    consts::{EMPTY_TEXTURE_ID, MAX_TEXTURES_PER_MATERIAL},
+};
 
+use self::buffer::MaterialBuffer;
 use self::buffer::MaterialSlot;
-use self::{buffer::MaterialBuffer, set::MaterialSet};
 
 #[derive(Serialize, Deserialize)]
 pub struct MaterialFactoryConfig {
@@ -31,8 +37,6 @@ pub struct MaterialFactoryConfig {
 pub struct MaterialFactory {
     ctx: Context,
     config: MaterialFactoryConfig,
-    /// Layout for material sets.
-    layout: DescriptorSetLayout,
     /// Passes that materials can handle.
     passes: FxHashMap<PassId, PassDefinition>,
     rt_passes: FxHashMap<PassId, RtPassDefinition>,
@@ -40,8 +44,7 @@ pub struct MaterialFactory {
     data: FxHashMap<u64, MaterialBuffer>,
     /// Global texture slots buffer
     textures: MaterialBuffer,
-    /// Descriptor sets for materials, keyed by their data size.
-    sets: FxHashMap<u64, [MaterialSet; FRAMES_IN_FLIGHT]>,
+    texture_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 pub struct PassDefinition {
@@ -72,28 +75,54 @@ pub enum AddPassError {
 
 impl MaterialFactory {
     pub fn new(ctx: Context, layout: DescriptorSetLayout, config: MaterialFactoryConfig) -> Self {
+        let textures = MaterialBuffer::new(
+            ctx.clone(),
+            "texture_slots_buffer".to_owned(),
+            MAX_TEXTURES_PER_MATERIAL as u64 * std::mem::size_of::<TextureSlot>() as u64,
+            config.default_textures_cap,
+        );
+
+        let texture_sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layout.clone(),
+                    debug_name: Some("texture_set".into()),
+                },
+            )
+            .unwrap();
+
+            set.update(&[DescriptorSetUpdate {
+                binding: TEXTURE_SLOTS_SET_SLOTS_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: textures.buffer(),
+                    array_element: i,
+                },
+            }]);
+
+            set
+        });
+
         MaterialFactory {
             passes: FxHashMap::default(),
             rt_passes: FxHashMap::default(),
             data: FxHashMap::default(),
-            textures: MaterialBuffer::new(
-                ctx.clone(),
-                "texture_slots_buffer".to_owned(),
-                MAX_TEXTURES_PER_MATERIAL as u64 * std::mem::size_of::<TextureSlot>() as u64,
-                config.default_textures_cap,
-            ),
-            sets: FxHashMap::default(),
+            textures,
+            texture_sets,
             ctx,
-            layout,
             config,
         }
     }
 
     #[inline]
-    pub fn get_set(&self, frame: Frame, data_size: u64) -> Option<&DescriptorSet> {
-        self.sets
-            .get(&data_size)
-            .map(|set| set[usize::from(frame)].set())
+    pub fn get_texture_slots_set(&self, frame: Frame) -> &DescriptorSet {
+        &self.texture_sets[usize::from(frame)]
+    }
+
+    #[inline(always)]
+    pub fn get_material_buffer(&self, data_size: u64) -> Option<&MaterialBuffer> {
+        self.data.get(&data_size)
     }
 
     #[inline]
@@ -122,20 +151,6 @@ impl MaterialFactory {
 
         self.rt_passes.insert(id, def);
         Ok(())
-    }
-
-    /// Verifies that a set for a particular data size exists.
-    pub fn verify_set(&mut self, data_size: u64) {
-        self.sets.entry(data_size).or_insert_with(|| {
-            std::array::from_fn(|frame_idx| {
-                MaterialSet::new(
-                    self.ctx.clone(),
-                    self.layout.clone(),
-                    data_size,
-                    frame_idx.into(),
-                )
-            })
-        });
     }
 
     pub fn allocate_data_slot(&mut self, data_size: u64) -> MaterialSlot {
@@ -182,17 +197,9 @@ impl MaterialFactory {
     }
 
     /// Flushes all dirty material buffers to the GPU.
-    pub fn flush(
-        &mut self,
-        frame: Frame,
-        materials: &ResourceAllocator<MaterialInstanceResource>,
-        data_binding: u32,
-        textures_binding: u32,
-    ) {
-        let mut need_rebind;
-
+    pub fn flush(&mut self, frame: Frame, materials: &ResourceAllocator<MaterialInstanceResource>) {
         // Flush textures
-        need_rebind = self.textures.flush(frame, materials, |buffer, mat| {
+        self.textures.flush(frame, materials, |buffer, mat| {
             const DATA_SIZE: usize =
                 MAX_TEXTURES_PER_MATERIAL as usize * std::mem::size_of::<TextureSlot>();
 
@@ -201,12 +208,12 @@ impl MaterialFactory {
                 None => return,
             };
             let end = start + DATA_SIZE;
-            let slots = bytemuck::cast_slice_mut::<_, u32>(&mut buffer[start..end]);
+            let slots = bytemuck::cast_slice_mut::<_, u16>(&mut buffer[start..end]);
 
             for (i, tex) in mat.textures.iter().enumerate() {
                 slots[i] = match tex {
-                    Some(tex) => usize::from(tex.id()) as u32,
-                    None => EMPTY_TEXTURE_ID,
+                    Some(tex) => usize::from(tex.id()) as u16,
+                    None => EMPTY_TEXTURE_ID as u16,
                 };
             }
         });
@@ -215,7 +222,7 @@ impl MaterialFactory {
         self.data.values_mut().for_each(|buffer| {
             // Flush material data
             let data_size = buffer.data_size() as usize;
-            need_rebind |= buffer.flush(frame, materials, |buffer, mat| {
+            buffer.flush(frame, materials, |buffer, mat| {
                 let start = match mat.data_slot {
                     Some(slot) => usize::from(slot) * data_size,
                     None => return,
@@ -224,23 +231,6 @@ impl MaterialFactory {
                 buffer[start..end].copy_from_slice(&mat.data);
             });
         });
-
-        // Rebind if needed
-        if need_rebind {
-            self.sets
-                .values_mut()
-                .flat_map(|set| set.iter_mut().enumerate())
-                .for_each(|(frame, set)| {
-                    let material = self.data.get(&set.data_size());
-                    set.check_rebind(
-                        frame.into(),
-                        material,
-                        data_binding,
-                        &self.textures,
-                        textures_binding,
-                    )
-                });
-        }
     }
 }
 

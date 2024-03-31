@@ -125,7 +125,7 @@ impl MeshResource {
 
         // Create staging buffers
         let (vertex_staging, vertex_offsets) = data.vertex_staging(ctx);
-        let index_staging = data.index_staging(ctx);
+        let index_staging = data.index_staging(ctx, block.vertex_block().base() as usize);
         let meshlet_staging = Self::meshlet_staging(ctx, data.bounds(), &block, data.meshlets());
 
         let bounds = *data.bounds();
@@ -139,10 +139,9 @@ impl MeshResource {
                 data: BottomLevelAccelerationStructureData::Geometry(data.blas_geometries(
                     factory.vertex_buffer().buffer(VertexAttribute::Position),
                     0,
-                    block.vertex_block().base() as u64 * std::mem::size_of::<Vec4>() as u64,
                     factory.index_buffer(),
                     0,
-                    block.index_block().base() as u64 * std::mem::size_of::<u16>() as u64,
+                    block.index_block().base() as u64 * MeshData::INDEX_SIZE as u64,
                 )),
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,

@@ -49,6 +49,7 @@ impl<W: Write> RustStructCodeGen<W> {
     fn field_name(ty: &GpuStructFieldType) -> String {
         match ty {
             GpuStructFieldType::Struct(name) => format!("Gpu{name}"),
+            GpuStructFieldType::Pointer(_) => "u64".into(),
             GpuStructFieldType::USize => "usize".into(),
             GpuStructFieldType::U16 => "u16".into(),
             GpuStructFieldType::U32 => "u32".into(),

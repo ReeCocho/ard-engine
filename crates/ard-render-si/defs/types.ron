@@ -96,16 +96,16 @@
         fields: [
             // NOTE: The beginning of this structure must line up with
             // VkAccelerationStructureInstanceKHR for raytracing.
-            (name: "model", ty: Mat3x4),        // Object instance model matrix
-            (name: "instance_mask", ty: U32),   // 24-bits for custom idx. 8 for mask.
-            (name: "shader_flags", ty: U32),    // 24-bits for shader binding table ofset. 8 for flags.
+            (name: "model", ty: Mat3x4),                    // Object instance model matrix
+            (name: "instance_mask", ty: U32),               // 24-bits for custom idx. 8 for mask.
+            (name: "shader_flags", ty: U32),                // 24-bits for shader binding table ofset. 8 for flags.
             (name: "blas", ty: U64),
             // Everything past here is up for us to decide.
-            (name: "model_inv", ty: Mat3x4),    // inv(model). Transpose is the normal matrix.
-            (name: "mesh", ty: U32),            // Mesh ID
-            (name: "material", ty: U32),        // Material ID for properties lookup
-            (name: "textures", ty: U32),        // Texture table ID
-            (name: "entity_id", ty: U32),       // ECS entity ID
+            (name: "model_inv", ty: Mat3x4),                // inv(model). Transpose is the normal matrix.
+            (name: "material", ty: Pointer("ArdMaterial")), // Material pointer for properties lookup
+            (name: "entity_id", ty: U32),                   // ECS entity ID
+            (name: "mesh", ty: U16),                        // Mesh ID
+            (name: "textures", ty: U16),                    // Texture table slot
         ]
     ),
     // Indirect indexed draw call.

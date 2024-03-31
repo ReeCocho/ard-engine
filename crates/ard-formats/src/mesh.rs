@@ -44,8 +44,8 @@ unsafe impl Pod for ObjectBounds {}
 unsafe impl Zeroable for ObjectBounds {}
 
 impl MeshData {
-    pub const INDEX_TYPE: IndexType = IndexType::U16;
-    pub const INDEX_SIZE: usize = std::mem::size_of::<u16>();
+    pub const INDEX_TYPE: IndexType = IndexType::U32;
+    pub const INDEX_SIZE: usize = std::mem::size_of::<u32>();
 
     #[inline(always)]
     pub fn layout(&self) -> VertexLayout {
@@ -119,7 +119,7 @@ impl MeshData {
         (staging, offsets)
     }
 
-    pub fn index_staging(&self, ctx: &Context) -> Buffer {
+    pub fn index_staging(&self, ctx: &Context, vertex_base: usize) -> Buffer {
         let mut staging = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -136,7 +136,7 @@ impl MeshData {
 
         // Copy in indices
         let mut view = staging.write(0).unwrap();
-        let idx_slice = bytemuck::cast_slice_mut::<_, u16>(view.deref_mut());
+        let idx_slice = bytemuck::cast_slice_mut::<_, u32>(view.deref_mut());
 
         // Loop over every meshlet
         self.meshlets.iter().for_each(|meshlet| {
@@ -144,8 +144,8 @@ impl MeshData {
             let index_count = meshlet.primitive_count as usize * 3;
             for i in 0..index_count {
                 let src_idx = meshlet.index_offset as usize + i;
-                let meshlet_rel_idx = self.indices[src_idx] as u16;
-                idx_slice[src_idx] = meshlet_rel_idx;
+                let meshlet_rel_idx = self.indices[src_idx] as u32;
+                idx_slice[src_idx] = vertex_base as u32 + meshlet.vertex_offset + meshlet_rel_idx;
             }
         });
 
@@ -158,7 +158,6 @@ impl MeshData {
         &'a self,
         vertex_data: &'a Buffer,
         vertex_data_array_element: usize,
-        vertex_data_base: u64,
         index_data: &'a Buffer,
         index_data_array_element: usize,
         index_data_base: u64,
@@ -172,15 +171,14 @@ impl MeshData {
                     vertex_format: Format::Rgba32SFloat,
                     vertex_data,
                     vertex_data_array_element,
-                    vertex_data_offset: vertex_data_base
-                        + (meshlet.vertex_offset as u64 * std::mem::size_of::<Vec4>() as u64),
+                    vertex_data_offset: 0,
                     vertex_count: meshlet.vertex_count as usize,
                     vertex_stride: std::mem::size_of::<Vec4>() as u64,
-                    index_type: IndexType::U16,
+                    index_type: MeshData::INDEX_TYPE,
                     index_data,
                     index_data_array_element,
                     index_data_offset: index_data_base
-                        + (meshlet.index_offset as u64 * std::mem::size_of::<u16>() as u64),
+                        + (meshlet.index_offset as u64 * MeshData::INDEX_SIZE as u64),
                     triangle_count: meshlet.primitive_count as usize,
                 }
             })

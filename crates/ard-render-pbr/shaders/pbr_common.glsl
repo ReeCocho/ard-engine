@@ -1,7 +1,7 @@
 #ifndef _ARD_PBR_COMMON
 #define _ARD_PBR_COMMON
 
-#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_buffer_reference : require
 
 ///////////////
 /// SET DEF ///
@@ -31,10 +31,14 @@
 
 #define ARD_SET_CAMERA 1
 #define ARD_SET_MESH_DATA 2
-#define ARD_SET_TEXTURES 3
-#define ARD_SET_MATERIALS 4
+#define ARD_SET_TEXTURE_SLOTS 3
+#define ARD_SET_TEXTURES 4
 
+layout(std430, buffer_reference, buffer_reference_align = 8) readonly buffer ArdMaterialPtr;
+#define ArdMaterial ArdMaterialPtr
 #include "ard_bindings.glsl"
+
+layout(std430, buffer_reference, buffer_reference_align = 8) readonly buffer ArdMaterialPtr { PbrMaterial mat; };
 
 ///////////////
 /// STRUCTS ///
@@ -43,7 +47,7 @@
 struct MsPayload {
     mat4x3 model;
     mat3 normal;
-    uint material;
+    uint object_id;
     uint meshlet_base;
     uint meshlet_info_base;
 #if ARD_VS_HAS_UV0
@@ -232,9 +236,6 @@ uvec3 get_cluster_id(vec2 uv, float depth) {
 }
 #endif
 
-/// Bindless texture sampling.
-#ifdef ARD_TEXTURE_COUNT
-
 /// Samples a texture at a given texture ID. If the texture is unbound, the provided default will
 /// be returned.
 vec4 sample_texture_default(uint id, vec2 uv, vec4 def) {
@@ -249,12 +250,5 @@ vec4 sample_texture_default(uint id, vec2 uv, vec4 def) {
 vec4 sample_texture(uint slot, vec2 uv) {
     return sample_texture_default(slot, uv, vec4(0));
 }
-
-#endif
-
-/// Bindless material data.
-#ifdef ArdMaterialData
-    #define ard_MaterialData(ID) (material_data[ID])
-#endif
 
 #endif

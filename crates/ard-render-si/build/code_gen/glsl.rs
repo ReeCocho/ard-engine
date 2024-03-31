@@ -50,6 +50,17 @@ impl<W: Write> GlslStructCodeGen<W> {
             "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\n"
         )
         .unwrap();
+        writeln!(
+            code_gen.writer,
+            "#extension GL_EXT_shader_16bit_storage : require\n"
+        )
+        .unwrap();
+
+        // NOTE: This is to handle includes where we don't define the material data pointer.
+        // It would be nice to not have to to this.
+        writeln!(code_gen.writer, "#ifndef ArdMaterial").unwrap();
+        writeln!(code_gen.writer, "#define ArdMaterial uint64_t").unwrap();
+        writeln!(code_gen.writer, "#endif").unwrap();
 
         code_gen
     }
@@ -57,6 +68,7 @@ impl<W: Write> GlslStructCodeGen<W> {
     fn field_name(ty: &GpuStructFieldType) -> String {
         match ty {
             GpuStructFieldType::Struct(name) => name.clone(),
+            GpuStructFieldType::Pointer(name) => name.clone(),
             GpuStructFieldType::U32 | GpuStructFieldType::USize => "uint".into(),
             GpuStructFieldType::I32 => "int".into(),
             GpuStructFieldType::U16 => "uint16_t".into(),

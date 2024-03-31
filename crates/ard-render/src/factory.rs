@@ -24,10 +24,7 @@ use ard_render_meshes::{
     factory::{MeshFactory, MeshFactoryConfig},
     mesh::{Mesh, MeshCreateError, MeshCreateInfo, MeshResource},
 };
-use ard_render_si::{
-    bindings::{Layouts, MATERIALS_SET_DATA_BINDING, MATERIALS_SET_TEXTURE_SLOTS_BINDING},
-    consts::*,
-};
+use ard_render_si::{bindings::Layouts, consts::*};
 use ard_render_textures::{
     factory::{MipUpdate, TextureFactory, TextureMipUpload},
     texture::{Texture, TextureCreateError, TextureCreateInfo, TextureResource},
@@ -94,12 +91,12 @@ impl Factory {
             texture_factory: Mutex::new(TextureFactory::new(&ctx, layouts)),
             material_factory: Mutex::new(MaterialFactory::new(
                 ctx.clone(),
-                layouts.materials.clone(),
+                layouts.texture_slots.clone(),
                 // TODO: Load this from a config file
                 MaterialFactoryConfig {
                     default_materials_cap: HashMap::default(),
-                    default_textures_cap: 128,
-                    fallback_materials_cap: 32,
+                    default_textures_cap: 1024,
+                    fallback_materials_cap: 1024,
                 },
             )),
             pending_blas: Mutex::new(PendingBlasBuilder::default()),
@@ -177,12 +174,7 @@ impl Factory {
         pending_blas.build_current_lists(frame, &self.inner.ctx, &static_meshes);
 
         // Flush modified material data and uploaded meshes
-        material_factory.flush(
-            frame,
-            &material_instances,
-            MATERIALS_SET_DATA_BINDING,
-            MATERIALS_SET_TEXTURE_SLOTS_BINDING,
-        );
+        material_factory.flush(frame, &material_instances);
 
         mesh_factory.flush_mesh_info(frame);
         mesh_factory.check_rebind(frame);
@@ -379,11 +371,11 @@ impl FactoryInner {
         let material = create_info.material.clone();
         let material_instance = MaterialInstanceResource::new(create_info, &mut material_factory)?;
 
-        let data_slot = material_instance.data_slot;
+        let data_ptrs = material_instance.data_ptrs.clone();
         let tex_slot = material_instance.textures_slot;
         let handle = material_instances.insert(material_instance);
 
-        Ok(MaterialInstance::new(handle, material, data_slot, tex_slot))
+        Ok(MaterialInstance::new(handle, material, data_ptrs, tex_slot))
     }
 
     fn load_texture_mip(&self, texture: &Texture, level: usize, source: impl TextureSource) {

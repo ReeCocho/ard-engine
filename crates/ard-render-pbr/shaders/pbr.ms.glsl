@@ -14,7 +14,7 @@
 
 shared mat4x3 s_model_mat;
 shared mat3 s_normal_mat;
-shared uint s_material;
+shared uint s_object_id;
 shared uint s_vertex_offset;
 shared uint s_index_offset;
 shared uint s_vert_prim_counts;
@@ -41,7 +41,7 @@ void main() {
         // Shading properties
         s_model_mat = payload.model;
         s_normal_mat = payload.normal;
-        s_material = payload.material;
+        s_object_id = payload.object_id;
 #if ARD_VS_HAS_UV0
         s_color_slot = payload.color_tex;
         s_met_rough_slot = payload.met_rough_tex;
@@ -56,7 +56,7 @@ void main() {
     // Extract shared values
     const mat4x3 model = s_model_mat;
     const mat3 normal_mat = s_normal_mat;
-    const uint materials_slot = s_material;
+    const uint object_id = s_object_id;
     const uint index_offset = s_index_offset;
     const uint vertex_offset = s_vertex_offset;
     const uint vp_count = s_vert_prim_counts & 0xFFFF;
@@ -88,9 +88,9 @@ void main() {
         // Read in indices
         const uint base = index_offset + (prim_idx * 3);
         gl_PrimitiveTriangleIndicesEXT[prim_idx] = uvec3(
-            v_indices[base],
-            v_indices[base + 1],
-            v_indices[base + 2]
+            v_indices[base] - vertex_offset,
+            v_indices[base + 1] - vertex_offset,
+            v_indices[base + 2] - vertex_offset
         );
     }
 
@@ -174,12 +174,12 @@ void main() {
 #if ARD_VS_HAS_UV0
         vs_out[vert_idx].uv = ard_uv0;
 #if ARD_VS_HAS_TANGENT
-        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, normal_slot, materials_slot);
+        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, normal_slot, object_id);
 #else
-        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, EMPTY_TEXTURE_ID, materials_slot);
+        vs_out[vert_idx].slots = uvec4(color_slot, met_rough_slot, EMPTY_TEXTURE_ID, object_id);
 #endif
 #else
-        vs_out[vert_idx].slots = uvec4(EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, materials_slot);
+        vs_out[vert_idx].slots = uvec4(EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, EMPTY_TEXTURE_ID, object_id);
 #endif
     }
 }

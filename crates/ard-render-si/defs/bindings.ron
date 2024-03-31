@@ -404,7 +404,7 @@
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "v_indices", ty: U16)),
+                    unbounded_array: Some((name: "v_indices", ty: U32)),
                 )
             ),
             (
@@ -488,30 +488,18 @@
     ),
     // Per material and texture slot bindings.
     (
-        name: "Materials",
+        name: "TextureSlots",
         bindings: [
-            // Material data SSBO
-            (
-                name: "Data",
-                stage: AllGraphics,
-                count: "1",
-                data: Ssbo(
-                    restrict: true,
-                    access: ReadOnly,
-                    inner: None,
-                    unbounded_array: Some((name: "material_data", ty: Struct("ArdMaterialData"))),
-                )
-            ),
             // Texture slots SSBO
             (
-                name: "TextureSlots",
+                name: "Slots",
                 stage: AllGraphics,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
                     inner: None,
-                    unbounded_array: Some((name: "texture_slots", ty: Array(ty: U32, len: "MAX_TEXTURES_PER_MATERIAL"))),
+                    unbounded_array: Some((name: "texture_slots", ty: Array(ty: U16, len: "MAX_TEXTURES_PER_MATERIAL"))),
                 )
             )
         ]  

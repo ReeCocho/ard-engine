@@ -111,12 +111,12 @@ void manual_payload(const ObjectId id) {
     payload.meshlet_info_base = mesh_info[object_data[id.data_idx].mesh].meshlet_offset;
     payload.model = transpose(object_data[id.data_idx].model);
     payload.normal = mat3(transpose(object_data[id.data_idx].model_inv));
-    payload.material = object_data[id.data_idx].material;
+    payload.object_id = id.data_idx;
 #if ARD_VS_HAS_UV0
-    payload.color_tex = texture_slots[textures_slot][0];
-    payload.met_rough_tex = texture_slots[textures_slot][2];
+    payload.color_tex = uint(texture_slots[textures_slot][0]);
+    payload.met_rough_tex = uint(texture_slots[textures_slot][2]);
 #if ARD_VS_HAS_TANGENT
-    payload.normal_tex = texture_slots[textures_slot][1];
+    payload.normal_tex = uint(texture_slots[textures_slot][1]);
 #endif
 #endif
 }
@@ -126,7 +126,6 @@ void manual_payload(const ObjectId id) {
     shared bool s_visible;
     shared mat4x3 s_model_mat;
     shared mat3 s_normal_mat;
-    shared uint s_material;
     shared mat4 s_view_model;
     shared ObjectBounds s_obj_bounds;
     shared uint s_data_idx;
@@ -171,7 +170,6 @@ void main() {
         const ObjectId id = input_ids[object_idx];
         const mat4x3 model_mat = transpose(object_data[id.data_idx].model);
         const mat3 normal_mat = mat3(transpose(object_data[id.data_idx].model_inv));
-        const uint material = object_data[id.data_idx].material;
         const uint textures_slot = object_data[id.data_idx].textures;
         const uint mesh_id = object_data[id.data_idx].mesh;
         const uint meshlet_offset = mesh_info[mesh_id].meshlet_offset;
@@ -223,7 +221,6 @@ void main() {
         s_meshlet_offset = meshlet_offset;
         s_meshlet_count = meshlet_count;
         s_max_scale_axis = max_scale_axis;
-        s_material = material;
 #if ARD_VS_HAS_UV0
         s_color_tex = texture_slots[textures_slot][0];
         s_met_rough_tex = texture_slots[textures_slot][2];
@@ -309,7 +306,7 @@ void main() {
         payload.meshlet_info_base = meshlet_offset;  
         payload.model = model_mat;
         payload.normal = s_normal_mat;
-        payload.material = s_material;
+        payload.object_id = s_data_idx;
 #if ARD_VS_HAS_UV0
         payload.color_tex = s_color_tex;
         payload.met_rough_tex = s_met_rough_tex;

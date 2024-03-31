@@ -1,7 +1,7 @@
 [
     (name: "MaxTexturesPerMaterial", value: UInt(8)),
     (name: "MaxTextures", value: USize(2048)),
-    (name: "EmptyTextureId", value: UInt(4294967295)),
+    (name: "EmptyTextureId", value: UInt(65535)),
     (name: "FinalLightSentinel", value: UInt(4294967295)),
     (name: "MaxShadowCascades", value: USize(4)),
     (name: "CAMERA_FROXELS_WIDTH", value: USize(32)),

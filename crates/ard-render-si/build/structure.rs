@@ -26,6 +26,7 @@ pub struct GpuStructField {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum GpuStructFieldType {
     Struct(String),
+    Pointer(String),
     USize,
     U16,
     U32,
@@ -91,6 +92,7 @@ impl GpuStructFieldType {
     pub fn size(&self) -> usize {
         match self {
             GpuStructFieldType::Struct(_) => usize::MAX,
+            GpuStructFieldType::Pointer(_) => 8,
             GpuStructFieldType::U64 => 8,
             GpuStructFieldType::USize => 4,
             GpuStructFieldType::U16 => 2,

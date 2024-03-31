@@ -833,6 +833,7 @@ impl VulkanBackend {
             .sample_rate_shading(true)
             .sampler_anisotropy(true)
             .shader_int64(true)
+            .shader_int16(true)
             .build();
 
         let mut features11 = vk::PhysicalDeviceVulkan11Features::builder()

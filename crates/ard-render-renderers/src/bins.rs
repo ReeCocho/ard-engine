@@ -346,19 +346,6 @@ impl DrawBins {
                 }
             }
 
-            if let Some(data_size) = bin.data_size {
-                if data_size > 0 {
-                    // Bind material set
-                    args.pass.bind_sets(
-                        4,
-                        vec![args
-                            .material_factory
-                            .get_set(args.frame, data_size as u64)
-                            .unwrap()],
-                    );
-                }
-            }
-
             if let Some(vertex_layout) = bin.vertices {
                 // If the vertices have changed, we also must check if the shader variant has
                 // changed, but only if the pipeline was not rebound
@@ -419,6 +406,7 @@ impl<'a, 'b> RenderArgs<'a, 'b> {
                 self.global_set,
                 self.camera.get_set(self.frame),
                 self.mesh_factory.mesh_data_set(self.frame),
+                self.material_factory.get_texture_slots_set(self.frame),
             ],
         );
 
@@ -427,7 +415,7 @@ impl<'a, 'b> RenderArgs<'a, 'b> {
         // 2. We don't write to the texture after it's been uploaded.
         unsafe {
             self.pass
-                .bind_sets_unchecked(3, vec![self.texture_factory.get_set(self.frame)]);
+                .bind_sets_unchecked(4, vec![self.texture_factory.get_set(self.frame)]);
         }
     }
 }

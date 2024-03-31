@@ -188,9 +188,12 @@ impl RenderSystem {
 
         let lights = queries.make::<(Entity, (Read<Light>, Read<Model>), Read<Disabled>)>();
 
-        frame
-            .object_data
-            .upload_objects(static_objs, dynamic_objs, &frame.dirty_static);
+        frame.object_data.upload_objects(
+            frame.frame,
+            static_objs,
+            dynamic_objs,
+            &frame.dirty_static,
+        );
 
         // Update lighting
         let global_lighting = res.get::<GlobalLighting>().unwrap();

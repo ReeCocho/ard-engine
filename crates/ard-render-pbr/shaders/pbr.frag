@@ -3,9 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_multiview : enable
 
-#define ARD_TEXTURE_COUNT 3
 #define FRAGMENT_SHADER
-#define ArdMaterialData PbrMaterial
 #include "pbr_common.glsl"
 #include "utils.glsl"
 
@@ -22,7 +20,7 @@
 ////////////////////
 
 void main() {
-    const PbrMaterial data = ard_MaterialData(vs_in.slots.w);
+    const PbrMaterial data = object_data[vs_in.slots.w].material.mat;
 
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0

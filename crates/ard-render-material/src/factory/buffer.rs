@@ -1,4 +1,3 @@
-use ard_log::warn;
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, SharingMode,
 };
@@ -23,7 +22,7 @@ pub struct MaterialBuffer {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct MaterialSlot(u32);
+pub struct MaterialSlot(u16);
 
 impl MaterialBuffer {
     pub fn new(ctx: Context, debug_name: String, data_size: u64, default_capacity: usize) -> Self {
@@ -38,7 +37,7 @@ impl MaterialBuffer {
                 BufferCreateInfo {
                     size: data_size * default_capacity as u64,
                     array_elements: FRAMES_IN_FLIGHT,
-                    buffer_usage: BufferUsage::STORAGE_BUFFER,
+                    buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::DEVICE_ADDRESS,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN,
                     sharing_mode: SharingMode::Exclusive,
@@ -62,7 +61,7 @@ impl MaterialBuffer {
     pub fn allocate(&mut self) -> MaterialSlot {
         self.free.pop().unwrap_or_else(|| {
             self.slot_counter += 1;
-            MaterialSlot(self.slot_counter as u32 - 1)
+            MaterialSlot(self.slot_counter as u16 - 1)
         })
     }
 
@@ -79,15 +78,15 @@ impl MaterialBuffer {
     }
 
     /// Flushes dirty material instances.
-    ///
-    /// Returns `true` if the buffer was resized.
     pub fn flush(
         &mut self,
         frame: Frame,
         materials: &ResourceAllocator<MaterialInstanceResource>,
         on_flush: impl Fn(&mut [u8], &MaterialInstanceResource),
-    ) -> bool {
-        let resized = self.check_for_resize();
+    ) {
+        if self.slot_counter > self.cap {
+            panic!("Material buffer '{}' exceeded capacity.", self.data_size);
+        }
 
         // Flush dirty values
         let mut view = self.buffer.write(frame.into()).unwrap();
@@ -100,30 +99,6 @@ impl MaterialBuffer {
                     materials.get(material_instance.id()).unwrap(),
                 );
             });
-
-        resized
-    }
-
-    /// Checks if the material buffer needs to be resized and resizes it if it does. Returns `true`
-    /// if it was resized.
-    fn check_for_resize(&mut self) -> bool {
-        match Buffer::expand(
-            &self.buffer,
-            self.slot_counter as u64 * self.data_size,
-            true,
-        ) {
-            Some(new_buffer) => {
-                warn!(
-                    "Material buffer for data size `{}` was resized. \
-                    Consider making the default capacity larger.",
-                    self.data_size
-                );
-                self.cap = (new_buffer.size() / self.data_size) as usize;
-                self.buffer = new_buffer;
-                true
-            }
-            None => false,
-        }
     }
 }
 
@@ -140,6 +115,12 @@ impl From<MaterialSlot> for u64 {
 }
 
 impl From<MaterialSlot> for u32 {
+    fn from(value: MaterialSlot) -> Self {
+        value.0 as u32
+    }
+}
+
+impl From<MaterialSlot> for u16 {
     fn from(value: MaterialSlot) -> Self {
         value.0
     }
