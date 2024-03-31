@@ -11,6 +11,7 @@ use ard_pal::prelude::{
 use ard_render_base::{
     ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
+    FRAMES_IN_FLIGHT,
 };
 use ard_render_si::{bindings::*, consts::*};
 use ordered_float::NotNan;
@@ -26,10 +27,10 @@ pub struct TextureFactory {
     /// Current anisotropy level.
     anisotropy: Option<AnisotropyLevel>,
     /// Bindless texture set per frame in flight.
-    sets: Vec<DescriptorSet>,
-    new_textures: Vec<Vec<ResourceId>>,
-    mip_updates: Vec<Vec<MipUpdate>>,
-    dropped_textures: Vec<Vec<ResourceId>>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
+    new_textures: [Vec<ResourceId>; FRAMES_IN_FLIGHT],
+    mip_updates: [Vec<MipUpdate>; FRAMES_IN_FLIGHT],
+    dropped_textures: [Vec<ResourceId>; FRAMES_IN_FLIGHT],
 }
 
 #[derive(Copy, Clone)]
@@ -64,47 +65,45 @@ const DEFAULT_SAMPLER: Sampler = Sampler {
 };
 
 impl TextureFactory {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         let error_tex = Self::create_error_texture(ctx);
 
-        let sets = (0..frames_in_flight)
-            .map(|frame_idx| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.textures.clone(),
-                        debug_name: Some(format!("texture_set_{frame_idx}")),
+        let sets = std::array::from_fn(|frame_idx| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.textures.clone(),
+                    debug_name: Some(format!("texture_set_{frame_idx}")),
+                },
+            )
+            .unwrap();
+
+            let updates: Vec<_> = (0..MAX_TEXTURES)
+                .map(|slot| DescriptorSetUpdate {
+                    binding: TEXTURES_SET_TEXTURES_BINDING,
+                    array_element: slot,
+                    value: DescriptorValue::Texture {
+                        texture: &error_tex,
+                        array_element: 0,
+                        sampler: DEFAULT_SAMPLER,
+                        base_mip: 0,
+                        mip_count: 1,
                     },
-                )
-                .unwrap();
+                })
+                .collect();
 
-                let updates: Vec<_> = (0..MAX_TEXTURES)
-                    .map(|slot| DescriptorSetUpdate {
-                        binding: TEXTURES_SET_TEXTURES_BINDING,
-                        array_element: slot,
-                        value: DescriptorValue::Texture {
-                            texture: &error_tex,
-                            array_element: 0,
-                            sampler: DEFAULT_SAMPLER,
-                            base_mip: 0,
-                            mip_count: 1,
-                        },
-                    })
-                    .collect();
+            set.update(&updates);
 
-                set.update(&updates);
-
-                set
-            })
-            .collect();
+            set
+        });
 
         Self {
             sets,
             error_tex,
             anisotropy: Some(AnisotropyLevel::X16),
-            new_textures: (0..frames_in_flight).map(|_| Vec::default()).collect(),
-            dropped_textures: (0..frames_in_flight).map(|_| Vec::default()).collect(),
-            mip_updates: (0..frames_in_flight).map(|_| Vec::default()).collect(),
+            new_textures: Default::default(),
+            dropped_textures: Default::default(),
+            mip_updates: Default::default(),
         }
     }
 
@@ -132,11 +131,7 @@ impl TextureFactory {
     }
 
     /// Binds ready textures to the main set for the given frame and unbinds destroyed textures.
-    pub fn update_bindings<const FIF: usize>(
-        &mut self,
-        frame: Frame,
-        textures: &ResourceAllocator<TextureResource, FIF>,
-    ) {
+    pub fn update_bindings(&mut self, frame: Frame, textures: &ResourceAllocator<TextureResource>) {
         let frame = usize::from(frame);
         let cap = self.new_textures[frame].len()
             + self.dropped_textures[frame].len()

@@ -21,8 +21,6 @@ pub mod frame;
 pub mod staging;
 pub mod system;
 
-pub const FRAMES_IN_FLIGHT: usize = 2;
-
 #[derive(Clone, Copy)]
 pub struct RendererSettings {
     /// Flag to enable drawing the game scene. For games, this should be `true` all the time. This

@@ -1,7 +1,7 @@
 use ard_ecs::resource::Resource;
 use ard_math::{UVec2, Vec4};
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_si::{bindings::*, types::*};
 use image::GenericImageView;
 use ordered_float::NotNan;
@@ -19,13 +19,13 @@ pub struct Smaa {
     detected_edges: Buffer,
     edges_indirect: Buffer,
     reset_edges_pipeline: ComputePipeline,
-    reset_edges_sets: Vec<DescriptorSet>,
+    reset_edges_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     edges_pipeline: ComputePipeline,
-    edges_sets: Vec<DescriptorSet>,
+    edges_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     weights_pipeline: ComputePipeline,
-    weights_sets: Vec<DescriptorSet>,
+    weights_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     blend_pipeline: GraphicsPipeline,
-    blend_sets: Vec<DescriptorSet>,
+    blend_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 const WORK_GROUP_SIZE_1D: u32 = 64;
@@ -53,12 +53,7 @@ impl Default for SmaaSettings {
 }
 
 impl Smaa {
-    pub fn new(
-        ctx: &Context,
-        layouts: &Layouts,
-        frames_in_flight: usize,
-        dims: (u32, u32),
-    ) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts, dims: (u32, u32)) -> Self {
         let search_tex_image = image::load_from_memory_with_format(
             include_bytes!("../bin/smaa/search_tex.png"),
             image::ImageFormat::Png,
@@ -291,106 +286,98 @@ impl Smaa {
         )
         .unwrap();
 
-        let reset_edges_sets = (0..frames_in_flight)
-            .map(|_| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.smaa_reset_edges.clone(),
-                        debug_name: Some("smaa_reset_edges_set".into()),
-                    },
-                )
-                .unwrap();
+        let reset_edges_sets = std::array::from_fn(|_| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.smaa_reset_edges.clone(),
+                    debug_name: Some("smaa_reset_edges_set".into()),
+                },
+            )
+            .unwrap();
 
-                set.update(&[DescriptorSetUpdate {
-                    binding: SMAA_RESET_EDGES_SET_INDIRECT_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: SMAA_RESET_EDGES_SET_INDIRECT_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &edges_indirect,
                     array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &edges_indirect,
-                        array_element: 0,
-                    },
-                }]);
+                },
+            }]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
-        let edges_sets = (0..frames_in_flight)
-            .map(|_| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.smaa_edge_detect.clone(),
-                        debug_name: Some("smaa_edge_detect_set".into()),
-                    },
-                )
-                .unwrap();
+        let edges_sets = std::array::from_fn(|_| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.smaa_edge_detect.clone(),
+                    debug_name: Some("smaa_edge_detect_set".into()),
+                },
+            )
+            .unwrap();
 
-                set.update(&[DescriptorSetUpdate {
-                    binding: SMAA_EDGE_DETECT_SET_INDIRECT_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: SMAA_EDGE_DETECT_SET_INDIRECT_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &edges_indirect,
                     array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &edges_indirect,
+                },
+            }]);
+
+            set
+        });
+
+        let weights_sets = std::array::from_fn(|_| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.smaa_weights.clone(),
+                    debug_name: Some("smaa_weights_set".into()),
+                },
+            )
+            .unwrap();
+
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: SMAA_WEIGHTS_SET_SEARCH_TEX_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::Texture {
+                        texture: &search_tex,
                         array_element: 0,
+                        sampler: SMAA_SAMPLER,
+                        base_mip: 0,
+                        mip_count: 1,
                     },
-                }]);
-
-                set
-            })
-            .collect();
-
-        let weights_sets = (0..frames_in_flight)
-            .map(|_| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.smaa_weights.clone(),
-                        debug_name: Some("smaa_weights_set".into()),
-                    },
-                )
-                .unwrap();
-
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: SMAA_WEIGHTS_SET_SEARCH_TEX_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SMAA_WEIGHTS_SET_AREA_TEX_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::Texture {
+                        texture: &area_tex,
                         array_element: 0,
-                        value: DescriptorValue::Texture {
-                            texture: &search_tex,
-                            array_element: 0,
-                            sampler: SMAA_SAMPLER,
-                            base_mip: 0,
-                            mip_count: 1,
-                        },
+                        sampler: SMAA_SAMPLER,
+                        base_mip: 0,
+                        mip_count: 1,
                     },
-                    DescriptorSetUpdate {
-                        binding: SMAA_WEIGHTS_SET_AREA_TEX_BINDING,
-                        array_element: 0,
-                        value: DescriptorValue::Texture {
-                            texture: &area_tex,
-                            array_element: 0,
-                            sampler: SMAA_SAMPLER,
-                            base_mip: 0,
-                            mip_count: 1,
-                        },
-                    },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
-        let blend_sets = (0..frames_in_flight)
-            .map(|_| {
-                DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.smaa_blend.clone(),
-                        debug_name: Some("smaa_blend_set".into()),
-                    },
-                )
-                .unwrap()
-            })
-            .collect();
+        let blend_sets = std::array::from_fn(|_| {
+            DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.smaa_blend.clone(),
+                    debug_name: Some("smaa_blend_set".into()),
+                },
+            )
+            .unwrap()
+        });
 
         Self {
             _search_tex: search_tex,

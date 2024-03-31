@@ -1,5 +1,5 @@
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_lighting::{
     lights::Lights,
     proc_skybox::{ProceduralSkyBox, DI_MAP_SAMPLER},
@@ -7,13 +7,13 @@ use ard_render_lighting::{
 use ard_render_si::bindings::*;
 
 pub struct ReflectionPassSets {
-    sets: Vec<DescriptorSet>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl ReflectionPassSets {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
-        let sets = (0..frames_in_flight)
-            .map(|frame_idx| {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
+        Self {
+            sets: std::array::from_fn(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
@@ -22,10 +22,8 @@ impl ReflectionPassSets {
                     },
                 )
                 .unwrap()
-            })
-            .collect();
-
-        Self { sets }
+            }),
+        }
     }
 
     pub fn update_sky_box_bindings(&mut self, frame: Frame, proc_skybox: &ProceduralSkyBox) {

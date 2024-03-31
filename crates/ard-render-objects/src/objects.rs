@@ -260,10 +260,7 @@ impl RenderObjects {
     }
 
     // Looks to see if any objects that were flagged as missing a BLAS can have the BLAS set.
-    pub fn check_for_blas<const FIF: usize>(
-        &mut self,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
-    ) {
+    pub fn check_for_blas(&mut self, meshes: &ResourceAllocator<MeshResource>) {
         let mut view = self.object_data.write(0).unwrap();
         self.dynamic_objects.check_for_blas(&mut view, meshes);
         self.static_objects
@@ -475,10 +472,10 @@ impl ObjectSet {
         });
     }
 
-    pub fn check_for_blas<const FIF: usize>(
+    pub fn check_for_blas(
         &mut self,
         view: &mut BufferWriteView,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
     ) {
         if self.missing_blas.is_empty() {
             return;

@@ -20,11 +20,11 @@ pub struct BindingDelta {
 }
 
 impl RenderStateTracker {
-    pub fn compute_delta<'a, const FIF: usize>(
+    pub fn compute_delta<'a>(
         &mut self,
         key: &SeparatedDrawKey,
-        meshes: &'a ResourceAllocator<MeshResource, FIF>,
-        materials: &'a ResourceAllocator<MaterialResource, FIF>,
+        meshes: &'a ResourceAllocator<MeshResource>,
+        materials: &'a ResourceAllocator<MaterialResource>,
     ) -> BindingDelta {
         let mut delta = BindingDelta {
             skip: false,

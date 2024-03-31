@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::ecs::Frame;
+use crate::{ecs::Frame, FRAMES_IN_FLIGHT};
 
-pub struct ResourceAllocator<R, const FRAMES_IN_FLIGHT: usize> {
+pub struct ResourceAllocator<R> {
     max: usize,
     ignore_drop: bool,
     resources: Vec<Option<R>>,
@@ -27,7 +27,7 @@ struct ResourceHandleInner {
     id: ResourceId,
 }
 
-impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
+impl<R> ResourceAllocator<R> {
     /// Creates a resource allocator for a paticular resources.
     ///
     /// `max` is the maximum number of resources that can be allocated from this allocator.

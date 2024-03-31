@@ -1,7 +1,7 @@
 use ard_core::core::Disabled;
 use ard_ecs::{entity::Entity, resource::Resource};
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_objects::Model;
 use ard_render_si::{
@@ -24,7 +24,7 @@ pub struct LightClusters {
     /// Clustering pipeline.
     pipeline: LightClusteringPipeline,
     /// Clustering set.
-    sets: Vec<LightClusteringSet>,
+    sets: [LightClusteringSet; FRAMES_IN_FLIGHT],
 }
 
 pub struct Lights {
@@ -36,7 +36,7 @@ pub struct Lights {
 }
 
 impl LightClusters {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         let clusters = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -53,14 +53,11 @@ impl LightClusters {
 
         let pipeline = LightClusteringPipeline::new(ctx, layouts);
 
-        let sets = (0..frames_in_flight)
-            .into_iter()
-            .map(|_| {
-                let mut set = LightClusteringSet::new(ctx, layouts);
-                set.bind_clusters(&clusters);
-                set
-            })
-            .collect();
+        let sets = std::array::from_fn(|_| {
+            let mut set = LightClusteringSet::new(ctx, layouts);
+            set.bind_clusters(&clusters);
+            set
+        });
 
         Self {
             clusters,

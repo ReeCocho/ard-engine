@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_render_base::{ecs::Frame, RenderingMode};
+use ard_render_base::{ecs::Frame, RenderingMode, FRAMES_IN_FLIGHT};
 use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
@@ -24,7 +24,7 @@ use crate::{
     ecs::RenderEcs,
     factory::Factory,
     frame::{FrameData, FrameDataInner},
-    DebugSettings, MsaaSettings, RenderPlugin, FRAMES_IN_FLIGHT,
+    DebugSettings, MsaaSettings, RenderPlugin,
 };
 
 #[derive(SystemState)]

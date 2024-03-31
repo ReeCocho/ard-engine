@@ -5,7 +5,7 @@ use ard_formats::{
     mesh::MeshData,
     vertex::{VertexAttribute, VertexLayout},
 };
-use ard_render_base::{ecs::Frame, resource::ResourceId};
+use ard_render_base::{ecs::Frame, resource::ResourceId, FRAMES_IN_FLIGHT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -44,10 +44,10 @@ pub struct MeshFactory {
     /// SSBO for mesh info.
     mesh_info_buffer: Buffer,
     /// Staging for mesh info upload. One list per frame in flight.
-    mesh_info_staging: Vec<Vec<(ResourceId, GpuMeshInfo)>>,
+    mesh_info_staging: [Vec<(ResourceId, GpuMeshInfo)>; FRAMES_IN_FLIGHT],
     /// Descriptor set for vertex, index, and meshlet data.
-    sets: Vec<DescriptorSet>,
-    needs_rebind: Vec<bool>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
+    needs_rebind: [bool; FRAMES_IN_FLIGHT],
 }
 
 /// Data upload information for a mesh.
@@ -76,7 +76,6 @@ impl MeshFactory {
         layouts: &Layouts,
         config: MeshFactoryConfig,
         max_mesh_count: usize,
-        frames_in_flight: usize,
     ) -> Self {
         let index_allocator = BufferBlockAllocator::new(
             ctx.clone(),
@@ -106,18 +105,16 @@ impl MeshFactory {
             config.default_index_buffer_len,
         );
 
-        let sets = (0..frames_in_flight)
-            .map(|_| {
-                DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.mesh_data.clone(),
-                        debug_name: Some("mesh_data_set".into()),
-                    },
-                )
-                .unwrap()
-            })
-            .collect();
+        let sets = std::array::from_fn(|_| {
+            DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.mesh_data.clone(),
+                    debug_name: Some("mesh_data_set".into()),
+                },
+            )
+            .unwrap()
+        });
 
         Self {
             _ctx: ctx.clone(),
@@ -128,7 +125,7 @@ impl MeshFactory {
                 ctx.clone(),
                 BufferCreateInfo {
                     size: (std::mem::size_of::<GpuMeshInfo>() * max_mesh_count) as u64,
-                    array_elements: frames_in_flight,
+                    array_elements: FRAMES_IN_FLIGHT,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN,
@@ -137,9 +134,9 @@ impl MeshFactory {
                 },
             )
             .unwrap(),
-            mesh_info_staging: (0..frames_in_flight).map(|_| Vec::default()).collect(),
+            mesh_info_staging: Default::default(),
             sets,
-            needs_rebind: (0..frames_in_flight).map(|_| true).collect(),
+            needs_rebind: std::array::from_fn(|_| true),
         }
     }
 

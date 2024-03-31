@@ -1,5 +1,5 @@
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_si::bindings::*;
 use ordered_float::NotNan;
 
@@ -20,16 +20,16 @@ pub const BLOOM_SAMPLE_FILTER: Sampler = Sampler {
     unnormalize_coords: false,
 };
 
-pub struct Bloom<const FIF: usize> {
+pub struct Bloom {
     bloom_image: Texture,
     layout: DescriptorSetLayout,
     downscale: GraphicsPipeline,
-    downscale_sets: [Vec<DescriptorSet>; FIF],
+    downscale_sets: [Vec<DescriptorSet>; FRAMES_IN_FLIGHT],
     upscale: GraphicsPipeline,
-    upscale_sets: [Vec<DescriptorSet>; FIF],
+    upscale_sets: [Vec<DescriptorSet>; FRAMES_IN_FLIGHT],
 }
 
-impl<const FIF: usize> Bloom<FIF> {
+impl Bloom {
     pub fn new(ctx: &Context, layouts: &Layouts, dims: (u32, u32), mip_count: usize) -> Self {
         let bloom_image = Self::make_bloom_image(ctx, dims, mip_count);
 

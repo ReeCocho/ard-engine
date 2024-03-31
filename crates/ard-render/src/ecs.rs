@@ -1,7 +1,7 @@
 use ard_log::info;
 use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_camera::{
     active::ActiveCamera, froxels::FroxelGenPipeline, ubo::CameraUbo, Camera, CameraClearColor,
 };
@@ -29,7 +29,7 @@ use ard_render_si::{bindings::Layouts, consts::*};
 use ard_render_textures::factory::TextureFactory;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin, FRAMES_IN_FLIGHT};
+use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin};
 
 pub(crate) struct RenderEcs {
     layouts: Layouts,
@@ -44,7 +44,7 @@ pub(crate) struct RenderEcs {
     froxels: FroxelGenPipeline,
     _fxaa: Fxaa,
     smaa: Smaa,
-    bloom: Bloom<FRAMES_IN_FLIGHT>,
+    bloom: Bloom,
     sun_shafts: SunShafts,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
@@ -107,7 +107,7 @@ impl RenderEcs {
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
         let fxaa = Fxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
-        let lighting = LightClusters::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let lighting = LightClusters::new(&ctx, &layouts);
 
         let canvas = Canvas::new(
             &ctx,
@@ -118,11 +118,10 @@ impl RenderEcs {
             &ao,
         );
 
-        let mut scene_renderer = SceneRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
-        let sun_shadows_renderer =
-            SunShadowsRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT, MAX_SHADOW_CASCADES);
-        let gui_renderer = GuiRenderer::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
-        let rt_render = RaytracedRenderer::new(&ctx, FRAMES_IN_FLIGHT);
+        let mut scene_renderer = SceneRenderer::new(&ctx, &layouts);
+        let sun_shadows_renderer = SunShadowsRenderer::new(&ctx, &layouts, MAX_SHADOW_CASCADES);
+        let gui_renderer = GuiRenderer::new(&ctx, &layouts);
+        let rt_render = RaytracedRenderer::new(&ctx);
         let mut reflections = Reflections::new(
             &ctx,
             &layouts,
@@ -131,11 +130,11 @@ impl RenderEcs {
             window_size,
         );
 
-        let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
-        let sun_shafts = SunShafts::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
-        let smaa = Smaa::new(&ctx, &layouts, FRAMES_IN_FLIGHT, window_size);
-        let mut tonemapping = Tonemapping::new(&ctx, &layouts, FRAMES_IN_FLIGHT);
+        let sun_shafts = SunShafts::new(&ctx, &layouts, window_size);
+        let smaa = Smaa::new(&ctx, &layouts, window_size);
+        let mut tonemapping = Tonemapping::new(&ctx, &layouts);
 
         for frame in 0..FRAMES_IN_FLIGHT {
             let frame = Frame::from(frame);
@@ -184,7 +183,7 @@ impl RenderEcs {
             Self {
                 froxels: FroxelGenPipeline::new(&ctx, &layouts),
                 canvas,
-                camera: CameraUbo::new(&ctx, FRAMES_IN_FLIGHT, true, &layouts),
+                camera: CameraUbo::new(&ctx, true, &layouts),
                 scene_renderer,
                 sun_shadows_renderer,
                 rt_render,
@@ -250,7 +249,6 @@ impl RenderEcs {
         let new_shadow_cascades = self.sun_shadows_renderer.update_cascade_settings(
             &self.ctx,
             &self.layouts,
-            FRAMES_IN_FLIGHT,
             frame.lights.global().shadow_cascades(),
         );
 
@@ -350,7 +348,7 @@ impl RenderEcs {
             .update_bindings(frame.frame, &frame.object_data, self.canvas.hzb());
 
         self.sun_shadows_renderer
-            .update_bindings::<FRAMES_IN_FLIGHT>(frame.frame, &frame.object_data);
+            .update_bindings(frame.frame, &frame.object_data);
 
         self.reflections
             .update_bindings(frame.frame, self.rt_render.tlas());
@@ -627,10 +625,10 @@ impl RenderEcs {
         &'a self,
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
-        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
-        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
         mesh_factory: &'a MeshFactory,
-        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        material_factory: &'a MaterialFactory,
         texture_factory: &'a TextureFactory,
     ) {
         puffin::profile_function!();
@@ -728,10 +726,10 @@ impl RenderEcs {
         canvas: &'a Canvas,
         camera: &'a CameraUbo,
         scene_render: &'a SceneRenderer,
-        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
-        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
         mesh_factory: &'a MeshFactory,
-        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        material_factory: &'a MaterialFactory,
         texture_factory: &'a TextureFactory,
     ) {
         puffin::profile_function!();
@@ -795,10 +793,10 @@ impl RenderEcs {
         commands: &mut CommandBuffer<'a>,
         frame_data: &FrameData,
         shadow_renderer: &'a SunShadowsRenderer,
-        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
-        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
         mesh_factory: &'a MeshFactory,
-        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        material_factory: &'a MaterialFactory,
         texture_factory: &'a TextureFactory,
     ) {
         puffin::profile_function!();
@@ -829,10 +827,10 @@ impl RenderEcs {
         camera: &'a CameraUbo,
         scene_render: &'a SceneRenderer,
         proc_skybox: &'a ProceduralSkyBox,
-        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
-        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
         mesh_factory: &'a MeshFactory,
-        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        material_factory: &'a MaterialFactory,
         texture_factory: &'a TextureFactory,
     ) {
         puffin::profile_function!();
@@ -880,10 +878,10 @@ impl RenderEcs {
         canvas: &'a Canvas,
         camera: &'a CameraUbo,
         scene_render: &'a SceneRenderer,
-        materials: &'a ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>,
-        meshes: &'a ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
         mesh_factory: &'a MeshFactory,
-        material_factory: &'a MaterialFactory<FRAMES_IN_FLIGHT>,
+        material_factory: &'a MaterialFactory,
         texture_factory: &'a TextureFactory,
     ) {
         puffin::profile_function!();

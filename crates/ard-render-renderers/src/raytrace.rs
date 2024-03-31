@@ -1,6 +1,6 @@
 use ard_math::{Vec3A, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_meshes::mesh::MeshResource;
 use ard_render_objects::{
     objects::RenderObjects,
@@ -13,7 +13,6 @@ const DEFAULT_SCRATCH_SIZE: u64 = 1024;
 
 pub struct RaytracedRenderer {
     ctx: Context,
-    frames_in_flight: usize,
     scratch_buffer: Buffer,
     objects: Buffer,
     tlas: TopLevelAccelerationStructure,
@@ -22,12 +21,12 @@ pub struct RaytracedRenderer {
 }
 
 impl RaytracedRenderer {
-    pub fn new(ctx: &Context, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context) -> Self {
         let tlas = Self::create_tlas(ctx, DEFAULT_OBJECTS_CAP);
 
         Self {
             ctx: ctx.clone(),
-            objects: Self::create_object_buffer(ctx, DEFAULT_OBJECTS_CAP, frames_in_flight),
+            objects: Self::create_object_buffer(ctx, DEFAULT_OBJECTS_CAP),
             scratch_buffer: Self::create_scratch_buffer(
                 ctx,
                 tlas.scratch_buffer_size().max(DEFAULT_SCRATCH_SIZE),
@@ -35,7 +34,6 @@ impl RaytracedRenderer {
             tlas,
             capacity: DEFAULT_OBJECTS_CAP,
             set: RenderableSet::default(),
-            frames_in_flight,
         }
     }
 
@@ -44,12 +42,12 @@ impl RaytracedRenderer {
         &self.tlas
     }
 
-    pub fn upload<const FIF: usize>(
+    pub fn upload(
         &mut self,
         frame: Frame,
         view_location: Vec3A,
         objects: &RenderObjects,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
     ) {
         fn is_visible(bounding_sphere: Vec4, view_location: Vec3A) -> bool {
             const EPSILON: f32 = 0.00001;
@@ -92,7 +90,7 @@ impl RaytracedRenderer {
             }
 
             // Resize objects
-            self.objects = Self::create_object_buffer(&self.ctx, new_cap, self.frames_in_flight);
+            self.objects = Self::create_object_buffer(&self.ctx, new_cap);
             self.tlas = Self::create_tlas(&self.ctx, new_cap);
             self.scratch_buffer =
                 Self::create_scratch_buffer(&self.ctx, self.tlas.scratch_buffer_size());
@@ -140,12 +138,12 @@ impl RaytracedRenderer {
         .unwrap()
     }
 
-    fn create_object_buffer(ctx: &Context, cap: usize, frames_in_flight: usize) -> Buffer {
+    fn create_object_buffer(ctx: &Context, cap: usize) -> Buffer {
         Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
                 size: (cap * std::mem::size_of::<u64>()) as u64,
-                array_elements: frames_in_flight,
+                array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::ACCELERATION_STRUCTURE_READ
                     | BufferUsage::STORAGE_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,

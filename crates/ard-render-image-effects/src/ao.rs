@@ -1,7 +1,7 @@
 use ard_ecs::resource::Resource;
 use ard_math::{IVec2, Vec2};
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, types::*};
 use ordered_float::NotNan;
@@ -53,7 +53,7 @@ pub struct AmbientOcclusion {
     noise: Texture,
 }
 
-pub struct AoImage<const FIF: usize> {
+pub struct AoImage {
     /// Prefiltered depths texture.
     _prefiltered_depth: Texture,
     /// Edge texture.
@@ -61,14 +61,14 @@ pub struct AoImage<const FIF: usize> {
     /// AO image.
     image: Texture,
     /// Sets for depth prefiltering.
-    depth_prefilter_sets: [DescriptorSet; FIF],
+    depth_prefilter_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Sets for the main AO pass.
-    main_pass_sets: [DescriptorSet; FIF],
+    main_pass_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Sets for the denoising pass.
-    denoise_sets: [DescriptorSet; FIF],
+    denoise_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Sets for the bilateral filter pass.
-    horz_filter_sets: [DescriptorSet; FIF],
-    vert_filter_sets: [DescriptorSet; FIF],
+    horz_filter_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
+    vert_filter_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 const WORK_GROUP_SIZE: u32 = 8;
@@ -307,11 +307,11 @@ impl AmbientOcclusion {
         }
     }
 
-    pub fn generate<'a, const FIF: usize>(
+    pub fn generate<'a>(
         &'a self,
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
-        image: &'a AoImage<FIF>,
+        image: &'a AoImage,
         camera: &'a CameraUbo,
         settings: &AoSettings,
     ) {
@@ -407,7 +407,7 @@ impl AmbientOcclusion {
     }
 }
 
-impl<const FIF: usize> AoImage<FIF> {
+impl AoImage {
     pub fn new(ao: &AmbientOcclusion, dims: (u32, u32)) -> Self {
         let prefiltered_depth = Texture::new(
             ao.ctx.clone(),

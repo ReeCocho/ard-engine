@@ -1,19 +1,18 @@
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
+use ard_render_base::FRAMES_IN_FLIGHT;
 use ard_render_camera::target::RenderTarget;
 use ard_render_image_effects::ao::{AmbientOcclusion, AoImage};
 use ard_render_renderers::highz::{HzbImage, HzbRenderer};
-
-use crate::FRAMES_IN_FLIGHT;
 
 #[derive(Resource)]
 pub(crate) struct Canvas {
     /// The render target to draw to for the canvas.
     render_target: RenderTarget,
     /// HZB image for occlusion culling.
-    hzb: HzbImage<FRAMES_IN_FLIGHT>,
+    hzb: HzbImage,
     /// AO image.
-    ao: AoImage<FRAMES_IN_FLIGHT>,
+    ao: AoImage,
     /// Surface being rendered to.
     surface: Surface,
     /// Surface image for the current frame.
@@ -60,12 +59,12 @@ impl Canvas {
     }
 
     #[inline(always)]
-    pub fn hzb(&self) -> &HzbImage<FRAMES_IN_FLIGHT> {
+    pub fn hzb(&self) -> &HzbImage {
         &self.hzb
     }
 
     #[inline(always)]
-    pub fn ao(&self) -> &AoImage<FRAMES_IN_FLIGHT> {
+    pub fn ao(&self) -> &AoImage {
         &self.ao
     }
 

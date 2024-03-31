@@ -2,12 +2,12 @@ use ard_log::warn;
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, SharingMode,
 };
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 
 use crate::material_instance::{MaterialInstance, MaterialInstanceResource};
 
 /// Contains material data for a size of object.
-pub struct MaterialBuffer<const FRAMES_IN_FLIGHT: usize> {
+pub struct MaterialBuffer {
     /// How big a single object can be from this material buffer.
     data_size: u64,
     /// The actual material buffer.
@@ -25,7 +25,7 @@ pub struct MaterialBuffer<const FRAMES_IN_FLIGHT: usize> {
 #[derive(Debug, Copy, Clone)]
 pub struct MaterialSlot(u32);
 
-impl<const FRAMES_IN_FLIGHT: usize> MaterialBuffer<FRAMES_IN_FLIGHT> {
+impl MaterialBuffer {
     pub fn new(ctx: Context, debug_name: String, data_size: u64, default_capacity: usize) -> Self {
         MaterialBuffer {
             data_size,
@@ -84,7 +84,7 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialBuffer<FRAMES_IN_FLIGHT> {
     pub fn flush(
         &mut self,
         frame: Frame,
-        materials: &ResourceAllocator<MaterialInstanceResource, FRAMES_IN_FLIGHT>,
+        materials: &ResourceAllocator<MaterialInstanceResource>,
         on_flush: impl Fn(&mut [u8], &MaterialInstanceResource),
     ) -> bool {
         let resized = self.check_for_resize();

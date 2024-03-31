@@ -14,3 +14,5 @@ pub enum RenderingMode {
     /// The entity is transparent,
     Transparent = 2,
 }
+
+pub const FRAMES_IN_FLIGHT: usize = 2;

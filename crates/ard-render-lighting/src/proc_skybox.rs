@@ -60,7 +60,7 @@ pub struct ProceduralSkyBox {
 }
 
 impl ProceduralSkyBox {
-    pub fn new(ctx: &Context, layouts: &Layouts, fif: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         // Buffer for irradiance samples
         let diffuse_irradiance_samples = Buffer::new(
             ctx.clone(),
@@ -193,7 +193,7 @@ impl ProceduralSkyBox {
         ctx.main().submit(Some("brdf_lut_write"), cb);
 
         // Camera for rendering the diffuse irradiance map
-        let mut di_render_camera = CameraUbo::new(ctx, fif, false, layouts);
+        let mut di_render_camera = CameraUbo::new(ctx, false, layouts);
 
         const DIRS: [(Vec3, Vec3); 6] = [
             (Vec3::X, Vec3::Y),

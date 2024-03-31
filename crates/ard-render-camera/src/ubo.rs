@@ -5,7 +5,7 @@ use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, DescriptorSet, DescriptorSetCreateInfo,
     DescriptorSetUpdate, DescriptorValue, MemoryUsage, QueueTypes, SharingMode,
 };
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_objects::Model;
 use ard_render_si::{
     bindings::*,
@@ -23,7 +23,7 @@ pub struct CameraUbo {
     /// Froxels for light binning.
     froxels: Buffer,
     /// Descriptor set for the camera UBO for each frame in flight.
-    sets: Vec<DescriptorSet>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Descriptor sets for froxel regeneration.
     froxel_regen_sets: Vec<DescriptorSet>,
     /// Flag indicating if camera froxels need to be regenerated.
@@ -31,12 +31,12 @@ pub struct CameraUbo {
 }
 
 impl CameraUbo {
-    pub fn new(ctx: &Context, fif: usize, has_froxels: bool, layouts: &Layouts) -> Self {
+    pub fn new(ctx: &Context, has_froxels: bool, layouts: &Layouts) -> Self {
         let ubo = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
                 size: 6 * std::mem::size_of::<GpuCamera>() as u64,
-                array_elements: fif,
+                array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
                 queue_types: QueueTypes::MAIN | QueueTypes::COMPUTE,
@@ -64,42 +64,40 @@ impl CameraUbo {
         )
         .unwrap();
 
-        let sets = (0..fif)
-            .map(|frame_idx| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.camera.clone(),
-                        debug_name: Some(format!("camera_set_{frame_idx}")),
-                    },
-                )
-                .unwrap();
+        let sets = std::array::from_fn(|frame_idx| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.camera.clone(),
+                    debug_name: Some(format!("camera_set_{frame_idx}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: CAMERA_SET_CAMERA_UBO_BINDING,
-                        array_element: 0,
-                        value: DescriptorValue::UniformBuffer {
-                            buffer: &ubo,
-                            array_element: frame_idx,
-                        },
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: CAMERA_SET_CAMERA_UBO_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::UniformBuffer {
+                        buffer: &ubo,
+                        array_element: frame_idx,
                     },
-                    DescriptorSetUpdate {
-                        binding: CAMERA_SET_CAMERA_FROXELS_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: CAMERA_SET_CAMERA_FROXELS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &froxels,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &froxels,
-                            array_element: 0,
-                        },
                     },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
         let froxel_regen_sets = if has_froxels {
-            (0..fif)
+            (0..FRAMES_IN_FLIGHT)
                 .map(|frame_idx| {
                     let mut set = DescriptorSet::new(
                         ctx.clone(),

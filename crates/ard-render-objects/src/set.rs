@@ -138,11 +138,11 @@ impl<'a> RenderableSetUpdate<'a> {
         self
     }
 
-    pub fn update<const FIF: usize>(
+    pub fn update(
         self,
         view_location: Vec3A,
         objects: &RenderObjects,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
         filter_opaque: impl Fn(&ObjectIndex) -> bool,
         filter_alpha_cut: impl Fn(&ObjectIndex) -> bool,
         filter_transparent: impl Fn(&ObjectIndex) -> bool,
@@ -393,12 +393,12 @@ impl<'a> RenderableSetUpdate<'a> {
         rng
     }
 
-    fn compact_groups<const FIF: usize>(
+    fn compact_groups(
         instances: &[ObjectInstance],
         ids: &mut Vec<GpuObjectId>,
         groups: &mut Vec<DrawGroup>,
         meshlet_count: &mut u32,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
     ) -> Range<usize> {
         let start = groups.len();
 

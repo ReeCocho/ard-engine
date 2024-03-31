@@ -6,6 +6,7 @@ use ard_pal::prelude::*;
 use ard_render_base::{
     ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
+    FRAMES_IN_FLIGHT,
 };
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{
@@ -20,7 +21,7 @@ use ard_render_textures::factory::TextureFactory;
 use crate::state::{BindingDelta, RenderStateTracker};
 
 pub struct DrawBins {
-    bins: Vec<DrawBinSet>,
+    bins: [DrawBinSet; FRAMES_IN_FLIGHT],
 }
 
 #[derive(Default)]
@@ -44,7 +45,7 @@ pub struct BinGenOutput {
     pub bin_count: usize,
 }
 
-pub struct RenderArgs<'a, 'b, const FIF: usize> {
+pub struct RenderArgs<'a, 'b> {
     pub ctx: &'a Context,
     pub pass_id: PassId,
     pub frame: Frame,
@@ -54,10 +55,10 @@ pub struct RenderArgs<'a, 'b, const FIF: usize> {
     pub camera: &'a CameraUbo,
     pub global_set: &'a DescriptorSet,
     pub mesh_factory: &'a MeshFactory,
-    pub material_factory: &'a MaterialFactory<FIF>,
+    pub material_factory: &'a MaterialFactory,
     pub texture_factory: &'a TextureFactory,
-    pub meshes: &'a ResourceAllocator<MeshResource, FIF>,
-    pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
+    pub meshes: &'a ResourceAllocator<MeshResource>,
+    pub materials: &'a ResourceAllocator<MaterialResource>,
 }
 
 /// A draw bin represents a set of draw groups that have the same vertex layout and material,
@@ -82,11 +83,9 @@ pub struct DrawBin {
 }
 
 impl DrawBins {
-    pub fn new(frames_in_flight: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            bins: (0..frames_in_flight)
-                .map(|_| DrawBinSet::default())
-                .collect(),
+            bins: std::array::from_fn(|_| DrawBinSet::default()),
         }
     }
 
@@ -101,7 +100,7 @@ impl DrawBins {
     }
 
     /// Generates high-z culling bins.
-    pub fn gen_bins<'a, 'b, const FIF: usize>(
+    pub fn gen_bins<'a, 'b>(
         &'b mut self,
         frame: Frame,
         static_opaque_draws: impl Iterator<Item = &'a DrawGroup>,
@@ -109,8 +108,8 @@ impl DrawBins {
         dynamic_opaque_draws: impl Iterator<Item = &'a DrawGroup>,
         dynamic_ac_draws: impl Iterator<Item = &'a DrawGroup>,
         transparent_draws: impl Iterator<Item = &'a DrawGroup>,
-        meshes: &'a ResourceAllocator<MeshResource, FIF>,
-        materials: &'a ResourceAllocator<MaterialResource, FIF>,
+        meshes: &'a ResourceAllocator<MeshResource>,
+        materials: &'a ResourceAllocator<MaterialResource>,
     ) {
         let draw_call_idx = usize::from(frame);
 
@@ -187,11 +186,11 @@ impl DrawBins {
     }
 
     /// Appends bins from the provided grouped draws.
-    fn gen_bins_inner<'a, const FIF: usize>(
+    fn gen_bins_inner<'a>(
         bins: &mut Vec<DrawBin>,
         groups: impl Iterator<Item = &'a DrawGroup>,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
+        materials: &ResourceAllocator<MaterialResource>,
         mut object_id_offset: usize,
         has_valid_draws: &mut bool,
     ) -> BinGenOutput {
@@ -269,46 +268,34 @@ impl DrawBins {
         out
     }
 
-    pub fn render_static_opaque_bins<'a, const FIF: usize>(
-        &'a self,
-        args: RenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_static_opaque_bins<'a>(&'a self, args: RenderArgs<'a, '_>) {
         let set = &self.bins[usize::from(args.frame)];
         self.render_bins(args, set.static_opaque.start, set.static_opaque.len());
     }
 
-    pub fn render_static_alpha_cutoff_bins<'a, const FIF: usize>(
-        &'a self,
-        args: RenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_static_alpha_cutoff_bins<'a>(&'a self, args: RenderArgs<'a, '_>) {
         let set = &self.bins[usize::from(args.frame)];
         self.render_bins(args, set.static_ac.start, set.static_ac.len());
     }
 
-    pub fn render_dynamic_opaque_bins<'a, const FIF: usize>(
-        &'a self,
-        args: RenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_dynamic_opaque_bins<'a>(&'a self, args: RenderArgs<'a, '_>) {
         let set = &self.bins[usize::from(args.frame)];
         self.render_bins(args, set.dynamic_opaque.start, set.dynamic_opaque.len());
     }
 
-    pub fn render_dynamic_alpha_cutoff_bins<'a, const FIF: usize>(
-        &'a self,
-        args: RenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_dynamic_alpha_cutoff_bins<'a>(&'a self, args: RenderArgs<'a, '_>) {
         let set = &self.bins[usize::from(args.frame)];
         self.render_bins(args, set.dynamic_ac.start, set.dynamic_ac.len());
     }
 
-    pub fn render_transparent_bins<'a, const FIF: usize>(&'a self, args: RenderArgs<'a, '_, FIF>) {
+    pub fn render_transparent_bins<'a>(&'a self, args: RenderArgs<'a, '_>) {
         let set = &self.bins[usize::from(args.frame)];
         self.render_bins(args, set.transparent_rng.start, set.transparent_rng.len());
     }
 
-    fn render_bins<'a, const FIF: usize>(
+    fn render_bins<'a>(
         &'a self,
-        mut args: RenderArgs<'a, '_, FIF>,
+        mut args: RenderArgs<'a, '_>,
         bin_offset: usize,
         bin_count: usize,
     ) {
@@ -424,7 +411,7 @@ impl DrawBins {
     }
 }
 
-impl<'a, 'b, const FIF: usize> RenderArgs<'a, 'b, FIF> {
+impl<'a, 'b> RenderArgs<'a, 'b> {
     fn bind_global(&mut self) {
         self.pass.bind_sets(
             0,

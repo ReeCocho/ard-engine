@@ -44,12 +44,12 @@ impl MaterialSet {
         &self.set
     }
 
-    pub fn check_rebind<const FRAMES_IN_FLIGHT: usize>(
+    pub fn check_rebind(
         &mut self,
         frame: Frame,
-        material: Option<&MaterialBuffer<FRAMES_IN_FLIGHT>>,
+        material: Option<&MaterialBuffer>,
         material_binding: u32,
-        textures: &MaterialBuffer<FRAMES_IN_FLIGHT>,
+        textures: &MaterialBuffer,
         texture_binding: u32,
     ) {
         // Update materials if provided

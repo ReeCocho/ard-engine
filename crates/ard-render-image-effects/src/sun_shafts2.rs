@@ -1,7 +1,7 @@
 use ard_ecs::resource::Resource;
 use ard_math::IVec2;
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;
@@ -35,13 +35,13 @@ pub struct SunShafts {
     sample_dispatch_buffer: Buffer,
     sun_shafts_texture: Texture,
     line_setup_pipeline: ComputePipeline,
-    line_setup_sets: Vec<DescriptorSet>,
+    line_setup_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     refine_pipeline: ComputePipeline,
-    refine_sets: Vec<DescriptorSet>,
+    refine_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     sample_pipeline: ComputePipeline,
-    sample_sets: Vec<DescriptorSet>,
+    sample_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     interpolation_pipeline: ComputePipeline,
-    interpolation_sets: Vec<DescriptorSet>,
+    interpolation_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 const DEPTH_SRC_IMAGE_SAMPLER: Sampler = Sampler {
@@ -75,12 +75,7 @@ const SHADOW_SAMPLER: Sampler = Sampler {
 };
 
 impl SunShafts {
-    pub fn new(
-        ctx: &Context,
-        layouts: &Layouts,
-        frames_in_flight: usize,
-        dims: (u32, u32),
-    ) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts, dims: (u32, u32)) -> Self {
         let line_count = Self::line_count_from_dims(dims);
         let sample_count = Self::sample_count_from_dims(dims);
         let initial_sample_count = 64;
@@ -205,158 +200,150 @@ impl SunShafts {
             )
             .unwrap();
 
-        let line_setup_sets = (0..frames_in_flight)
-            .map(|i| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.sun_shaft_line_setup.clone(),
-                        debug_name: Some(format!("sun_shaft_line_setup_set_{i}")),
-                    },
-                )
-                .unwrap();
+        let line_setup_sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.sun_shaft_line_setup.clone(),
+                    debug_name: Some(format!("sun_shaft_line_setup_set_{i}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_LINE_SETUP_SET_EPIPOLAR_LINES_BINDING,
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_LINE_SETUP_SET_EPIPOLAR_LINES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_lines,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_lines,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_LINE_SETUP_SET_EPIPOLAR_SAMPLES_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_LINE_SETUP_SET_EPIPOLAR_SAMPLES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_samples,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_samples,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_LINE_SETUP_SET_SUN_SHAFT_INDIRECT_DISPATCH_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_LINE_SETUP_SET_SUN_SHAFT_INDIRECT_DISPATCH_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &sample_dispatch_buffer,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &sample_dispatch_buffer,
-                            array_element: 0,
-                        },
                     },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
-        let refine_sets = (0..frames_in_flight)
-            .map(|i| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.sun_shaft_refine.clone(),
-                        debug_name: Some(format!("sun_shaft_refine_set_{i}")),
-                    },
-                )
-                .unwrap();
+        let refine_sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.sun_shaft_refine.clone(),
+                    debug_name: Some(format!("sun_shaft_refine_set_{i}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_REFINE_SET_EPIPOLAR_LINES_BINDING,
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_REFINE_SET_EPIPOLAR_LINES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_lines,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_lines,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_REFINE_SET_EPIPOLAR_SAMPLES_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_REFINE_SET_EPIPOLAR_SAMPLES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_samples,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_samples,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_REFINE_SET_SUN_SHAFT_INDIRECT_DISPATCH_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_REFINE_SET_SUN_SHAFT_INDIRECT_DISPATCH_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &sample_dispatch_buffer,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &sample_dispatch_buffer,
-                            array_element: 0,
-                        },
                     },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
-        let sample_sets = (0..frames_in_flight)
-            .map(|i| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.sun_shaft_sample.clone(),
-                        debug_name: Some(format!("sun_shaft_sample_set_{i}")),
-                    },
-                )
-                .unwrap();
+        let sample_sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.sun_shaft_sample.clone(),
+                    debug_name: Some(format!("sun_shaft_sample_set_{i}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_SAMPLE_SET_EPIPOLAR_LINES_BINDING,
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_SAMPLE_SET_EPIPOLAR_LINES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_lines,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_lines,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_SAMPLE_SET_EPIPOLAR_SAMPLES_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_SAMPLE_SET_EPIPOLAR_SAMPLES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_samples,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_samples,
-                            array_element: 0,
-                        },
                     },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
-        let interpolation_sets = (0..frames_in_flight)
-            .map(|i| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.sun_shaft_interpolation.clone(),
-                        debug_name: Some(format!("sun_shaft_interpolation_set_{i}")),
-                    },
-                )
-                .unwrap();
+        let interpolation_sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.sun_shaft_interpolation.clone(),
+                    debug_name: Some(format!("sun_shaft_interpolation_set_{i}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_INTERPOLATION_SET_EPIPOLAR_LINES_BINDING,
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_INTERPOLATION_SET_EPIPOLAR_LINES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &epipolar_lines,
                         array_element: 0,
-                        value: DescriptorValue::StorageBuffer {
-                            buffer: &epipolar_lines,
-                            array_element: 0,
-                        },
                     },
-                    DescriptorSetUpdate {
-                        binding: SUN_SHAFT_INTERPOLATION_SET_OUTPUT_TEX_BINDING,
+                },
+                DescriptorSetUpdate {
+                    binding: SUN_SHAFT_INTERPOLATION_SET_OUTPUT_TEX_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageImage {
+                        texture: &sun_shafts_texture,
                         array_element: 0,
-                        value: DescriptorValue::StorageImage {
-                            texture: &sun_shafts_texture,
-                            array_element: 0,
-                            mip: 0,
-                        },
+                        mip: 0,
                     },
-                ]);
+                },
+            ]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
         Self {
             line_count,

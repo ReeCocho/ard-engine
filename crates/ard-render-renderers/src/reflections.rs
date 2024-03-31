@@ -1,5 +1,5 @@
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_raytracing::pipeline::{
@@ -16,17 +16,17 @@ pub struct Reflections {
 }
 
 impl Reflections {
-    pub fn new<const FIF: usize>(
+    pub fn new(
         ctx: &Context,
         layouts: &Layouts,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
-        factory: &MaterialFactory<FIF>,
+        materials: &ResourceAllocator<MaterialResource>,
+        factory: &MaterialFactory,
         dims: (u32, u32),
     ) -> Self {
         let image = Self::create_texture(ctx, dims);
-        let mut sets = ReflectionPassSets::new(ctx, layouts, FIF);
+        let mut sets = ReflectionPassSets::new(ctx, layouts);
 
-        for i in 0..FIF {
+        for i in 0..FRAMES_IN_FLIGHT {
             sets.update_output(Frame::from(i), &image);
         }
 
@@ -80,11 +80,11 @@ impl Reflections {
         self.sets.update_output(frame, &self.image);
     }
 
-    pub fn check_for_rebuild<const FIF: usize>(
+    pub fn check_for_rebuild(
         &mut self,
         ctx: &Context,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
-        factory: &MaterialFactory<FIF>,
+        materials: &ResourceAllocator<MaterialResource>,
+        factory: &MaterialFactory,
     ) {
         self.pipeline.check_for_rebuild(ctx, materials, factory);
     }

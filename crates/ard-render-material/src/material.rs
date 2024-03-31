@@ -155,10 +155,10 @@ impl MaterialResource {
     pub const RT_GROUPS_PER_RENDERING_MODE: usize = (1 << (VertexAttribute::COUNT - 2));
     pub const RT_GROUPS_PER_MATERIAL: usize = 3 * Self::RT_GROUPS_PER_RENDERING_MODE;
 
-    pub fn new<const FRAMES_IN_FLIGHT: usize>(
+    pub fn new(
         ctx: &Context,
-        factory: &MaterialFactory<FRAMES_IN_FLIGHT>,
-        shaders: &ResourceAllocator<ShaderResource, FRAMES_IN_FLIGHT>,
+        factory: &MaterialFactory,
+        shaders: &ResourceAllocator<ShaderResource>,
         create_info: MaterialCreateInfo,
     ) -> Result<Self, MaterialCreateError> {
         // Must have at least one variant
@@ -401,12 +401,12 @@ impl MaterialResource {
 }
 
 impl RtMaterialVariant {
-    pub fn new<const FIF: usize>(
+    pub fn new(
         ctx: &Context,
         pass_id: PassId,
         variants: Vec<RtVariantDescriptor>,
-        factory: &MaterialFactory<FIF>,
-        shaders: &ResourceAllocator<ShaderResource, FIF>,
+        factory: &MaterialFactory,
+        shaders: &ResourceAllocator<ShaderResource>,
     ) -> Self {
         // Acquire a unique offset for each vertex layout/rendering mode pair
         let mut offsets = BTreeMap::default();

@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_objects::set::RenderableSet;
 use ard_render_si::types::*;
 
@@ -13,13 +13,13 @@ pub struct RenderIds {
 const DEFAULT_RENDER_ID_COUNT: u64 = 1;
 
 impl RenderIds {
-    pub fn new(ctx: &Context, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context) -> Self {
         Self {
             input: Buffer::new(
                 ctx.clone(),
                 BufferCreateInfo {
                     size: std::mem::size_of::<GpuObjectId>() as u64 * DEFAULT_RENDER_ID_COUNT,
-                    array_elements: frames_in_flight,
+                    array_elements: FRAMES_IN_FLIGHT,
                     buffer_usage: BufferUsage::STORAGE_BUFFER,
                     memory_usage: MemoryUsage::CpuToGpu,
                     queue_types: QueueTypes::MAIN,

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ard_ecs::resource::Resource;
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;
@@ -68,17 +68,17 @@ pub struct Tonemapping {
     screen_size: (u32, u32),
     /// Generates the luminance histogram.
     histogram_gen_pipeline: ComputePipeline,
-    histogram_sets: Vec<DescriptorSet>,
+    histogram_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Computes luminance from the histogram.
     luminance_comp_pipeline: ComputePipeline,
     luminance_set: DescriptorSet,
     /// Tonemaps using adaptive luminance.
     tonemapping_pipeline: GraphicsPipeline,
-    tonemapping_sets: Vec<DescriptorSet>,
+    tonemapping_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl Tonemapping {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         let histogram = Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -213,29 +213,27 @@ impl Tonemapping {
             )
             .unwrap();
 
-        let histogram_sets = (0..frames_in_flight)
-            .map(|frame| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.histogram_gen.clone(),
-                        debug_name: Some(format!("histogram_gen_set_{frame}")),
-                    },
-                )
-                .unwrap();
+        let histogram_sets = std::array::from_fn(|frame| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.histogram_gen.clone(),
+                    debug_name: Some(format!("histogram_gen_set_{frame}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[DescriptorSetUpdate {
-                    binding: HISTOGRAM_GEN_SET_HISTOGRAM_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: HISTOGRAM_GEN_SET_HISTOGRAM_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &histogram,
                     array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &histogram,
-                        array_element: 0,
-                    },
-                }]);
+                },
+            }]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
         let luminance_set = {
             let mut set = DescriptorSet::new(
@@ -269,29 +267,27 @@ impl Tonemapping {
             set
         };
 
-        let tonemapping_sets = (0..frames_in_flight)
-            .map(|frame| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.tonemapping.clone(),
-                        debug_name: Some(format!("tonemapping_set_{frame}")),
-                    },
-                )
-                .unwrap();
+        let tonemapping_sets = std::array::from_fn(|frame| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.tonemapping.clone(),
+                    debug_name: Some(format!("tonemapping_set_{frame}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[DescriptorSetUpdate {
-                    binding: TONEMAPPING_SET_LUMINANCE_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: TONEMAPPING_SET_LUMINANCE_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &luminance,
                     array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &luminance,
-                        array_element: 0,
-                    },
-                }]);
+                },
+            }]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
         Self {
             _histogram: histogram,

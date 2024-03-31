@@ -6,7 +6,6 @@ use std::{
 use crate::{
     blas::PendingBlasBuilder,
     staging::{Staging, StagingRequest, StagingResource},
-    FRAMES_IN_FLIGHT,
 };
 use ard_ecs::prelude::*;
 use ard_formats::{mesh::MeshData, meshlet::Meshlet, texture::TextureSource};
@@ -52,15 +51,14 @@ pub struct Factory {
 
 pub(crate) struct FactoryInner {
     staging: Mutex<Staging>,
-    pub(crate) meshes: Mutex<ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>>,
-    pub(crate) textures: Mutex<ResourceAllocator<TextureResource, FRAMES_IN_FLIGHT>>,
-    pub(crate) shaders: Mutex<ResourceAllocator<ShaderResource, FRAMES_IN_FLIGHT>>,
-    pub(crate) materials: Mutex<ResourceAllocator<MaterialResource, FRAMES_IN_FLIGHT>>,
-    pub(crate) material_instances:
-        Mutex<ResourceAllocator<MaterialInstanceResource, FRAMES_IN_FLIGHT>>,
+    pub(crate) meshes: Mutex<ResourceAllocator<MeshResource>>,
+    pub(crate) textures: Mutex<ResourceAllocator<TextureResource>>,
+    pub(crate) shaders: Mutex<ResourceAllocator<ShaderResource>>,
+    pub(crate) materials: Mutex<ResourceAllocator<MaterialResource>>,
+    pub(crate) material_instances: Mutex<ResourceAllocator<MaterialInstanceResource>>,
     pub(crate) mesh_factory: Mutex<MeshFactory>,
     pub(crate) texture_factory: Mutex<TextureFactory>,
-    pub(crate) material_factory: Mutex<MaterialFactory<FRAMES_IN_FLIGHT>>,
+    pub(crate) material_factory: Mutex<MaterialFactory>,
     pub(crate) pending_blas: Mutex<PendingBlasBuilder>,
     ctx: Context,
 }
@@ -92,9 +90,8 @@ impl Factory {
                     default_meshlet_buffer_len: 16384,
                 },
                 MAX_MESHES,
-                FRAMES_IN_FLIGHT,
             )),
-            texture_factory: Mutex::new(TextureFactory::new(&ctx, layouts, FRAMES_IN_FLIGHT)),
+            texture_factory: Mutex::new(TextureFactory::new(&ctx, layouts)),
             material_factory: Mutex::new(MaterialFactory::new(
                 ctx.clone(),
                 layouts.materials.clone(),

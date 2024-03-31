@@ -105,10 +105,10 @@ impl Staging {
     }
 
     /// Begin pending uploads.
-    pub fn upload<const FIF: usize>(
+    pub fn upload(
         &mut self,
         mesh_factory: &mut MeshFactory,
-        textures: &ResourceAllocator<TextureResource, FIF>,
+        textures: &ResourceAllocator<TextureResource>,
     ) {
         if self.pending.is_empty() {
             return;

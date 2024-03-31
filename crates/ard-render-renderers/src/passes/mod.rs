@@ -37,7 +37,7 @@ pub const TRANSPARENT_PASS_ID: PassId = PassId::new(7);
 pub const RT_PASS_ID: PassId = PassId::new(8);
 
 /// Defines primary passes.
-pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layouts: &Layouts) {
+pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
     factory
         .add_pass(
             HIGH_Z_PASS_ID,

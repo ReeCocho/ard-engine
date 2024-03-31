@@ -8,10 +8,9 @@ use ard_pal::prelude::{
 use ard_render_base::{
     ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
+    FRAMES_IN_FLIGHT,
 };
 use ard_render_meshes::mesh::MeshResource;
-
-use crate::FRAMES_IN_FLIGHT;
 
 const BLAS_BUILD_PER_PROCESS: usize = 16;
 
@@ -72,7 +71,7 @@ impl PendingBlasBuilder {
         &mut self,
         frame: Frame,
         ctx: &Context,
-        meshes: &ResourceAllocator<MeshResource, FRAMES_IN_FLIGHT>,
+        meshes: &ResourceAllocator<MeshResource>,
     ) {
         // Take some new meshes and put them into the "to build" list
         self.to_build.clear();

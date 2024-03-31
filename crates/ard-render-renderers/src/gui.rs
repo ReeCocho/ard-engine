@@ -1,7 +1,7 @@
 use ard_log::warn;
 use ard_math::{UVec2, Vec2};
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_gui::GuiRunOutput;
 use ard_render_si::{bindings::*, types::*};
 use ordered_float::NotNan;
@@ -36,7 +36,7 @@ pub struct GuiRenderer {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     font_pipeline: GraphicsPipeline,
-    sets: Vec<DescriptorSet>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     draw_calls: Vec<DrawCall>,
     texture_deltas: Vec<TextureDelta>,
 }
@@ -59,7 +59,7 @@ struct TextureDelta {
 }
 
 impl GuiRenderer {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         let vertex = Shader::new(
             ctx.clone(),
             ShaderCreateInfo {
@@ -168,7 +168,7 @@ impl GuiRenderer {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<egui::epaint::Vertex>() as u64 * DEFAULT_VB_SIZE,
-                array_elements: frames_in_flight,
+                array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::VERTEX_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
                 sharing_mode: SharingMode::Exclusive,
@@ -182,7 +182,7 @@ impl GuiRenderer {
             ctx.clone(),
             BufferCreateInfo {
                 size: std::mem::size_of::<u32>() as u64 * DEFAULT_IB_SIZE,
-                array_elements: frames_in_flight,
+                array_elements: FRAMES_IN_FLIGHT,
                 buffer_usage: BufferUsage::INDEX_BUFFER,
                 memory_usage: MemoryUsage::CpuToGpu,
                 sharing_mode: SharingMode::Exclusive,
@@ -192,32 +192,30 @@ impl GuiRenderer {
         )
         .unwrap();
 
-        let sets = (0..frames_in_flight)
-            .map(|i| {
-                let mut set = DescriptorSet::new(
-                    ctx.clone(),
-                    DescriptorSetCreateInfo {
-                        layout: layouts.gui.clone(),
-                        debug_name: Some(format!("font_set_{i}")),
-                    },
-                )
-                .unwrap();
+        let sets = std::array::from_fn(|i| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.gui.clone(),
+                    debug_name: Some(format!("font_set_{i}")),
+                },
+            )
+            .unwrap();
 
-                set.update(&[DescriptorSetUpdate {
-                    binding: GUI_SET_FONT_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: GUI_SET_FONT_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: &font_texture,
                     array_element: 0,
-                    value: DescriptorValue::Texture {
-                        texture: &font_texture,
-                        array_element: 0,
-                        sampler: FONT_SAMPLER,
-                        base_mip: 0,
-                        mip_count: 1,
-                    },
-                }]);
+                    sampler: FONT_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            }]);
 
-                set
-            })
-            .collect();
+            set
+        });
 
         Self {
             ctx: ctx.clone(),

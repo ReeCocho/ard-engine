@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use ard_pal::prelude::{Context, DescriptorSet, DescriptorSetLayout};
 use ard_render_base::ecs::Frame;
 use ard_render_base::resource::ResourceAllocator;
+use ard_render_base::FRAMES_IN_FLIGHT;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -27,7 +28,7 @@ pub struct MaterialFactoryConfig {
     pub default_materials_cap: HashMap<u64, usize>,
 }
 
-pub struct MaterialFactory<const FRAMES_IN_FLIGHT: usize> {
+pub struct MaterialFactory {
     ctx: Context,
     config: MaterialFactoryConfig,
     /// Layout for material sets.
@@ -36,9 +37,9 @@ pub struct MaterialFactory<const FRAMES_IN_FLIGHT: usize> {
     passes: FxHashMap<PassId, PassDefinition>,
     rt_passes: FxHashMap<PassId, RtPassDefinition>,
     /// Material data buffers keyed by their data size.
-    data: FxHashMap<u64, MaterialBuffer<FRAMES_IN_FLIGHT>>,
+    data: FxHashMap<u64, MaterialBuffer>,
     /// Global texture slots buffer
-    textures: MaterialBuffer<FRAMES_IN_FLIGHT>,
+    textures: MaterialBuffer,
     /// Descriptor sets for materials, keyed by their data size.
     sets: FxHashMap<u64, [MaterialSet; FRAMES_IN_FLIGHT]>,
 }
@@ -69,7 +70,7 @@ pub enum AddPassError {
     AlreadyExists(PassId),
 }
 
-impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
+impl MaterialFactory {
     pub fn new(ctx: Context, layout: DescriptorSetLayout, config: MaterialFactoryConfig) -> Self {
         MaterialFactory {
             passes: FxHashMap::default(),
@@ -184,7 +185,7 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
     pub fn flush(
         &mut self,
         frame: Frame,
-        materials: &ResourceAllocator<MaterialInstanceResource, FRAMES_IN_FLIGHT>,
+        materials: &ResourceAllocator<MaterialInstanceResource>,
         data_binding: u32,
         textures_binding: u32,
     ) {

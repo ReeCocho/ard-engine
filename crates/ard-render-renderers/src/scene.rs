@@ -43,30 +43,30 @@ pub struct SceneRenderer {
     transparent_sets: TransparentPassSets,
 }
 
-pub struct SceneRenderArgs<'a, 'b, const FIF: usize> {
+pub struct SceneRenderArgs<'a, 'b> {
     pub pass: &'b mut RenderPass<'a>,
     pub render_area: Vec2,
     pub static_dirty: bool,
     pub lock_culling: bool,
     pub camera: &'a CameraUbo,
     pub mesh_factory: &'a MeshFactory,
-    pub material_factory: &'a MaterialFactory<FIF>,
+    pub material_factory: &'a MaterialFactory,
     pub texture_factory: &'a TextureFactory,
-    pub meshes: &'a ResourceAllocator<MeshResource, FIF>,
-    pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
+    pub meshes: &'a ResourceAllocator<MeshResource>,
+    pub materials: &'a ResourceAllocator<MaterialResource>,
 }
 
 impl SceneRenderer {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         Self {
             ctx: ctx.clone(),
-            ids: RenderIds::new(ctx, frames_in_flight),
-            bins: DrawBins::new(frames_in_flight),
+            ids: RenderIds::new(ctx),
+            bins: DrawBins::new(),
             set: RenderableSet::default(),
-            hzb_pass_sets: HzbPassSets::new(ctx, layouts, frames_in_flight),
-            depth_prepass_sets: DepthPrepassSets::new(ctx, layouts, frames_in_flight),
-            color_sets: ColorPassSets::new(ctx, layouts, frames_in_flight),
-            transparent_sets: TransparentPassSets::new(ctx, layouts, frames_in_flight),
+            hzb_pass_sets: HzbPassSets::new(ctx, layouts),
+            depth_prepass_sets: DepthPrepassSets::new(ctx, layouts),
+            color_sets: ColorPassSets::new(ctx, layouts),
+            transparent_sets: TransparentPassSets::new(ctx, layouts),
         }
     }
 
@@ -85,12 +85,12 @@ impl SceneRenderer {
         &mut self.transparent_sets
     }
 
-    pub fn upload<const FIF: usize>(
+    pub fn upload(
         &mut self,
         frame: Frame,
         objects: &RenderObjects,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
+        materials: &ResourceAllocator<MaterialResource>,
         view_location: Vec3A,
     ) {
         puffin::profile_function!();
@@ -123,12 +123,7 @@ impl SceneRenderer {
         );
     }
 
-    pub fn update_bindings<const FIF: usize>(
-        &mut self,
-        frame: Frame,
-        objects: &RenderObjects,
-        hzb_image: &HzbImage<FIF>,
-    ) {
+    pub fn update_bindings(&mut self, frame: Frame, objects: &RenderObjects, hzb_image: &HzbImage) {
         self.hzb_pass_sets
             .update_object_data_bindings(frame, objects.object_data(), &self.ids);
 
@@ -147,11 +142,7 @@ impl SceneRenderer {
         self.transparent_sets.update_hzb_binding(frame, hzb_image);
     }
 
-    pub fn render_hzb<'a, const FIF: usize>(
-        &'a self,
-        frame: Frame,
-        args: SceneRenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_hzb<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         // Render static opaque geometry
         self.bins.render_static_opaque_bins(RenderArgs {
             ctx: &self.ctx,
@@ -170,11 +161,7 @@ impl SceneRenderer {
         });
     }
 
-    pub fn render_depth_prepass<'a, const FIF: usize>(
-        &'a self,
-        frame: Frame,
-        args: SceneRenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_depth_prepass<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         // Render opaque and alpha cut objects
         self.bins.render_static_opaque_bins(RenderArgs {
             ctx: &self.ctx,
@@ -241,11 +228,7 @@ impl SceneRenderer {
         });
     }
 
-    pub fn render_opaque<'a, const FIF: usize>(
-        &'a self,
-        frame: Frame,
-        args: SceneRenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_opaque<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         self.bins.render_static_opaque_bins(RenderArgs {
             ctx: &self.ctx,
             pass_id: COLOR_OPAQUE_PASS_ID,
@@ -311,11 +294,7 @@ impl SceneRenderer {
         });
     }
 
-    pub fn render_transparent<'a, const FIF: usize>(
-        &'a self,
-        frame: Frame,
-        args: SceneRenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render_transparent<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         self.bins.render_transparent_bins(RenderArgs {
             ctx: &self.ctx,
             pass_id: TRANSPARENT_PASS_ID,

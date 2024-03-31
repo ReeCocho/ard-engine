@@ -1,7 +1,7 @@
 use ard_ecs::resource::Resource;
 use ard_math::{Vec2, Vec3, Vec3A};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_camera::{ubo::CameraUbo, Camera};
 use ard_render_lighting::shadows::{ShadowCascadeSettings, SunShadowsUbo};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
@@ -47,18 +47,18 @@ pub struct SunShadowsRenderer {
     ids: RenderIds,
     set: RenderableSet,
     empty_shadow: Texture,
-    ubo: Vec<SunShadowsUbo>,
+    ubo: [SunShadowsUbo; FRAMES_IN_FLIGHT],
     bins: DrawBins,
     cascades: Vec<ShadowCascadeRenderData>,
 }
 
-pub struct ShadowRenderArgs<'a, 'b, const FIF: usize> {
+pub struct ShadowRenderArgs<'a, 'b> {
     pub commands: &'b mut CommandBuffer<'a>,
     pub mesh_factory: &'a MeshFactory,
-    pub material_factory: &'a MaterialFactory<FIF>,
+    pub material_factory: &'a MaterialFactory,
     pub texture_factory: &'a TextureFactory,
-    pub meshes: &'a ResourceAllocator<MeshResource, FIF>,
-    pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
+    pub meshes: &'a ResourceAllocator<MeshResource>,
+    pub materials: &'a ResourceAllocator<MaterialResource>,
     pub cascade: usize,
 }
 
@@ -69,12 +69,7 @@ struct ShadowCascadeRenderData {
 }
 
 impl SunShadowsRenderer {
-    pub fn new(
-        ctx: &Context,
-        layouts: &Layouts,
-        frames_in_flight: usize,
-        shadow_cascades: usize,
-    ) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts, shadow_cascades: usize) -> Self {
         let empty_shadow = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
@@ -120,20 +115,18 @@ impl SunShadowsRenderer {
             .submit(Some("empty_shadow_prepare"), command_buffer)
             .wait_on(None);
 
-        let ubo: Vec<_> = (0..frames_in_flight)
-            .map(|_| SunShadowsUbo::new(ctx))
-            .collect();
+        let ubo = std::array::from_fn(|_| SunShadowsUbo::new(ctx));
 
         let cascades = (0..shadow_cascades)
-            .map(|_| ShadowCascadeRenderData::new(ctx, layouts, frames_in_flight, 1))
+            .map(|_| ShadowCascadeRenderData::new(ctx, layouts, 1))
             .collect();
 
         Self {
             ctx: ctx.clone(),
-            ids: RenderIds::new(ctx, frames_in_flight),
+            ids: RenderIds::new(ctx),
             set: RenderableSet::default(),
             ubo,
-            bins: DrawBins::new(frames_in_flight),
+            bins: DrawBins::new(),
             cascades,
             empty_shadow,
         }
@@ -159,12 +152,12 @@ impl SunShadowsRenderer {
         self.cascades.get(i).map(|cascade| &cascade.image)
     }
 
-    pub fn upload<const FIF: usize>(
+    pub fn upload(
         &mut self,
         frame: Frame,
         objects: &RenderObjects,
-        meshes: &ResourceAllocator<MeshResource, FIF>,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
+        meshes: &ResourceAllocator<MeshResource>,
+        materials: &ResourceAllocator<MaterialResource>,
         view_location: Vec3A,
     ) {
         puffin::profile_function!();
@@ -195,19 +188,13 @@ impl SunShadowsRenderer {
         &mut self,
         ctx: &Context,
         layouts: &Layouts,
-        frames_in_flight: usize,
         cascades: &[ShadowCascadeSettings],
     ) -> bool {
         let mut needs_resize = self.cascades.len() != cascades.len();
 
         let mut i = cascades.len();
         self.cascades.resize_with(cascades.len(), || {
-            let new_cascade = ShadowCascadeRenderData::new(
-                ctx,
-                layouts,
-                frames_in_flight,
-                cascades[i].resolution,
-            );
+            let new_cascade = ShadowCascadeRenderData::new(ctx, layouts, cascades[i].resolution);
             i += 1;
             new_cascade
         });
@@ -221,7 +208,7 @@ impl SunShadowsRenderer {
         needs_resize
     }
 
-    pub fn update_bindings<const FIF: usize>(&mut self, frame: Frame, objects: &RenderObjects) {
+    pub fn update_bindings(&mut self, frame: Frame, objects: &RenderObjects) {
         self.cascades.iter_mut().for_each(|cascade| {
             cascade
                 .sets
@@ -258,11 +245,7 @@ impl SunShadowsRenderer {
             });
     }
 
-    pub fn render<'a, const FIF: usize>(
-        &'a self,
-        frame: Frame,
-        args: ShadowRenderArgs<'a, '_, FIF>,
-    ) {
+    pub fn render<'a>(&'a self, frame: Frame, args: ShadowRenderArgs<'a, '_>) {
         let cascade = &self.cascades[args.cascade];
         let render_area = Vec2::new(cascade.image.dims().0 as f32, cascade.image.dims().1 as f32);
         args.commands.render_pass(
@@ -353,11 +336,11 @@ impl SunShadowsRenderer {
 }
 
 impl ShadowCascadeRenderData {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize, resolution: u32) -> Self {
+    pub fn new(ctx: &Context, layouts: &Layouts, resolution: u32) -> Self {
         Self {
             image: Self::create_image(ctx, resolution),
-            camera: CameraUbo::new(ctx, frames_in_flight, false, layouts),
-            sets: ShadowPassSets::new(ctx, layouts, frames_in_flight),
+            camera: CameraUbo::new(ctx, false, layouts),
+            sets: ShadowPassSets::new(ctx, layouts),
         }
     }
 

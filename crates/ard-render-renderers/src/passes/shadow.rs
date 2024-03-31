@@ -1,17 +1,17 @@
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_si::bindings::*;
 
 use crate::ids::RenderIds;
 
 pub struct ShadowPassSets {
-    sets: Vec<DescriptorSet>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl ShadowPassSets {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
-        let sets = (0..frames_in_flight)
-            .map(|frame_idx| {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
+        Self {
+            sets: std::array::from_fn(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
@@ -20,10 +20,8 @@ impl ShadowPassSets {
                     },
                 )
                 .unwrap()
-            })
-            .collect();
-
-        Self { sets }
+            }),
+        }
     }
 
     pub fn update_object_data_bindings(

@@ -7,11 +7,11 @@ use ard_render_material::{
     material::MaterialResource,
 };
 
-pub struct RayTracingMaterialPipelineCreateInfo<'a, const FIF: usize> {
+pub struct RayTracingMaterialPipelineCreateInfo<'a> {
     pub pass: PassId,
     pub layouts: Vec<DescriptorSetLayout>,
-    pub materials: &'a ResourceAllocator<MaterialResource, FIF>,
-    pub factory: &'a MaterialFactory<FIF>,
+    pub materials: &'a ResourceAllocator<MaterialResource>,
+    pub factory: &'a MaterialFactory,
     pub raygen: Shader,
     pub miss: Shader,
     pub debug_name: Option<String>,
@@ -38,10 +38,7 @@ struct TableBases {
 }
 
 impl RayTracingMaterialPipeline {
-    pub fn new<const FIF: usize>(
-        ctx: &Context,
-        create_info: RayTracingMaterialPipelineCreateInfo<FIF>,
-    ) -> Self {
+    pub fn new(ctx: &Context, create_info: RayTracingMaterialPipelineCreateInfo) -> Self {
         let pass = create_info.pass;
         let layouts = create_info.layouts.clone();
         let debug_name = create_info.debug_name.clone();
@@ -90,11 +87,11 @@ impl RayTracingMaterialPipeline {
         &self.pipeline
     }
 
-    pub fn check_for_rebuild<const FIF: usize>(
+    pub fn check_for_rebuild(
         &mut self,
         ctx: &Context,
-        materials: &ResourceAllocator<MaterialResource, FIF>,
-        factory: &MaterialFactory<FIF>,
+        materials: &ResourceAllocator<MaterialResource>,
+        factory: &MaterialFactory,
     ) {
         if materials.allocated() == self.last_material_count {
             return;
@@ -120,9 +117,9 @@ impl RayTracingMaterialPipeline {
         self.last_material_count = materials.allocated();
     }
 
-    fn create_pipeline<const FIF: usize>(
+    fn create_pipeline(
         ctx: &Context,
-        create_info: RayTracingMaterialPipelineCreateInfo<FIF>,
+        create_info: RayTracingMaterialPipelineCreateInfo,
     ) -> RayTracingPipeline {
         // Stage and group for raygen and miss shader
         let stages = vec![

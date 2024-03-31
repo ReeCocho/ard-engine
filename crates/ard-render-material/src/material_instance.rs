@@ -74,9 +74,9 @@ impl MaterialInstance {
 }
 
 impl MaterialInstanceResource {
-    pub fn new<const FRAMES_IN_FLIGHT: usize>(
+    pub fn new(
         create_info: MaterialInstanceCreateInfo,
-        factory: &mut MaterialFactory<FRAMES_IN_FLIGHT>,
+        factory: &mut MaterialFactory,
     ) -> Result<Self, MaterialInstanceCreateError> {
         factory.verify_set(create_info.material.data_size() as u64);
 

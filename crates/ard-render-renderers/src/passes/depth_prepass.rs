@@ -1,17 +1,17 @@
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_si::bindings::*;
 
 use crate::{highz::HzbImage, ids::RenderIds};
 
 pub struct DepthPrepassSets {
-    sets: Vec<DescriptorSet>,
+    sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
 impl DepthPrepassSets {
-    pub fn new(ctx: &Context, layouts: &Layouts, frames_in_flight: usize) -> Self {
-        let sets = (0..frames_in_flight)
-            .map(|frame_idx| {
+    pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
+        Self {
+            sets: std::array::from_fn(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
@@ -20,13 +20,11 @@ impl DepthPrepassSets {
                     },
                 )
                 .unwrap()
-            })
-            .collect();
-
-        Self { sets }
+            }),
+        }
     }
 
-    pub fn update_hzb_binding<const FIF: usize>(&mut self, frame: Frame, image: &HzbImage<FIF>) {
+    pub fn update_hzb_binding(&mut self, frame: Frame, image: &HzbImage) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
             binding: DEPTH_PREPASS_SET_HZB_IMAGE_BINDING,
