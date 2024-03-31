@@ -1,9 +1,7 @@
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
-use ard_render_material::{
-    binding_table::BindingTableOffset, material::MaterialResource, shader::ShaderResource,
-};
+use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_raytracing::pipeline::{
     RayTracingMaterialPipeline, RayTracingMaterialPipelineCreateInfo,
 };
@@ -22,8 +20,7 @@ impl Reflections {
         ctx: &Context,
         layouts: &Layouts,
         materials: &ResourceAllocator<MaterialResource, FIF>,
-        shaders: &ResourceAllocator<ShaderResource, FIF>,
-        offset: &BindingTableOffset,
+        factory: &MaterialFactory<FIF>,
         dims: (u32, u32),
     ) -> Self {
         let image = Self::create_texture(ctx, dims);
@@ -58,12 +55,9 @@ impl Reflections {
                     pass: RT_PASS_ID,
                     layouts: vec![layouts.camera.clone(), layouts.reflection_rt_pass.clone()],
                     materials,
-                    shaders,
-                    offset,
+                    factory,
                     raygen,
                     miss,
-                    recursion_depth: 1,
-                    push_constants: None,
                     debug_name: Some("rt_pipeline".into()),
                 },
             ),
@@ -89,12 +83,10 @@ impl Reflections {
     pub fn check_for_rebuild<const FIF: usize>(
         &mut self,
         ctx: &Context,
-        offset: &BindingTableOffset,
         materials: &ResourceAllocator<MaterialResource, FIF>,
-        shaders: &ResourceAllocator<ShaderResource, FIF>,
+        factory: &MaterialFactory<FIF>,
     ) {
-        self.pipeline
-            .check_for_rebuild(ctx, offset, materials, shaders);
+        self.pipeline.check_for_rebuild(ctx, materials, factory);
     }
 
     pub fn trace<'a>(

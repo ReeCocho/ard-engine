@@ -76,8 +76,8 @@ pub mod prelude {
         api::rt_pipeline::RayTracingPipelineCreateInfo<crate::Backend>;
     pub type RayTracingDispatch<'a> = api::rt_pass::RayTracingDispatch<'a, crate::Backend>;
     pub use api::rt_pipeline::{
-        RayTracingPipelineCreateError, RayTracingShaderGroup, RayTracingShaderStage,
-        ShaderBindingTableData,
+        PipelineLibraryInfo, RayTracingPipelineCreateError, RayTracingShaderGroup,
+        RayTracingShaderStage, ShaderBindingTableData,
     };
 
     // Buffer

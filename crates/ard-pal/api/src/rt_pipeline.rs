@@ -13,7 +13,16 @@ pub struct RayTracingPipelineCreateInfo<B: Backend> {
     pub max_ray_recursion_depth: u32,
     pub layouts: Vec<DescriptorSetLayout<B>>,
     pub push_constants_size: Option<u32>,
+    pub library_info: Option<PipelineLibraryInfo>,
+    pub libraries: Vec<RayTracingPipeline<B>>,
     pub debug_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PipelineLibraryInfo {
+    pub is_library: bool,
+    pub max_ray_payload_size: u32,
+    pub max_ray_hit_attribute_size: u32,
 }
 
 #[derive(Clone)]

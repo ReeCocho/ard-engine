@@ -1,13 +1,11 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::{collections::BTreeMap, sync::Mutex};
 
-use ard_formats::vertex::VertexLayout;
+use ard_formats::vertex::{VertexAttribute, VertexLayout};
 use ard_pal::prelude::{
     ColorBlendState, Context, DepthStencilState, GraphicsPipeline, GraphicsPipelineCreateError,
-    GraphicsPipelineCreateInfo, MeshShadingShader, RasterizationState, ShaderStage, ShaderStages,
-    VertexInputState,
+    GraphicsPipelineCreateInfo, MeshShadingShader, PipelineLibraryInfo, RasterizationState,
+    RayTracingPipeline, RayTracingPipelineCreateInfo, RayTracingShaderGroup, RayTracingShaderStage,
+    ShaderStage, ShaderStages, VertexInputState,
 };
 use ard_render_base::{
     resource::{ResourceAllocator, ResourceHandle, ResourceId},
@@ -18,7 +16,6 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
-    binding_table::BindingTableOffset,
     factory::{MaterialFactory, PassId},
     shader::{Shader, ShaderResource},
 };
@@ -26,7 +23,7 @@ use crate::{
 pub struct MaterialCreateInfo {
     /// Variants of this material.
     pub variants: Vec<MaterialVariantDescriptor>,
-    pub rt_variants: Vec<RtVariantDescriptor>,
+    pub rt_variants: BTreeMap<PassId, Vec<RtVariantDescriptor>>,
     /// The size of the properties data structure used for this material type.
     pub data_size: u32,
     /// The number of textures this material supports.
@@ -54,15 +51,7 @@ pub struct MaterialVariantDescriptor {
     pub debug_name: Option<String>,
 }
 
-pub struct RtMaterialVariants {
-    /// Maps from the vertex layout and rendering mode to the offset in the SBT.
-    offsets: BTreeMap<(VertexLayout, RenderingMode), u32>,
-    /// Maps from a given pass to another map from the SBT offset to the variant.
-    pass_to_variant: BTreeMap<PassId, BTreeMap<u32, RtMaterialVariant>>,
-}
-
 pub struct RtVariantDescriptor {
-    pub pass_id: PassId,
     pub vertex_layout: VertexLayout,
     pub rendering_mode: RenderingMode,
     pub shader: Shader,
@@ -99,7 +88,6 @@ pub struct Material {
     data_size: u32,
     texture_slots: u32,
     handle: ResourceHandle,
-    rt_variants: Arc<Mutex<RtMaterialVariants>>,
 }
 
 pub struct MaterialVariant {
@@ -114,8 +102,7 @@ pub struct MaterialVariant {
 }
 
 pub struct RtMaterialVariant {
-    pub shader: Shader,
-    pub stage: ShaderStage,
+    pub pipeline: RayTracingPipeline,
 }
 
 /// Requests a variant from a material.
@@ -127,36 +114,22 @@ pub struct MaterialVariantRequest {
     pub vertex_layout: VertexLayout,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RtMaterialVariantRequest {
-    /// The pass we want.
-    pub pass_id: PassId,
-    /// The vertex attributes we require.
-    pub vertex_layout: VertexLayout,
-}
-
 pub struct MaterialResource {
     pub data_size: u32,
     pub texture_slots: u32,
     /// Variants the material supports.
     pub variants: Vec<MaterialVariant>,
-    pub rt_variants: Arc<Mutex<RtMaterialVariants>>,
+    pub rt_variants: BTreeMap<PassId, RtMaterialVariant>,
     /// Lookup table for pipelines based on their variant.
     pub variant_lookup: Mutex<FxHashMap<MaterialVariantRequest, usize>>,
 }
 
 impl Material {
-    pub fn new(
-        handle: ResourceHandle,
-        data_size: u32,
-        texture_slots: u32,
-        rt_variants: Arc<Mutex<RtMaterialVariants>>,
-    ) -> Material {
+    pub fn new(handle: ResourceHandle, data_size: u32, texture_slots: u32) -> Material {
         Material {
             handle,
             data_size,
             texture_slots,
-            rt_variants,
         }
     }
 
@@ -174,19 +147,18 @@ impl Material {
     pub fn texture_slots(&self) -> u32 {
         self.texture_slots
     }
-
-    #[inline(always)]
-    pub fn rt_variants(&self) -> MutexGuard<RtMaterialVariants> {
-        self.rt_variants.lock().unwrap()
-    }
 }
 
 impl MaterialResource {
+    /// Group per combination of vertex layout and rendering mode. We have 3 rendering modes, and
+    /// all meshes have positions and normals, so we can get rid of two there.
+    pub const RT_GROUPS_PER_RENDERING_MODE: usize = (1 << (VertexAttribute::COUNT - 2));
+    pub const RT_GROUPS_PER_MATERIAL: usize = 3 * Self::RT_GROUPS_PER_RENDERING_MODE;
+
     pub fn new<const FRAMES_IN_FLIGHT: usize>(
         ctx: &Context,
         factory: &MaterialFactory<FRAMES_IN_FLIGHT>,
         shaders: &ResourceAllocator<ShaderResource, FRAMES_IN_FLIGHT>,
-        bt_offsets: &mut BindingTableOffset,
         create_info: MaterialCreateInfo,
     ) -> Result<Self, MaterialCreateError> {
         // Must have at least one variant
@@ -273,12 +245,21 @@ impl MaterialResource {
         }
 
         // TODO: RT variant verification.
-        let rt_variants = RtMaterialVariants::new(create_info.rt_variants, bt_offsets);
+        let rt_variants = create_info
+            .rt_variants
+            .into_iter()
+            .map(|(pass_id, desc)| {
+                (
+                    pass_id,
+                    RtMaterialVariant::new(ctx, pass_id, desc, factory, shaders),
+                )
+            })
+            .collect();
 
         // Create each variant
         let mut resource = MaterialResource {
             variants: Vec::with_capacity(create_info.variants.len()),
-            rt_variants: Arc::new(Mutex::new(rt_variants)),
+            rt_variants,
             variant_lookup: Mutex::new(FxHashMap::default()),
             data_size: create_info.data_size,
             texture_slots: create_info.texture_slots,
@@ -387,97 +368,154 @@ impl MaterialResource {
     pub fn get_variant_by_id(&self, id: u32) -> Option<&MaterialVariant> {
         self.variants.get(id as usize)
     }
+
+    #[inline(always)]
+    pub const fn to_group_idx(mode: RenderingMode, layout: VertexLayout) -> usize {
+        let offset = (layout.bits() >> 2) as usize;
+        let base = mode as usize * MaterialResource::RT_GROUPS_PER_RENDERING_MODE;
+        base + offset
+    }
+
+    #[inline(always)]
+    pub const fn from_group_idx(idx: usize) -> Option<(RenderingMode, VertexLayout)> {
+        if idx > MaterialResource::RT_GROUPS_PER_MATERIAL {
+            return None;
+        }
+
+        let mode = match idx / MaterialResource::RT_GROUPS_PER_RENDERING_MODE {
+            0 => RenderingMode::Opaque,
+            1 => RenderingMode::AlphaCutout,
+            2 => RenderingMode::Transparent,
+            _ => unreachable!(),
+        };
+
+        let vl = (idx - (mode as usize * MaterialResource::RT_GROUPS_PER_RENDERING_MODE)) << 2;
+
+        Some((
+            mode,
+            VertexLayout::from_bits_truncate(
+                VertexLayout::POSITION.bits() | VertexLayout::NORMAL.bits() | vl as u8,
+            ),
+        ))
+    }
 }
 
-impl RtMaterialVariants {
-    pub fn new(variants: Vec<RtVariantDescriptor>, bt_offsets: &mut BindingTableOffset) -> Self {
+impl RtMaterialVariant {
+    pub fn new<const FIF: usize>(
+        ctx: &Context,
+        pass_id: PassId,
+        variants: Vec<RtVariantDescriptor>,
+        factory: &MaterialFactory<FIF>,
+        shaders: &ResourceAllocator<ShaderResource, FIF>,
+    ) -> Self {
         // Acquire a unique offset for each vertex layout/rendering mode pair
         let mut offsets = BTreeMap::default();
+        let mut stages = Vec::with_capacity(variants.len());
         variants.iter().for_each(|variant| {
-            let pair = (variant.vertex_layout, variant.rendering_mode);
-            offsets.entry(pair).or_insert_with(|| bt_offsets.register());
+            let pair = (variant.rendering_mode, variant.vertex_layout);
+            offsets.entry(pair).or_insert_with(|| stages.len());
+
+            stages.push(RayTracingShaderStage {
+                shader: shaders.get(variant.shader.id()).unwrap().shader.clone(),
+                stage: variant.stage,
+            });
         });
 
-        // Construct variants
-        let mut pass_to_variant = BTreeMap::<PassId, BTreeMap<u32, RtMaterialVariant>>::default();
-        for variant in variants {
-            let entry = pass_to_variant.entry(variant.pass_id).or_default();
+        // Construct variants (it's possible some might fail, so we report those back as `None`).
+        // NOTE: We should use an error type in the future and report it back to the user.
+        let groups: Vec<_> = (0..MaterialResource::RT_GROUPS_PER_MATERIAL)
+            .map(|idx| {
+                let pair = MaterialResource::from_group_idx(idx).unwrap();
 
-            // Get the offset for this variant
-            // NOTE: Safe to unwrap since we just constructed an offset for each unique pair
-            let pair = (variant.vertex_layout, variant.rendering_mode);
-            let offset = *offsets.get(&pair).unwrap();
-
-            // Construct the variant
-            entry.insert(
-                offset,
-                RtMaterialVariant {
-                    shader: variant.shader,
-                    stage: variant.stage,
-                },
-            );
-        }
-
-        Self {
-            offsets,
-            pass_to_variant,
-        }
-    }
-
-    // Get the variants for a given pass.
-    #[inline(always)]
-    pub fn variants_of(&self, pass_id: PassId) -> &BTreeMap<u32, RtMaterialVariant> {
-        self.pass_to_variant.get(&pass_id).unwrap()
-    }
-
-    // Get the offset for the given vertex layout and rendering mode.
-    #[inline(always)]
-    pub fn offset_of(
-        &mut self,
-        vertex_layout: VertexLayout,
-        rendering_mode: RenderingMode,
-    ) -> Option<u32> {
-        // Try to lookup the pair in the map
-        let pair = (vertex_layout, rendering_mode);
-        if let Some(offset) = self.offsets.get(&pair) {
-            return Some(*offset);
-        }
-
-        // If we didn't find it, it might be possible to find one that supports a subset of
-        // our attributes.
-        let mut new_variant = None;
-        let mut supported_attributes = 0;
-
-        self.offsets
-            .iter()
-            .for_each(|((new_vertex_layout, new_mode), offset)| {
-                // Rendering modes must match
-                if *new_mode != rendering_mode {
-                    return;
+                // See if we match exactly with the
+                if let Some(offset) = offsets.get(&pair) {
+                    return match variants[*offset].stage {
+                        ShaderStage::RayClosestHit => Some(RayTracingShaderGroup::Triangles {
+                            closest_hit: Some(*offset),
+                            any_hit: None,
+                        }),
+                        ShaderStage::RayAnyHit => Some(RayTracingShaderGroup::Triangles {
+                            closest_hit: None,
+                            any_hit: Some(*offset),
+                        }),
+                        // Invalid stage
+                        _ => None,
+                    };
                 }
 
-                // Only compatible if the variant requires a subset of the requested vertex
-                // attributes
-                if !new_vertex_layout.subset_of(vertex_layout) {
-                    return;
+                // If we didn't find it, it might be possible to find one that supports a subset of
+                // our attributes.
+                let mut new_variant = None;
+                let mut supported_attributes = 0;
+
+                offsets
+                    .iter()
+                    .for_each(|((new_mode, new_vertex_layout), offset)| {
+                        // Rendering modes must match
+                        if *new_mode != pair.0 {
+                            return;
+                        }
+
+                        // Only compatible if the variant requires a subset of the requested vertex
+                        // attributes
+                        if !new_vertex_layout.subset_of(pair.1) {
+                            return;
+                        }
+
+                        // Replace the selected variant if this variants vertex attributes are more
+                        // specialized
+                        let attributes = new_vertex_layout.into_iter().count();
+                        if attributes > supported_attributes {
+                            supported_attributes = attributes;
+                            new_variant = Some(*offset);
+                        }
+                    });
+
+                // If we still haven't found it, error out
+                let offset = new_variant?;
+
+                match variants[offset].stage {
+                    ShaderStage::RayClosestHit => Some(RayTracingShaderGroup::Triangles {
+                        closest_hit: Some(offset),
+                        any_hit: None,
+                    }),
+                    ShaderStage::RayAnyHit => Some(RayTracingShaderGroup::Triangles {
+                        closest_hit: None,
+                        any_hit: Some(offset),
+                    }),
+                    // Invalid stage
+                    _ => None,
                 }
+            })
+            .collect();
 
-                // Replace the selected variant if this variants vertex attributes are more
-                // specialized
-                let attributes = new_vertex_layout.into_iter().count();
-                if attributes > supported_attributes {
-                    supported_attributes = attributes;
-                    new_variant = Some(*offset);
-                }
-            });
+        // Check for errors
+        // NOTE: Right now, we just panic. We should have error handling.
+        let groups = groups.into_iter().map(|group| group.unwrap()).collect();
 
-        // If we still haven't found it, error out
-        let offset = new_variant?;
+        let pass = factory.get_rt_pass(pass_id).unwrap();
 
-        // Register new offset for next time
-        self.offsets.insert(pair, offset);
+        // Construct pipeline library
+        let pipeline = RayTracingPipeline::new(
+            ctx.clone(),
+            RayTracingPipelineCreateInfo {
+                stages,
+                groups,
+                max_ray_recursion_depth: 0,
+                layouts: pass.layouts.clone(),
+                push_constants_size: pass.push_constant_size,
+                library_info: Some(PipelineLibraryInfo {
+                    is_library: true,
+                    max_ray_payload_size: pass.max_ray_payload_size,
+                    max_ray_hit_attribute_size: pass.max_ray_hit_attribute_size,
+                }),
+                libraries: Vec::default(),
+                debug_name: Some("rt_pipeline".into()),
+            },
+        )
+        .unwrap();
 
-        Some(offset)
+        Self { pipeline }
     }
 }
 

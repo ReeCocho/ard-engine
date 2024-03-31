@@ -708,16 +708,14 @@ impl VulkanBackend {
 
         // Get required device extensions
         let device_extensions = {
-            let mut extensions = vec![
+            let extensions = vec![
                 ash::extensions::khr::Swapchain::name(),
                 ash::extensions::ext::MeshShader::name(),
                 ash::extensions::khr::AccelerationStructure::name(),
                 ash::extensions::khr::RayTracingPipeline::name(),
                 ash::extensions::khr::DeferredHostOperations::name(),
+                c"VK_KHR_pipeline_library",
             ];
-            if create_info.debug {
-                extensions.push(CStr::from_bytes_with_nul(b"VK_EXT_robustness2\0").unwrap());
-            }
             extensions
                 .into_iter()
                 .map(|r| r.as_ptr())
@@ -871,6 +869,10 @@ impl VulkanBackend {
             .acceleration_structure(true)
             .build();
 
+        let mut pl_features = vk::PhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT::builder()
+            .pipeline_library_group_handles(true)
+            .build();
+
         let mut features2 = vk::PhysicalDeviceFeatures2::builder()
             .features(features)
             .push_next(&mut features11)
@@ -879,6 +881,7 @@ impl VulkanBackend {
             .push_next(&mut ms_features)
             .push_next(&mut rt_features)
             .push_next(&mut as_features)
+            .push_next(&mut pl_features)
             .build();
 
         let create_info = vk::DeviceCreateInfo::builder()

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use ard_formats::vertex::VertexLayout;
 use ard_pal::prelude::{
@@ -883,13 +883,13 @@ pub fn create_pbr_material(
 
     // Construct variants
     let mut variants = Vec::default();
-    let mut rt_variants = Vec::default();
+    let mut rt_variants = BTreeMap::<PassId, Vec<RtVariantDescriptor>>::default();
 
     for (variant, ray_shader) in variant_shaders.iter() {
         // If this is a ray tracing shader, create the variant
         if variant.stage == ShaderStage::RayClosestHit || variant.stage == ShaderStage::RayAnyHit {
-            rt_variants.push(RtVariantDescriptor {
-                pass_id: variant.pass,
+            let entry = rt_variants.entry(variant.pass).or_default();
+            entry.push(RtVariantDescriptor {
                 vertex_layout: VertexLayout::POSITION
                     | VertexLayout::NORMAL
                     | variant.vertex_layout,

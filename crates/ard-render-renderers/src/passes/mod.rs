@@ -1,5 +1,6 @@
-use ard_render_material::factory::{MaterialFactory, PassDefinition, PassId};
-use ard_render_si::bindings::Layouts;
+use ard_math::Vec2;
+use ard_render_material::factory::{MaterialFactory, PassDefinition, PassId, RtPassDefinition};
+use ard_render_si::{bindings::Layouts, types::*};
 
 pub mod color;
 pub mod depth_prepass;
@@ -169,6 +170,19 @@ pub fn define_passes<const FIF: usize>(factory: &mut MaterialFactory<FIF>, layou
                 ],
                 has_depth_stencil_attachment: true,
                 color_attachment_count: 1,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_rt_pass(
+            RT_PASS_ID,
+            RtPassDefinition {
+                layouts: vec![layouts.camera.clone(), layouts.reflection_rt_pass.clone()],
+                push_constant_size: None,
+                max_ray_recursion: 0,
+                max_ray_hit_attribute_size: std::mem::size_of::<Vec2>() as u32,
+                max_ray_payload_size: std::mem::size_of::<GpuReflectionRayPayload>() as u32,
             },
         )
         .unwrap();

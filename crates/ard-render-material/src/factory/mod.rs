@@ -34,6 +34,7 @@ pub struct MaterialFactory<const FRAMES_IN_FLIGHT: usize> {
     layout: DescriptorSetLayout,
     /// Passes that materials can handle.
     passes: FxHashMap<PassId, PassDefinition>,
+    rt_passes: FxHashMap<PassId, RtPassDefinition>,
     /// Material data buffers keyed by their data size.
     data: FxHashMap<u64, MaterialBuffer<FRAMES_IN_FLIGHT>>,
     /// Global texture slots buffer
@@ -51,6 +52,14 @@ pub struct PassDefinition {
     pub color_attachment_count: usize,
 }
 
+pub struct RtPassDefinition {
+    pub layouts: Vec<DescriptorSetLayout>,
+    pub push_constant_size: Option<u32>,
+    pub max_ray_recursion: u32,
+    pub max_ray_payload_size: u32,
+    pub max_ray_hit_attribute_size: u32,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PassId(usize);
 
@@ -64,6 +73,7 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
     pub fn new(ctx: Context, layout: DescriptorSetLayout, config: MaterialFactoryConfig) -> Self {
         MaterialFactory {
             passes: FxHashMap::default(),
+            rt_passes: FxHashMap::default(),
             data: FxHashMap::default(),
             textures: MaterialBuffer::new(
                 ctx.clone(),
@@ -90,12 +100,26 @@ impl<const FRAMES_IN_FLIGHT: usize> MaterialFactory<FRAMES_IN_FLIGHT> {
         self.passes.get(&id)
     }
 
+    #[inline]
+    pub fn get_rt_pass(&self, id: PassId) -> Option<&RtPassDefinition> {
+        self.rt_passes.get(&id)
+    }
+
     pub fn add_pass(&mut self, id: PassId, def: PassDefinition) -> Result<(), AddPassError> {
         if self.passes.contains_key(&id) {
             return Err(AddPassError::AlreadyExists(id));
         }
 
         self.passes.insert(id, def);
+        Ok(())
+    }
+
+    pub fn add_rt_pass(&mut self, id: PassId, def: RtPassDefinition) -> Result<(), AddPassError> {
+        if self.rt_passes.contains_key(&id) {
+            return Err(AddPassError::AlreadyExists(id));
+        }
+
+        self.rt_passes.insert(id, def);
         Ok(())
     }
 

@@ -93,6 +93,11 @@ impl<R, const FRAMES_IN_FLIGHT: usize> ResourceAllocator<R, FRAMES_IN_FLIGHT> {
         &self.resources
     }
 
+    #[inline(always)]
+    pub fn allocated(&self) -> usize {
+        self.resources.len() - self.free.len()
+    }
+
     pub fn insert(&mut self, resource: R) -> ResourceHandle {
         let id = match self.free.pop() {
             Some(id) => {

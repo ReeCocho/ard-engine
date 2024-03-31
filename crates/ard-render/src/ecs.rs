@@ -127,8 +127,7 @@ impl RenderEcs {
             &ctx,
             &layouts,
             &factory.inner.materials.lock().unwrap(),
-            &factory.inner.shaders.lock().unwrap(),
-            &factory.inner.bt_offset.lock().unwrap(),
+            &factory.inner.material_factory.lock().unwrap(),
             window_size,
         );
 
@@ -312,19 +311,17 @@ impl RenderEcs {
 
         let meshes = self.factory.inner.meshes.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
-        let shaders = self.factory.inner.shaders.lock().unwrap();
         let materials = self.factory.inner.materials.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
-        let bt_offset = self.factory.inner.bt_offset.lock().unwrap();
 
         // Check objects for uploaded BLAS'
         frame.object_data.check_for_blas(&meshes);
 
         // Check if any RT pipelines need to be rebuilt
         self.reflections
-            .check_for_rebuild(&self.ctx, &bt_offset, &materials, &shaders);
+            .check_for_rebuild(&self.ctx, &materials, &material_factory);
 
         // Upload object data to renderers
         self.scene_renderer.upload(

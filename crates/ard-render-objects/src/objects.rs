@@ -14,7 +14,7 @@ use ard_render_base::{
     resource::{ResourceAllocator, ResourceId},
     RenderingMode,
 };
-use ard_render_material::material_instance::MaterialInstance;
+use ard_render_material::{material::MaterialResource, material_instance::MaterialInstance};
 use ard_render_meshes::mesh::{Mesh, MeshResource};
 use rustc_hash::FxHashMap;
 
@@ -305,12 +305,9 @@ impl RenderObjects {
         // Lookup BLAS (might not be ready yet, but 0 values are allowed by the spec).
         let blas = mesh.blas();
 
-        // Lookup SBT offset. Not sure if it's ok to provide an OOB index for invalid bindings.
-        let sbt = mat
-            .material()
-            .rt_variants()
-            .offset_of(mesh.layout(), *mode)
-            .unwrap();
+        // SBT offsets conversion
+        let sbt = (usize::from(mat.material().id()) * MaterialResource::RT_GROUPS_PER_MATERIAL)
+            + MaterialResource::to_group_idx(*mode, mesh.layout());
 
         // Write the object ID and data to the appropriate list based on the rendering mode
         let data = GpuObjectData {
@@ -320,7 +317,7 @@ impl RenderObjects {
             instance_mask: (0xFF << 24),
             // SBT Offset and geometry flags.
             // NOTE: The flags come from `VkGeometryInstanceFlagBitsKHR`
-            shader_flags: (sbt & 0xFFFFFF) | (1 << 24),
+            shader_flags: (sbt as u32 & 0xFFFFFF) | (1 << 24),
             blas,
             // Our stuff
             model_inv: [mdl_inv.row(0), mdl_inv.row(1), mdl_inv.row(2)],

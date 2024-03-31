@@ -98,13 +98,37 @@ impl RayTracingPipeline {
             })
             .collect();
 
-        let rt_pipeline_create_info = [vk::RayTracingPipelineCreateInfoKHR::builder()
+        let libraries: Vec<_> = create_info
+            .libraries
+            .iter()
+            .map(|pip| pip.internal().pipeline)
+            .collect();
+
+        let rt_libraries = vk::PipelineLibraryCreateInfoKHR::builder().libraries(&libraries);
+
+        let rt_interface = match create_info.library_info {
+            Some(info) => vk::RayTracingPipelineInterfaceCreateInfoKHR::builder()
+                .max_pipeline_ray_hit_attribute_size(info.max_ray_hit_attribute_size)
+                .max_pipeline_ray_payload_size(info.max_ray_payload_size)
+                .build(),
+            None => vk::RayTracingPipelineInterfaceCreateInfoKHR::default(),
+        };
+
+        let mut rt_pipeline_create_info = [vk::RayTracingPipelineCreateInfoKHR::builder()
+            .library_info(&rt_libraries)
             .stages(&stages)
             .groups(&groups)
             .flags(vk::PipelineCreateFlags::RAY_TRACING_SKIP_AABBS_KHR)
             .max_pipeline_ray_recursion_depth(create_info.max_ray_recursion_depth)
             .layout(layout)
             .build()];
+
+        if let Some(info) = &create_info.library_info {
+            if info.is_library {
+                rt_pipeline_create_info[0].flags |= vk::PipelineCreateFlags::LIBRARY_KHR;
+            }
+            rt_pipeline_create_info[0].p_library_interface = &rt_interface;
+        }
 
         let pipeline = match ctx.rt_loader.create_ray_tracing_pipelines(
             vk::DeferredOperationKHR::null(),
@@ -116,10 +140,15 @@ impl RayTracingPipeline {
             Err(err) => return Err(RayTracingPipelineCreateError::Other(err.to_string())),
         };
 
+        let mut group_count = groups.len();
+        for lib in &create_info.libraries {
+            group_count += lib.internal().group_count;
+        }
+
         Ok(Self {
             layout,
             pipeline,
-            group_count: groups.len(),
+            group_count,
             garbage: ctx.garbage.sender(),
         })
     }
