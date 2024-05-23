@@ -100,7 +100,15 @@ impl SceneRenderer {
             .with_opaque()
             .with_alpha_cutout()
             .with_transparent()
-            .update(view_location, objects, meshes, |_| true, |_| true, |_| true);
+            .update(
+                view_location,
+                objects,
+                meshes,
+                false,
+                |_| true,
+                |_| true,
+                |_| true,
+            );
 
         // Upload object IDs
         let _buffers_expanded = self.ids.upload(frame, objects.static_dirty(), &self.set);

@@ -17,7 +17,7 @@ enum Pass {
     Color,
     ColorAc,
     Transparent,
-    RayTrace,
+    PathTrace,
 }
 
 fn main() {
@@ -109,9 +109,9 @@ fn main() {
             pass: Pass::Transparent,
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
         },
-        // Ray tracing
+        // Path tracing
         ShaderVariant {
-            pass: Pass::RayTrace,
+            pass: Pass::PathTrace,
             vertex_layout: VertexLayout::empty(),
         },
     ];
@@ -151,7 +151,7 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
             Pass::DepthPrepass | Pass::DepthPrepassAc => "DEPTH_PREPASS",
             Pass::Color | Pass::ColorAc => "COLOR_PASS",
             Pass::Transparent => "TRANSPARENT_PASS",
-            Pass::RayTrace => "RT_PASS",
+            Pass::PathTrace => "PATH_TRACE_PASS",
         }
         .into(),
     );
@@ -177,7 +177,7 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
     ));
 
     match variant.pass {
-        Pass::RayTrace => {
+        Pass::PathTrace => {
             let rchit_name = format!("pbr.rchit{}.spv", ext);
 
             ard_render_codegen::vulkan_spirv::compile_shader(
@@ -225,7 +225,7 @@ impl std::fmt::Display for Pass {
             Pass::Color => write!(f, "color"),
             Pass::ColorAc => write!(f, "color_ac"),
             Pass::Transparent => write!(f, "transparent"),
-            Pass::RayTrace => write!(f, "rt"),
+            Pass::PathTrace => write!(f, "pt"),
         }
     }
 }

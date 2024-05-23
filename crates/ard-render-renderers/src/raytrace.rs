@@ -53,7 +53,7 @@ impl RaytracedRenderer {
             const EPSILON: f32 = 0.00001;
 
             // TODO: Make this configurable
-            let ang_cutoff = (14.0_f32).to_radians().tan();
+            let ang_cutoff = (3.0_f32).to_radians().tan();
 
             let d = (view_location - Vec3A::from(bounding_sphere.xyz())).length();
             let r = bounding_sphere.w;
@@ -76,6 +76,7 @@ impl RaytracedRenderer {
                 view_location,
                 objects,
                 meshes,
+                true,
                 |idx| is_visible(idx.bounding_sphere, view_location),
                 |idx| is_visible(idx.bounding_sphere, view_location),
                 |idx| is_visible(idx.bounding_sphere, view_location),

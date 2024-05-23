@@ -30,8 +30,11 @@ where
     /// Given an archetype, generates an instance of the storage set for the filter.
     ///
     /// Returns `None` if the filter isn't a subset of the archetype.
-    fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes)
-        -> Option<Self::StorageSet>;
+    fn make_storage_set(
+        archetype: &Archetype,
+        archetypes: &Archetypes,
+        size_hint: usize,
+    ) -> Option<Self::StorageSet>;
 }
 
 impl<T: ComponentAccess> ComponentFilter for T {
@@ -39,13 +42,15 @@ impl<T: ComponentAccess> ComponentFilter for T {
 
     fn type_key() -> TypeKey {
         let mut descriptor = TypeKey::default();
-        descriptor.add::<T::Component>();
+        if !T::IS_OPTIONAL {
+            descriptor.add::<T::Component>();
+        }
         descriptor
     }
 
     fn read_type_key() -> TypeKey {
         let mut descriptor = TypeKey::default();
-        if !T::MUT_ACCESS {
+        if !T::MUT_ACCESS && !T::IS_OPTIONAL {
             descriptor.add::<T::Component>();
         }
         descriptor
@@ -53,7 +58,7 @@ impl<T: ComponentAccess> ComponentFilter for T {
 
     fn mut_type_key() -> TypeKey {
         let mut descriptor = TypeKey::default();
-        if T::MUT_ACCESS {
+        if T::MUT_ACCESS && !T::IS_OPTIONAL {
             descriptor.add::<T::Component>();
         }
         descriptor
@@ -62,11 +67,10 @@ impl<T: ComponentAccess> ComponentFilter for T {
     fn make_storage_set(
         archetype: &Archetype,
         archetypes: &Archetypes,
+        size_hint: usize,
     ) -> Option<Self::StorageSet> {
-        archetype
-            .map
-            .get(&TypeId::of::<T::Component>())
-            .map(|i| T::Storage::new(archetypes, *i))
+        let index = archetype.map.get(&TypeId::of::<T::Component>()).cloned();
+        T::Storage::new(archetypes, index, size_hint)
     }
 }
 
@@ -79,7 +83,9 @@ macro_rules! component_filter_impl {
             fn type_key() -> TypeKey {
                 let mut descriptor = TypeKey::default();
                 $(
-                    descriptor.add::<$name::Component>();
+                    if !$name::IS_OPTIONAL {
+                        descriptor.add::<$name::Component>();
+                    }
                 )*
                 descriptor
             }
@@ -88,7 +94,7 @@ macro_rules! component_filter_impl {
             fn read_type_key() -> TypeKey {
                 let mut descriptor = TypeKey::default();
                 $(
-                    if !$name::MUT_ACCESS {
+                    if !$name::MUT_ACCESS && !$name::IS_OPTIONAL {
                         descriptor.add::<$name::Component>();
                     }
                 )*
@@ -99,7 +105,7 @@ macro_rules! component_filter_impl {
             fn mut_type_key() -> TypeKey {
                 let mut descriptor = TypeKey::default();
                 $(
-                    if $name::MUT_ACCESS {
+                    if $name::MUT_ACCESS && !$name::IS_OPTIONAL {
                         descriptor.add::<$name::Component>();
                     }
                 )*
@@ -107,12 +113,12 @@ macro_rules! component_filter_impl {
             }
 
             #[inline]
-            fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes)
+            fn make_storage_set(archetype: &Archetype, archetypes: &Archetypes, size_hint: usize)
                 -> Option<Self::StorageSet> {
                 Some(($(
-                    match archetype.map.get(&TypeId::of::<$name::Component>()) {
-                        Some(idx) => $name::Storage::new(archetypes, *idx),
-                        None => return None,
+                    {
+                        let index = archetype.map.get(&TypeId::of::<$name::Component>()).cloned();
+                        $name::Storage::new(archetypes, index, size_hint)?
                     },
                 )*))
             }

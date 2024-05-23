@@ -1,2 +1,2 @@
-pub mod renderable;
+pub mod destroy;
 pub mod transform;

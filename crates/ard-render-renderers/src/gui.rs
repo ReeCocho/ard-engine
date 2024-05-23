@@ -27,6 +27,7 @@ const FONT_SAMPLER: Sampler = Sampler {
 pub struct GuiDrawPrepare<'a> {
     pub frame: Frame,
     pub canvas_size: (u32, u32),
+    pub scene_texture: (&'a Texture, usize),
     pub gui_output: &'a mut GuiRunOutput,
 }
 
@@ -46,7 +47,7 @@ struct DrawCall {
     index_offset: usize,
     index_count: usize,
     scissor: Scissor,
-    _texture_id: u32,
+    texture_id: u32,
 }
 
 struct TextureDelta {
@@ -230,6 +231,19 @@ impl GuiRenderer {
     }
 
     pub fn prepare(&mut self, args: GuiDrawPrepare) {
+        // Bind the scene texture
+        self.sets[usize::from(args.frame)].update(&[DescriptorSetUpdate {
+            binding: GUI_SET_SCENE_BINDING,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: args.scene_texture.0,
+                array_element: args.scene_texture.1,
+                sampler: FONT_SAMPLER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }]);
+
         // Update the lengths of index and vertex buffers if needed
         let mut vb_size_req = 0;
         let mut ib_size_req = 0;
@@ -298,8 +312,8 @@ impl GuiRenderer {
                     width: clip_max_x - clip_min_x,
                     height: clip_max_y - clip_min_y,
                 },
-                _texture_id: match mesh.texture_id {
-                    egui::TextureId::Managed(_) => u32::MAX,
+                texture_id: match mesh.texture_id {
+                    egui::TextureId::Managed(_) => 0,
                     egui::TextureId::User(id) => id as u32,
                 },
             });
@@ -421,7 +435,7 @@ impl GuiRenderer {
         );
         pass.bind_index_buffer(&self.index_buffer, usize::from(frame), 0, IndexType::U32);
 
-        let constants = [GpuGuiPushConstants {
+        let mut constants = [GpuGuiPushConstants {
             screen_size: Vec2::new(screen_size.0 as f32, screen_size.1 as f32),
             texture_id: 0,
         }];
@@ -430,6 +444,11 @@ impl GuiRenderer {
         self.draw_calls.iter().for_each(|draw| {
             if draw.scissor.width == 0 || draw.scissor.height == 0 {
                 return;
+            }
+
+            if draw.texture_id != constants[0].texture_id {
+                constants[0].texture_id = draw.texture_id;
+                pass.push_constants(bytemuck::cast_slice(&constants));
             }
 
             pass.set_scissor(0, draw.scissor);

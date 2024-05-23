@@ -16,6 +16,7 @@ use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 use ard_render_objects::{objects::RenderObjects, Model, RenderFlags};
+use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
 use crossbeam_channel::{self, Receiver, Sender};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -24,11 +25,11 @@ use crate::{
     ecs::RenderEcs,
     factory::Factory,
     frame::{FrameData, FrameDataInner},
-    DebugSettings, MsaaSettings, RenderPlugin,
+    CanvasSize, DebugSettings, MsaaSettings, RenderPlugin,
 };
 
 #[derive(SystemState)]
-pub(crate) struct RenderSystem {
+pub struct RenderSystem {
     /// The thread the render ECS is running on.
     thread: Option<std::thread::JoinHandle<()>>,
     /// Used to send messages to the render thread.
@@ -39,6 +40,8 @@ pub(crate) struct RenderSystem {
     surface_window: WindowId,
     // Instant the last frame was sent.
     last_frame_time: Instant,
+    // Frame rate cap.
+    render_time: Option<Duration>,
 }
 
 #[derive(Debug, Event, Copy, Clone)]
@@ -65,6 +68,8 @@ impl RenderSystem {
             crossbeam_channel::bounded(FRAMES_IN_FLIGHT);
 
         // Create the render ECS
+        let render_time = plugin.settings.render_time;
+        let present_scene = plugin.settings.present_scene;
         let (render_ecs, factory) = RenderEcs::new(plugin, window, window_size);
 
         // Create default frames
@@ -72,6 +77,7 @@ impl RenderSystem {
             complete_frames_send
                 .send(Box::new(FrameDataInner {
                     frame: Frame::from(frame),
+                    present_scene,
                     dt: Duration::from_millis(1),
                     dirty_static: dirty_static.listen().to_all().build(),
                     gui_output: GuiRunOutput::default(),
@@ -83,6 +89,7 @@ impl RenderSystem {
                     sun_shafts_settings: SunShaftsSettings::default(),
                     smaa_settings: SmaaSettings::default(),
                     msaa_settings: MsaaSettings::default(),
+                    path_tracer_settings: PathTracerSettings::default(),
                     active_cameras: ActiveCameras::default(),
                     job: None,
                     window_size,
@@ -103,6 +110,7 @@ impl RenderSystem {
                 complete_frames: complete_frames_recv,
                 surface_window: window_id,
                 last_frame_time: Instant::now(),
+                render_time,
             },
             factory,
         )
@@ -118,6 +126,13 @@ impl RenderSystem {
         queries: Queries<Everything>,
         res: Res<Everything>,
     ) {
+        // Do not render if enough time has not passed
+        if let Some(rate) = self.render_time {
+            if Instant::now().duration_since(self.last_frame_time) < rate {
+                return;
+            }
+        }
+
         let windows = res.get::<Windows>().unwrap();
 
         // Do not render if the window is minimized
@@ -209,7 +224,11 @@ impl RenderSystem {
 
         // Prepare data for the render thread
         frame.window_size = (physical_width, physical_height);
-        frame.canvas_size = frame.window_size;
+        frame.canvas_size = res
+            .get::<CanvasSize>()
+            .unwrap()
+            .0
+            .unwrap_or(frame.window_size);
         frame.dt = dt;
         frame.tonemapping_settings = *res.get::<TonemappingSettings>().unwrap();
         frame.ao_settings = *res.get::<AoSettings>().unwrap();
@@ -217,6 +236,7 @@ impl RenderSystem {
         frame.smaa_settings = *res.get::<SmaaSettings>().unwrap();
         frame.msaa_settings = *res.get::<MsaaSettings>().unwrap();
         frame.debug_settings = *res.get::<DebugSettings>().unwrap();
+        frame.path_tracer_settings = *res.get::<PathTracerSettings>().unwrap();
 
         self.last_frame_time = now;
 

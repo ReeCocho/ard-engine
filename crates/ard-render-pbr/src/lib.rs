@@ -15,7 +15,7 @@ use ard_render_material::{
 };
 use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
-    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, RT_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
+    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
     SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 use ard_render_si::{consts::*, types::GpuPbrMaterial};
@@ -602,32 +602,32 @@ pub fn create_pbr_material(
     // Ray tracing
     variant_code.insert(
         ShaderVariant {
-            pass: RT_PASS_ID,
+            pass: PATH_TRACER_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::RayClosestHit,
             rendering_mode: RenderingMode::Opaque,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.pt.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
-            pass: RT_PASS_ID,
+            pass: PATH_TRACER_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::RayClosestHit,
             rendering_mode: RenderingMode::Transparent,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.pt.spv")),
     );
 
     variant_code.insert(
         ShaderVariant {
-            pass: RT_PASS_ID,
+            pass: PATH_TRACER_PASS_ID,
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::RayClosestHit,
             rendering_mode: RenderingMode::AlphaCutout,
         },
-        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.rt.spv")),
+        include_bytes!(concat!(env!("OUT_DIR"), "./pbr.rchit.pt.spv")),
     );
 
     // Compile variants

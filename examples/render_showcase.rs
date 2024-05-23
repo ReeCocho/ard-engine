@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ard_assets::prelude::{AssetName, Assets, AssetsPlugin};
 use ard_core::prelude::*;
@@ -7,7 +7,7 @@ use ard_input::{InputState, Key};
 use ard_math::*;
 use ard_pal::prelude::*;
 use ard_render::{
-    factory::Factory, system::PostRender, DebugSettings, MsaaSettings, RenderPlugin,
+    factory::Factory, system::PostRender, CanvasSize, DebugSettings, MsaaSettings, RenderPlugin,
     RendererSettings,
 };
 use ard_render_assets::{model::ModelAsset, RenderAssetsPlugin};
@@ -22,6 +22,7 @@ use ard_render_lighting::{global::GlobalLighting, Light};
 use ard_render_meshes::{mesh::MeshCreateInfo, vertices::VertexAttributes};
 use ard_render_objects::{Model, RenderFlags};
 use ard_render_pbr::PbrMaterialData;
+use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
 use ard_winit::prelude::*;
 
@@ -70,16 +71,32 @@ pub struct CameraMover {
     pub rotation: Vec3,
 }
 
+#[derive(SystemState, Default)]
+pub struct LightMover {
+    pub last_t: f32,
+}
+
 impl CameraMover {
     fn on_tick(
         &mut self,
         evt: Tick,
         _: Commands,
         queries: Queries<(Write<Camera>, Write<Model>)>,
-        res: Res<(Read<Factory>, Read<InputState>, Write<Windows>)>,
+        res: Res<(
+            Read<Factory>,
+            Read<InputState>,
+            Read<PathTracerSettings>,
+            Write<Windows>,
+        )>,
     ) {
         let input = res.get::<InputState>().unwrap();
+        let pt = res.get::<PathTracerSettings>().unwrap();
         let mut windows = res.get_mut::<Windows>().unwrap();
+
+        // Do nothing if we are path tracing. Camera movement will mess up the gather.
+        if pt.enabled {
+            return;
+        }
 
         // Rotate the camera
         let delta = evt.0.as_secs_f32();
@@ -187,6 +204,7 @@ impl GuiView for TestingGui {
         let mut smaa = res.get_mut::<SmaaSettings>().unwrap();
         let mut msaa = res.get_mut::<MsaaSettings>().unwrap();
         let mut debug = res.get_mut::<DebugSettings>().unwrap();
+        let mut pt = res.get_mut::<PathTracerSettings>().unwrap();
 
         if self.ui_visible {
             egui::Window::new("Welcome").open(&mut self.welcome_open).show(ctx, |ui| {
@@ -455,6 +473,14 @@ impl GuiView for TestingGui {
                         },
                     );
 
+                    egui::CollapsingHeader::new("Path Tracer Settings").show_unindented(ui, |ui| {
+                        egui::Grid::new("_path_tracer_settings_grid").show(ui, |ui| {
+                            ui.label("Enabled");
+                            ui.add(egui::Checkbox::new(&mut pt.enabled, ""));
+                            ui.end_row();
+                        });
+                    });
+
                     egui::CollapsingHeader::new("Debug Settings").show_unindented(ui, |ui| {
                         egui::Grid::new("_debug_settings_grid").show(ui, |ui| {
                             ui.label("Lock Culling");
@@ -486,6 +512,35 @@ impl GuiView for TestingGui {
     }
 }
 
+impl LightMover {
+    fn on_tick(
+        &mut self,
+        evt: Tick,
+        _: Commands,
+        queries: Queries<(Write<Model>, Read<Light>)>,
+        _res: Res<()>,
+    ) {
+        let dt = evt.0.as_secs_f32();
+        let new_t = self.last_t + dt * 2.0;
+
+        for (i, (mdl, _light)) in queries.make::<(Write<Model>, Read<Light>)>().enumerate() {
+            let last_pos = (self.last_t + (i as f32)).sin();
+            let new_pos = (new_t + (i as f32)).sin();
+            *mdl = Model(mdl.0 * Mat4::from_translation(Vec3::new(0.0, new_pos - last_pos, 0.0)));
+        }
+
+        self.last_t = new_t;
+    }
+}
+
+impl From<LightMover> for System {
+    fn from(mover: LightMover) -> Self {
+        SystemBuilder::new(mover)
+            .with_handler(LightMover::on_tick)
+            .build()
+    }
+}
+
 fn main() {
     // let server_addr = format!("127.0.0.1:{}", puffin_http::DEFAULT_PORT);
     // let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
@@ -508,16 +563,17 @@ fn main() {
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
             settings: RendererSettings {
-                render_scene: true,
-                render_time: None,
-                present_mode: PresentMode::Mailbox,
+                present_scene: true,
+                render_time: Some(Duration::from_secs_f32(1.0 / 61.0)),
+                present_mode: PresentMode::Fifo,
                 render_scale: 1.0,
-                canvas_size: None,
+                canvas_size: CanvasSize(None),
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
+        .add_system(LightMover::default())
         .add_startup_function(setup)
         .run();
 }
@@ -582,9 +638,9 @@ fn setup(app: &mut App) {
                 &new_mat,
                 &PbrMaterialData {
                     alpha_cutoff: 0.0,
-                    color: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    color: Vec4::new(0.0, 0.0, 1.0, 1.0), // Vec4::new(0.95, 0.64, 0.54, 1.0),
                     metallic: y as f32 / (SPHERE_Y as f32 - 1.0),
-                    roughness: x as f32 / (SPHERE_X as f32 - 1.0),
+                    roughness: (x as f32 / (SPHERE_X as f32 - 1.0)).max(0.045),
                 },
             );
 
@@ -686,7 +742,7 @@ fn setup(app: &mut App) {
         &quad_material,
         &PbrMaterialData {
             alpha_cutoff: 0.0,
-            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            color: Vec4::new(0.5, 0.5, 0.5, 1.0),
             metallic: 0.0,
             roughness: 1.0,
         },
@@ -795,7 +851,7 @@ fn setup(app: &mut App) {
     app.dispatcher.add_system(CameraMover {
         cursor_locked: false,
         look_speed: 0.1,
-        move_speed: 24.0,
+        move_speed: 12.0,
         entity: camera[0],
         position: Vec3::new(5.0, 5.0, 5.0),
         rotation: Vec3::ZERO,
@@ -867,9 +923,9 @@ fn setup(app: &mut App) {
     for _ in 0..LIGHT_COUNT {
         lights.0.push(Light::Point {
             color: Vec3::new(
-                (rng.gen::<f32>() * 0.5) + 0.5,
-                (rng.gen::<f32>() * 0.5) + 0.5,
-                (rng.gen::<f32>() * 0.5) + 0.5,
+                (rng.gen::<f32>() * 0.7) + 0.3,
+                (rng.gen::<f32>() * 0.7) + 0.3,
+                (rng.gen::<f32>() * 0.7) + 0.3,
             ),
             range: 1.0,
             intensity: 64.0,

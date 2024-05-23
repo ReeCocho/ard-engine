@@ -254,14 +254,23 @@
             (name: "inv_total_sample_weight", ty: F32),
         ]
     ),
-    // Payload for RT reflections.
+    // Payload for path tracing.
     (
-        name: "ReflectionRayPayload",
+        name: "PathTracerPayload",
         no_mangle: false,
         fields: [
             // 16-bit color encoded in a UVec2.
-            (name: "color", ty: UVec2),
+            (name: "color", ty: Vec4),
+            // World space hit location
             (name: "location", ty: Vec4),
+            // Hit normal.
+            (name: "normal", ty: Vec4),
+            (name: "tangent", ty: Vec4),
+            (name: "bitangent", ty: Vec4),
+            // Material roughness.
+            (name: "roughness", ty: F32),
+            // Material metallic.
+            (name: "metallic", ty: F32),
             // Flag indicating the ray hit.
             (name: "hit", ty: Bool),
         ]
@@ -417,4 +426,12 @@
             (name: "screen_dims", ty: UVec2),
         ]
     ),
+    // Push constants for path tracing.
+    (
+        name: "PathTracerPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "sample_batch", ty: U32),
+        ]
+    )
 ]

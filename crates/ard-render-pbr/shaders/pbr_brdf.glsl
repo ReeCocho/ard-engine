@@ -4,6 +4,12 @@
 const float INV_PI = 0.318309886184;
 const float PI = 3.14159265359;
 
+float schlick_weight(float u) {
+    float m = clamp(1.0 - u, 0.0, 1.0);
+    float m2 = m * m;
+    return m2 * m2 * m;
+}
+
 float specular_d(vec3 N, vec3 H, float roughness) {
     // GGX/Trowbridge-Reitz
     const float a = roughness * roughness;
@@ -23,7 +29,7 @@ float geometry_schlick_ggx(float ndotv, float k) {
     return ndotv / (denom + 0.00001);
 }
 
-float specular_g(float ndotv, float ndotl, vec3 N, float roughness) {
+float specular_g(float ndotv, float ndotl, float roughness) {
     // Modified Schlick model
     float k = roughness + 1.0;
     k = (k * k) * 0.125;
@@ -36,10 +42,43 @@ vec3 specular_f(vec3 V, vec3 H, vec3 F0) {
     return F0 + (1.0 - F0) * pow(2.0, ((-5.55473 * vdoth) - 6.98316) * vdoth);
 }
 
-vec3 specular_f_roughness(float ndotv, vec3 F0, float roughness)
-{
+vec3 specular_f_roughness(float ndotv, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - ndotv, 0.0, 1.0), 5.0);
 }   
+
+// Computes a random GGX microfacet direction.
+// Computed in tangent space. Result should be transformed with TBN matrix.
+vec3 get_ggx_microfacet(vec2 rand_vec, float roughness) {
+    const float a2 = roughness * roughness;
+    const float cos_theta_h = sqrt(max(0.0, (1.0 - rand_vec.x) / ((a2 - 1.0) * rand_vec.x + 1.0)));
+	const float sin_theta_h = sqrt(max(0.0, 1.0 - cos_theta_h * cos_theta_h));
+	const float phi_h = rand_vec.y * PI * 2.0;
+
+    return vec3(
+        cos(phi_h) * sin_theta_h,
+        sin(phi_h) * sin_theta_h,
+        cos_theta_h
+    );
+}
+
+// Randomly samples a cosine weighted hemisphere.
+// Computed in tangent space. Result should be transformed with TBN matrix.
+vec3 get_cosine_hemisphere(vec2 rand_vec) {
+    const float pdf = sqrt(rand_vec.x);
+    const float theta = acos(pdf);
+    const float phi = 2.0 * PI * rand_vec.y;
+
+    return vec3(
+        cos(phi) * sin(theta),
+        sin(phi) * sin(theta),
+        pdf
+    );
+}
+
+float get_ggx_pdf(vec3 N, vec3 H, vec3 V, float roughness) {
+    return (specular_d(N, H, roughness) * max(dot(N, H), 0.0))
+        / (4.0 * max(dot(H, V), 0.0001));
+}
 
 vec3 evaluate_brdf(
     vec3 albedo,
@@ -59,7 +98,7 @@ vec3 evaluate_brdf(
     const float ndotv = max(dot(N, V), 0.0);
     const float d = specular_d(N, H, roughness);
     const vec3 f = specular_f(V, H, F0);
-    const float g = specular_g(ndotv, ndotl, N, roughness);
+    const float g = specular_g(ndotv, ndotl, roughness);
 
     const vec3 num = d * g * f;
     const float denom = (4.0 * ndotl * ndotv) + 0.00001;
@@ -72,7 +111,7 @@ vec3 evaluate_brdf(
     // the diffuse portion for metals since dielectrics don't refract light.
     const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
 
-    return (kD * f_diffuse) + (kS * f_specular);
+    return (kD * f_diffuse) + f_specular;
 }
 
 #endif

@@ -345,8 +345,6 @@ fn save_textures(
         .into_par_iter()
         .enumerate()
         .for_each(|(i, mut texture)| {
-            // println!("Saving texture {i}");
-
             // Path to the folder for the texture
             let tex_path = ModelHeader::texture_path(out, i);
 
@@ -358,7 +356,7 @@ fn save_textures(
                 ard_gltf::TextureSourceFormat::Png => image::ImageFormat::Png,
                 ard_gltf::TextureSourceFormat::Jpeg => image::ImageFormat::Jpeg,
             };
-            let mut image = image::load_from_memory_with_format(&texture.data, image_fmt).unwrap();
+            let image = image::load_from_memory_with_format(&texture.data, image_fmt).unwrap();
             texture.data = Vec::default();
 
             let compress = args.compress_textures && texture_needs_compression(&image);

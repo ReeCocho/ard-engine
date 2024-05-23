@@ -1943,14 +1943,16 @@ impl VulkanBackend {
                         vk_sets.push(set.internal().set);
                     }
 
-                    device.cmd_bind_descriptor_sets(
-                        cb,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        active_layout,
-                        *first as u32,
-                        &vk_sets,
-                        &[],
-                    );
+                    if active_layout != vk::PipelineLayout::default() {
+                        device.cmd_bind_descriptor_sets(
+                            cb,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            active_layout,
+                            *first as u32,
+                            &vk_sets,
+                            &[],
+                        );
+                    }
                 }
                 Command::BindDescriptorSetsUnchecked { sets, first, .. } => {
                     let mut vk_sets = Vec::with_capacity(sets.len());
@@ -1958,14 +1960,16 @@ impl VulkanBackend {
                         vk_sets.push(set.internal().set);
                     }
 
-                    device.cmd_bind_descriptor_sets(
-                        cb,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        active_layout,
-                        *first as u32,
-                        &vk_sets,
-                        &[],
-                    );
+                    if active_layout != vk::PipelineLayout::default() {
+                        device.cmd_bind_descriptor_sets(
+                            cb,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            active_layout,
+                            *first as u32,
+                            &vk_sets,
+                            &[],
+                        );
+                    }
                 }
                 Command::BindVertexBuffers { first, binds } => {
                     let mut buffers = Vec::with_capacity(binds.len());

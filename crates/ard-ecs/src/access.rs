@@ -1,5 +1,8 @@
 use crate::{
-    archetype::storage::access::{ReadStorageBuffer, WriteStorageBuffer},
+    archetype::storage::access::{
+        OptionalReadStorageBuffer, OptionalWriteStorageBuffer, ReadStorageBuffer,
+        WriteStorageBuffer,
+    },
     component::access::ComponentAccess,
     prelude::{Component, Resource, Resources, Tag, Tags},
     prw_lock::{PrwReadLock, PrwWriteLock},
@@ -46,12 +49,28 @@ impl<C: Component + 'static> ComponentAccess for Read<C> {
     type Component = C;
     type Storage = ReadStorageBuffer<C>;
     const MUT_ACCESS: bool = false;
+    const IS_OPTIONAL: bool = false;
 }
 
 impl<C: Component + 'static> ComponentAccess for Write<C> {
     type Component = C;
     type Storage = WriteStorageBuffer<C>;
     const MUT_ACCESS: bool = true;
+    const IS_OPTIONAL: bool = false;
+}
+
+impl<C: Component + 'static> ComponentAccess for Option<Read<C>> {
+    type Component = C;
+    type Storage = OptionalReadStorageBuffer<C>;
+    const MUT_ACCESS: bool = false;
+    const IS_OPTIONAL: bool = true;
+}
+
+impl<C: Component + 'static> ComponentAccess for Option<Write<C>> {
+    type Component = C;
+    type Storage = OptionalWriteStorageBuffer<C>;
+    const MUT_ACCESS: bool = true;
+    const IS_OPTIONAL: bool = true;
 }
 
 impl<R: Resource + 'static> ResourceAccess for Read<R> {

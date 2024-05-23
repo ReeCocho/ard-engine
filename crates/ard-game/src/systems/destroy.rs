@@ -1,11 +1,7 @@
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 
-/// Marks an entity for destruction. Destruction is deferred, which allows you to run code on
-/// entities that are about to be destroyed. To do this, your system must have a `Tick` handler
-/// that runs before the `Destroyer` system.
-#[derive(Debug, Component, Copy, Clone)]
-pub struct Destroy;
+use crate::components::destroy::Destroy;
 
 #[derive(Debug, Default, SystemState)]
 pub struct Destroyer {

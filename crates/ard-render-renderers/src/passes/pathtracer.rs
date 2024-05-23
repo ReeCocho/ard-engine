@@ -6,19 +6,19 @@ use ard_render_lighting::{
 };
 use ard_render_si::bindings::*;
 
-pub struct ReflectionPassSets {
+pub struct PathTracerPassSets {
     sets: [DescriptorSet; FRAMES_IN_FLIGHT],
 }
 
-impl ReflectionPassSets {
+impl PathTracerPassSets {
     pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
         Self {
             sets: std::array::from_fn(|frame_idx| {
                 DescriptorSet::new(
                     ctx.clone(),
                     DescriptorSetCreateInfo {
-                        layout: layouts.reflection_rt_pass.clone(),
-                        debug_name: Some(format!("reflection_pass_set_{frame_idx}")),
+                        layout: layouts.path_tracer_pass.clone(),
+                        debug_name: Some(format!("path_tracer_pass_set_{frame_idx}")),
                     },
                 )
                 .unwrap()
@@ -26,10 +26,22 @@ impl ReflectionPassSets {
         }
     }
 
+    pub fn update_object_data_bindings(&mut self, frame: Frame, object_data: &Buffer) {
+        let set = &mut self.sets[usize::from(frame)];
+        set.update(&[DescriptorSetUpdate {
+            binding: PATH_TRACER_PASS_SET_GLOBAL_OBJECT_DATA_BINDING,
+            array_element: 0,
+            value: DescriptorValue::StorageBuffer {
+                buffer: object_data,
+                array_element: 0,
+            },
+        }]);
+    }
+
     pub fn update_sky_box_bindings(&mut self, frame: Frame, proc_skybox: &ProceduralSkyBox) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RT_PASS_SET_ENV_MAP_BINDING,
+            binding: PATH_TRACER_PASS_SET_ENV_MAP_BINDING,
             array_element: 0,
             value: DescriptorValue::CubeMap {
                 cube_map: proc_skybox.prefiltered_env_map(),
@@ -44,7 +56,7 @@ impl ReflectionPassSets {
     pub fn update_tlas(&mut self, frame: Frame, tlas: &TopLevelAccelerationStructure) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RT_PASS_SET_TLAS_BINDING,
+            binding: PATH_TRACER_PASS_SET_TLAS_BINDING,
             array_element: 0,
             value: DescriptorValue::TopLevelAccelerationStructure(tlas),
         }]);
@@ -53,7 +65,7 @@ impl ReflectionPassSets {
     pub fn update_lights_binding(&mut self, frame: Frame, lights: &Lights) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RT_PASS_SET_GLOBAL_LIGHTING_INFO_BINDING,
+            binding: PATH_TRACER_PASS_SET_GLOBAL_LIGHTING_INFO_BINDING,
             array_element: 0,
             value: DescriptorValue::UniformBuffer {
                 buffer: lights.global_buffer(),
@@ -65,7 +77,7 @@ impl ReflectionPassSets {
     pub fn update_output(&mut self, frame: Frame, tex: &Texture) {
         let set = &mut self.sets[usize::from(frame)];
         set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RT_PASS_SET_OUTPUT_TEX_BINDING,
+            binding: PATH_TRACER_PASS_SET_OUTPUT_TEX_BINDING,
             array_element: 0,
             value: DescriptorValue::StorageImage {
                 texture: tex,

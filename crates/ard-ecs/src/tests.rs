@@ -794,3 +794,51 @@ fn query_filter() {
         4
     );
 }
+
+/// Support for optional component queries.
+#[test]
+fn optional_components() {
+    let mut world = World::new();
+
+    let a = ComponentA { x: 1, y: 2 };
+    let b = ComponentB { x: 3, y: 4 };
+    let c = ComponentC { x: 5, y: 6 };
+
+    world.entities().commands().create((vec![a; 4],), &mut []);
+
+    world
+        .entities()
+        .commands()
+        .create((vec![a; 4], vec![b; 4]), &mut []);
+
+    world
+        .entities()
+        .commands()
+        .create((vec![a; 4], vec![b; 4], vec![c; 4]), &mut []);
+
+    world.process_entities();
+
+    let gen = Queries::<(Write<ComponentA>, Write<ComponentB>, Write<ComponentC>)>::new(
+        world.tags(),
+        world.archetypes(),
+        world.entities(),
+    );
+
+    let mut some_sum = 0;
+    let mut all_sum = 0;
+    for c in gen.filter().make::<Option<Read<ComponentB>>>() {
+        some_sum += c.is_some() as u32;
+        all_sum += 1;
+    }
+    assert_eq!(some_sum, 8);
+    assert_eq!(all_sum, 12);
+
+    let mut some_sum = 0;
+    let mut all_sum = 0;
+    for c in gen.filter().make::<Option<Write<ComponentB>>>() {
+        some_sum += c.is_some() as u32;
+        all_sum += 1;
+    }
+    assert_eq!(some_sum, 8);
+    assert_eq!(all_sum, 12);
+}

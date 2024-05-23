@@ -28,19 +28,14 @@ pub struct Queries<S: SystemData> {
 
 pub struct QueryFilter<'a, S: SystemData> {
     queries: &'a Queries<S>,
-    without: TypeKey,
-    with: TypeKey,
+    without_components: TypeKey,
+    with_components: TypeKey,
 }
 
 /// A query is a request by a system for access to the system required components and tags.
 pub trait Query<C: ComponentFilter, T: TagFilter> {
     /// Creates a new instance of the query.
     fn new(tags: &Tags, archetypes: &Archetypes, with: TypeKey, without: TypeKey) -> Self;
-
-    fn is_empty(&self) -> bool;
-
-    /// Number of entities found using this query.
-    fn len(&self) -> usize;
 }
 
 pub trait SingleQuery<C: ComponentFilter, T: TagFilter>: Sized {
@@ -137,8 +132,8 @@ impl<S: SystemData> Queries<S> {
     pub fn filter(&self) -> QueryFilter<S> {
         QueryFilter {
             queries: self,
-            without: TypeKey::default(),
-            with: TypeKey::default(),
+            without_components: TypeKey::default(),
+            with_components: TypeKey::default(),
         }
     }
 
@@ -196,13 +191,13 @@ impl<S: SystemData> Queries<S> {
 impl<'a, S: SystemData> QueryFilter<'a, S> {
     #[inline]
     pub fn with<C: Component + 'static>(mut self) -> Self {
-        self.with.add::<C>();
+        self.with_components.add::<C>();
         self
     }
 
     #[inline]
     pub fn without<C: Component + 'static>(mut self) -> Self {
-        self.without.add::<C>();
+        self.without_components.add::<C>();
         self
     }
 
@@ -229,8 +224,8 @@ impl<'a, S: SystemData> QueryFilter<'a, S> {
             T::Query::new(
                 self.queries.tags.as_ref(),
                 self.queries.archetypes.as_ref(),
-                self.with,
-                self.without,
+                self.with_components,
+                self.without_components,
             )
         }
     }
@@ -238,16 +233,6 @@ impl<'a, S: SystemData> QueryFilter<'a, S> {
 
 impl<C: ComponentFilter, T: TagFilter> Query<C, T> for () {
     fn new(_: &Tags, _: &Archetypes, _: TypeKey, _: TypeKey) -> Self {}
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        0
-    }
 }
 
 impl<C: ComponentFilter, T: TagFilter> SingleQuery<C, T> for () {
@@ -278,21 +263,28 @@ impl<Components: ComponentFilter> Query<Components, ()> for EntityComponentQuery
             }
 
             // Must be compatible
-            if descriptor.subset_of(&archetype.type_key) {
-                // Grab entity storage
-                let handle = archetypes.get_entity_storage().get(archetype.entities);
-
-                // Must have non-zero entity count
-                if handle.len() != 0 {
-                    len += handle.len();
-
-                    // Add set and entity buffer
-                    sets.push((
-                        FastEntityIterator::new(handle),
-                        Components::make_storage_set(archetype, archetypes).unwrap(),
-                    ));
-                }
+            if !descriptor.subset_of(&archetype.type_key) {
+                continue;
             }
+
+            // Grab entity storage
+            let handle = archetypes.get_entity_storage().get(archetype.entities);
+
+            // Must have non-zero entity count
+            if handle.is_empty() {
+                continue;
+            }
+
+            let storage_set =
+                Components::make_storage_set(archetype, archetypes, handle.len()).unwrap();
+
+            if storage_set.is_empty() {
+                continue;
+            }
+
+            // Add set and entity buffer
+            len += handle.len();
+            sets.push((FastEntityIterator::new(handle), storage_set));
         }
 
         // Grab the starting set and entity buffer
@@ -304,16 +296,6 @@ impl<Components: ComponentFilter> Query<Components, ()> for EntityComponentQuery
             idx: 0,
             len,
         }
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len
     }
 }
 
@@ -381,18 +363,28 @@ impl<Components: ComponentFilter> Query<Components, ()> for ComponentQuery<Compo
             }
 
             // Must be compatible
-            if descriptor.subset_of(&archetype.type_key) {
-                // Must have non-zero entity count
-                let entity_count = archetypes
-                    .get_entity_storage()
-                    .get(archetype.entities)
-                    .len();
-
-                if entity_count != 0 {
-                    len += entity_count;
-                    sets.push(Components::make_storage_set(archetype, archetypes).unwrap());
-                }
+            if !descriptor.subset_of(&archetype.type_key) {
+                continue;
             }
+
+            // Grab entity storage
+            let handle = archetypes.get_entity_storage().get(archetype.entities);
+
+            // Must have non-zero entity count
+            if handle.is_empty() {
+                continue;
+            }
+
+            let storage_set =
+                Components::make_storage_set(archetype, archetypes, handle.len()).unwrap();
+
+            if storage_set.is_empty() {
+                continue;
+            }
+
+            // Add set and entity buffer
+            len += handle.len();
+            sets.push(storage_set);
         }
 
         // Grab the starting set
@@ -404,16 +396,6 @@ impl<Components: ComponentFilter> Query<Components, ()> for ComponentQuery<Compo
             idx: 0,
             len,
         }
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len
     }
 }
 
@@ -473,12 +455,15 @@ impl<C: ComponentFilter> SingleQuery<C, ()> for SingleComponentQuery<C> {
             None => return None,
         };
 
-        C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes).map(
-            |set| {
-                let data = unsafe { set.fetch(idx as usize) };
-                Self { _set: set, data }
-            },
+        C::make_storage_set(
+            &archetypes.archetypes()[usize::from(archetype)],
+            archetypes,
+            idx as usize + 1,
         )
+        .map(|set| {
+            let data = unsafe { set.fetch(idx as usize) };
+            Self { _set: set, data }
+        })
     }
 }
 
@@ -520,21 +505,27 @@ impl<C: ComponentFilter, T: TagFilter> Query<C, T> for EntityComponentTagQuery<C
             }
 
             // Must be compatible
-            if descriptor.subset_of(&archetype.type_key) {
-                // Grab entity storage
-                let handle = archetypes.get_entity_storage().get(archetype.entities);
-
-                // Must have non-zero entity count
-                if handle.len() != 0 {
-                    len += handle.len();
-
-                    // Add set and entity buffer
-                    sets.push((
-                        FastEntityIterator::new(handle),
-                        C::make_storage_set(archetype, archetypes).unwrap(),
-                    ));
-                }
+            if !descriptor.subset_of(&archetype.type_key) {
+                continue;
             }
+
+            // Grab entity storage
+            let handle = archetypes.get_entity_storage().get(archetype.entities);
+
+            // Must have non-zero entity count
+            if handle.is_empty() {
+                continue;
+            }
+
+            let storage_set = C::make_storage_set(archetype, archetypes, handle.len()).unwrap();
+
+            if storage_set.is_empty() {
+                continue;
+            }
+
+            // Add set and entity buffer
+            len += handle.len();
+            sets.push((FastEntityIterator::new(handle), storage_set));
         }
 
         // Grab the starting set and entity buffer
@@ -547,16 +538,6 @@ impl<C: ComponentFilter, T: TagFilter> Query<C, T> for EntityComponentTagQuery<C
             idx: 0,
             len,
         }
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len
     }
 }
 
@@ -621,8 +602,12 @@ impl<C: ComponentFilter, T: TagFilter> SingleQuery<C, T> for SingleComponentTagQ
             None => return None,
         };
 
-        let set = C::make_storage_set(&archetypes.archetypes()[usize::from(archetype)], archetypes)
-            .unwrap();
+        let set = C::make_storage_set(
+            &archetypes.archetypes()[usize::from(archetype)],
+            archetypes,
+            idx as usize + 1,
+        )
+        .unwrap();
         let data = unsafe { set.fetch(idx as usize) };
 
         let tag_set = T::StorageSet::from_tags(tags);

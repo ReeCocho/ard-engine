@@ -866,7 +866,7 @@ impl ProceduralSkyBox {
             let fndoth = N.dot(h).clamp(0.0, 1.0);
             let fvdoth = V.dot(h).clamp(0.0, 1.0);
 
-            // Probability Distribution Function
+            // Probability Density Function
             let fpdf = d_ggx(roughness, fndoth) * fndoth / (4.0 * fvdoth);
 
             // Solid angle represented by this sample

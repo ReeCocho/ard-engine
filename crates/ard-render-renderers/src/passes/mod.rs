@@ -5,7 +5,7 @@ use ard_render_si::{bindings::Layouts, types::*};
 pub mod color;
 pub mod depth_prepass;
 pub mod hzb;
-pub mod reflections;
+pub mod pathtracer;
 pub mod shadow;
 pub mod transparent;
 
@@ -33,8 +33,8 @@ pub const COLOR_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(6);
 /// The transparent pass renders only transparent materials.
 pub const TRANSPARENT_PASS_ID: PassId = PassId::new(7);
 
-/// Pass used for ray tracing.
-pub const RT_PASS_ID: PassId = PassId::new(8);
+/// Pass used for path tracing.
+pub const PATH_TRACER_PASS_ID: PassId = PassId::new(8);
 
 /// Defines primary passes.
 pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
@@ -176,13 +176,19 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
 
     factory
         .add_rt_pass(
-            RT_PASS_ID,
+            PATH_TRACER_PASS_ID,
             RtPassDefinition {
-                layouts: vec![layouts.camera.clone(), layouts.reflection_rt_pass.clone()],
-                push_constant_size: None,
-                max_ray_recursion: 0,
+                layouts: vec![
+                    layouts.path_tracer_pass.clone(),
+                    layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
+                    layouts.texture_slots.clone(),
+                    layouts.textures.clone(),
+                ],
+                push_constant_size: Some(std::mem::size_of::<GpuPathTracerPushConstants>() as u32),
+                max_ray_recursion: 1,
                 max_ray_hit_attribute_size: std::mem::size_of::<Vec2>() as u32,
-                max_ray_payload_size: std::mem::size_of::<GpuReflectionRayPayload>() as u32,
+                max_ray_payload_size: std::mem::size_of::<GpuPathTracerPayload>() as u32,
             },
         )
         .unwrap();

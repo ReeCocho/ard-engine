@@ -166,7 +166,15 @@ impl SunShadowsRenderer {
         RenderableSetUpdate::new(&mut self.set)
             .with_opaque()
             .with_alpha_cutout()
-            .update(view_location, objects, meshes, |_| true, |_| true, |_| true);
+            .update(
+                view_location,
+                objects,
+                meshes,
+                false,
+                |_| true,
+                |_| true,
+                |_| true,
+            );
 
         // Upload IDs
         let _buffer_expanded = self.ids.upload(frame, objects.static_dirty(), &self.set);

@@ -143,6 +143,7 @@ impl<'a> RenderableSetUpdate<'a> {
         view_location: Vec3A,
         objects: &RenderObjects,
         meshes: &ResourceAllocator<MeshResource>,
+        override_static_dirty: bool,
         filter_opaque: impl Fn(&ObjectIndex) -> bool,
         filter_alpha_cut: impl Fn(&ObjectIndex) -> bool,
         filter_transparent: impl Fn(&ObjectIndex) -> bool,
@@ -156,7 +157,7 @@ impl<'a> RenderableSetUpdate<'a> {
         instances.clear();
 
         // Either reset everything or ignore static objects and groups
-        if objects.static_dirty() {
+        if objects.static_dirty() || override_static_dirty {
             self.set.static_meshlet_count = 0;
             ids.clear();
             groups.clear();

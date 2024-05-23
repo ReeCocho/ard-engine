@@ -304,6 +304,10 @@ impl DrawBins {
         let mut variant_id = u32::MAX;
         let mut has_bound_global = false;
 
+        // NOTE: This is a silly trick to make sure that we perform transitions on these resources
+        // even if we aren't rendering anything.
+        args.bind_global();
+
         for bin in self.bins[usize::from(args.frame)]
             .bins
             .iter()

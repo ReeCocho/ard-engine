@@ -1,115 +1,93 @@
-[tasks.ignore-members]
-workspace = false
+# Primary build script for the editor.
+#
+# You can build a release version with `cargo-make build-rel` 
+# or a debug version with `cargo-make build-dbg`.
+#
+# The steps for building are as follows:
+#   1. Initialize any neccesary folders.
+#   2. Build the editor executable and oven executables.
+#   3. Copy the output executables into the destination folders.
 
 [config]
 default_to_workspace = false
 
-[tasks.build-release]
-command = "cargo"
-args = [ 
-    "build", "--release",
-    "--package", "gltf-oven", 
-    "--package", "ibl-oven", 
-    "--package", "editor" 
-]
-
-[tasks.build-debug]
-command = "cargo"
-args = [ 
-    "build", 
-    "--package", "gltf-oven", 
-    "--package", "ibl-oven", 
-    "--package", "editor" 
-]
-
-[tasks.copy-executables-debug]
+[tasks.init-folders]
 script_runner = "@duckscript"
-dependencies = [
-    "build-debug"
-]
 script = '''
-mkdir ./build/debug/tools/
-mkdir ./build/debug/temp/
-cp ./target/debug/gltf-oven.exe ./build/debug/tools/gltf-oven.exe
-cp ./target/debug/ibl-oven.exe ./build/debug/tools/ibl-oven.exe
-cp ./target/debug/editor.exe ./build/debug/ard-editor.exe
-cp ./target/debug/editor.pdb ./build/debug/ard-editor.pdb
+dst_dir = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
+mkdir ${dst_dir}
 '''
 
-[tasks.copy-executables-release]
+[tasks.init-project]
 script_runner = "@duckscript"
-dependencies = [
-    "build-release"
-]
 script = '''
-mkdir ./build/release/tools/
-mkdir ./build/release/temp/
-cp ./target/release/gltf-oven.exe ./build/release/tools/gltf-oven.exe
-cp ./target/release/ibl-oven.exe ./build/release/tools/ibl-oven.exe
-cp ./target/release/editor.exe ./build/release/ard-editor.exe
+dst_dir = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
+package_manifest_path = concat ${dst_dir} "assets/packages.ron"
+
+# Create the packages list if it doesn't exist
+if not is_path_exists ${package_manifest_path}
+    writefile ${package_manifest_path} "PackageList(packages: [])"
+end
 '''
 
-[tasks.copy-assets-debug]
-script_runner = "@rust"
-script = '''
-//! ```cargo
-//! [dependencies]
-//! fs_extra = "1"
-//! ```
-fn main() {
-    let options = fs_extra::dir::CopyOptions {
-        overwrite: true,
-        skip_exist: false,
-        ..Default::default()
-    };
-
-    std::fs::create_dir_all("./build/debug/assets/").unwrap();
-
-    fs_extra::dir::copy("./data/assets/editor/", "./build/debug/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/game/", "./build/debug/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/standard/", "./build/debug/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/baked/", "./build/debug/assets/", &options).unwrap();
-    std::fs::copy("./data/assets/packages.ron", "./build/debug/assets/packages.ron").unwrap();
-}
-'''
-
-[tasks.copy-assets-release]
-script_runner = "@rust"
-script = '''
-//! ```cargo
-//! [dependencies]
-//! fs_extra = "1"
-//! ```
-fn main() {
-    let options = fs_extra::dir::CopyOptions {
-        overwrite: true,
-        skip_exist: false,
-        ..Default::default()
-    };
-
-
-    std::fs::create_dir_all("./build/release/assets/").unwrap();
-
-    fs_extra::dir::copy("./data/assets/editor/", "./build/release/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/game/", "./build/release/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/standard/", "./build/release/assets/", &options).unwrap();
-    fs_extra::dir::copy("./data/assets/baked/", "./build/release/assets/", &options).unwrap();
-    std::fs::copy("./data/assets/packages.ron", "./build/release/assets/packages.ron").unwrap();
-}
-'''
-
-[tasks.build_dbg]
-clear = true
-dependencies = [
-    "build-debug",
-    "copy-executables-debug",
-    "copy-assets-debug"
+[tasks.run-cargo]
+command = "cargo"
+args = [
+    "build", "--profile=${CARGO_MAKE_PROFILE}",
+    "--package", "gltf-oven",
+    "--package", "ard-editor"
 ]
 
-[tasks.build_rel]
-clear = true
+[tasks.copy-execs]
+script_runner = "@duckscript"
+script = '''
+bins = array "gltf-oven" "ard-editor"
+dst = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
+
+# Windows ".exe" extensions
+ext = set ""
+if is_windows
+    ext = set ".exe"
+end
+
+# For "historical reasons" the dev profile outputs to the debug folder. This handles that.
+profile_dir = set ${CARGO_MAKE_PROFILE}
+if eq ${CARGO_MAKE_PROFILE} "dev"
+    profile_dir = set "debug"
+end
+
+target_dir = concat ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} "/" ${profile_dir} "/"
+
+for bin in ${bins}
+    bin_src = concat ${target_dir} ${bin} ${ext}
+
+    # If this *isn't* the editor, then it's a tool and should go in the tools folder
+    bin_dst = set ${dst}
+    if not eq ${bin} "ard-editor"
+        bin_dst = concat ${bin_dst} "tools/"
+    end
+    bin_dst = concat ${bin_dst} ${bin} ${ext}
+
+    cp ${bin_src} ${bin_dst}
+
+    # Windows has separate debugging files and, for some reason, the hyphens in the executable 
+    # names are converted into underscores so we first run a replacement for those
+    if is_windows
+        bin = replace ${bin} "-" "_"
+        pdb_src = concat ${target_dir} ${bin} ".pdb"
+        pdb_dst = concat ${dst} ${bin} ".pdb"
+
+        if is_path_exists ${pdb_src}
+            cp ${pdb_src} ${pdb_dst}
+        end
+    end
+end
+'''
+
+[tasks.build-editor]
 dependencies = [
-    "build-release",
-    "copy-executables-release",
-    "copy-assets-release"
+    "init-folders",
+    "init-project",
+    "run-cargo",
+    "copy-execs"
 ]

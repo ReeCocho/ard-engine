@@ -29,6 +29,10 @@
     #define ARD_SET_DEPTH_PREPASS 0
 #endif
 
+#if defined(PATH_TRACE_PASS)
+    #define ARD_SET_PATH_TRACER_PASS 0
+#endif
+
 #define ARD_SET_CAMERA 1
 #define ARD_SET_MESH_DATA 2
 #define ARD_SET_TEXTURE_SLOTS 3
@@ -221,7 +225,7 @@ vec3 light_fragment(
 }
 
 /// Get the cluster ID for the given screen coordinate.
-#if !defined(TASK_SHADER)
+#if !defined(TASK_SHADER) && !defined(PATH_TRACE_PASS)
 uvec3 get_cluster_id(vec2 uv, float depth) {
     return uvec3(
         clamp(uint(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),

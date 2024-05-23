@@ -48,4 +48,13 @@ impl<'a, B: Backend> RayTracingPass<'a, B> {
             stage: ShaderStage::RayTracing,
         });
     }
+
+    #[inline]
+    pub unsafe fn bind_sets_unchecked(&mut self, first: usize, sets: Vec<&'a DescriptorSet<B>>) {
+        self.commands.push(Command::BindDescriptorSetsUnchecked {
+            sets,
+            first,
+            stage: ShaderStage::RayTracing,
+        });
+    }
 }

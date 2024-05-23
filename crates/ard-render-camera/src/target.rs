@@ -393,7 +393,7 @@ impl RenderTarget {
                     width: dims.0,
                     height: dims.1,
                     depth: 1,
-                    array_elements: 1,
+                    array_elements: 2,
                     mip_levels: 1,
                     sample_count: MultiSamples::Count1,
                     texture_usage: TextureUsage::COLOR_ATTACHMENT

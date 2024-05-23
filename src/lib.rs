@@ -14,21 +14,18 @@ pub mod math {
     pub use ard_math::*;
 }
 
-//pub mod game {
-//    pub use ard_game::*;
-//}
+pub mod game {
+    pub use ard_game::*;
+}
 
-#[cfg(feature = "assets")]
 pub mod assets {
     pub use ard_assets::*;
 }
 
-#[cfg(feature = "input")]
 pub mod input {
     pub use ard_input::*;
 }
 
-#[cfg(feature = "window")]
 pub mod window {
     pub mod prelude {
         pub use ard_window::prelude::*;
@@ -36,13 +33,15 @@ pub mod window {
     }
 }
 
-// #[cfg(feature = "render")]
-// pub mod render {
-//     pub mod prelude {
-//         pub use ard_pal::prelude::*;
-//         pub use ard_render::prelude::*;
-//     }
-//
-//     pub use ard_pal::*;
-//     pub use ard_render::*;
-// }
+pub mod render {
+    pub mod prelude {
+        pub use ard_pal::prelude::*;
+    }
+
+    pub use ard_pal::*;
+    pub use ard_render::*;
+    pub use ard_render_assets::*;
+    pub use ard_render_camera::*;
+    pub use ard_render_gui::*;
+    pub use ard_render_objects::*;
+}

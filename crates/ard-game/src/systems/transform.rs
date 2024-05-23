@@ -1,12 +1,15 @@
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_math::*;
-use ard_render::renderer::Model;
+use ard_render::system::RenderSystem;
+use ard_render_objects::Model;
 
-use crate::{
-    components::transform::{Children, Parent, PrevParent, Transform},
-    destroy::{Destroy, Destroyer},
+use crate::components::{
+    destroy::Destroy,
+    transform::{Children, Parent, Position, Rotation, Scale, SetParent},
 };
+
+use super::destroy::Destroyer;
 
 #[derive(SystemState, Default)]
 pub struct TransformUpdate {
@@ -15,12 +18,14 @@ pub struct TransformUpdate {
 }
 
 type TransformUpdateQuery = (
-    Read<Transform>,
-    Read<Parent>,
     Read<Destroy>,
-    Write<Children>,
+    Read<SetParent>,
+    Read<Position>,
+    Read<Rotation>,
+    Read<Scale>,
     Write<Model>,
-    Write<PrevParent>,
+    Write<Parent>,
+    Write<Children>,
 );
 
 impl TransformUpdate {
@@ -37,51 +42,103 @@ impl TransformUpdate {
             .with::<Destroy>()
             .make::<(Entity, Read<Parent>)>()
         {
-            if let Some(parent) = parent.0 {
-                if let Some(mut children) = queries.get::<Write<Children>>(parent) {
-                    children.0.retain(|e| *e != entity);
-                }
+            if let Some(mut children) = queries.get::<Write<Children>>(parent.0) {
+                children.0.retain(|e| *e != entity);
             }
         }
 
         // Remove from old parents child list if we changed parents
-        for (entity, (parent, prev)) in queries.make::<(Entity, (Read<Parent>, Read<PrevParent>))>()
+        for (entity, (parent, new)) in
+            queries.make::<(Entity, (Option<Write<Parent>>, Read<SetParent>))>()
         {
-            // Remove self from old parents list
-            if let Some(prev) = prev.0 {
-                if let Some(mut children) = queries.get::<Write<Children>>(prev) {
-                    children.0.retain(|e| *e != entity);
+            // Remove self from old parents child list and update parent
+            match parent {
+                Some(parent) => {
+                    if let Some(mut children) = queries.get::<Write<Children>>(parent.0) {
+                        children.0.retain(|e| *e != entity);
+                    }
+
+                    if let Some(new) = new.0 {
+                        parent.0 = new;
+                    }
+                }
+                None => {
+                    if let Some(new) = new.0 {
+                        commands.entities.add_component(entity, Parent(new));
+                    }
                 }
             }
 
-            // Put self into new parents list
-            if let Some(parent) = parent.0 {
+            // Put self into new parents child list
+            if let Some(parent) = new.0 {
                 if let Some(mut children) = queries.get::<Write<Children>>(parent) {
                     children.0.push(entity);
                 }
             }
 
-            commands.entities.remove_component::<PrevParent>(entity);
+            commands.entities.remove_component::<SetParent>(entity);
         }
 
-        let current = queries
+        // Find the roots of the transform hierarchy and initialize their model matrices
+        self.hierarchy.clear();
+
+        // This first query is every component without a parent and without a 'SetComponent'
+        // marker. Obviously, these are roots.
+        let guaranteed_roots = queries
             .filter()
             .without::<Destroy>()
-            .make::<(Entity, (Read<Parent>, Read<Transform>, Write<Model>))>();
+            .without::<Parent>()
+            .make::<(
+                Entity,
+                (
+                    Option<Read<Position>>,
+                    Option<Read<Rotation>>,
+                    Option<Read<Scale>>,
+                    Write<Model>,
+                ),
+            )>();
+        self.hierarchy.reserve(guaranteed_roots.len());
 
-        self.hierarchy.clear();
-        self.hierarchy.reserve(current.len());
+        for (entity, (pos, rot, scl, model)) in guaranteed_roots {
+            self.hierarchy.push(entity);
 
-        // Find all transforms with no parents (the roots of the tree)
-        for (entity, (parent, transform, global)) in current {
-            if parent.0.is_none() {
-                self.hierarchy.push(entity);
-                global.0 = Mat4::from_scale_rotation_translation(
-                    transform.scale(),
-                    transform.rotation(),
-                    transform.position(),
-                );
+            let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
+            let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
+            let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
+
+            model.0 = Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
+        }
+
+        // This second query is every component with a `SetComponent` marker and a parent. They
+        // "may" be setting the component to `None` and are thus a root.
+        let possible_roots = queries
+            .filter()
+            .without::<Destroy>()
+            .with::<Parent>()
+            .make::<(
+                Entity,
+                (
+                    Read<SetParent>,
+                    Option<Read<Position>>,
+                    Option<Read<Rotation>>,
+                    Option<Read<Scale>>,
+                    Write<Model>,
+                ),
+            )>();
+        self.hierarchy.reserve(possible_roots.len());
+
+        for (entity, (set_parent, pos, rot, scl, model)) in possible_roots {
+            if set_parent.0.is_some() {
+                continue;
             }
+
+            self.hierarchy.push(entity);
+
+            let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
+            let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
+            let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
+
+            model.0 = Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
         }
 
         // Construct the tree from roots to leaves breadth first
@@ -111,13 +168,20 @@ impl TransformUpdate {
             for child in children.0.iter() {
                 self.hierarchy.push(*child);
 
-                if let Some(mut query) = queries.get::<(Read<Transform>, Write<Model>)>(*child) {
-                    query.1 .0 = parent_global
-                        * Mat4::from_scale_rotation_translation(
-                            query.0.scale(),
-                            query.0.rotation(),
-                            query.0.position(),
-                        );
+                let mut query = queries.get::<(
+                    Option<Read<Position>>,
+                    Option<Read<Rotation>>,
+                    Option<Read<Scale>>,
+                    Write<Model>,
+                )>(*child);
+
+                if let Some((pos, rot, scl, model)) = query.as_deref_mut() {
+                    let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
+                    let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
+                    let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
+
+                    model.0 = parent_global
+                        * Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
                 }
             }
 
@@ -131,6 +195,7 @@ impl From<TransformUpdate> for System {
         SystemBuilder::new(sys)
             .with_handler(TransformUpdate::on_tick)
             .run_before::<Tick, Destroyer>()
+            .run_before::<Tick, RenderSystem>()
             .build()
     }
 }

@@ -74,7 +74,7 @@ void main() {
     // View vector
     const vec3 V = normalize(camera[gl_ViewIndex].position.xyz - vs_in.world_space_position);
 
-    // Calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
+    // Calculate reflectance at normal incidence; if dielectric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, color.rgb, metallic);

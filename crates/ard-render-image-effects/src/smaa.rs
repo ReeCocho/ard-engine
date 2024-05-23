@@ -507,7 +507,7 @@ impl Smaa {
         &'a self,
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
-        surface_image: &'a SurfaceImage,
+        dst: ColorAttachmentDestination<'a>,
     ) {
         let frame = usize::from(frame);
 
@@ -580,7 +580,7 @@ impl Smaa {
         commands.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    dst: ColorAttachmentDestination::SurfaceImage(surface_image),
+                    dst,
                     load_op: LoadOp::DontCare,
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,

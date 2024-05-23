@@ -20,8 +20,8 @@ use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
+    pathtracer::PathTracer,
     raytrace::RaytracedRenderer,
-    reflections::Reflections,
     scene::{SceneRenderArgs, SceneRenderer},
     shadow::{ShadowRenderArgs, SunShadowsRenderer},
 };
@@ -48,7 +48,7 @@ pub(crate) struct RenderEcs {
     sun_shafts: SunShafts,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
-    reflections: Reflections,
+    path_tracer: PathTracer,
     proc_skybox: ProceduralSkyBox,
     factory: Factory,
     ctx: Context,
@@ -122,7 +122,7 @@ impl RenderEcs {
         let sun_shadows_renderer = SunShadowsRenderer::new(&ctx, &layouts, MAX_SHADOW_CASCADES);
         let gui_renderer = GuiRenderer::new(&ctx, &layouts);
         let rt_render = RaytracedRenderer::new(&ctx);
-        let mut reflections = Reflections::new(
+        let mut path_tracer = PathTracer::new(
             &ctx,
             &layouts,
             &factory.inner.materials.lock().unwrap(),
@@ -158,7 +158,7 @@ impl RenderEcs {
                 .transparent_pass_sets_mut()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
-            reflections
+            path_tracer
                 .sets()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
@@ -190,7 +190,7 @@ impl RenderEcs {
                 gui_renderer,
                 lighting,
                 hzb_render,
-                reflections,
+                path_tracer,
                 _fxaa: fxaa,
                 smaa,
                 sun_shafts,
@@ -229,7 +229,7 @@ impl RenderEcs {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
             self.sun_shafts.resize(&self.ctx, frame.canvas_size);
             self.smaa.resize(&self.ctx, frame.canvas_size);
-            self.reflections.resize(&self.ctx, frame.canvas_size);
+            self.path_tracer.resize(&self.ctx, frame.canvas_size);
 
             for frame in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(frame);
@@ -272,7 +272,7 @@ impl RenderEcs {
             self.scene_renderer
                 .transparent_pass_sets_mut()
                 .update_lights_binding(frame.frame, &frame.lights);
-            self.reflections
+            self.path_tracer
                 .sets()
                 .update_lights_binding(frame.frame, &frame.lights);
         }
@@ -318,7 +318,7 @@ impl RenderEcs {
         frame.object_data.check_for_blas(&meshes);
 
         // Check if any RT pipelines need to be rebuilt
-        self.reflections
+        self.path_tracer
             .check_for_rebuild(&self.ctx, &materials, &material_factory);
 
         // Upload object data to renderers
@@ -350,8 +350,10 @@ impl RenderEcs {
         self.sun_shadows_renderer
             .update_bindings(frame.frame, &frame.object_data);
 
-        self.reflections
-            .update_bindings(frame.frame, self.rt_render.tlas());
+        self.path_tracer
+            .update_bindings(frame.frame, self.rt_render.tlas(), &frame.object_data);
+        self.path_tracer
+            .update_settings(&frame.path_tracer_settings);
 
         self.sun_shadows_renderer.update_cascade_views(
             frame.frame,
@@ -364,16 +366,28 @@ impl RenderEcs {
 
         self.gui_renderer.prepare(GuiDrawPrepare {
             frame: frame.frame,
-            canvas_size: self.canvas.size(),
+            // We always render to native resolution for the GUI.
+            canvas_size: frame.window_size,
+            scene_texture: (
+                self.canvas.render_target().linear_color(),
+                frame.smaa_settings.enabled as usize,
+            ),
             gui_output: &mut frame.gui_output,
         });
 
-        self.bloom
-            .bind_images(frame.frame, self.canvas.render_target().final_color());
+        // If path tracing is enabled, we want to use that image instead of
+        // the main color image
+        let final_color_src = if frame.path_tracer_settings.enabled {
+            self.path_tracer.image()
+        } else {
+            self.canvas.render_target().final_color()
+        };
+
+        self.bloom.bind_images(frame.frame, final_color_src);
 
         self.tonemapping.bind_images(
             frame.frame,
-            self.canvas.render_target().final_color(),
+            final_color_src,
             self.canvas.render_target().final_depth(),
         );
 
@@ -414,8 +428,15 @@ impl RenderEcs {
         // Build TLAS
         self.rt_render.build(&mut main_cb, frame.frame);
 
-        self.reflections
-            .trace(frame.frame, &mut main_cb, &self.camera);
+        // Path trace
+        self.path_tracer.trace(
+            frame.frame,
+            &mut main_cb,
+            &self.camera,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+        );
 
         // Render the high-z depth image
         self.render_hzb(
@@ -568,8 +589,9 @@ impl RenderEcs {
             &mut cb,
             &self.camera,
             // If SMAA is enabled, we want to draw to the "final color" attachment so it can be
-            // read during the SMAA pass.
-            if frame.smaa_settings.enabled {
+            // read during the SMAA pass. We also want to do this if we're rendering the scene
+            // offscreen (i.e. not presenting the scene)
+            if frame.smaa_settings.enabled || !frame.present_scene {
                 ColorAttachmentDestination::Texture {
                     texture: self.canvas.render_target().linear_color(),
                     array_element: 0,
@@ -586,7 +608,19 @@ impl RenderEcs {
 
         // Apply anti-aliasing
         if frame.smaa_settings.enabled {
-            self.smaa.render(frame.frame, &mut cb, self.canvas.image());
+            self.smaa.render(
+                frame.frame,
+                &mut cb,
+                if frame.present_scene {
+                    ColorAttachmentDestination::SurfaceImage(self.canvas.image())
+                } else {
+                    ColorAttachmentDestination::Texture {
+                        texture: self.canvas.render_target().linear_color(),
+                        array_element: 1,
+                        mip_level: 0,
+                    }
+                },
+            );
         }
 
         // Render GUI
@@ -594,7 +628,11 @@ impl RenderEcs {
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
                     dst: ColorAttachmentDestination::SurfaceImage(self.canvas.image()),
-                    load_op: LoadOp::Load,
+                    load_op: if frame.present_scene {
+                        LoadOp::Load
+                    } else {
+                        LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0))
+                    },
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,
                 }],
@@ -605,7 +643,7 @@ impl RenderEcs {
             Some("gui_rendering"),
             |pass| {
                 self.gui_renderer
-                    .render(frame.frame, self.canvas.size(), pass);
+                    .render(frame.frame, frame.window_size, pass);
             },
         );
 

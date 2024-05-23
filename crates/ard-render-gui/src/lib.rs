@@ -3,6 +3,7 @@ use std::time::Duration;
 use ard_core::core::Tick;
 use ard_ecs::prelude::*;
 use ard_input::{InputState, Key, MouseButton};
+use ard_render_si::consts::GUI_SCENE_TEXTURE_ID;
 use ard_window::{
     window::{Window, WindowId},
     windows::Windows,
@@ -56,7 +57,7 @@ impl Default for Gui {
         ctx.style_mut(|style| {
             style.visuals.dark_mode = true;
             style.visuals.window_rounding = egui::Rounding::from(2.0);
-            style.visuals.window_shadow = egui::epaint::Shadow::small_dark();
+            style.visuals.window_shadow = egui::epaint::Shadow::NONE;
             style.text_styles = [
                 (TextStyle::Small, FontId::new(11.0, Proportional)),
                 (TextStyle::Body, FontId::new(14.0, Proportional)),
@@ -76,6 +77,8 @@ impl Default for Gui {
 }
 
 impl Gui {
+    pub const SCENE_TEXTURE: egui::TextureId = egui::TextureId::User(GUI_SCENE_TEXTURE_ID as u64);
+
     pub fn add_view(&mut self, view: impl GuiView + 'static) {
         self.views.push(Box::new(view));
     }

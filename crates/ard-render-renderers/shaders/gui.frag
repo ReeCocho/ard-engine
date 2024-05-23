@@ -15,6 +15,15 @@ layout(push_constant) uniform constants {
 };
 
 void main() {
-    vec4 color = texture(font_texture, IN_UV);
+    vec4 color = vec4(0); 
+    if (consts.texture_id == GUI_SCENE_TEXTURE_ID)
+    {
+        color = texture(scene_texture, IN_UV);
+    }
+    else
+    {
+        color = texture(font_texture, IN_UV);
+    }
+    
     OUT_COLOR = IN_COLOR * color;
 }

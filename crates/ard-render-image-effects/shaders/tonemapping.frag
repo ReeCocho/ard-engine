@@ -22,7 +22,7 @@ void main() {
 
     // Tonemapping with adaptive luminance
     color = mix(color, bloom, 0.05);
-    color += 0.4 * sun_shafts;
+    color += 0.2 * sun_shafts;
     color = vec3(1.0) - exp(-color * (consts.exposure / luminance));
     color = pow(color, vec3(1.0 / consts.gamma));
 

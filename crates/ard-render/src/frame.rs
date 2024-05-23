@@ -12,6 +12,7 @@ use ard_render_image_effects::{
 };
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
+use ard_render_renderers::pathtracer::PathTracerSettings;
 
 use crate::{DebugSettings, MsaaSettings};
 
@@ -22,6 +23,8 @@ pub struct FrameDataInner {
     pub dt: Duration,
     /// Frame handle for this frame.
     pub frame: Frame,
+    /// Indicates that the scene should be presented to the screen (and not rendered offscreen).
+    pub present_scene: bool,
     /// Listener for dirty static objects.
     pub dirty_static: DirtyStaticListener,
     /// The job of the currently processing frame.
@@ -38,6 +41,7 @@ pub struct FrameDataInner {
     pub smaa_settings: SmaaSettings,
     pub msaa_settings: MsaaSettings,
     pub debug_settings: DebugSettings,
+    pub path_tracer_settings: PathTracerSettings,
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.

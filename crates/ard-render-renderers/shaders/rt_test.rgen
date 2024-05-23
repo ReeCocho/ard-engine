@@ -4,8 +4,8 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_ray_tracing : enable
 
-#define ARD_SET_CAMERA 0
-#define ARD_SET_REFLECTION_RT_PASS 1
+#define ARD_SET_REFLECTION_RT_PASS 0
+#define ARD_SET_CAMERA 1
 #include "ard_bindings.glsl"
 
 layout(location = 0) rayPayloadEXT ReflectionRayPayload hit_value;
@@ -17,50 +17,43 @@ void main() {
     in_uv.y = 1.0 - in_uv.y;
 	const vec2 d = in_uv * 2.0 - 1.0;
 
-    const vec3 center = camera[0].position.xyz;
+    vec3 center = camera[0].position.xyz;
     vec4 pos = camera[0].projection_inv * vec4(d, 0.0, 1.0);
     vec4 dir = camera[0].view_inv * vec4(normalize(pos.xyz), 0.0);
 
     // Fire a ray toward the pixel
     float tmin = 0.001;
 	float tmax = 10000.0;
-    traceRayEXT(
-        tlas, 
-        gl_RayFlagsOpaqueEXT, 
-        0xff, 0, 0, 0, 
-        center.xyz, 
-        tmin, 
-        dir.xyz,
-        tmax, 
-        0
-    );
 
-    vec4 color = vec4(
-        unpackHalf2x16(hit_value.color.x),
-        unpackHalf2x16(hit_value.color.y)
-    );
+    vec4 color = vec4(1.0);
+    for (uint i = 0; i < 8; i++) {
+        // Trace a ray to see if we hit a surface
+        traceRayEXT(
+            tlas, 
+            gl_RayFlagsOpaqueEXT, 
+            0xff, 0, 0, 0, 
+            center, 
+            tmin, 
+            dir.xyz,
+            tmax, 
+            0
+        );
 
-    // If we hit nothing, stop.
-    if (hit_value.hit == 0) {
-	    imageStore(out_tex, ivec2(gl_LaunchIDEXT.xy), vec4(color.rgb, 1.0));
-        return;
-    }
+        // Decode the color
+        const vec4 dec_color = vec4(
+            unpackHalf2x16(hit_value.color.x),
+            unpackHalf2x16(hit_value.color.y)
+        );
+        color.rgb *= dec_color.rgb;
 
-    // If we hit something, fire a shadow ray.
-    traceRayEXT(
-        tlas, 
-        gl_RayFlagsOpaqueEXT, 
-        0xff, 0, 0, 0, 
-        hit_value.location.xyz, 
-        tmin, 
-        -global_lighting.sun_direction.xyz, 
-        tmax, 
-        0
-    );
+        // If we hit nothing, or this is the last iteration, stop.
+        if (hit_value.hit == 0) {
+            break;
+        }
 
-    // If we hit something, we are in shadow.
-    if (hit_value.hit == 1) {
-        color.rgb *= 0.1;
+        // Otherwise, update the center and direction vectors and try again
+        center = hit_value.location.xyz;
+        dir.xyz = normalize(reflect(dir.xyz, hit_value.normal.xyz));
     }
     
     imageStore(out_tex, ivec2(gl_LaunchIDEXT.xy), vec4(color.rgb, 1.0));

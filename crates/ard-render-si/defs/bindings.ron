@@ -354,10 +354,21 @@
             )
         ]
     ),
-    // Pass used for rendering RT reflections.
+    // Pass used for path tracing.
     (
-        name: "ReflectionRtPass",
+        name: "PathTracerPass",
         bindings: [
+            (
+                name: "GlobalObjectData",
+                stage: RayTracing,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
             (
                 name: "Tlas",
                 stage: RayTracing,
@@ -371,7 +382,7 @@
                 data: StorageImage(
                     field_name: "out_tex",
                     restrict: true,
-                    access: WriteOnly,
+                    access: ReadWrite,
                     format: Rgba16F,
                 )
             ),
@@ -1013,7 +1024,13 @@
                 stage: Fragment,
                 count: "1",
                 data: Texture("font_texture"),
-            )
+            ),
+            (
+                name: "Scene",
+                stage: Fragment,
+                count: "1",
+                data: Texture("scene_texture"),
+            ),
         ]
     ),
     // Depth prefiltering layout for GTAO.

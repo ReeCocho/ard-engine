@@ -28,15 +28,15 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/rt_test.rgen",
-        PathBuf::from(&out_dir).join("rt_test.rgen.spv"),
-        &["./shaders/"],
+        "./shaders/pathtracer/pathtracer.rgen",
+        PathBuf::from(&out_dir).join("pathtracer.rgen.spv"),
+        &["./shaders/", "../ard-render-pbr/shaders/"],
         &[],
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/rt_test.rmiss",
-        PathBuf::from(&out_dir).join("rt_test.rmiss.spv"),
+        "./shaders/pathtracer/pathtracer.rmiss",
+        PathBuf::from(&out_dir).join("pathtracer.rmiss.spv"),
         &["./shaders/"],
         &[],
     );

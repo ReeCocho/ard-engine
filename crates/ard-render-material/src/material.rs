@@ -501,7 +501,7 @@ impl RtMaterialVariant {
             RayTracingPipelineCreateInfo {
                 stages,
                 groups,
-                max_ray_recursion_depth: 0,
+                max_ray_recursion_depth: pass.max_ray_recursion,
                 layouts: pass.layouts.clone(),
                 push_constants_size: pass.push_constant_size,
                 library_info: Some(PipelineLibraryInfo {

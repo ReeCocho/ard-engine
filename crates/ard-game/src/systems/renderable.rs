@@ -1,3 +1,4 @@
+/*
 use ard_assets::manager::Assets;
 use ard_ecs::prelude::*;
 use ard_render::renderer::{PreRender, RenderLayer, Renderable};
@@ -74,3 +75,4 @@ impl From<ApplyRenderableData> for System {
             .build()
     }
 }
+*/

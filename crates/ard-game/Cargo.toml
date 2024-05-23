@@ -11,7 +11,7 @@ ard-ecs = { path = "../ard-ecs" }
 ard-core = { path = "../ard-core" }
 ard-assets = { path = "../ard-assets" }
 ard-render = { path = "../ard-render" }
-ard-game-derive = { path = "./ard-game-derive/" }
+ard-render-objects = { path = "../ard-render-objects" }
 crossbeam-channel.workspace = true
 smallvec.workspace = true
 serde.workspace = true

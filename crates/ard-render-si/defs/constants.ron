@@ -17,4 +17,5 @@
     (name: "HzbGenKernelSize", value: USize(8)),
     (name: "DiReduceBlockSize", value: UInt(128)),
     (name: "EnvPrefilterSampleCount", value: USize(32)),
+    (name: "GuiSceneTextureId", value: UInt(4294967295))
 ]
