@@ -11,18 +11,16 @@
 [config]
 default_to_workspace = false
 
-[tasks.init-folders]
-script_runner = "@duckscript"
-script = '''
-dst_dir = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
-mkdir ${dst_dir}
-'''
-
 [tasks.init-project]
 script_runner = "@duckscript"
 script = '''
 dst_dir = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
-package_manifest_path = concat ${dst_dir} "assets/packages.ron"
+mkdir ${dst_dir}
+
+assets_path = concat ${dst_dir} "assets/"
+mkdir ${assets_path}
+
+package_manifest_path = concat ${dst_dir} "packages/packages.ron"
 
 # Create the packages list if it doesn't exist
 if not is_path_exists ${package_manifest_path}
@@ -86,7 +84,6 @@ end
 
 [tasks.build-editor]
 dependencies = [
-    "init-folders",
     "init-project",
     "run-cargo",
     "copy-execs"

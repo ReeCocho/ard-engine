@@ -4,7 +4,10 @@ use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_camera::{ubo::CameraUbo, Camera};
 use ard_render_lighting::shadows::{ShadowCascadeSettings, SunShadowsUbo};
-use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
+use ard_render_material::{
+    factory::MaterialFactory, material::MaterialResource,
+    material_instance::MaterialInstanceResource,
+};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{
     objects::RenderObjects,
@@ -12,7 +15,7 @@ use ard_render_objects::{
     Model,
 };
 use ard_render_si::bindings::Layouts;
-use ard_render_textures::factory::TextureFactory;
+use ard_render_textures::{factory::TextureFactory, texture::TextureResource};
 use ordered_float::NotNan;
 
 use crate::{
@@ -156,8 +159,10 @@ impl SunShadowsRenderer {
         &mut self,
         frame: Frame,
         objects: &RenderObjects,
+        textures: &ResourceAllocator<TextureResource>,
         meshes: &ResourceAllocator<MeshResource>,
         materials: &ResourceAllocator<MaterialResource>,
+        material_instances: &ResourceAllocator<MaterialInstanceResource>,
         view_location: Vec3A,
     ) {
         puffin::profile_function!();
@@ -187,8 +192,10 @@ impl SunShadowsRenderer {
             self.set.groups()[self.set.dynamic_group_ranges().opaque.clone()].iter(),
             self.set.groups()[self.set.dynamic_group_ranges().alpha_cutout.clone()].iter(),
             std::iter::empty(),
+            textures,
             meshes,
             materials,
+            material_instances,
         );
     }
 

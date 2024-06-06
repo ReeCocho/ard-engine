@@ -30,6 +30,9 @@ struct Args {
     /// Compress textures.
     #[arg(long, default_value_t = false)]
     compress_textures: bool,
+    /// Use UUID file names.
+    #[arg(long, default_value_t = false)]
+    uuid_names: bool,
 }
 
 fn main() {
@@ -67,8 +70,27 @@ fn main() {
         .map(|_| AtomicBool::new(false))
         .collect();
 
+    // We also precompute their header paths so materials know how to reference them
+    let texture_paths: Vec<_> = model
+        .textures
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let tex_path = ModelHeader::texture_path(&out_path, i);
+
+            if args.uuid_names {
+                let mut header_path = out_path.clone();
+                header_path.push(format!("{}.ard_tex", uuid::Uuid::new_v4().to_string()));
+                header_path
+            } else {
+                std::fs::create_dir_all(&tex_path).unwrap();
+                TextureHeader::header_path(&tex_path)
+            }
+        })
+        .collect();
+
     println!("Constructing header...");
-    let mut header = create_header(&args, &model, &texture_is_unorm);
+    let mut header = create_header(&args, &out_path, &model, &texture_is_unorm, &texture_paths);
 
     // Save everything
     println!("Saving meshes and textures...");
@@ -80,13 +102,20 @@ fn main() {
                 &out_path,
                 std::mem::take(&mut model.textures),
                 &texture_is_unorm,
+                &texture_paths,
             )
         },
     );
 
     // Save the header
     header.meshes = mesh_headers;
-    let header_path = ModelHeader::header_path(out_path.clone());
+    let header_path = if args.uuid_names {
+        let mut path = out_path.clone();
+        path.push(format!("{}.ard_mdl", uuid::Uuid::new_v4().to_string()));
+        path
+    } else {
+        ModelHeader::header_path(out_path.clone())
+    };
     let mut f = BufWriter::new(fs::File::create(&header_path).unwrap());
     bincode::serialize_into(&mut f, &header).unwrap();
     std::mem::drop(f);
@@ -95,8 +124,10 @@ fn main() {
 
 fn create_header(
     args: &Args,
+    out_path: &Path,
     gltf: &ard_gltf::GltfModel,
     texture_is_unorm: &[AtomicBool],
+    texture_paths: &[PathBuf],
 ) -> ModelHeader {
     let mut header = ModelHeader::default();
     header.lights = Vec::with_capacity(gltf.lights.len());
@@ -136,8 +167,14 @@ fn create_header(
         });
     }
 
-    for material in &gltf.materials {
-        header.materials.push(match material {
+    if !args.uuid_names {
+        let mut mat_root = ModelHeader::material_path(out_path, 0);
+        mat_root.pop();
+        std::fs::create_dir_all(&mat_root).unwrap();
+    }
+
+    for (i, material) in gltf.materials.iter().enumerate() {
+        let mat_header = match material {
             ard_gltf::GltfMaterial::Pbr {
                 base_color,
                 metallic,
@@ -158,18 +195,30 @@ fn create_header(
                     metallic: *metallic,
                     roughness: *roughness,
                     alpha_cutoff: *alpha_cutoff,
-                    diffuse_map: diffuse_map.map(|v| v as u32),
+                    diffuse_map: diffuse_map.map(|v| texture_paths[v].clone()),
                     normal_map: normal_map.map(|v| {
                         texture_is_unorm[v].store(true, Ordering::Relaxed);
-                        v as u32
+                        texture_paths[v].clone()
                     }),
                     metallic_roughness_map: metallic_roughness_map.map(|v| {
                         texture_is_unorm[v].store(true, Ordering::Relaxed);
-                        v as u32
+                        texture_paths[v].clone()
                     }),
                 },
             },
-        });
+        };
+
+        let mat_path = if args.uuid_names {
+            let mut mat_path = PathBuf::from(out_path);
+            mat_path.push(format!("{}.ard_mat", uuid::Uuid::new_v4().to_string()));
+            mat_path
+        } else {
+            ModelHeader::material_path(out_path, i)
+        };
+        let mut f = BufWriter::new(fs::File::create(&mat_path).unwrap());
+        bincode::serialize_into(&mut f, &mat_header).unwrap();
+
+        header.materials.push(mat_path);
     }
 
     for mesh_group in &gltf.mesh_groups {
@@ -182,39 +231,6 @@ fn create_header(
         }
 
         header.mesh_groups.push(MeshGroup(instances));
-    }
-
-    for texture in &gltf.textures {
-        let image = image::load_from_memory_with_format(
-            &texture.data,
-            match texture.src_format {
-                ard_gltf::TextureSourceFormat::Png => image::ImageFormat::Png,
-                ard_gltf::TextureSourceFormat::Jpeg => image::ImageFormat::Jpeg,
-            },
-        )
-        .unwrap();
-
-        let compress = args.compress_textures && texture_needs_compression(&image);
-        let mip_count = texture_mip_count(&image, compress);
-
-        header.textures.push(TextureHeader {
-            width: image.width(),
-            height: image.height(),
-            mip_count: mip_count as u32,
-            format: if compress {
-                texture.usage.into_compressed_format()
-            } else {
-                texture.usage.into_format()
-            },
-            sampler: Sampler {
-                min_filter: texture.sampler.min_filter,
-                mag_filter: texture.sampler.mag_filter,
-                mipmap_filter: texture.sampler.mipmap_filter,
-                address_u: texture.sampler.address_u,
-                address_v: texture.sampler.address_v,
-                anisotropy: true,
-            },
-        });
     }
 
     fn parse_node(node: &ard_gltf::GltfNode, root: bool) -> Node {
@@ -247,21 +263,39 @@ fn create_header(
     header
 }
 
-fn save_meshes(args: &Args, out: &Path, meshes: Vec<GltfMesh>) -> Vec<MeshHeader> {
+fn save_meshes(args: &Args, out: &Path, meshes: Vec<GltfMesh>) -> Vec<PathBuf> {
     use rayon::prelude::*;
     meshes
         .into_par_iter()
         .enumerate()
         .map(|(i, mesh)| {
-            let mesh_path = ModelHeader::mesh_path(out, i);
-            fs::create_dir_all(&mesh_path).unwrap();
+            let mesh_path = if args.uuid_names {
+                PathBuf::from(out)
+            } else {
+                let mesh_path = ModelHeader::mesh_path(out, i);
+                fs::create_dir_all(&mesh_path).unwrap();
+                mesh_path
+            };
             save_mesh(args, &mesh_path, mesh)
         })
         .collect()
 }
 
-fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
-    let mesh_data_path = MeshHeader::mesh_data_path(out);
+fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
+    let (mesh_data_path, mesh_header_path) = if args.uuid_names {
+        let mut mesh_data_path = PathBuf::from(out);
+        mesh_data_path.push(uuid::Uuid::new_v4().to_string());
+
+        let mut mesh_header_path = PathBuf::from(out);
+        mesh_header_path.push(format!("{}.ard_msh", uuid::Uuid::new_v4().to_string()));
+
+        (mesh_data_path, mesh_header_path)
+    } else {
+        (
+            MeshHeader::mesh_data_path(out),
+            MeshHeader::mesh_header_path(out),
+        )
+    };
 
     let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
 
@@ -326,12 +360,18 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> MeshHeader {
     let mut f = BufWriter::new(fs::File::create(&mesh_data_path).unwrap());
     bincode::serialize_into(&mut f, &data).unwrap();
 
-    MeshHeader {
+    // Save the header
+    let header = MeshHeader {
+        data_path: mesh_data_path,
         index_count: data.index_count() as u32,
         vertex_count: data.vertex_count() as u32,
         meshlet_count: data.meshlet_count() as u32,
         vertex_layout,
-    }
+    };
+    let mut f = BufWriter::new(fs::File::create(&mesh_header_path).unwrap());
+    bincode::serialize_into(&mut f, &header).unwrap();
+
+    mesh_header_path
 }
 
 fn save_textures(
@@ -339,18 +379,13 @@ fn save_textures(
     out: &Path,
     textures: Vec<GltfTexture>,
     texture_is_unorm: &[AtomicBool],
+    texture_paths: &[PathBuf],
 ) {
     use rayon::prelude::*;
     textures
         .into_par_iter()
         .enumerate()
         .for_each(|(i, mut texture)| {
-            // Path to the folder for the texture
-            let tex_path = ModelHeader::texture_path(out, i);
-
-            // Create the texture path if it doesn't exist
-            fs::create_dir_all(&tex_path).unwrap();
-
             // Parse the image
             let image_fmt = match texture.src_format {
                 ard_gltf::TextureSourceFormat::Png => image::ImageFormat::Png,
@@ -374,6 +409,40 @@ fn save_textures(
                     Format::Rgba8Srgb
                 }
             };
+
+            let tex_path = ModelHeader::texture_path(out, i);
+            let header_path = texture_paths[i].clone();
+
+            let tex_header = TextureHeader {
+                width: image.width(),
+                height: image.height(),
+                mips: (0..mip_count)
+                    .map(|mip| {
+                        if args.uuid_names {
+                            let mut data_path = PathBuf::from(out);
+                            data_path.push(format!("{}", uuid::Uuid::new_v4().to_string()));
+                            data_path
+                        } else {
+                            TextureHeader::mip_path(&tex_path, mip as u32)
+                        }
+                    })
+                    .collect(),
+                format: if compress {
+                    texture.usage.into_compressed_format()
+                } else {
+                    texture.usage.into_format()
+                },
+                sampler: Sampler {
+                    min_filter: texture.sampler.min_filter,
+                    mag_filter: texture.sampler.mag_filter,
+                    mipmap_filter: texture.sampler.mipmap_filter,
+                    address_u: texture.sampler.address_u,
+                    address_v: texture.sampler.address_v,
+                    anisotropy: true,
+                },
+            };
+            let mut f = BufWriter::new(fs::File::create(&header_path).unwrap());
+            bincode::serialize_into(&mut f, &tex_header).unwrap();
 
             // Compute each mip and save to disc
             for mip in 0..mip_count {
@@ -405,8 +474,7 @@ fn save_textures(
                 let tex_data = TextureData::new(bytes, width, height, format);
 
                 // Save the file to disk
-                let mip_path = TextureHeader::mip_path(&tex_path, mip as u32);
-                let mut f = BufWriter::new(fs::File::create(&mip_path).unwrap());
+                let mut f = BufWriter::new(fs::File::create(&tex_header.mips[mip]).unwrap());
                 bincode::serialize_into(&mut f, &tex_data).unwrap();
             }
         });

@@ -130,7 +130,7 @@ impl DescriptorSet {
         device: &ash::Device,
         pools: &mut DescriptorPools,
         garbage: Sender<Garbage>,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         create_info: DescriptorSetCreateInfo<crate::VulkanBackend>,
         set_ids: &IdGenerator,
     ) -> Result<Self, DescriptorSetCreateError> {
@@ -181,9 +181,9 @@ impl DescriptorSet {
         }
 
         let mut writes = Vec::with_capacity(updates.len());
-        let mut buffers = Vec::with_capacity(updates.len());
-        let mut images = Vec::with_capacity(updates.len());
-        let mut tlas_writes = Vec::with_capacity(updates.len());
+        let mut buffers = Vec::default();
+        let mut images = Vec::default();
+        let mut tlas_writes = Vec::default();
 
         for update in updates {
             // Deal with the old value
@@ -266,22 +266,20 @@ impl DescriptorSet {
                         let buffer = buffer.internal();
 
                         buffers.push(
-                            vk::DescriptorBufferInfo::builder()
+                            vk::DescriptorBufferInfo::default()
                                 .buffer(buffer.buffer)
                                 .offset(buffer.aligned_size * (*array_element) as u64)
-                                .range(buffer.aligned_size)
-                                .build(),
+                                .range(buffer.aligned_size),
                         );
 
-                        writes.push(
-                            vk::WriteDescriptorSet::builder()
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                                .buffer_info(&buffers[buffers.len() - 1..])
-                                .build(),
-                        );
+                                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER),
+                            buffers.len() - 1..buffers.len(),
+                        ));
 
                         Binding {
                             access,
@@ -304,22 +302,20 @@ impl DescriptorSet {
                         let buffer = buffer.internal();
 
                         buffers.push(
-                            vk::DescriptorBufferInfo::builder()
+                            vk::DescriptorBufferInfo::default()
                                 .buffer(buffer.buffer)
                                 .offset(buffer.offset(*array_element))
-                                .range(buffer.aligned_size)
-                                .build(),
+                                .range(buffer.aligned_size),
                         );
 
-                        writes.push(
-                            vk::WriteDescriptorSet::builder()
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                                .buffer_info(&buffers[buffers.len() - 1..])
-                                .build(),
-                        );
+                                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER),
+                            buffers.len() - 1..buffers.len(),
+                        ));
 
                         Binding {
                             access,
@@ -345,7 +341,7 @@ impl DescriptorSet {
                         let texture = texture.internal();
 
                         // Create a view for the texture
-                        let create_info = vk::ImageViewCreateInfo::builder()
+                        let create_info = vk::ImageViewCreateInfo::default()
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
@@ -361,28 +357,25 @@ impl DescriptorSet {
                                 b: vk::ComponentSwizzle::B,
                                 a: vk::ComponentSwizzle::A,
                             })
-                            .image(texture.image)
-                            .build();
+                            .image(texture.image);
 
                         let view = ctx.device.create_image_view(&create_info, None).unwrap();
 
                         images.push(
-                            vk::DescriptorImageInfo::builder()
+                            vk::DescriptorImageInfo::default()
                                 .sampler(sampler_cache.get(&ctx.device, *sampler))
                                 .image_view(view)
-                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                                .build(),
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
                         );
 
-                        writes.push(
-                            vk::WriteDescriptorSet::builder()
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                                .image_info(&images[images.len() - 1..])
-                                .build(),
-                        );
+                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
+                            images.len() - 1..images.len(),
+                        ));
 
                         Binding {
                             access,
@@ -409,7 +402,7 @@ impl DescriptorSet {
                         let texture = texture.internal();
 
                         // Create a view for the texture
-                        let create_info = vk::ImageViewCreateInfo::builder()
+                        let create_info = vk::ImageViewCreateInfo::default()
                             .format(texture.format)
                             .view_type(vk::ImageViewType::TYPE_2D)
                             .subresource_range(vk::ImageSubresourceRange {
@@ -425,27 +418,24 @@ impl DescriptorSet {
                                 b: vk::ComponentSwizzle::B,
                                 a: vk::ComponentSwizzle::A,
                             })
-                            .image(texture.image)
-                            .build();
+                            .image(texture.image);
 
                         let view = ctx.device.create_image_view(&create_info, None).unwrap();
 
                         images.push(
-                            vk::DescriptorImageInfo::builder()
+                            vk::DescriptorImageInfo::default()
                                 .image_view(view)
-                                .image_layout(vk::ImageLayout::GENERAL)
-                                .build(),
+                                .image_layout(vk::ImageLayout::GENERAL),
                         );
 
-                        writes.push(
-                            vk::WriteDescriptorSet::builder()
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-                                .image_info(&images[images.len() - 1..])
-                                .build(),
-                        );
+                                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE),
+                            images.len() - 1..images.len(),
+                        ));
 
                         Binding {
                             access,
@@ -473,7 +463,7 @@ impl DescriptorSet {
                         let cube_map = cube_map.internal();
 
                         // Create a view for the texture
-                        let create_info = vk::ImageViewCreateInfo::builder()
+                        let create_info = vk::ImageViewCreateInfo::default()
                             .format(cube_map.format)
                             .view_type(vk::ImageViewType::CUBE)
                             .subresource_range(vk::ImageSubresourceRange {
@@ -489,28 +479,25 @@ impl DescriptorSet {
                                 b: vk::ComponentSwizzle::B,
                                 a: vk::ComponentSwizzle::A,
                             })
-                            .image(cube_map.image)
-                            .build();
+                            .image(cube_map.image);
 
                         let view = ctx.device.create_image_view(&create_info, None).unwrap();
 
                         images.push(
-                            vk::DescriptorImageInfo::builder()
+                            vk::DescriptorImageInfo::default()
                                 .sampler(sampler_cache.get(&ctx.device, *sampler))
                                 .image_view(view)
-                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                                .build(),
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
                         );
 
-                        writes.push(
-                            vk::WriteDescriptorSet::builder()
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                                .image_info(&images[images.len() - 1..])
-                                .build(),
-                        );
+                                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
+                            images.len() - 1..images.len(),
+                        ));
 
                         Binding {
                             access,
@@ -530,23 +517,21 @@ impl DescriptorSet {
                     }
                     DescriptorValue::TopLevelAccelerationStructure(tlas) => {
                         tlas_writes.push(
-                            vk::WriteDescriptorSetAccelerationStructureKHR::builder()
+                            vk::WriteDescriptorSetAccelerationStructureKHR::default()
                                 .acceleration_structures(std::slice::from_ref(
                                     &tlas.internal().acceleration_struct,
                                 )),
                         );
                         let idx = tlas_writes.len() - 1;
 
-                        writes.push({
-                            let mut write = vk::WriteDescriptorSet::builder()
-                                .push_next(&mut tlas_writes[idx])
+                        writes.push((
+                            vk::WriteDescriptorSet::default()
                                 .dst_set(self.set)
                                 .dst_binding(update.binding)
                                 .dst_array_element(update.array_element as u32)
-                                .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR);
-                            write.descriptor_count = 1;
-                            write.build()
-                        });
+                                .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR),
+                            idx..tlas_writes.len(),
+                        ));
 
                         Binding {
                             access,
@@ -563,6 +548,34 @@ impl DescriptorSet {
                 }
             });
         }
+
+        // Map temp writes to final writes
+        let writes: Vec<_> = writes
+            .into_iter()
+            .map(|(mut write, range)| match write.descriptor_type {
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER | vk::DescriptorType::STORAGE_IMAGE => {
+                    if range.is_empty() {
+                        println!("empty");
+                    }
+                    write.image_info(&images[range])
+                }
+                vk::DescriptorType::STORAGE_BUFFER | vk::DescriptorType::UNIFORM_BUFFER => {
+                    if range.is_empty() {
+                        println!("empty");
+                    }
+                    write.buffer_info(&buffers[range])
+                }
+                vk::DescriptorType::ACCELERATION_STRUCTURE_KHR => {
+                    if range.is_empty() {
+                        println!("empty");
+                    }
+                    write.p_next = <*const _>::cast(&tlas_writes[range.start]);
+                    write.descriptor_count = 1;
+                    write
+                }
+                _ => unreachable!("should handle all possible types"),
+            })
+            .collect();
 
         ctx.device.update_descriptor_sets(&writes, &[]);
     }

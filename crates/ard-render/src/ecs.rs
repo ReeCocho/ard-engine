@@ -27,13 +27,13 @@ use ard_render_renderers::{
 };
 use ard_render_si::{bindings::Layouts, consts::*};
 use ard_render_textures::factory::TextureFactory;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::HasDisplayHandle;
 
 use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin};
 
 pub(crate) struct RenderEcs {
     layouts: Layouts,
-    canvas: Canvas,
+    canvas: Option<Canvas>,
     camera: CameraUbo,
     scene_renderer: SceneRenderer,
     sun_shadows_renderer: SunShadowsRenderer,
@@ -67,40 +67,23 @@ const DEFAULT_ACTIVE_CAMERA: ActiveCamera = ActiveCamera {
 };
 
 impl RenderEcs {
-    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
-        plugin: RenderPlugin,
-        window: &W,
-        window_size: (u32, u32),
-    ) -> (Self, Factory) {
+    pub fn new<D: HasDisplayHandle>(plugin: RenderPlugin, display_handle: &D) -> (Self, Factory) {
         // Initialize the backend based on what renderer we want
         let backend = {
             ard_pal::backend::VulkanBackend::new(ard_pal::backend::VulkanBackendCreateInfo {
                 app_name: String::from("ard"),
                 engine_name: String::from("ard"),
-                window,
+                display_handle,
                 debug: plugin.debug,
             })
             .unwrap()
         };
 
+        // Dummy window size
+        let window_size = (16, 16);
+
         // Create our graphics context
         let ctx = Context::new(backend);
-
-        // Create our surface
-        let surface = Surface::new(
-            ctx.clone(),
-            SurfaceCreateInfo {
-                config: SurfaceConfiguration {
-                    width: window_size.0,
-                    height: window_size.1,
-                    present_mode: plugin.settings.present_mode,
-                    format: Format::Bgra8Unorm,
-                },
-                window,
-                debug_name: Some(String::from("primary_surface")),
-            },
-        )
-        .unwrap();
 
         let layouts = Layouts::new(&ctx);
         let factory = Factory::new(ctx.clone(), &layouts);
@@ -108,15 +91,6 @@ impl RenderEcs {
         let fxaa = Fxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
         let lighting = LightClusters::new(&ctx, &layouts);
-
-        let canvas = Canvas::new(
-            &ctx,
-            surface,
-            window_size,
-            plugin.settings.present_mode,
-            &hzb_render,
-            &ao,
-        );
 
         let mut scene_renderer = SceneRenderer::new(&ctx, &layouts);
         let sun_shadows_renderer = SunShadowsRenderer::new(&ctx, &layouts, MAX_SHADOW_CASCADES);
@@ -162,6 +136,7 @@ impl RenderEcs {
                 .sets()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
+            /*
             scene_renderer
                 .color_pass_sets_mut()
                 .update_ao_image_binding(frame, canvas.ao().texture());
@@ -169,6 +144,7 @@ impl RenderEcs {
             scene_renderer
                 .transparent_pass_sets_mut()
                 .update_ao_image_binding(frame, canvas.ao().texture());
+            */
 
             scene_renderer
                 .color_pass_sets_mut()
@@ -182,7 +158,7 @@ impl RenderEcs {
         (
             Self {
                 froxels: FroxelGenPipeline::new(&ctx, &layouts),
-                canvas,
+                canvas: None,
                 camera: CameraUbo::new(&ctx, true, &layouts),
                 scene_renderer,
                 sun_shadows_renderer,
@@ -218,14 +194,57 @@ impl RenderEcs {
         // Upload factory resources
         self.factory.process(frame.frame);
 
+        // If there is no window size, there is no window to render to.
+        let window = match frame.window.as_ref() {
+            Some(window) => window,
+            None => return frame,
+        };
+
+        // If there is no canvas, we must create one
+        let (canvas, new_canvas) = match &mut self.canvas {
+            Some(canvas) => (canvas, false),
+            None => {
+                let surface = Surface::new(
+                    self.ctx.clone(),
+                    SurfaceCreateInfo {
+                        config: SurfaceConfiguration {
+                            width: window.size.0,
+                            height: window.size.1,
+                            present_mode: frame.present_settings.present_mode,
+                            format: Format::Bgra8Unorm,
+                        },
+                        window: WindowSource::<winit::window::Window>::Raw {
+                            window: window.window_handle,
+                            display: window.display_handle,
+                        },
+                        debug_name: Some(String::from("primary_surface")),
+                    },
+                )
+                .unwrap();
+
+                let canvas = Canvas::new(
+                    &self.ctx,
+                    surface,
+                    window.size,
+                    frame.present_settings.present_mode,
+                    &self.hzb_render,
+                    &self.ao,
+                );
+
+                self.canvas = Some(canvas);
+                (self.canvas.as_mut().unwrap(), true)
+            }
+        };
+
         // Update the canvas size and acquire a new swap chain image
-        if self.canvas.resize(
+        if canvas.resize(
             &self.ctx,
             &self.hzb_render,
             &self.ao,
             frame.canvas_size,
             frame.msaa_settings.samples,
-        ) {
+        ) || new_canvas
+        {
             self.bloom.resize(&self.ctx, frame.canvas_size, 6);
             self.sun_shafts.resize(&self.ctx, frame.canvas_size);
             self.smaa.resize(&self.ctx, frame.canvas_size);
@@ -238,10 +257,10 @@ impl RenderEcs {
                     .bind_sun_shafts(frame, self.sun_shafts.image());
                 self.scene_renderer
                     .color_pass_sets_mut()
-                    .update_ao_image_binding(frame, self.canvas.ao().texture());
+                    .update_ao_image_binding(frame, canvas.ao().texture());
                 self.scene_renderer
                     .transparent_pass_sets_mut()
-                    .update_ao_image_binding(frame, self.canvas.ao().texture());
+                    .update_ao_image_binding(frame, canvas.ao().texture());
             }
         }
 
@@ -286,18 +305,21 @@ impl RenderEcs {
                     .shadow_cascade(i)
                     .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
             }),
-            self.canvas.render_target().depth_resolve(),
+            canvas.render_target().depth_resolve(),
         );
 
         self.smaa
-            .update_bindings(frame.frame, self.canvas.render_target().linear_color());
+            .update_bindings(frame.frame, canvas.render_target().linear_color());
 
-        self.canvas.acquire_image();
+        canvas.acquire_image();
+
+        // Reborrow canvas immutably
+        let canvas = self.canvas.as_ref().unwrap();
 
         // Update the camera
         let main_camera = match frame.active_cameras.main_camera() {
             Some(camera) => {
-                let (width, height) = self.canvas.size();
+                let (width, height) = canvas.size();
                 self.camera
                     .update(frame.frame, &camera.camera, width, height, camera.model);
                 camera
@@ -307,9 +329,11 @@ impl RenderEcs {
 
         let view_location = main_camera.model.position();
 
+        let textures = self.factory.inner.textures.lock().unwrap();
         let meshes = self.factory.inner.meshes.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
         let materials = self.factory.inner.materials.lock().unwrap();
+        let material_instances = self.factory.inner.material_instances.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
         let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
@@ -325,16 +349,20 @@ impl RenderEcs {
         self.scene_renderer.upload(
             frame.frame,
             &frame.object_data,
+            &textures,
             &meshes,
             &materials,
+            &material_instances,
             view_location,
         );
 
         self.sun_shadows_renderer.upload(
             frame.frame,
             &frame.object_data,
+            &textures,
             &meshes,
             &materials,
+            &material_instances,
             view_location,
         );
 
@@ -345,7 +373,7 @@ impl RenderEcs {
         self.lighting.update_set(frame.frame, &frame.lights);
 
         self.scene_renderer
-            .update_bindings(frame.frame, &frame.object_data, self.canvas.hzb());
+            .update_bindings(frame.frame, &frame.object_data, canvas.hzb());
 
         self.sun_shadows_renderer
             .update_bindings(frame.frame, &frame.object_data);
@@ -359,7 +387,7 @@ impl RenderEcs {
             frame.frame,
             &main_camera.camera,
             main_camera.model,
-            self.canvas.size(),
+            canvas.size(),
             frame.lights.global().sun_direction(),
             frame.lights.global().shadow_cascades(),
         );
@@ -367,9 +395,9 @@ impl RenderEcs {
         self.gui_renderer.prepare(GuiDrawPrepare {
             frame: frame.frame,
             // We always render to native resolution for the GUI.
-            canvas_size: frame.window_size,
+            canvas_size: window.size,
             scene_texture: (
-                self.canvas.render_target().linear_color(),
+                canvas.render_target().linear_color(),
                 frame.smaa_settings.enabled as usize,
             ),
             gui_output: &mut frame.gui_output,
@@ -380,7 +408,7 @@ impl RenderEcs {
         let final_color_src = if frame.path_tracer_settings.enabled {
             self.path_tracer.image()
         } else {
-            self.canvas.render_target().final_color()
+            canvas.render_target().final_color()
         };
 
         self.bloom.bind_images(frame.frame, final_color_src);
@@ -388,7 +416,7 @@ impl RenderEcs {
         self.tonemapping.bind_images(
             frame.frame,
             final_color_src,
-            self.canvas.render_target().final_depth(),
+            canvas.render_target().final_depth(),
         );
 
         // Phase 1:
@@ -441,6 +469,7 @@ impl RenderEcs {
         // Render the high-z depth image
         self.render_hzb(
             &mut main_cb,
+            canvas,
             &frame,
             &materials,
             &meshes,
@@ -479,7 +508,7 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        self.generate_hzb(&mut compute_cb, &frame);
+        self.generate_hzb(&mut compute_cb, canvas, &frame);
         self.generate_froxels(&mut compute_cb, &frame);
         self.cluster_lights(&mut compute_cb, &frame);
 
@@ -495,7 +524,7 @@ impl RenderEcs {
         Self::depth_prepass(
             &mut cb,
             &frame,
-            &self.canvas,
+            canvas,
             &self.camera,
             &self.scene_renderer,
             &materials,
@@ -509,7 +538,7 @@ impl RenderEcs {
         Self::generate_ao_image(
             &mut cb,
             &frame,
-            &self.canvas,
+            canvas,
             &self.camera,
             &self.ao,
             &frame.ao_settings,
@@ -531,7 +560,7 @@ impl RenderEcs {
         Self::render_opaque(
             &mut main_cb,
             &frame,
-            &self.canvas,
+            canvas,
             &self.camera,
             &self.scene_renderer,
             &self.proc_skybox,
@@ -546,7 +575,7 @@ impl RenderEcs {
         Self::render_transparent(
             &mut main_cb,
             &frame,
-            &self.canvas,
+            canvas,
             &self.camera,
             &self.scene_renderer,
             &materials,
@@ -566,7 +595,7 @@ impl RenderEcs {
         self.sun_shafts
             .transfer_image_ownership(&mut compute_cb, QueueType::Main);
         compute_cb.transfer_texture_ownership(
-            self.canvas.render_target().depth_resolve(),
+            canvas.render_target().depth_resolve(),
             0,
             0,
             1,
@@ -593,14 +622,14 @@ impl RenderEcs {
             // offscreen (i.e. not presenting the scene)
             if frame.smaa_settings.enabled || !frame.present_scene {
                 ColorAttachmentDestination::Texture {
-                    texture: self.canvas.render_target().linear_color(),
+                    texture: canvas.render_target().linear_color(),
                     array_element: 0,
                     mip_level: 0,
                 }
             }
             // Otherwise, we'll draw directly to the surface
             else {
-                ColorAttachmentDestination::SurfaceImage(self.canvas.image())
+                ColorAttachmentDestination::SurfaceImage(canvas.image())
             },
             &frame.tonemapping_settings,
             frame.dt,
@@ -612,10 +641,10 @@ impl RenderEcs {
                 frame.frame,
                 &mut cb,
                 if frame.present_scene {
-                    ColorAttachmentDestination::SurfaceImage(self.canvas.image())
+                    ColorAttachmentDestination::SurfaceImage(canvas.image())
                 } else {
                     ColorAttachmentDestination::Texture {
-                        texture: self.canvas.render_target().linear_color(),
+                        texture: canvas.render_target().linear_color(),
                         array_element: 1,
                         mip_level: 0,
                     }
@@ -627,7 +656,7 @@ impl RenderEcs {
         cb.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
-                    dst: ColorAttachmentDestination::SurfaceImage(self.canvas.image()),
+                    dst: ColorAttachmentDestination::SurfaceImage(canvas.image()),
                     load_op: if frame.present_scene {
                         LoadOp::Load
                     } else {
@@ -642,16 +671,18 @@ impl RenderEcs {
             },
             Some("gui_rendering"),
             |pass| {
-                self.gui_renderer
-                    .render(frame.frame, frame.window_size, pass);
+                self.gui_renderer.render(frame.frame, window.size, pass);
             },
         );
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));
 
+        // Reborrow canvas as mut
+        let canvas = self.canvas.as_mut().unwrap();
+
         // Present the surface image
-        self.canvas.present(&self.ctx, frame.window_size);
+        canvas.present(&self.ctx, window.size);
 
         frame
     }
@@ -662,6 +693,7 @@ impl RenderEcs {
     fn render_hzb<'a>(
         &'a self,
         commands: &mut CommandBuffer<'a>,
+        canvas: &'a Canvas,
         frame_data: &FrameData,
         materials: &'a ResourceAllocator<MaterialResource>,
         meshes: &'a ResourceAllocator<MeshResource>,
@@ -671,11 +703,11 @@ impl RenderEcs {
     ) {
         puffin::profile_function!();
 
-        let (width, height, _) = self.canvas.render_target().color_target().dims();
+        let (width, height, _) = canvas.render_target().color_target().dims();
         let render_area = Vec2::new(width as f32, height as f32);
 
         commands.render_pass(
-            self.canvas.render_target().hzb_pass(),
+            canvas.render_target().hzb_pass(),
             Some("render_hzb"),
             |pass| {
                 if frame_data.object_data.static_dirty() {
@@ -702,7 +734,7 @@ impl RenderEcs {
         );
 
         // Transfer depth so it can be read when generating the HZB
-        let depth = self.canvas.render_target().final_depth();
+        let depth = canvas.render_target().final_depth();
         commands.transfer_texture_ownership(
             depth,
             0,
@@ -713,24 +745,27 @@ impl RenderEcs {
         );
 
         // Transfer the HZB image itself.
-        self.canvas
+        canvas
             .hzb()
             .transfer_ownership(commands, QueueType::Compute);
     }
 
     #[inline(never)]
     /// Generates the hierarchical-z buffer for use in draw call generation.
-    fn generate_hzb<'a>(&'a self, commands: &mut CommandBuffer<'a>, frame_data: &FrameData) {
+    fn generate_hzb<'a>(
+        &'a self,
+        commands: &mut CommandBuffer<'a>,
+        canvas: &'a Canvas,
+        frame_data: &FrameData,
+    ) {
         puffin::profile_function!();
 
         self.hzb_render
-            .generate(frame_data.frame, commands, self.canvas.hzb());
+            .generate(frame_data.frame, commands, canvas.hzb());
 
-        let depth = self.canvas.render_target().final_depth();
+        let depth = canvas.render_target().final_depth();
         commands.transfer_texture_ownership(depth, 0, 0, depth.mip_count(), QueueType::Main, None);
-        self.canvas
-            .hzb()
-            .transfer_ownership(commands, QueueType::Main);
+        canvas.hzb().transfer_ownership(commands, QueueType::Main);
     }
 
     #[inline(never)]
@@ -742,7 +777,7 @@ impl RenderEcs {
             return;
         }
 
-        info!("Generating camera froxels.");
+        // info!("Generating camera froxels.");
         self.froxels.regen(frame_data.frame, commands, &self.camera);
     }
 

@@ -1,0 +1,147 @@
+use anyhow::Result;
+use ard_engine::{ecs::prelude::*, log::*};
+use path_macro::path;
+use std::path::PathBuf;
+
+use crate::{
+    assets::meta::{MetaData, MetaFile},
+    tasks::{EditorTask, TaskConfirmation},
+};
+
+use super::EditorAssets;
+
+pub struct ModelImportTask {
+    path: PathBuf,
+    meta_file: Option<MetaFile>,
+}
+
+impl ModelImportTask {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            meta_file: None,
+        }
+    }
+}
+
+impl EditorTask for ModelImportTask {
+    fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
+        let mut res = TaskConfirmation::Wait;
+
+        ui.label(format!("Do you want to import `{}`?", self.path.display()));
+
+        if ui.button("Yes").clicked() {
+            res = TaskConfirmation::Ready;
+        }
+
+        if ui.button("No").clicked() {
+            res = TaskConfirmation::Cancel;
+        }
+
+        Ok(res)
+    }
+
+    fn run(&mut self) -> Result<()> {
+        info!("Importing `{}`...", self.path.display());
+
+        // Create a temporary folder for artifacts
+        let temp_folder = tempfile::TempDir::new()?;
+
+        // Run the command
+        let in_path = format!("{}", self.path.display());
+        let out_path = format!("{}", temp_folder.path().display());
+
+        let output = std::process::Command::new("./tools/gltf-oven")
+            .args([
+                "--path",
+                &in_path,
+                "--out",
+                &out_path,
+                "--compress-textures",
+                "--uuid-names",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
+            return Err(anyhow::Error::msg(err_msg));
+        }
+
+        // Find the primary model asset
+        let mut model_file = None;
+        for entry in temp_folder.path().read_dir()? {
+            let entry = entry?;
+            let path = entry.path();
+            let ext = match path.extension() {
+                Some(ext) => ext,
+                None => continue,
+            };
+
+            if ext == "ard_mdl" {
+                model_file = Some(entry.file_name());
+                break;
+            }
+        }
+
+        let model_file = match model_file {
+            Some(model_file) => model_file,
+            None => return Err(anyhow::Error::msg("could not find model file")),
+        };
+
+        // Move artifacts into the package
+        let folder = temp_folder.into_path();
+        fs_extra::dir::move_dir(
+            folder,
+            "./packages/main",
+            &fs_extra::dir::CopyOptions {
+                overwrite: true,
+                content_only: true,
+                ..Default::default()
+            },
+        )?;
+
+        // Copy raw asset into the assets folder
+        let (out_path, meta_path) = match self.path.file_name() {
+            Some(file_name) => {
+                let out_path = path!("./main" / file_name);
+                let mut meta_path = out_path.clone();
+                meta_path.set_extension("glb.meta");
+
+                (out_path, meta_path)
+            }
+            None => return Err(anyhow::Error::msg("Invalid file name.")),
+        };
+
+        std::fs::copy(in_path, path!("./assets" / out_path))?;
+
+        // Create the meta file for the asset
+        let meta = MetaFile {
+            raw: out_path,
+            baked: model_file.into(),
+            data: MetaData::Model,
+        };
+
+        let file = std::fs::File::create(path!("./assets" / meta_path))?;
+        let writer = std::io::BufWriter::new(file);
+        ron::ser::to_writer(writer, &meta)?;
+
+        self.meta_file = Some(meta);
+
+        Ok(())
+    }
+
+    fn complete(
+        &mut self,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let mut assets = res.get_mut::<EditorAssets>().unwrap();
+        let meta_file = self.meta_file.take().unwrap();
+        assets.add_meta_file(meta_file);
+
+        println!("Task complete...");
+
+        Ok(())
+    }
+}

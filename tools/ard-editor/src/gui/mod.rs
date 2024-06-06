@@ -1,8 +1,10 @@
+pub mod assets;
+pub mod menu_bar;
 pub mod scene;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 
-use self::scene::SceneView;
+use self::{assets::AssetsView, menu_bar::MenuBar, scene::SceneView};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Pane {
@@ -12,7 +14,9 @@ pub enum Pane {
 
 pub struct EditorView {
     tree: egui_tiles::Tree<Pane>,
+    menu_bar: MenuBar,
     scene: SceneView,
+    assets: AssetsView,
 }
 
 pub struct EditorViewContext<'a> {
@@ -29,6 +33,7 @@ struct EditorViewBehavior<'a> {
     queries: &'a Queries<Everything>,
     res: &'a Res<Everything>,
     scene: &'a mut SceneView,
+    assets: &'a mut AssetsView,
 }
 
 impl Default for EditorView {
@@ -43,14 +48,16 @@ impl Default for EditorView {
 
         EditorView {
             tree: egui_tiles::Tree::new("editor_view_tree", root, tiles),
+            menu_bar: MenuBar,
             scene: SceneView {},
+            assets: AssetsView {},
         }
     }
 }
 
 impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
-    fn tab_title_for_pane(&mut self, _pane: &Pane) -> egui::WidgetText {
-        "blarg".into()
+    fn tab_title_for_pane(&mut self, pane: &Pane) -> egui::WidgetText {
+        format! {"{pane:?}"}.into()
     }
 
     fn pane_ui(
@@ -68,7 +75,7 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
         };
         match *pane {
             Pane::Scene => self.scene.show(ctx),
-            Pane::Assets => egui_tiles::UiResponse::None,
+            Pane::Assets => self.assets.show(ctx),
         }
     }
 }
@@ -83,12 +90,15 @@ impl GuiView for EditorView {
         res: &Res<Everything>,
     ) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            self.menu_bar.show(ui, commands, queries, res);
+
             let mut behavior = EditorViewBehavior {
                 tick,
                 commands,
                 queries,
                 res,
                 scene: &mut self.scene,
+                assets: &mut self.assets,
             };
             self.tree.ui(&mut behavior, ui);
         });

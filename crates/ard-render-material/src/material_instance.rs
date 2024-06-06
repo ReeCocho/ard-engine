@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use ard_ecs::prelude::Component;
 use ard_render_base::{
@@ -41,6 +41,7 @@ pub struct MaterialInstanceResource {
     pub data_slot: Option<MaterialSlot>,
     pub data_ptrs: Option<Arc<[u64; FRAMES_IN_FLIGHT]>>,
     pub textures_slot: Option<MaterialSlot>,
+    pub textures_ready: AtomicBool,
 }
 
 impl MaterialInstance {
@@ -116,6 +117,7 @@ impl MaterialInstanceResource {
             data_slot,
             data_ptrs,
             textures_slot,
+            textures_ready: AtomicBool::new(true),
         })
     }
 }

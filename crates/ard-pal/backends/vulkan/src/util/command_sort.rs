@@ -46,9 +46,9 @@ pub(crate) struct CommandSorting {
     /// All memory barriers.
     memory_barriers: Vec<MemoryBarrier>,
     /// All buffer memory barriers.
-    buffer_barriers: Vec<vk::BufferMemoryBarrier2>,
+    buffer_barriers: Vec<vk::BufferMemoryBarrier2<'static>>,
     /// All image memory barriers.
-    image_barriers: Vec<vk::ImageMemoryBarrier2>,
+    image_barriers: Vec<vk::ImageMemoryBarrier2<'static>>,
 }
 
 unsafe impl Send for CommandSorting {}
@@ -178,21 +178,19 @@ impl CommandSorting {
                 memory_barriers = memory_barriers_map
                     .iter()
                     .map(|(dst, src)| {
-                        vk::MemoryBarrier2::builder()
+                        vk::MemoryBarrier2::default()
                             .dst_access_mask(dst.0)
                             .dst_stage_mask(dst.1)
                             .src_access_mask(src.0)
                             .src_stage_mask(src.1)
-                            .build()
                     })
                     .collect();
 
-                let dep = vk::DependencyInfo::builder()
+                let dep = vk::DependencyInfo::default()
                     .dependency_flags(vk::DependencyFlags::BY_REGION)
                     .memory_barriers(&memory_barriers)
                     .buffer_memory_barriers(&buffer_barriers)
-                    .image_memory_barriers(&image_barriers)
-                    .build();
+                    .image_memory_barriers(&image_barriers);
 
                 device.cmd_pipeline_barrier2(cb, &dep);
             }
@@ -2742,7 +2740,7 @@ impl CommandSorting {
         );
 
         self.buffer_barriers.push(
-            vk::BufferMemoryBarrier2::builder()
+            vk::BufferMemoryBarrier2::default()
                 .src_queue_family_index(info.queue_families.to_index(info.queue))
                 .src_access_mask(src_access)
                 .src_stage_mask(src_stage)
@@ -2751,8 +2749,7 @@ impl CommandSorting {
                 .dst_stage_mask(vk::PipelineStageFlags2::empty())
                 .buffer(buffer.internal().buffer)
                 .size(buffer.internal().aligned_size)
-                .offset(buffer.internal().offset(array_element))
-                .build(),
+                .offset(buffer.internal().offset(array_element)),
         );
     }
 
@@ -2805,7 +2802,7 @@ impl CommandSorting {
             );
 
             self.image_barriers.push(
-                vk::ImageMemoryBarrier2::builder()
+                vk::ImageMemoryBarrier2::default()
                     .src_queue_family_index(info.queue_families.to_index(info.queue))
                     .src_access_mask(src_access)
                     .src_stage_mask(src_stage)
@@ -2816,15 +2813,13 @@ impl CommandSorting {
                     .new_layout(old_usage.layout)
                     .image(texture.internal().image)
                     .subresource_range(
-                        vk::ImageSubresourceRange::builder()
+                        vk::ImageSubresourceRange::default()
                             .aspect_mask(texture.internal().aspect_flags)
                             .base_mip_level(base_mip + i as u32)
                             .level_count(1)
                             .base_array_layer(array_element)
-                            .layer_count(1)
-                            .build(),
-                    )
-                    .build(),
+                            .layer_count(1),
+                    ),
             );
         }
     }
@@ -2913,7 +2908,7 @@ impl CommandSorting {
             );
 
             self.image_barriers.push(
-                vk::ImageMemoryBarrier2::builder()
+                vk::ImageMemoryBarrier2::default()
                     .src_queue_family_index(info.queue_families.to_index(info.queue))
                     .src_access_mask(src_access)
                     .src_stage_mask(src_stage)
@@ -2924,15 +2919,13 @@ impl CommandSorting {
                     .new_layout(old_usage.layout)
                     .image(cube_map.internal().image)
                     .subresource_range(
-                        vk::ImageSubresourceRange::builder()
+                        vk::ImageSubresourceRange::default()
                             .aspect_mask(cube_map.internal().aspect_flags)
                             .base_mip_level(base_mip + i as u32)
                             .level_count(1)
                             .base_array_layer(array_element)
-                            .layer_count(1)
-                            .build(),
-                    )
-                    .build(),
+                            .layer_count(1),
+                    ),
             );
         }
     }
@@ -3026,13 +3019,12 @@ impl CommandSorting {
             }
             PipelineBarrier::Image(mut barrier) => {
                 barrier.image = image;
-                barrier.subresource_range = vk::ImageSubresourceRange::builder()
+                barrier.subresource_range = vk::ImageSubresourceRange::default()
                     .aspect_mask(aspect_flags)
                     .base_mip_level(mip_level)
                     .level_count(1)
                     .base_array_layer(array_element)
-                    .layer_count(1)
-                    .build();
+                    .layer_count(1);
 
                 match &old.queue {
                     Some(old) => {
@@ -3093,14 +3085,13 @@ impl CommandSorting {
     }
 }
 
-impl From<MemoryBarrier> for vk::MemoryBarrier2 {
+impl From<MemoryBarrier> for vk::MemoryBarrier2<'static> {
     #[inline(always)]
     fn from(value: MemoryBarrier) -> Self {
-        vk::MemoryBarrier2::builder()
+        vk::MemoryBarrier2::default()
             .src_access_mask(value.src_access)
             .src_stage_mask(value.src_stage)
             .dst_access_mask(value.dst_access)
             .dst_stage_mask(value.dst_stage)
-            .build()
     }
 }

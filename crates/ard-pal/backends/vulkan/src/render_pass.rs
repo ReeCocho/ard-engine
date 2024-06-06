@@ -112,7 +112,7 @@ impl RenderPassCache {
                 sample_count = crate::util::to_vk_sample_count(attachment.samples);
 
                 attachments.push(
-                    vk::AttachmentDescription2::builder()
+                    vk::AttachmentDescription2::default()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
@@ -131,8 +131,7 @@ impl RenderPassCache {
                                 cube_map.internal().format
                             }
                         })
-                        .samples(sample_count)
-                        .build(),
+                        .samples(sample_count),
                 );
             }
 
@@ -158,7 +157,7 @@ impl RenderPassCache {
                 };
 
                 attachments.push(
-                    vk::AttachmentDescription2::builder()
+                    vk::AttachmentDescription2::default()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
@@ -177,8 +176,7 @@ impl RenderPassCache {
                                 cube_map.internal().format
                             }
                         })
-                        .samples(vk::SampleCountFlags::TYPE_1)
-                        .build(),
+                        .samples(vk::SampleCountFlags::TYPE_1),
                 );
             }
 
@@ -213,14 +211,13 @@ impl RenderPassCache {
                 };
 
                 attachments.push(
-                    vk::AttachmentDescription2::builder()
+                    vk::AttachmentDescription2::default()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(format)
-                        .samples(sample_count)
-                        .build(),
+                        .samples(sample_count),
                 );
             }
 
@@ -251,14 +248,13 @@ impl RenderPassCache {
                 };
 
                 attachments.push(
-                    vk::AttachmentDescription2::builder()
+                    vk::AttachmentDescription2::default()
                         .initial_layout(initial_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
                         .format(format)
-                        .samples(vk::SampleCountFlags::TYPE_1)
-                        .build(),
+                        .samples(vk::SampleCountFlags::TYPE_1),
                 );
             }
 
@@ -266,19 +262,17 @@ impl RenderPassCache {
             let mut attachment_refs = Vec::with_capacity(pass.color_attachments.len());
             for (i, _) in pass.color_attachments.iter().enumerate() {
                 attachment_refs.push(
-                    vk::AttachmentReference2::builder()
+                    vk::AttachmentReference2::default()
                         .attachment(i as u32)
-                        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .build(),
+                        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
                 );
             }
 
             let mut resolve_attachment_refs: Vec<_> = (0..pass.color_attachments.len())
                 .map(|_| {
-                    vk::AttachmentReference2::builder()
+                    vk::AttachmentReference2::default()
                         .attachment(vk::ATTACHMENT_UNUSED)
                         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .build()
                 })
                 .collect();
 
@@ -292,61 +286,57 @@ impl RenderPassCache {
             let depth_resolve_attachment;
             let mut depth_resolve;
 
-            let subpass = vk::SubpassDescription2::builder()
+            let subpass = vk::SubpassDescription2::default()
                 .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
                 .view_mask(if is_cube_render { 0b111111 } else { 0 })
                 .color_attachments(&attachment_refs)
                 .resolve_attachments(&resolve_attachment_refs);
 
             let subpass = if let Some(attachment) = &pass.depth_stencil_attachment {
-                depth_attachment = vk::AttachmentReference2::builder()
+                depth_attachment = vk::AttachmentReference2::default()
                     .attachment(
                         (pass.color_attachments.len() + pass.color_resolve_attachments.len())
                             as u32,
                     )
-                    .layout(crate::util::depth_store_op_to_layout(attachment.store_op))
-                    .build();
+                    .layout(crate::util::depth_store_op_to_layout(attachment.store_op));
                 subpass.depth_stencil_attachment(&depth_attachment)
             } else {
                 subpass
             };
 
             if let Some(resolve) = &pass.depth_stencil_resolve_attachment {
-                depth_resolve_attachment = vk::AttachmentReference2::builder()
+                depth_resolve_attachment = vk::AttachmentReference2::default()
                     .attachment(
                         (pass.color_attachments.len() + pass.color_resolve_attachments.len() + 1)
                             as u32,
                     )
-                    .layout(crate::util::depth_store_op_to_layout(resolve.store_op))
-                    .build();
+                    .layout(crate::util::depth_store_op_to_layout(resolve.store_op));
 
-                depth_resolve = vk::SubpassDescriptionDepthStencilResolve::builder()
+                depth_resolve = vk::SubpassDescriptionDepthStencilResolve::default()
                     .depth_resolve_mode(crate::util::to_vk_resolve_mode(resolve.depth_resolve_mode))
                     .stencil_resolve_mode(crate::util::to_vk_resolve_mode(
                         resolve.stencil_resolve_mode,
                     ))
-                    .depth_stencil_resolve_attachment(&depth_resolve_attachment)
-                    .build();
+                    .depth_stencil_resolve_attachment(&depth_resolve_attachment);
             } else {
                 depth_resolve = vk::SubpassDescriptionDepthStencilResolve::default();
             }
 
-            let subpass = [subpass.push_next(&mut depth_resolve).build()];
+            let subpass = [subpass.push_next(&mut depth_resolve)];
 
             let cube_correlation_mask = [0b111111];
             let tex_correlation_mask = [];
 
             // Create the render pass
             unsafe {
-                let create_info = vk::RenderPassCreateInfo2::builder()
+                let create_info = vk::RenderPassCreateInfo2::default()
                     .attachments(&attachments)
                     .subpasses(&subpass)
                     .correlated_view_masks(if is_cube_render {
                         &cube_correlation_mask
                     } else {
                         &tex_correlation_mask
-                    })
-                    .build();
+                    });
 
                 VkRenderPass {
                     pass: device.create_render_pass2(&create_info, None).unwrap(),
@@ -429,13 +419,12 @@ impl Framebuffers {
             Some(framebuffer) => *framebuffer,
             None => {
                 let framebuffer = unsafe {
-                    let create_info = vk::FramebufferCreateInfo::builder()
+                    let create_info = vk::FramebufferCreateInfo::default()
                         .attachments(&images)
                         .width(extent.width)
                         .height(extent.height)
                         .layers(1)
-                        .render_pass(self.pass)
-                        .build();
+                        .render_pass(self.pass);
 
                     device.create_framebuffer(&create_info, None).unwrap()
                 };

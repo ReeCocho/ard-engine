@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 ard-engine = { path = "../../" }
+anyhow.workspace = true
 tokio.workspace = true
 serde.workspace = true
 thiserror.workspace = true
@@ -14,4 +15,10 @@ ron.workspace = true
 smallvec.workspace = true
 paste.workspace = true
 egui.workspace = true
+egui-phosphor.workspace = true
+rustc-hash.workspace = true
+crossbeam-channel.workspace = true
+fs_extra.workspace = true
 egui_tiles = "0.8"
+tempfile = "3.10"
+path_macro = "1.0.0"

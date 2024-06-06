@@ -24,6 +24,7 @@ pub mod prelude {
     pub type SurfaceImage = api::surface::SurfaceImage<crate::Backend>;
     pub use api::surface::{
         SurfaceConfiguration, SurfaceCreateError, SurfaceCreateInfo, SurfacePresentSuccess,
+        WindowSource,
     };
 
     // Compute pass

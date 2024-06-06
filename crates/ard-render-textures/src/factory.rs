@@ -42,6 +42,7 @@ pub enum MipUpdate {
 pub struct TextureUpload {
     pub staging: Buffer,
     pub mip_type: MipType,
+    pub loaded_mips: u32,
 }
 
 pub struct TextureMipUpload {

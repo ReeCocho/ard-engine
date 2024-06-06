@@ -5,7 +5,7 @@ use api::{
     types::{BufferUsage, MemoryUsage, SharingMode},
     Backend,
 };
-use ash::vk::{self, Handle};
+use ash::vk;
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
@@ -16,7 +16,7 @@ use crate::{
         id_gen::{IdGenerator, ResourceId},
         usage::BufferRegion,
     },
-    QueueFamilyIndices, VulkanBackend,
+    PhysicalDeviceProperties, QueueFamilyIndices, VulkanBackend,
 };
 
 pub struct Buffer {
@@ -42,44 +42,42 @@ impl Buffer {
     pub(crate) unsafe fn new(
         device: &ash::Device,
         qfi: &QueueFamilyIndices,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         on_drop: Sender<Garbage>,
         id_gen: &IdGenerator,
         allocator: &mut Allocator,
-        limits: &vk::PhysicalDeviceLimits,
-        accel_struct_props: &vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
-        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+        props: &PhysicalDeviceProperties,
         create_info: BufferCreateInfo,
     ) -> Result<Self, BufferCreateError> {
         // Determine memory alignment requirements
         let mut alignment_req = 0;
         if create_info.memory_usage == MemoryUsage::CpuToGpu {
-            alignment_req = alignment_req.max(limits.non_coherent_atom_size);
+            alignment_req = alignment_req.max(props.limits.non_coherent_atom_size);
         }
         if create_info
             .buffer_usage
             .contains(BufferUsage::UNIFORM_BUFFER)
         {
-            alignment_req = alignment_req.max(limits.min_uniform_buffer_offset_alignment);
+            alignment_req = alignment_req.max(props.limits.min_uniform_buffer_offset_alignment);
         }
         if create_info
             .buffer_usage
             .contains(BufferUsage::STORAGE_BUFFER)
         {
-            alignment_req = alignment_req.max(limits.min_storage_buffer_offset_alignment);
+            alignment_req = alignment_req.max(props.limits.min_storage_buffer_offset_alignment);
         }
         if create_info
             .buffer_usage
             .contains(BufferUsage::ACCELERATION_STRUCTURE_SCRATCH)
         {
-            alignment_req = alignment_req
-                .max(accel_struct_props.min_acceleration_structure_scratch_offset_alignment as u64);
+            alignment_req =
+                alignment_req.max(props.min_acceleration_structure_scratch_offset_alignment as u64);
         }
         if create_info
             .buffer_usage
             .contains(BufferUsage::SHADER_BINDING_TABLE)
         {
-            alignment_req = alignment_req.max(rt_props.shader_group_base_alignment as u64);
+            alignment_req = alignment_req.max(props.shader_group_base_alignment as u64);
         }
 
         // Round size to a multiple of the alignment
@@ -87,7 +85,7 @@ impl Buffer {
 
         // Create the buffer
         let qfi = qfi.queue_types_to_indices(create_info.queue_types);
-        let buffer_create_info = vk::BufferCreateInfo::builder()
+        let buffer_create_info = vk::BufferCreateInfo::default()
             .size(aligned_size * create_info.array_elements as u64)
             .usage(crate::util::to_vk_buffer_usage(create_info.buffer_usage))
             .sharing_mode(if qfi.len() == 1 {
@@ -95,8 +93,7 @@ impl Buffer {
             } else {
                 crate::util::to_vk_sharing_mode(create_info.sharing_mode)
             })
-            .queue_family_indices(&qfi)
-            .build();
+            .queue_family_indices(&qfi);
         let buffer = match device.create_buffer(&buffer_create_info, None) {
             Ok(buffer) => buffer,
             Err(err) => return Err(BufferCreateError::Other(err.to_string())),
@@ -133,15 +130,11 @@ impl Buffer {
         if let Some(name) = create_info.debug_name {
             if let Some(debug) = debug {
                 let name = CString::new(name).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::BUFFER)
-                    .object_handle(buffer.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(buffer)
+                    .object_name(&name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
             }
         }
 
@@ -201,7 +194,7 @@ impl Buffer {
         device: &ash::Device,
         array_elem: usize,
     ) -> vk::DeviceOrHostAddressKHR {
-        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.buffer);
+        let info = vk::BufferDeviceAddressInfo::default().buffer(self.buffer);
         let base = device.get_buffer_device_address(&info);
         let mut res = vk::DeviceOrHostAddressKHR::default();
         res.device_address = base + self.offset(array_elem);
@@ -214,7 +207,7 @@ impl Buffer {
         device: &ash::Device,
         array_elem: usize,
     ) -> vk::DeviceOrHostAddressConstKHR {
-        let info = vk::BufferDeviceAddressInfo::builder().buffer(self.buffer);
+        let info = vk::BufferDeviceAddressInfo::default().buffer(self.buffer);
         let base = device.get_buffer_device_address(&info);
         let mut res = vk::DeviceOrHostAddressConstKHR::default();
         res.device_address = base + self.offset(array_elem);

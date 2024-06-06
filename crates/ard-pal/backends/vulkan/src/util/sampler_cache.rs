@@ -13,7 +13,7 @@ pub(crate) struct SamplerCache {
 impl SamplerCache {
     pub unsafe fn get(&mut self, device: &ash::Device, sampler: Sampler) -> vk::Sampler {
         *self.samplers.entry(sampler).or_insert_with(|| {
-            let create_info = vk::SamplerCreateInfo::builder()
+            let create_info = vk::SamplerCreateInfo::default()
                 .min_filter(crate::util::to_vk_filter(sampler.min_filter))
                 .mag_filter(crate::util::to_vk_filter(sampler.mag_filter))
                 .mipmap_mode(match sampler.mipmap_filter {
@@ -48,8 +48,7 @@ impl SamplerCache {
                     Some(border_color) => crate::util::to_vk_border_color(border_color),
                     None => vk::BorderColor::FLOAT_OPAQUE_WHITE,
                 })
-                .unnormalized_coordinates(sampler.unnormalize_coords)
-                .build();
+                .unnormalized_coordinates(sampler.unnormalize_coords);
 
             device.create_sampler(&create_info, None).unwrap()
         })

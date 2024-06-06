@@ -1,26 +1,14 @@
 use ard_math::{IVec2, Vec2};
+use winit::{
+    dpi::{LogicalPosition, Position},
+    raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle},
+    window::{CursorGrabMode, CursorIcon},
+};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WindowId(usize);
-
-/// An operating system window that can present content and receive user input.
-///
-/// ## Window Sizes
-///
-/// There are three sizes associated with a window. The physical size which is
-/// the height and width in physical pixels on the monitor. The logical size
-/// which is the physical size scaled by an operating system provided factor to
-/// account for monitors with differing pixel densities or user preference. And
-/// the requested size, measured in logical pixels, which is the value submitted
-/// to the API when creating the window, or requesting that it be resized.
-///
-/// The actual size, in logical pixels, of the window may not match the
-/// requested size due to operating system limits on the window size, or the
-/// quantization of the logical size when converting the physical size to the
-/// logical size through the scaling factor.
-#[derive(Debug)]
 pub struct Window {
-    id: WindowId,
+    pub(crate) winit_window: winit::window::Window,
+    window_handle: RawWindowHandle,
+    display_handle: RawDisplayHandle,
     requested_width: f32,
     requested_height: f32,
     physical_width: u32,
@@ -36,23 +24,10 @@ pub struct Window {
     cursor_visible: bool,
     cursor_locked: bool,
     cursor_position: Option<Vec2>,
+    cursor_icon: CursorIcon,
     focused: bool,
     mode: WindowMode,
     command_queue: Vec<WindowCommand>,
-}
-
-/// The size limits on a window.
-/// These values are measured in logical pixels, so the user's
-/// scale factor does affect the size limits on the window.
-/// Please note that if the window is resizable, then when the window is
-/// maximized it may have a size outside of these limits. The functionality
-/// required to disable maximizing is not yet exposed by winit.
-#[derive(Debug, Clone, Copy)]
-pub struct WindowResizeConstraints {
-    pub min_width: f32,
-    pub min_height: f32,
-    pub max_width: f32,
-    pub max_height: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +43,23 @@ pub struct WindowDescriptor {
     pub cursor_visible: bool,
     pub cursor_locked: bool,
     pub mode: WindowMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WindowId(usize);
+
+/// The size limits on a window.
+/// These values are measured in logical pixels, so the user's
+/// scale factor does affect the size limits on the window.
+/// Please note that if the window is resizable, then when the window is
+/// maximized it may have a size outside of these limits. The functionality
+/// required to disable maximizing is not yet exposed by winit.
+#[derive(Debug, Clone, Copy)]
+pub struct WindowResizeConstraints {
+    pub min_width: f32,
+    pub min_height: f32,
+    pub max_width: f32,
+    pub max_height: f32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
@@ -111,6 +103,9 @@ pub enum WindowCommand {
     SetCursorPosition {
         position: Vec2,
     },
+    SetCursor {
+        icon: CursorIcon,
+    },
     SetMaximized {
         maximized: bool,
     },
@@ -131,7 +126,7 @@ impl WindowId {
     }
 
     pub const fn primary() -> Self {
-        WindowId(0)
+        WindowId(usize::MAX)
     }
 
     pub const fn is_primary(&self) -> bool {
@@ -158,24 +153,19 @@ impl Default for WindowDescriptor {
 }
 
 impl Window {
-    pub fn new(
-        id: WindowId,
-        window_descriptor: &WindowDescriptor,
-        physical_width: u32,
-        physical_height: u32,
-        scale_factor: f64,
-        position: Option<IVec2>,
-    ) -> Self {
+    pub fn new(winit_window: winit::window::Window, window_descriptor: &WindowDescriptor) -> Self {
         Window {
-            id,
             requested_width: window_descriptor.width,
             requested_height: window_descriptor.height,
-            position,
-            physical_width,
-            physical_height,
+            position: winit_window
+                .outer_position()
+                .ok()
+                .map(|position| IVec2::new(position.x, position.y)),
+            physical_width: winit_window.inner_size().width,
+            physical_height: winit_window.inner_size().height,
             resize_constraints: window_descriptor.resize_constraints,
             scale_factor_override: window_descriptor.scale_factor_override,
-            backend_scale_factor: scale_factor,
+            backend_scale_factor: winit_window.scale_factor(),
             title: window_descriptor.title.clone(),
             vsync: window_descriptor.vsync,
             resizable: window_descriptor.resizable,
@@ -183,15 +173,24 @@ impl Window {
             cursor_visible: window_descriptor.cursor_visible,
             cursor_locked: window_descriptor.cursor_locked,
             cursor_position: None,
+            cursor_icon: CursorIcon::Default,
             focused: true,
             mode: window_descriptor.mode,
             command_queue: Vec::new(),
+            window_handle: winit_window.window_handle().unwrap().as_raw(),
+            display_handle: winit_window.display_handle().unwrap().as_raw(),
+            winit_window,
         }
     }
 
-    #[inline]
-    pub const fn id(&self) -> WindowId {
-        self.id
+    #[inline(always)]
+    pub fn window_handle(&self) -> RawWindowHandle {
+        self.window_handle
+    }
+
+    #[inline(always)]
+    pub fn display_handle(&self) -> RawDisplayHandle {
+        self.display_handle
     }
 
     /// The current logical width of the window's client area.
@@ -428,6 +427,15 @@ impl Window {
     }
 
     #[inline]
+    pub fn cursor_icon(&self) -> CursorIcon {
+        self.cursor_icon
+    }
+
+    pub fn set_cursor_icon(&mut self, icon: CursorIcon) {
+        self.command_queue.push(WindowCommand::SetCursor { icon });
+    }
+
+    #[inline]
     pub fn update_focused_status_from_backend(&mut self, focused: bool) {
         self.focused = focused;
     }
@@ -451,8 +459,55 @@ impl Window {
     }
 
     #[inline]
-    pub fn drain_commands(&mut self) -> impl Iterator<Item = WindowCommand> + '_ {
-        self.command_queue.drain(..)
+    pub fn apply_commands(&mut self) {
+        for command in self.command_queue.drain(..) {
+            match command {
+                WindowCommand::SetWindowMode { .. } => todo!(),
+                WindowCommand::SetTitle { title } => self.winit_window.set_title(title.as_str()),
+                WindowCommand::SetScaleFactor { .. } => todo!(),
+                WindowCommand::SetResolution { .. } => todo!(),
+                WindowCommand::SetVsync { .. } => todo!(),
+                WindowCommand::SetResizable { resizable } => {
+                    self.winit_window.set_resizable(resizable)
+                }
+                WindowCommand::SetDecorations { decorations } => {
+                    self.winit_window.set_decorations(decorations)
+                }
+                WindowCommand::SetCursorLockMode { locked } => self
+                    .winit_window
+                    .set_cursor_grab(if locked {
+                        if cfg!(target_os = "macos") {
+                            CursorGrabMode::Locked
+                        } else {
+                            CursorGrabMode::Confined
+                        }
+                    } else {
+                        CursorGrabMode::None
+                    })
+                    .unwrap(),
+                WindowCommand::SetCursorVisibility { visible } => {
+                    self.winit_window.set_cursor_visible(visible)
+                }
+                WindowCommand::SetCursorPosition { position } => self
+                    .winit_window
+                    .set_cursor_position(Position::Logical(LogicalPosition::new(
+                        position.x as f64,
+                        position.y as f64,
+                    )))
+                    .unwrap(),
+                WindowCommand::SetCursor { icon } => self.winit_window.set_cursor(icon),
+                WindowCommand::SetMaximized { maximized } => {
+                    self.winit_window.set_maximized(maximized)
+                }
+                WindowCommand::SetMinimized { minimized } => {
+                    self.winit_window.set_minimized(minimized)
+                }
+                WindowCommand::SetPosition { .. } => todo!(),
+                WindowCommand::SetResizeConstraints { .. } => {
+                    todo!()
+                }
+            }
+        }
     }
 
     #[inline]

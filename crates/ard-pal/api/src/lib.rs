@@ -39,7 +39,7 @@ use descriptor_set::{
 };
 use graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo};
 use queue::SurfacePresentFailure;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rt_pipeline::{
     RayTracingPipelineCreateError, RayTracingPipelineCreateInfo, ShaderBindingTableData,
 };
@@ -78,7 +78,7 @@ pub trait Backend: Sized + 'static {
     unsafe fn properties(&self) -> &GraphicsProperties;
 
     // Surface
-    unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    unsafe fn create_surface<W: HasWindowHandle + HasDisplayHandle>(
         &self,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError>;

@@ -1,29 +1,30 @@
+pub mod runner;
 pub mod window;
 pub mod windows;
 
 pub mod prelude {
-    pub use crate::window::Window;
-    pub use crate::window::WindowCommand;
-    pub use crate::window::WindowDescriptor;
     pub use crate::window::WindowId;
-    pub use crate::window::WindowMode;
-    pub use crate::window::WindowResizeConstraints;
+    pub use crate::window::{Window, WindowDescriptor, WindowMode};
     pub use crate::windows::Windows;
     pub use crate::WindowClosed;
     pub use crate::WindowFileDropped;
     pub use crate::WindowPlugin;
     pub use crate::WindowResized;
+    pub use winit::window::CursorIcon;
 }
 
 use std::path::PathBuf;
 
 use ard_core::prelude::*;
 use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
+use ard_input::InputState;
 use prelude::WindowId;
+use window::WindowDescriptor;
 
 /// Plugin for the window subsystem.
+#[derive(Resource, Clone)]
 pub struct WindowPlugin {
-    pub add_primary_window: Option<window::WindowDescriptor>,
+    pub add_primary_window: Option<WindowDescriptor>,
     pub exit_on_close: bool,
 }
 
@@ -49,7 +50,7 @@ pub struct WindowResized {
 impl Default for WindowPlugin {
     fn default() -> Self {
         WindowPlugin {
-            add_primary_window: Some(window::WindowDescriptor::default()),
+            add_primary_window: Some(WindowDescriptor::default()),
             exit_on_close: true,
         }
     }
@@ -57,17 +58,9 @@ impl Default for WindowPlugin {
 
 impl Plugin for WindowPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
-        let mut windows = windows::Windows::default();
-
-        if let Some(descriptor) = std::mem::take(&mut self.add_primary_window) {
-            windows.create(WindowId::primary(), descriptor);
-        }
-
-        if self.exit_on_close {
-            app.add_system(ExitOnClose);
-        }
-
-        app.add_resource(windows);
+        app.add_resource(InputState::default());
+        app.add_resource(self.clone());
+        app.with_runner(runner::winit_runner);
     }
 }
 

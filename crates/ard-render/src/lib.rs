@@ -11,7 +11,6 @@ use ard_render_image_effects::{
 use ard_render_lighting::global::GlobalLighting;
 use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
-use ard_winit::windows::WinitWindows;
 use system::RenderSystem;
 
 pub mod blas;
@@ -41,6 +40,11 @@ pub struct RendererSettings {
 /// of the surface being presented to.
 #[derive(Resource, Default, Clone, Copy)]
 pub struct CanvasSize(pub Option<(u32, u32)>);
+
+#[derive(Resource, Default, Clone, Copy)]
+pub struct PresentationSettings {
+    pub present_mode: PresentMode,
+}
 
 #[derive(Resource, Default, Clone, Copy)]
 pub struct DebugSettings {
@@ -86,21 +90,16 @@ impl Default for MsaaSettings {
 
 fn late_render_init(app: &mut App) {
     let plugin = app.resources.get::<RenderPlugin>().unwrap().clone();
-    let windows = app.resources.get::<WinitWindows>().unwrap();
+    let windows = app.resources.get::<Windows>().unwrap();
     let dirty_static = app.resources.get::<DirtyStatic>().unwrap();
-    let window = windows.get_window(plugin.window).unwrap();
-    let size = window.inner_size();
 
+    app.resources.add(PresentationSettings {
+        present_mode: plugin.settings.present_mode,
+    });
     app.resources.add(plugin.settings.canvas_size);
 
-    let window_id = plugin.window;
-    let (render_system, factory) = RenderSystem::new(
-        plugin,
-        &dirty_static,
-        window,
-        window_id,
-        (size.width, size.height),
-    );
+    let (render_system, factory) =
+        RenderSystem::new(plugin, &dirty_static, windows.display_handle());
 
     app.dispatcher.add_system(render_system);
     app.resources.add(factory);

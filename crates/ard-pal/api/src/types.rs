@@ -261,10 +261,13 @@ pub enum ClearColor {
     D32S32(f32, u32),
 }
 
-#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub enum PresentMode {
     /// The presentation engine will not wait for a vertical blanking period to update the current
     /// image. Visisble tearing may occur.
+    #[default]
     Immediate,
     /// The presentation engine will wait for a vertical blanking period to update the image,
     /// pulling from a single-entry queue which contains the next image to present. If a new image

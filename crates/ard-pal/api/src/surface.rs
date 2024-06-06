@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 use thiserror::Error;
 
 use crate::{
@@ -9,13 +9,21 @@ use crate::{
     Backend,
 };
 
-pub struct SurfaceCreateInfo<'a, W: HasRawWindowHandle> {
+pub struct SurfaceCreateInfo<W: HasWindowHandle + HasDisplayHandle> {
     /// Default surface configuration.
     pub config: SurfaceConfiguration,
     /// Raw window handle used by whatever windowing API you choose.
-    pub window: &'a W,
+    pub window: WindowSource<W>,
     /// The backend *should* use the provided debug name for easy identification.
     pub debug_name: Option<String>,
+}
+
+pub enum WindowSource<W: HasWindowHandle + HasDisplayHandle> {
+    Raw {
+        window: RawWindowHandle,
+        display: RawDisplayHandle,
+    },
+    Reference(W),
 }
 
 pub struct SurfaceConfiguration {
@@ -91,7 +99,7 @@ pub enum SurfacePresentSuccess {
 }
 
 impl<B: Backend> Surface<B> {
-    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    pub fn new<W: HasWindowHandle + HasDisplayHandle>(
         ctx: Context<B>,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self, SurfaceCreateError> {

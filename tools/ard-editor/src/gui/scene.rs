@@ -13,12 +13,14 @@ pub struct SceneView {}
 
 impl SceneView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
+        // Update the canvas size to match the viewport
         let canvas_size = ctx.ui.available_size_before_wrap();
         ctx.res.get_mut::<CanvasSize>().unwrap().0 = Some((
             (canvas_size.x.ceil() as u32).max(1),
             (canvas_size.y.ceil() as u32).max(1),
         ));
 
+        // Draw the scene view
         let scene_image = egui::Image::new(egui::ImageSource::Texture(egui::load::SizedTexture {
             id: Gui::SCENE_TEXTURE,
             size: canvas_size,
@@ -32,6 +34,7 @@ impl SceneView {
         });
         let response = ctx.ui.add(scene_image);
 
+        // Camera movement
         if response.dragged_by(egui::PointerButton::Secondary) {
             let scene_camera = ctx.res.get::<SceneViewCamera>().unwrap();
 
@@ -41,8 +44,8 @@ impl SceneView {
                 .unwrap();
             let (mut ry, mut rx, rz) = rotation.0.to_euler(EulerRot::YXZ);
 
-            rx += response.drag_delta().y * 0.01;
-            ry += response.drag_delta().x * 0.01;
+            rx += response.drag_delta().y * 0.007;
+            ry += response.drag_delta().x * 0.007;
             rx = rx.clamp(
                 -std::f32::consts::FRAC_PI_2 + 0.05,
                 std::f32::consts::FRAC_PI_2 - 0.05,

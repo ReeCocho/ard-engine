@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU32;
+
 use ard_ecs_derive::SystemState;
 
 use crate::{prelude::*, prw_lock::PrwLock, resource::res::Res, system::commands::Commands};
@@ -683,6 +685,7 @@ fn parallel_systems() {
                 .build(),
         )
         .build();
+    dispatcher.event_sender().submit(RunOnce);
 
     let mut world = World::default();
     let resources = Resources::default();
@@ -723,9 +726,73 @@ fn circular_dependency() {
                 .build(),
         )
         .build();
+    dispatcher.event_sender().submit(RunOnce);
 
     let mut world = World::default();
     let resources = Resources::default();
+
+    dispatcher.run(&mut world, &resources);
+}
+
+/// Handler dependencies should be respected.
+#[test]
+fn handler_dependencies() {
+    use std::sync::atomic::Ordering;
+
+    #[derive(Resource)]
+    struct Counter(AtomicU32);
+
+    #[derive(SystemState)]
+    struct SystemA;
+    impl SystemA {
+        fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<Counter>,)>) {
+            let resource = res.get::<Counter>().unwrap();
+            assert_eq!(resource.0.fetch_add(1, Ordering::SeqCst), 0);
+        }
+    }
+
+    #[derive(SystemState)]
+    struct SystemB;
+    impl SystemB {
+        fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<Counter>,)>) {
+            let resource = res.get::<Counter>().unwrap();
+            assert_eq!(resource.0.fetch_add(1, Ordering::SeqCst), 1);
+        }
+    }
+
+    #[derive(SystemState)]
+    struct SystemC;
+    impl SystemC {
+        fn run(&mut self, _: RunOnce, _: Commands, _: Queries<()>, res: Res<(Read<Counter>,)>) {
+            let resource = res.get::<Counter>().unwrap();
+            assert_eq!(resource.0.fetch_add(1, Ordering::SeqCst), 2);
+        }
+    }
+
+    let mut dispatcher = Dispatcher::builder()
+        .add_system(
+            SystemBuilder::new(SystemC)
+                .with_handler(SystemC::run)
+                .build(),
+        )
+        .add_system(
+            SystemBuilder::new(SystemA)
+                .with_handler(SystemA::run)
+                .run_before::<RunOnce, SystemB>()
+                .build(),
+        )
+        .add_system(
+            SystemBuilder::new(SystemB)
+                .with_handler(SystemB::run)
+                .run_before::<RunOnce, SystemC>()
+                .build(),
+        )
+        .build();
+    dispatcher.event_sender().submit(RunOnce);
+
+    let mut world = World::default();
+    let mut resources = Resources::default();
+    resources.add(Counter(AtomicU32::new(0)));
 
     dispatcher.run(&mut world, &resources);
 }

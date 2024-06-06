@@ -97,7 +97,7 @@ impl Assets {
     /// loading assets from disk.
     pub fn new() -> Self {
         // Load the package list
-        let contents = match std::fs::read_to_string(Path::new("./assets/packages.ron")) {
+        let contents = match std::fs::read_to_string(Path::new("./packages/packages.ron")) {
             Ok(contents) => contents,
             Err(_) => panic!("could not load packages list"),
         };
@@ -118,7 +118,7 @@ impl Assets {
         // Attempt to open packages
         let mut packages = Vec::<Package>::default();
         for name in package_names {
-            let mut path: PathBuf = Path::new("./assets/").into();
+            let mut path: PathBuf = Path::new("./packages/").into();
             path.extend(Path::new(&name));
 
             // TODO: Implement non-folder packages
@@ -160,7 +160,8 @@ impl Assets {
         Self(Arc::new(AssetsInner {
             runtime: tokio::runtime::Builder::new_multi_thread()
                 // TODO: Make configurable
-                .worker_threads(4)
+                .worker_threads(8)
+                .thread_name("asset-loading-thread")
                 .build()
                 .unwrap(),
             packages,
@@ -392,7 +393,17 @@ impl Assets {
             handle: handle.clone(),
         };
 
-        load_asset::<A>(req).await;
+        // We perform the normal load asyncronously, then we spawn a task for the post load so that
+        // it can be completed in parallel (possibly) with other loading operations.
+        let needs_post_load = load_asset::<A>(&req).await;
+        if needs_post_load {
+            self.0.loading.insert(
+                handle.id(),
+                self.0.runtime.spawn(async move {
+                    post_load_asset::<A>(&req).await;
+                }),
+            );
+        }
 
         handle
     }
@@ -421,7 +432,10 @@ impl Assets {
         self.0.loading.insert(
             handle.id(),
             self.0.runtime.spawn(async move {
-                load_asset::<A>(req).await;
+                let needs_post_load = load_asset::<A>(&req).await;
+                if needs_post_load {
+                    post_load_asset::<A>(&req).await;
+                }
             }),
         );
 
@@ -454,7 +468,10 @@ impl Assets {
         self.0.loading.insert(
             handle.id(),
             self.0.runtime.spawn(async move {
-                load_asset::<A>(req).await;
+                let needs_post_load = load_asset::<A>(&req).await;
+                if needs_post_load {
+                    post_load_asset::<A>(&req).await;
+                }
             }),
         );
     }
@@ -661,7 +678,63 @@ struct LoadRequest<A: Asset> {
 }
 
 /// Helper function to load assets asyncronously.
-async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
+/// Returns a flag indicading if post load operations are required.
+async fn load_asset<A: Asset + 'static>(req: &LoadRequest<A>) -> bool {
+    use ard_log::*;
+
+    let asset_data = req.assets.0.assets.get(&req.handle.id()).unwrap();
+
+    // Find the loader for this asset type
+    let loader = {
+        match req.assets.0.loaders.get(&TypeId::of::<A>()) {
+            Some(loader) => loader.clone(),
+            None => {
+                error!("loader for requested asset type does not exist");
+                asset_data.loading.store(false, Ordering::Relaxed);
+                return false;
+            }
+        }
+    };
+
+    let loader = loader.as_any().downcast_ref::<A::Loader>().unwrap();
+
+    // Find the package to load it from
+    let package = req.assets.0.packages[usize::from(asset_data.package)].clone();
+
+    // Use the loader to load the asset
+    let (asset, post_load, persistent) = match loader
+        .load(req.assets.clone(), package.clone(), &asset_data.name)
+        .await
+    {
+        Ok(res) => match res {
+            AssetLoadResult::Loaded { asset, persistent } => (asset, false, persistent),
+            AssetLoadResult::NeedsPostLoad { asset, persistent } => (asset, true, persistent),
+        },
+        Err(err) => {
+            error!("error loading asset `{:?}` : {}", &asset_data.name, err);
+            asset_data.loading.store(false, Ordering::Relaxed);
+            return false;
+        }
+    };
+
+    // Update to be persistent if requested
+    if persistent {
+        asset_data
+            .outstanding_handles
+            .store(u32::MAX, Ordering::Relaxed);
+    }
+
+    // Put the asset into the asset container
+    *asset_data.asset.write().unwrap() = Some(Box::new(asset));
+
+    // Loading is still technically occuring, but post load allows for access at this point
+    asset_data.loading.store(false, Ordering::Relaxed);
+
+    return post_load;
+}
+
+/// Helper function to perform post load operations on an asset
+async fn post_load_asset<A: Asset + 'static>(req: &LoadRequest<A>) {
     use ard_log::*;
 
     let asset_data = req.assets.0.assets.get(&req.handle.id()).unwrap();
@@ -683,35 +756,7 @@ async fn load_asset<A: Asset + 'static>(req: LoadRequest<A>) {
     // Find the package to load it from
     let package = req.assets.0.packages[usize::from(asset_data.package)].clone();
 
-    // Use the loader to load the asset
-    let (asset, mut post_load, persistent) = match loader
-        .load(req.assets.clone(), package.clone(), &asset_data.name)
-        .await
-    {
-        Ok(res) => match res {
-            AssetLoadResult::Loaded { asset, persistent } => (asset, false, persistent),
-            AssetLoadResult::NeedsPostLoad { asset, persistent } => (asset, true, persistent),
-        },
-        Err(err) => {
-            error!("error loading asset `{:?}` : {}", &asset_data.name, err);
-            asset_data.loading.store(false, Ordering::Relaxed);
-            return;
-        }
-    };
-
-    // Update to be persistent if requested
-    if persistent {
-        asset_data
-            .outstanding_handles
-            .store(u32::MAX, Ordering::Relaxed);
-    }
-
-    // Put the asset into the asset container
-    *asset_data.asset.write().unwrap() = Some(Box::new(asset));
-
-    // Loading is still technically occuring, but post load allows for access at this point
-    asset_data.loading.store(false, Ordering::Relaxed);
-
+    let mut post_load = true;
     // Loop until post load is not needed
     while post_load {
         let handle = unsafe { req.handle.clone().transmute() };

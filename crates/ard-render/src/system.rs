@@ -19,13 +19,13 @@ use ard_render_objects::{objects::RenderObjects, Model, RenderFlags};
 use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
 use crossbeam_channel::{self, Receiver, Sender};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::HasDisplayHandle;
 
 use crate::{
     ecs::RenderEcs,
     factory::Factory,
-    frame::{FrameData, FrameDataInner},
-    CanvasSize, DebugSettings, MsaaSettings, RenderPlugin,
+    frame::{FrameData, FrameDataInner, WindowInfo},
+    CanvasSize, DebugSettings, MsaaSettings, PresentationSettings, RenderPlugin,
 };
 
 #[derive(SystemState)]
@@ -53,12 +53,10 @@ enum RenderSystemMessage {
 }
 
 impl RenderSystem {
-    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    pub fn new<D: HasDisplayHandle>(
         plugin: RenderPlugin,
         dirty_static: &DirtyStatic,
-        window: &W,
-        window_id: WindowId,
-        window_size: (u32, u32),
+        display_handle: &D,
     ) -> (Self, Factory) {
         // Channel for render system messages
         let (messages_send, messages_recv) = crossbeam_channel::bounded(FRAMES_IN_FLIGHT + 1);
@@ -70,7 +68,9 @@ impl RenderSystem {
         // Create the render ECS
         let render_time = plugin.settings.render_time;
         let present_scene = plugin.settings.present_scene;
-        let (render_ecs, factory) = RenderEcs::new(plugin, window, window_size);
+        let present_mode = plugin.settings.present_mode;
+        let window_id = plugin.window;
+        let (render_ecs, factory) = RenderEcs::new(plugin, display_handle);
 
         // Create default frames
         for frame in 0..FRAMES_IN_FLIGHT {
@@ -83,6 +83,7 @@ impl RenderSystem {
                     gui_output: GuiRunOutput::default(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
+                    present_settings: PresentationSettings { present_mode },
                     debug_settings: DebugSettings::default(),
                     tonemapping_settings: TonemappingSettings::default(),
                     ao_settings: AoSettings::default(),
@@ -92,8 +93,8 @@ impl RenderSystem {
                     path_tracer_settings: PathTracerSettings::default(),
                     active_cameras: ActiveCameras::default(),
                     job: None,
-                    window_size,
-                    canvas_size: window_size,
+                    window: None,
+                    canvas_size: (16, 16),
                 }))
                 .unwrap();
         }
@@ -135,15 +136,20 @@ impl RenderSystem {
 
         let windows = res.get::<Windows>().unwrap();
 
-        // Do not render if the window is minimized
-        let window = windows
-            .get(self.surface_window)
-            .expect("surface window is destroyed");
+        // Do not render if the window is minimized or not created yet
+        let window = match windows.get(self.surface_window) {
+            Some(window) => window,
+            None => return,
+        };
         let physical_width = window.physical_width();
         let physical_height = window.physical_height();
         if physical_width == 0 || physical_height == 0 {
             return;
         }
+
+        let window_handle = window.window_handle();
+        let display_handle = window.display_handle();
+
         std::mem::drop(windows);
 
         // See if we have a new frame that's ready for rendering
@@ -222,13 +228,58 @@ impl RenderSystem {
         let mut gui = res.get_mut::<Gui>().unwrap();
         frame.gui_output = gui.run(Tick(dt), &commands, &queries, &res);
 
+        // Set cursor icon
+        let mut windows = res.get_mut::<Windows>().unwrap();
+        let window = windows.get_mut(self.surface_window).unwrap();
+        window.set_cursor_icon(match frame.gui_output.full.platform_output.cursor_icon {
+            egui::CursorIcon::Default => CursorIcon::Default,
+            egui::CursorIcon::None => CursorIcon::Default,
+            egui::CursorIcon::ContextMenu => CursorIcon::ContextMenu,
+            egui::CursorIcon::Help => CursorIcon::Help,
+            egui::CursorIcon::PointingHand => CursorIcon::Pointer,
+            egui::CursorIcon::Progress => CursorIcon::Progress,
+            egui::CursorIcon::Wait => CursorIcon::Wait,
+            egui::CursorIcon::Cell => CursorIcon::Cell,
+            egui::CursorIcon::Crosshair => CursorIcon::Crosshair,
+            egui::CursorIcon::Text => CursorIcon::Text,
+            egui::CursorIcon::VerticalText => CursorIcon::VerticalText,
+            egui::CursorIcon::Alias => CursorIcon::Alias,
+            egui::CursorIcon::Copy => CursorIcon::Copy,
+            egui::CursorIcon::Move => CursorIcon::Move,
+            egui::CursorIcon::NoDrop => CursorIcon::NoDrop,
+            egui::CursorIcon::NotAllowed => CursorIcon::NotAllowed,
+            egui::CursorIcon::Grab => CursorIcon::Grab,
+            egui::CursorIcon::Grabbing => CursorIcon::Grabbing,
+            egui::CursorIcon::AllScroll => CursorIcon::AllScroll,
+            egui::CursorIcon::ResizeHorizontal => CursorIcon::EwResize,
+            egui::CursorIcon::ResizeNeSw => CursorIcon::NeswResize,
+            egui::CursorIcon::ResizeNwSe => CursorIcon::NwseResize,
+            egui::CursorIcon::ResizeVertical => CursorIcon::NsResize,
+            egui::CursorIcon::ResizeEast => CursorIcon::EResize,
+            egui::CursorIcon::ResizeSouthEast => CursorIcon::SeResize,
+            egui::CursorIcon::ResizeSouth => CursorIcon::SResize,
+            egui::CursorIcon::ResizeSouthWest => CursorIcon::SwResize,
+            egui::CursorIcon::ResizeWest => CursorIcon::WResize,
+            egui::CursorIcon::ResizeNorthWest => CursorIcon::NwResize,
+            egui::CursorIcon::ResizeNorth => CursorIcon::NResize,
+            egui::CursorIcon::ResizeNorthEast => CursorIcon::NeResize,
+            egui::CursorIcon::ResizeColumn => CursorIcon::ColResize,
+            egui::CursorIcon::ResizeRow => CursorIcon::RowResize,
+            egui::CursorIcon::ZoomIn => CursorIcon::ZoomIn,
+            egui::CursorIcon::ZoomOut => CursorIcon::ZoomOut,
+        });
+
         // Prepare data for the render thread
-        frame.window_size = (physical_width, physical_height);
+        frame.window = Some(WindowInfo {
+            size: (physical_width, physical_height),
+            window_handle,
+            display_handle,
+        });
         frame.canvas_size = res
             .get::<CanvasSize>()
             .unwrap()
             .0
-            .unwrap_or(frame.window_size);
+            .unwrap_or((physical_width, physical_height));
         frame.dt = dt;
         frame.tonemapping_settings = *res.get::<TonemappingSettings>().unwrap();
         frame.ao_settings = *res.get::<AoSettings>().unwrap();

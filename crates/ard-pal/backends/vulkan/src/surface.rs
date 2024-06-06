@@ -10,8 +10,8 @@ use api::{
         SurfacePresentSuccess, SurfaceUpdateError,
     },
 };
-use ash::vk::{self, Handle};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use ash::vk;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::{
     util::{
@@ -66,35 +66,39 @@ pub(crate) struct SurfaceImageSemaphores {
 }
 
 impl Surface {
-    pub(crate) unsafe fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    pub(crate) unsafe fn new<W: HasWindowHandle + HasDisplayHandle>(
         ctx: &VulkanBackend,
-        create_info: SurfaceCreateInfo<'_, W>,
+        create_info: SurfaceCreateInfo<W>,
         image_ids: &IdGenerator,
         global_usage: &mut GlobalResourceUsage,
     ) -> Result<Self, SurfaceCreateError> {
         // Create and name the surface
-        let surface = match ash_window::create_surface(
-            &ctx.entry,
-            &ctx.instance,
-            create_info.window.raw_display_handle(),
-            create_info.window.raw_window_handle(),
-            None,
-        ) {
-            Ok(surface) => surface,
-            Err(err) => return Err(SurfaceCreateError::Other(err.to_string())),
+        let (display, window) = match create_info.window {
+            api::surface::WindowSource::Raw {
+                window, display, ..
+            } => (display, window),
+            api::surface::WindowSource::Reference(r) => (
+                r.display_handle().unwrap().as_raw(),
+                r.window_handle().unwrap().as_raw(),
+            ),
         };
 
+        let surface =
+            match ash_window::create_surface(&ctx.entry, &ctx.instance, display, window, None) {
+                Ok(surface) => surface,
+                Err(err) => return Err(SurfaceCreateError::Other(err.to_string())),
+            };
+
         if let Some(name) = &create_info.debug_name {
-            if let Some((debug, _)) = &ctx.debug {
+            if let Some(debug) = &ctx.debug {
                 let name = CString::new(name.as_str()).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::SURFACE_KHR)
-                    .object_handle(surface.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(surface)
+                    .object_name(&name);
 
                 debug
-                    .set_debug_utils_object_name(ctx.device.handle(), &name_info)
+                    .device
+                    .set_debug_utils_object_name(&name_info)
                     .unwrap();
             }
         }
@@ -122,7 +126,7 @@ impl Surface {
     pub(crate) unsafe fn present(
         &self,
         image: &mut SurfaceImage,
-        swapchain_loader: &ash::extensions::khr::Swapchain,
+        swapchain_loader: &ash::khr::swapchain::Device,
         queue: vk::Queue,
     ) -> Result<SurfacePresentSuccess, SurfacePresentFailure> {
         if image.surface() != self.surface {
@@ -138,11 +142,10 @@ impl Surface {
             let idx = [image.index() as u32];
             let swapchain = [self.swapchain];
             let presentable = [image.semaphores().presentable];
-            let present_info = vk::PresentInfoKHR::builder()
+            let present_info = vk::PresentInfoKHR::default()
                 .image_indices(&idx)
                 .swapchains(&swapchain)
-                .wait_semaphores(&presentable)
-                .build();
+                .wait_semaphores(&presentable);
             swapchain_loader
                 .queue_present(queue, &present_info)
                 .unwrap_or(true)
@@ -272,7 +275,7 @@ impl Surface {
         };
 
         // Create the swapchain
-        let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
+        let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(self.surface)
             .min_image_count(desired_image_count)
             .image_color_space(self.format.color_space)
@@ -300,7 +303,7 @@ impl Surface {
             Ok(images) => images
                 .into_iter()
                 .map(|image| {
-                    let create_info = vk::ImageViewCreateInfo::builder()
+                    let create_info = vk::ImageViewCreateInfo::default()
                         .image(image)
                         .components(vk::ComponentMapping {
                             r: vk::ComponentSwizzle::R,
@@ -316,8 +319,7 @@ impl Surface {
                             layer_count: 1,
                         })
                         .format(self.format.format)
-                        .view_type(vk::ImageViewType::TYPE_2D)
-                        .build();
+                        .view_type(vk::ImageViewType::TYPE_2D);
 
                     let view = ctx.device.create_image_view(&create_info, None).unwrap();
 
@@ -346,35 +348,32 @@ impl Surface {
 
         // Name everything
         if let Some(name) = &self.debug_name {
-            if let Some((debug, _)) = &ctx.debug {
+            if let Some(debug) = &ctx.debug {
                 let swapchain_name = CString::new(format!("{name}_swapchain")).unwrap();
-                let swapchain_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::SWAPCHAIN_KHR)
-                    .object_handle(self.swapchain.as_raw())
-                    .object_name(&swapchain_name)
-                    .build();
+                let swapchain_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(self.swapchain)
+                    .object_name(&swapchain_name);
                 debug
-                    .set_debug_utils_object_name(ctx.device.handle(), &swapchain_name_info)
+                    .device
+                    .set_debug_utils_object_name(&swapchain_name_info)
                     .unwrap();
 
                 for (i, (image, _, view)) in self.images.iter().enumerate() {
                     let image_name = CString::new(format!("{name}_image_{i}")).unwrap();
                     let view_name = CString::new(format!("{name}_view_{i}")).unwrap();
-                    let image_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::IMAGE)
-                        .object_handle(image.as_raw())
-                        .object_name(&image_name)
-                        .build();
-                    let view_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::IMAGE_VIEW)
-                        .object_handle(view.as_raw())
-                        .object_name(&view_name)
-                        .build();
+                    let image_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(*image)
+                        .object_name(&image_name);
+                    let view_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(*view)
+                        .object_name(&view_name);
                     debug
-                        .set_debug_utils_object_name(ctx.device.handle(), &image_name_info)
+                        .device
+                        .set_debug_utils_object_name(&image_name_info)
                         .unwrap();
                     debug
-                        .set_debug_utils_object_name(ctx.device.handle(), &view_name_info)
+                        .device
+                        .set_debug_utils_object_name(&view_name_info)
                         .unwrap();
                 }
 
@@ -383,21 +382,19 @@ impl Surface {
                         CString::new(format!("{name}_available_semaphore_{i}")).unwrap();
                     let presentable_name =
                         CString::new(format!("{name}_presentable_semaphore_{i}")).unwrap();
-                    let available_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::SEMAPHORE)
-                        .object_handle(semaphores.available.as_raw())
-                        .object_name(&available_name)
-                        .build();
-                    let presentable_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::SEMAPHORE)
-                        .object_handle(semaphores.presentable.as_raw())
-                        .object_name(&presentable_name)
-                        .build();
+                    let available_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(semaphores.available)
+                        .object_name(&available_name);
+                    let presentable_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(semaphores.presentable)
+                        .object_name(&presentable_name);
                     debug
-                        .set_debug_utils_object_name(ctx.device.handle(), &available_name_info)
+                        .device
+                        .set_debug_utils_object_name(&available_name_info)
                         .unwrap();
                     debug
-                        .set_debug_utils_object_name(ctx.device.handle(), &presentable_name_info)
+                        .device
+                        .set_debug_utils_object_name(&presentable_name_info)
                         .unwrap();
                 }
             }

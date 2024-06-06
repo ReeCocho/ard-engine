@@ -2,7 +2,7 @@ use api::{
     context::GraphicsProperties, rt_pipeline::ShaderBindingTableData, surface::SurfaceCapabilities,
     Backend,
 };
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 pub struct EmptyBackend(GraphicsProperties);
 
@@ -28,7 +28,7 @@ impl Backend for EmptyBackend {
         &self.0
     }
 
-    unsafe fn create_surface<W: HasRawWindowHandle>(
+    unsafe fn create_surface<W: HasWindowHandle + HasDisplayHandle>(
         &self,
         _create_info: api::surface::SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, api::surface::SurfaceCreateError> {

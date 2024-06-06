@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 
-use crate::{material::MaterialHeader, mesh::MeshHeader, texture::TextureHeader};
 use ard_math::{Mat4, Vec3};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct ModelHeader {
-    pub textures: Vec<TextureHeader>,
-    pub materials: Vec<MaterialHeader<u32>>,
+    pub textures: Vec<PathBuf>,
+    pub meshes: Vec<PathBuf>,
+    pub materials: Vec<PathBuf>,
     pub lights: Vec<Light>,
     pub mesh_groups: Vec<MeshGroup>,
-    pub meshes: Vec<MeshHeader>,
     pub roots: Vec<Node>,
 }
 
@@ -61,7 +60,14 @@ pub enum NodeData {
 impl ModelHeader {
     pub fn header_path(root: impl Into<PathBuf>) -> PathBuf {
         let mut path: PathBuf = root.into();
-        path.push("header");
+        path.push("header.ard_mdl");
+        path
+    }
+
+    pub fn material_path(root: impl Into<PathBuf>, idx: usize) -> PathBuf {
+        let mut path: PathBuf = root.into();
+        path.push("materials");
+        path.push(format!("{}.ard_mat", idx.to_string()));
         path
     }
 

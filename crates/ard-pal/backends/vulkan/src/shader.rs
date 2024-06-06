@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
 use api::shader::{ShaderCreateError, ShaderCreateInfo};
-use ash::vk::{self, Handle};
+use ash::vk;
 
 pub struct Shader {
     pub(crate) module: vk::ShaderModule,
@@ -10,7 +10,7 @@ pub struct Shader {
 impl Shader {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         create_info: ShaderCreateInfo,
     ) -> Result<Self, ShaderCreateError> {
         if create_info.code.len() % std::mem::size_of::<u32>() != 0 {
@@ -33,15 +33,11 @@ impl Shader {
         if let Some(name) = create_info.debug_name {
             if let Some(debug) = debug {
                 let name = CString::new(name).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::SHADER_MODULE)
-                    .object_handle(module.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(module)
+                    .object_name(&name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
             }
         }
 

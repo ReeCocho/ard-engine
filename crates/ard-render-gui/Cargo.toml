@@ -10,3 +10,4 @@ ard-input = { path = "../ard-input" }
 ard-window = { path = "../ard-window" }
 ard-render-si = { path = "../ard-render-si" }
 egui.workspace = true
+egui-phosphor.workspace = true

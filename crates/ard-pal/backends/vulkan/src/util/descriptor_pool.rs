@@ -2,7 +2,7 @@ use std::{collections::HashMap, ffi::CString};
 
 use super::fast_int_hasher::FIHashMap;
 use api::descriptor_set::DescriptorSetLayoutCreateInfo;
-use ash::vk::{self, Handle};
+use ash::vk;
 use rustc_hash::FxHashMap;
 
 /// Default number of sets per pool.
@@ -69,18 +69,15 @@ impl DescriptorPool {
         let mut bindings = Vec::default();
         for binding in &create_info.bindings {
             bindings.push(
-                vk::DescriptorSetLayoutBinding::builder()
+                vk::DescriptorSetLayoutBinding::default()
                     .binding(binding.binding)
                     .descriptor_count(binding.count as u32)
                     .descriptor_type(super::to_vk_descriptor_type(binding.ty))
-                    .stage_flags(crate::util::to_vk_shader_stage(binding.stage))
-                    .build(),
+                    .stage_flags(crate::util::to_vk_shader_stage(binding.stage)),
             );
         }
 
-        let create_info = vk::DescriptorSetLayoutCreateInfo::builder()
-            .bindings(&bindings)
-            .build();
+        let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
         // Create the layout
         let layout = device
@@ -128,7 +125,7 @@ impl DescriptorPool {
     pub unsafe fn allocate(
         &mut self,
         device: &ash::Device,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         name: Option<String>,
     ) -> vk::DescriptorSet {
         let set = match self.free.pop() {
@@ -138,20 +135,18 @@ impl DescriptorPool {
                 if self.size == 0 {
                     self.size = SETS_PER_POOL;
                     self.pools.push({
-                        let create_info = vk::DescriptorPoolCreateInfo::builder()
+                        let create_info = vk::DescriptorPoolCreateInfo::default()
                             .max_sets(self.size as u32)
-                            .pool_sizes(&self.sizes)
-                            .build();
+                            .pool_sizes(&self.sizes);
                         device.create_descriptor_pool(&create_info, None).unwrap()
                     });
                 }
 
                 // Allocate new set
                 self.size -= 1;
-                let alloc_info = vk::DescriptorSetAllocateInfo::builder()
+                let alloc_info = vk::DescriptorSetAllocateInfo::default()
                     .descriptor_pool(*self.pools.last().unwrap())
-                    .set_layouts(&self.layout)
-                    .build();
+                    .set_layouts(&self.layout);
                 device.allocate_descriptor_sets(&alloc_info).unwrap()[0]
             }
         };
@@ -160,15 +155,11 @@ impl DescriptorPool {
         if let Some(name) = name {
             if let Some(debug) = debug {
                 let name = CString::new(name).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::DESCRIPTOR_SET)
-                    .object_handle(set.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(set)
+                    .object_name(&name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
             }
         }
 

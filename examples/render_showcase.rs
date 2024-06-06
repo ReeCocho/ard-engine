@@ -24,7 +24,6 @@ use ard_render_objects::{Model, RenderFlags};
 use ard_render_pbr::PbrMaterialData;
 use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
-use ard_winit::prelude::*;
 
 #[derive(SystemState)]
 pub struct FrameRate {
@@ -558,18 +557,17 @@ fn main() {
             }),
             exit_on_close: true,
         })
-        .add_plugin(WinitPlugin)
         .add_plugin(AssetsPlugin)
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),
             settings: RendererSettings {
                 present_scene: true,
-                render_time: Some(Duration::from_secs_f32(1.0 / 61.0)),
-                present_mode: PresentMode::Fifo,
+                render_time: None,
+                present_mode: PresentMode::Mailbox,
                 render_scale: 1.0,
                 canvas_size: CanvasSize(None),
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_system(FrameRate::default())
@@ -586,13 +584,13 @@ fn setup(app: &mut App) {
     gui.add_view(TestingGui::default());
 
     // Load in models
-    let bistro_model = assets.load::<ModelAsset>(AssetName::new("test_scene.model"));
-    let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.model"));
+    let bistro_model = assets.load::<ModelAsset>(AssetName::new("bistro.ard_mdl/header.ard_mdl"));
+    let sphere_model = assets.load::<ModelAsset>(AssetName::new("sphere.ard_mdl/header.ard_mdl"));
     assets.wait_for_load(&bistro_model);
     assets.wait_for_load(&sphere_model);
 
     // Instantiate models
-    let instance = assets.get(&bistro_model).unwrap().instantiate();
+    let instance = assets.get(&bistro_model).unwrap().instantiate(&assets);
     app.world.entities().commands().create(
         (
             vec![Static(0); instance.meshes.meshes.len()],
@@ -614,7 +612,7 @@ fn setup(app: &mut App) {
         &mut [],
     );
 
-    let sphere = assets.get(&sphere_model).unwrap();
+    let sphere_mesh = assets.get(&sphere_model).unwrap().meshes[0].clone();
     let offset = Vec3::new(0.0, 25.0, 0.0);
     const SPHERE_X: usize = 8;
     const SPHERE_Y: usize = 4;
@@ -623,7 +621,7 @@ fn setup(app: &mut App) {
     let mut pack = (
         vec![Static(0); SPHERE_COUNT],
         (0..SPHERE_COUNT)
-            .map(|_| sphere.meshes[0].clone())
+            .map(|_| assets.get(&sphere_mesh).unwrap().mesh.clone())
             .collect(),
         Vec::with_capacity(SPHERE_COUNT),
         Vec::with_capacity(SPHERE_COUNT),

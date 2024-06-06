@@ -12,11 +12,12 @@ use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{
     factory::{MaterialFactory, PassId},
     material::{MaterialResource, MaterialVariantRequest},
+    material_instance::MaterialInstanceResource,
 };
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::set::DrawGroup;
 use ard_render_si::types::*;
-use ard_render_textures::factory::TextureFactory;
+use ard_render_textures::{factory::TextureFactory, texture::TextureResource};
 
 use crate::state::{BindingDelta, RenderStateTracker};
 
@@ -108,8 +109,10 @@ impl DrawBins {
         dynamic_opaque_draws: impl Iterator<Item = &'a DrawGroup>,
         dynamic_ac_draws: impl Iterator<Item = &'a DrawGroup>,
         transparent_draws: impl Iterator<Item = &'a DrawGroup>,
-        meshes: &'a ResourceAllocator<MeshResource>,
-        materials: &'a ResourceAllocator<MaterialResource>,
+        textures: &ResourceAllocator<TextureResource>,
+        meshes: &ResourceAllocator<MeshResource>,
+        materials: &ResourceAllocator<MaterialResource>,
+        material_instances: &ResourceAllocator<MaterialInstanceResource>,
     ) {
         let draw_call_idx = usize::from(frame);
 
@@ -125,8 +128,10 @@ impl DrawBins {
         let res = Self::gen_bins_inner(
             &mut bin_set.bins,
             static_opaque_draws,
+            textures,
             meshes,
             materials,
+            material_instances,
             id_offset,
             &mut bin_set.has_valid_draws,
         );
@@ -138,8 +143,10 @@ impl DrawBins {
         let res = Self::gen_bins_inner(
             &mut bin_set.bins,
             static_ac_draws,
+            textures,
             meshes,
             materials,
+            material_instances,
             id_offset,
             &mut bin_set.has_valid_draws,
         );
@@ -151,8 +158,10 @@ impl DrawBins {
         let res = Self::gen_bins_inner(
             &mut bin_set.bins,
             dynamic_opaque_draws,
+            textures,
             meshes,
             materials,
+            material_instances,
             id_offset,
             &mut bin_set.has_valid_draws,
         );
@@ -164,8 +173,10 @@ impl DrawBins {
         let res = Self::gen_bins_inner(
             &mut bin_set.bins,
             dynamic_ac_draws,
+            textures,
             meshes,
             materials,
+            material_instances,
             id_offset,
             &mut bin_set.has_valid_draws,
         );
@@ -177,8 +188,10 @@ impl DrawBins {
         let res = Self::gen_bins_inner(
             &mut bin_set.bins,
             transparent_draws,
+            textures,
             meshes,
             materials,
+            material_instances,
             id_offset,
             &mut bin_set.has_valid_draws,
         );
@@ -189,8 +202,10 @@ impl DrawBins {
     fn gen_bins_inner<'a>(
         bins: &mut Vec<DrawBin>,
         groups: impl Iterator<Item = &'a DrawGroup>,
+        textures: &ResourceAllocator<TextureResource>,
         meshes: &ResourceAllocator<MeshResource>,
         materials: &ResourceAllocator<MaterialResource>,
+        material_instances: &ResourceAllocator<MaterialInstanceResource>,
         mut object_id_offset: usize,
         has_valid_draws: &mut bool,
     ) -> BinGenOutput {
@@ -215,12 +230,24 @@ impl DrawBins {
             // If this is the first group, we must prime the delta
             // TODO: Get this check out of the hot loop
             if first {
-                delta = state.compute_delta(&separated_key, meshes, materials);
+                delta = state.compute_delta(
+                    &separated_key,
+                    textures,
+                    meshes,
+                    materials,
+                    material_instances,
+                );
                 first = false;
             }
 
             // Compute the delta for this draw and see if it's new
-            let new_delta = state.compute_delta(&separated_key, meshes, materials);
+            let new_delta = state.compute_delta(
+                &separated_key,
+                textures,
+                meshes,
+                materials,
+                material_instances,
+            );
 
             // If it is, we submit the current group
             if new_delta.draw_required() {

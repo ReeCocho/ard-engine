@@ -29,7 +29,6 @@ pub mod input {
 pub mod window {
     pub mod prelude {
         pub use ard_window::prelude::*;
-        pub use ard_winit::prelude::*;
     }
 }
 

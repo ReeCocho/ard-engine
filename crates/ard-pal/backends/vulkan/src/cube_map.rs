@@ -4,7 +4,7 @@ use api::{
     cube_map::{CubeMapCreateError, CubeMapCreateInfo},
     types::{CubeFace, SharingMode},
 };
-use ash::vk::{self, Handle};
+use ash::vk;
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 
@@ -43,7 +43,7 @@ impl CubeMap {
         device: &ash::Device,
         id_gen: &IdGenerator,
         qfi: &QueueFamilyIndices,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         on_drop: Sender<Garbage>,
         allocator: &mut Allocator,
         create_info: CubeMapCreateInfo,
@@ -51,7 +51,7 @@ impl CubeMap {
         // Create the image
         let format = crate::util::to_vk_format(create_info.format);
         let qfi = qfi.queue_types_to_indices(create_info.queue_types);
-        let image_create_info = vk::ImageCreateInfo::builder()
+        let image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
                 width: create_info.size,
@@ -71,8 +71,7 @@ impl CubeMap {
             })
             .queue_family_indices(&qfi)
             .samples(vk::SampleCountFlags::TYPE_1)
-            .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
-            .build();
+            .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE);
 
         let image = match device.create_image(&image_create_info, None) {
             Ok(image) => image,
@@ -123,7 +122,7 @@ impl CubeMap {
         };
         for i in 0..create_info.array_elements {
             for j in 0..create_info.mip_levels {
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::CUBE)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -139,8 +138,7 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 views.push(device.create_image_view(&view_create_info, None).unwrap());
             }
         }
@@ -149,7 +147,7 @@ impl CubeMap {
         let mut face_views = Vec::with_capacity(views.len() * 6);
         for i in 0..create_info.array_elements {
             for j in 0..create_info.mip_levels {
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -165,11 +163,10 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
 
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -185,11 +182,10 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
 
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -205,11 +201,10 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
 
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -225,11 +220,10 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
 
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -245,11 +239,10 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
 
-                let view_create_info = vk::ImageViewCreateInfo::builder()
+                let view_create_info = vk::ImageViewCreateInfo::default()
                     .format(format)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .subresource_range(vk::ImageSubresourceRange {
@@ -265,8 +258,7 @@ impl CubeMap {
                         b: vk::ComponentSwizzle::B,
                         a: vk::ComponentSwizzle::A,
                     })
-                    .image(image)
-                    .build();
+                    .image(image);
                 face_views.push(device.create_image_view(&view_create_info, None).unwrap());
             }
         }
@@ -275,27 +267,19 @@ impl CubeMap {
         if let Some(name) = create_info.debug_name {
             if let Some(debug) = debug {
                 let cstr_name = CString::new(name.as_str()).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::IMAGE)
-                    .object_handle(image.as_raw())
-                    .object_name(&cstr_name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(image)
+                    .object_name(&cstr_name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
 
                 for (i, view) in views.iter().enumerate() {
                     let name = CString::new(format!("{}_view_{}", &name, i)).unwrap();
-                    let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::IMAGE_VIEW)
-                        .object_handle(view.as_raw())
-                        .object_name(&name)
-                        .build();
+                    let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(*view)
+                        .object_name(&name);
 
-                    debug
-                        .set_debug_utils_object_name(device.handle(), &name_info)
-                        .unwrap();
+                    debug.set_debug_utils_object_name(&name_info).unwrap();
                 }
             }
         }

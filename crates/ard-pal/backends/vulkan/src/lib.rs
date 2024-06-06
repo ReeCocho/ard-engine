@@ -39,7 +39,7 @@ use gpu_allocator::vulkan::*;
 use graphics_pipeline::GraphicsPipeline;
 use job::Job;
 use queue::VkQueue;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use render_pass::{DrawIndexedIndirect, FramebufferCache, RenderPassCache, VkRenderPass};
 use rt_pipeline::RayTracingPipeline;
 use shader::Shader;
@@ -85,11 +85,11 @@ pub mod texture;
 pub mod tlas;
 pub mod util;
 
-pub struct VulkanBackendCreateInfo<'a, W: HasRawWindowHandle + HasRawDisplayHandle> {
+pub struct VulkanBackendCreateInfo<'a, D: HasDisplayHandle> {
     pub app_name: String,
     pub engine_name: String,
     /// A window is required to find a queue that supports presentation.
-    pub window: &'a W,
+    pub display_handle: &'a D,
     /// Enables debugging layers and extensions.
     pub debug: bool,
 }
@@ -107,20 +107,18 @@ pub enum VulkanBackendCreateError {
 pub struct VulkanBackend {
     pub(crate) entry: ash::Entry,
     pub(crate) instance: ash::Instance,
-    pub(crate) debug: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    pub(crate) debug: Option<VkDebug>,
     pub(crate) physical_device: vk::PhysicalDevice,
     pub(crate) queue_family_indices: QueueFamilyIndices,
-    pub(crate) properties: vk::PhysicalDeviceProperties,
-    pub(crate) accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
-    pub(crate) rt_props: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+    pub(crate) properties: PhysicalDeviceProperties,
     pub(crate) graphics_properties: GraphicsProperties,
     pub(crate) _features: vk::PhysicalDeviceFeatures,
     pub(crate) device: ash::Device,
-    pub(crate) surface_loader: ash::extensions::khr::Surface,
-    pub(crate) swapchain_loader: ash::extensions::khr::Swapchain,
-    pub(crate) mesh_shading_loader: ash::extensions::ext::MeshShader,
-    pub(crate) rt_loader: ash::extensions::khr::RayTracingPipeline,
-    pub(crate) as_loader: ash::extensions::khr::AccelerationStructure,
+    pub(crate) surface_loader: ash::khr::surface::Instance,
+    pub(crate) swapchain_loader: ash::khr::swapchain::Device,
+    pub(crate) mesh_shading_loader: ash::ext::mesh_shader::Device,
+    pub(crate) rt_loader: ash::khr::ray_tracing_pipeline::Device,
+    pub(crate) as_loader: ash::khr::acceleration_structure::Device,
     pub(crate) main: ShardedLock<VkQueue>,
     pub(crate) transfer: ShardedLock<VkQueue>,
     pub(crate) present: ShardedLock<VkQueue>,
@@ -138,6 +136,12 @@ pub struct VulkanBackend {
     pub(crate) pools: Mutex<DescriptorPools>,
     pub(crate) pipelines: Mutex<PipelineCache>,
     pub(crate) samplers: Mutex<SamplerCache>,
+}
+
+pub(crate) struct VkDebug {
+    pub instance: ash::ext::debug_utils::Instance,
+    pub device: ash::ext::debug_utils::Device,
+    pub messenger: vk::DebugUtilsMessengerEXT,
 }
 
 #[derive(Default)]
@@ -158,11 +162,22 @@ pub(crate) struct QueueFamilyIndices {
 struct PhysicalDeviceQuery {
     pub device: vk::PhysicalDevice,
     pub queue_family_indices: QueueFamilyIndices,
-    pub properties: vk::PhysicalDeviceProperties2,
-    pub accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
-    rt_props: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
-    pub mesh_shading_properties: vk::PhysicalDeviceMeshShaderPropertiesEXT,
+    pub properties: PhysicalDeviceProperties,
+    // pub properties: vk::PhysicalDeviceProperties2<'static>,
+    // pub accel_struct_props: vk::PhysicalDeviceAccelerationStructurePropertiesKHR<'static>,
+    // pub rt_props: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'static>,
+    // pub mesh_shading_properties: vk::PhysicalDeviceMeshShaderPropertiesEXT<'static>,
     pub features: vk::PhysicalDeviceFeatures,
+}
+
+pub struct PhysicalDeviceProperties {
+    pub shader_group_handle_size: u32,
+    pub shader_group_handle_alignment: u32,
+    pub max_preferred_mesh_work_group_invocations: u32,
+    pub max_preferred_task_work_group_invocations: u32,
+    pub min_acceleration_structure_scratch_offset_alignment: u32,
+    pub shader_group_base_alignment: u32,
+    pub limits: vk::PhysicalDeviceLimits,
 }
 
 impl Backend for VulkanBackend {
@@ -189,7 +204,7 @@ impl Backend for VulkanBackend {
     }
 
     #[inline(always)]
-    unsafe fn create_surface<W: HasRawWindowHandle + HasRawDisplayHandle>(
+    unsafe fn create_surface<W: HasWindowHandle + HasDisplayHandle>(
         &self,
         create_info: SurfaceCreateInfo<W>,
     ) -> Result<Self::Surface, SurfaceCreateError> {
@@ -335,10 +350,9 @@ impl Backend for VulkanBackend {
         // Otherwise we have to wait
         let semaphore = [queue.semaphore()];
         let value = [job.target_value];
-        let wait = vk::SemaphoreWaitInfo::builder()
+        let wait = vk::SemaphoreWaitInfo::default()
             .semaphores(&semaphore)
-            .values(&value)
-            .build();
+            .values(&value);
 
         match self.device.wait_semaphores(
             &wait,
@@ -378,13 +392,11 @@ impl Backend for VulkanBackend {
         Buffer::new(
             &self.device,
             &self.queue_family_indices,
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             self.garbage.sender(),
             &self.buffer_ids,
             &mut self.allocator.lock().unwrap(),
-            &self.properties.limits,
-            &self.accel_struct_props,
-            &self.rt_props,
+            &self.properties,
             create_info,
         )
     }
@@ -398,7 +410,7 @@ impl Backend for VulkanBackend {
             &self.device,
             &self.image_ids,
             &self.queue_family_indices,
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             self.garbage.sender(),
             &mut self.allocator.lock().unwrap(),
             create_info,
@@ -414,7 +426,7 @@ impl Backend for VulkanBackend {
             &self.device,
             &self.image_ids,
             &self.queue_family_indices,
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             self.garbage.sender(),
             &mut self.allocator.lock().unwrap(),
             create_info,
@@ -428,7 +440,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::Shader, ShaderCreateError> {
         Shader::new(
             &self.device,
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             create_info,
         )
     }
@@ -452,7 +464,7 @@ impl Backend for VulkanBackend {
     ) -> Result<Self::ComputePipeline, ComputePipelineCreateError> {
         ComputePipeline::new(
             &self.device,
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             self.garbage.sender(),
             create_info,
         )
@@ -475,7 +487,7 @@ impl Backend for VulkanBackend {
             &self.device,
             &mut self.pools.lock().unwrap(),
             self.garbage.sender(),
-            self.debug.as_ref().map(|(utils, _)| utils),
+            self.debug.as_ref().map(|utils| &utils.device),
             create_info,
             &self.set_ids,
         )
@@ -586,7 +598,7 @@ impl Backend for VulkanBackend {
 
     #[inline(always)]
     unsafe fn blas_device_ref(&self, id: &Self::BottomLevelAccelerationStructure) -> u64 {
-        let info = vk::AccelerationStructureDeviceAddressInfoKHR::builder()
+        let info = vk::AccelerationStructureDeviceAddressInfoKHR::default()
             .acceleration_structure(id.acceleration_struct);
         self.as_loader
             .get_acceleration_structure_device_address(&info)
@@ -669,8 +681,8 @@ impl Backend for VulkanBackend {
 }
 
 impl VulkanBackend {
-    pub fn new<W: HasRawWindowHandle + HasRawDisplayHandle>(
-        create_info: VulkanBackendCreateInfo<W>,
+    pub fn new<D: HasDisplayHandle>(
+        create_info: VulkanBackendCreateInfo<D>,
     ) -> Result<Self, VulkanBackendCreateError> {
         let app_name = CString::new(create_info.app_name).unwrap();
         let vk_version = vk::API_VERSION_1_3;
@@ -690,14 +702,19 @@ impl VulkanBackend {
 
         // Get required instance extensions
         let instance_extensions = {
-            let mut extensions =
-                ash_window::enumerate_required_extensions(create_info.window.raw_display_handle())?
-                    .iter()
-                    .map(|ext| unsafe { CStr::from_ptr(*ext) })
-                    .collect::<Vec<_>>();
+            let mut extensions = ash_window::enumerate_required_extensions(
+                create_info
+                    .display_handle
+                    .display_handle()
+                    .unwrap()
+                    .as_raw(),
+            )?
+            .iter()
+            .map(|ext| unsafe { CStr::from_ptr(*ext) })
+            .collect::<Vec<_>>();
 
             if create_info.debug {
-                extensions.push(ash::extensions::ext::DebugUtils::name());
+                extensions.push(ash::ext::debug_utils::NAME);
             }
 
             extensions
@@ -709,11 +726,11 @@ impl VulkanBackend {
         // Get required device extensions
         let device_extensions = {
             let extensions = vec![
-                ash::extensions::khr::Swapchain::name(),
-                ash::extensions::ext::MeshShader::name(),
-                ash::extensions::khr::AccelerationStructure::name(),
-                ash::extensions::khr::RayTracingPipeline::name(),
-                ash::extensions::khr::DeferredHostOperations::name(),
+                ash::khr::swapchain::NAME,
+                ash::ext::mesh_shader::NAME,
+                ash::khr::acceleration_structure::NAME,
+                ash::khr::ray_tracing_pipeline::NAME,
+                ash::khr::deferred_host_operations::NAME,
                 c"VK_KHR_pipeline_library",
             ];
             extensions
@@ -726,70 +743,49 @@ impl VulkanBackend {
         let entry = unsafe { ash::Entry::load()? };
 
         // Create the instance
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(&app_name)
             .application_version(0)
             .engine_name(&app_name)
             .engine_version(0)
             .api_version(vk_version);
 
-        let instance_create_info = vk::InstanceCreateInfo::builder()
+        let instance_create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_layer_names(&layer_names)
             .enabled_extension_names(&instance_extensions);
 
         let instance = unsafe { entry.create_instance(&instance_create_info, None)? };
 
-        // Create debugging utilities if requested
-        let debug = if create_info.debug {
-            let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
-                .message_severity(
-                    vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
-                )
-                .message_type(
-                    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                        | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
-                        | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
-                )
-                .pfn_user_callback(Some(vulkan_debug_callback));
-            let debug_utils_loader = ash::extensions::ext::DebugUtils::new(&entry, &instance);
-            let debug_messenger =
-                unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
-            Some((debug_utils_loader, debug_messenger))
-        } else {
-            None
+        // Closure to check for presentation support. This depends on the windowing system being
+        // used
+        let display_handle = create_info.display_handle.display_handle().unwrap();
+        let presentation_support = match display_handle.as_raw() {
+            raw_window_handle::RawDisplayHandle::Windows(_) => {
+                let surface_instance = ash::khr::win32_surface::Instance::new(&entry, &instance);
+                move |physical_device, queue_family_index| unsafe {
+                    surface_instance.get_physical_device_win32_presentation_support(
+                        physical_device,
+                        queue_family_index,
+                    )
+                }
+            }
+            _ => todo!("support for other window systems"),
         };
 
         // Create a surface to check for presentation compatibility
-        let surface = unsafe {
-            ash_window::create_surface(
-                &entry,
-                &instance,
-                create_info.window.raw_display_handle(),
-                create_info.window.raw_window_handle(),
-                None,
-            )?
-        };
-        let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+        let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
 
         // Query for a physical device
         let pd_query = unsafe {
-            match pick_physical_device(&instance, surface, &surface_loader, &device_extensions) {
+            match pick_physical_device(&instance, presentation_support, &device_extensions) {
                 Some(pd) => pd,
                 None => return Err(VulkanBackendCreateError::NoDevice),
             }
         };
 
-        // Cleanup surface since it's not needed anymore
-        unsafe {
-            surface_loader.destroy_surface(surface, None);
-        }
-
         // Queue requests
         let mut priorities = Vec::with_capacity(pd_query.queue_family_indices.unique.len());
-        let mut queue_infos = Vec::with_capacity(pd_query.queue_family_indices.unique.len());
         let mut queue_indices = (0, 0, 0, 0);
         for q in &pd_query.queue_family_indices.unique {
             let mut cur_priorities = Vec::with_capacity(4);
@@ -814,18 +810,23 @@ impl VulkanBackend {
                 cur_priorities.push(0.5);
             }
 
-            queue_infos.push(
-                vk::DeviceQueueCreateInfo::builder()
-                    .queue_family_index(*q)
-                    .queue_priorities(&cur_priorities)
-                    .build(),
-            );
-
             priorities.push(cur_priorities);
         }
 
+        let queue_infos: Vec<_> = pd_query
+            .queue_family_indices
+            .unique
+            .iter()
+            .zip(priorities.iter())
+            .map(|(q, cur_priorities)| {
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(*q)
+                    .queue_priorities(&cur_priorities)
+            })
+            .collect();
+
         // Request features
-        let features = vk::PhysicalDeviceFeatures::builder()
+        let features = vk::PhysicalDeviceFeatures::default()
             .fill_mode_non_solid(true)
             .draw_indirect_first_instance(true)
             .multi_draw_indirect(true)
@@ -833,48 +834,40 @@ impl VulkanBackend {
             .sample_rate_shading(true)
             .sampler_anisotropy(true)
             .shader_int64(true)
-            .shader_int16(true)
-            .build();
+            .shader_int16(true);
 
-        let mut features11 = vk::PhysicalDeviceVulkan11Features::builder()
+        let mut features11 = vk::PhysicalDeviceVulkan11Features::default()
             .multiview(true)
-            .storage_buffer16_bit_access(true)
-            .build();
+            .storage_buffer16_bit_access(true);
 
-        let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
+        let mut features12 = vk::PhysicalDeviceVulkan12Features::default()
             .timeline_semaphore(true)
             .buffer_device_address(true)
             .runtime_descriptor_array(true)
             .draw_indirect_count(true)
             .uniform_buffer_standard_layout(true)
-            .host_query_reset(true)
-            .build();
+            .host_query_reset(true);
 
-        let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::default()
             .synchronization2(true)
-            .maintenance4(true)
-            .build();
+            .maintenance4(true);
 
-        let mut ms_features = vk::PhysicalDeviceMeshShaderFeaturesEXT::builder()
+        let mut ms_features = vk::PhysicalDeviceMeshShaderFeaturesEXT::default()
             .mesh_shader(true)
             .task_shader(true)
-            .multiview_mesh_shader(true)
-            .build();
+            .multiview_mesh_shader(true);
 
-        let mut rt_features = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
+        let mut rt_features = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
             .ray_tracing_pipeline(true)
-            .ray_traversal_primitive_culling(true)
-            .build();
+            .ray_traversal_primitive_culling(true);
 
-        let mut as_features = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::builder()
-            .acceleration_structure(true)
-            .build();
+        let mut as_features = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default()
+            .acceleration_structure(true);
 
-        let mut pl_features = vk::PhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT::builder()
-            .pipeline_library_group_handles(true)
-            .build();
+        let mut pl_features = vk::PhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT::default()
+            .pipeline_library_group_handles(true);
 
-        let mut features2 = vk::PhysicalDeviceFeatures2::builder()
+        let mut features2 = vk::PhysicalDeviceFeatures2::default()
             .features(features)
             .push_next(&mut features11)
             .push_next(&mut features12)
@@ -882,21 +875,18 @@ impl VulkanBackend {
             .push_next(&mut ms_features)
             .push_next(&mut rt_features)
             .push_next(&mut as_features)
-            .push_next(&mut pl_features)
-            .build();
+            .push_next(&mut pl_features);
 
-        let create_info = vk::DeviceCreateInfo::builder()
+        let device_create_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(&queue_infos)
             .enabled_extension_names(&device_extensions)
             .push_next(&mut features2);
 
-        let create_info = create_info.build();
-
         // Create the device
-        let device = unsafe { instance.create_device(pd_query.device, &create_info, None)? };
+        let device = unsafe { instance.create_device(pd_query.device, &device_create_info, None)? };
 
         // Create swapchain loader
-        let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
+        let swapchain_loader = ash::khr::swapchain::Device::new(&instance, &device);
 
         // Create the memory allocator
         let allocator = ManuallyDrop::new(Mutex::new(
@@ -919,15 +909,42 @@ impl VulkanBackend {
         ));
 
         // Device loaders
-        let mesh_shading_loader = ash::extensions::ext::MeshShader::new(&instance, &device);
-        let rt_loader = ash::extensions::khr::RayTracingPipeline::new(&instance, &device);
-        let as_loader = ash::extensions::khr::AccelerationStructure::new(&instance, &device);
+        let mesh_shading_loader = ash::ext::mesh_shader::Device::new(&instance, &device);
+        let rt_loader = ash::khr::ray_tracing_pipeline::Device::new(&instance, &device);
+        let as_loader = ash::khr::acceleration_structure::Device::new(&instance, &device);
+
+        // Create debugging utilities if requested
+        let debug = if create_info.debug {
+            let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
+                .message_severity(
+                    vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
+                        | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                        | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
+                )
+                .message_type(
+                    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                        | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+                        | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
+                )
+                .pfn_user_callback(Some(vulkan_debug_callback));
+            let debug_utils_loader = ash::ext::debug_utils::Instance::new(&entry, &instance);
+            let debug_messenger =
+                unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
+
+            Some(VkDebug {
+                instance: debug_utils_loader,
+                device: ash::ext::debug_utils::Device::new(&instance, &device),
+                messenger: debug_messenger,
+            })
+        } else {
+            None
+        };
 
         // Create queues
         let main = unsafe {
             VkQueue::new(
                 &device,
-                debug.as_ref().map(|(utils, _)| utils),
+                debug.as_ref().map(|utils| &utils.device),
                 device.get_device_queue(pd_query.queue_family_indices.main, queue_indices.0 as u32),
                 QueueType::Main,
                 pd_query.queue_family_indices.main,
@@ -937,7 +954,7 @@ impl VulkanBackend {
         let transfer = unsafe {
             VkQueue::new(
                 &device,
-                debug.as_ref().map(|(utils, _)| utils),
+                debug.as_ref().map(|utils| &utils.device),
                 device.get_device_queue(
                     pd_query.queue_family_indices.transfer,
                     queue_indices.1 as u32,
@@ -950,7 +967,7 @@ impl VulkanBackend {
         let present = unsafe {
             VkQueue::new(
                 &device,
-                debug.as_ref().map(|(utils, _)| utils),
+                debug.as_ref().map(|utils| &utils.device),
                 device.get_device_queue(
                     pd_query.queue_family_indices.present,
                     queue_indices.2 as u32,
@@ -963,7 +980,7 @@ impl VulkanBackend {
         let compute = unsafe {
             VkQueue::new(
                 &device,
-                debug.as_ref().map(|(utils, _)| utils),
+                debug.as_ref().map(|utils| &utils.device),
                 device.get_device_queue(
                     pd_query.queue_family_indices.compute,
                     queue_indices.3 as u32,
@@ -976,10 +993,10 @@ impl VulkanBackend {
         let graphics_properties = GraphicsProperties {
             mesh_shading: MeshShadingProperties {
                 preferred_mesh_work_group_invocations: pd_query
-                    .mesh_shading_properties
+                    .properties
                     .max_preferred_mesh_work_group_invocations,
                 preferred_task_work_group_invocations: pd_query
-                    .mesh_shading_properties
+                    .properties
                     .max_preferred_task_work_group_invocations,
             },
         };
@@ -990,9 +1007,7 @@ impl VulkanBackend {
             debug,
             physical_device: pd_query.device,
             queue_family_indices: pd_query.queue_family_indices,
-            properties: pd_query.properties.properties,
-            accel_struct_props: pd_query.accel_struct_props,
-            rt_props: pd_query.rt_props,
+            properties: pd_query.properties,
             graphics_properties,
             _features: pd_query.features,
             device,
@@ -1062,18 +1077,17 @@ impl VulkanBackend {
             QueueType::Compute => &mut compute,
             QueueType::Present => &mut present,
         }
-        .allocate_command_buffer(&self.device, self.debug.as_ref().map(|(utils, _)| utils));
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-            .build();
+        .allocate_command_buffer(&self.device, self.debug.as_ref().map(|utils| &utils.device));
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         self.device.begin_command_buffer(cb, &begin_info).unwrap();
 
         // Insert debug name
         if let Some(name) = debug_name {
-            if let Some((debug, _)) = &self.debug {
+            if let Some(debug) = &self.debug {
                 let name = CString::new(name).unwrap();
-                let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
-                debug.cmd_begin_debug_utils_label(cb, &label);
+                let label = vk::DebugUtilsLabelEXT::default().label_name(&name);
+                debug.device.cmd_begin_debug_utils_label(cb, &label);
             }
         }
 
@@ -1102,7 +1116,7 @@ impl VulkanBackend {
                     &self.mesh_shading_loader,
                     &self.as_loader,
                     &self.rt_loader,
-                    &self.rt_props,
+                    &self.properties,
                     &queries,
                     idx,
                     commands,
@@ -1166,8 +1180,8 @@ impl VulkanBackend {
 
         // Submit to the queue
         if debug_name.is_some() {
-            if let Some((debug, _)) = &self.debug {
-                debug.cmd_end_debug_utils_label(cb);
+            if let Some(debug) = &self.debug {
+                debug.device.cmd_end_debug_utils_label(cb);
             }
         }
 
@@ -1219,17 +1233,17 @@ impl VulkanBackend {
     unsafe fn execute_command<'a>(
         cb: vk::CommandBuffer,
         device: &ash::Device,
-        mesh_shading: &ash::extensions::ext::MeshShader,
-        as_loader: &ash::extensions::khr::AccelerationStructure,
-        rt_loader: &ash::extensions::khr::RayTracingPipeline,
-        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+        mesh_shading: &ash::ext::mesh_shader::Device,
+        as_loader: &ash::khr::acceleration_structure::Device,
+        rt_loader: &ash::khr::ray_tracing_pipeline::Device,
+        props: &PhysicalDeviceProperties,
         queries: &Queries,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
         framebuffers: &FramebufferCache,
         pipelines: &mut PipelineCache,
-        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+        debug: Option<&VkDebug>,
     ) {
         match &commands[command_idx] {
             Command::BeginRenderPass(_, _) => Self::execute_render_pass(
@@ -1246,29 +1260,22 @@ impl VulkanBackend {
             Command::BeginComputePass(_, _) => {
                 Self::execute_compute_pass(cb, device, command_idx, commands, debug)
             }
-            Command::BeginRayTracingPass(_, _) => Self::execute_rt_pass(
-                cb,
-                device,
-                rt_loader,
-                rt_props,
-                command_idx,
-                commands,
-                debug,
-            ),
+            Command::BeginRayTracingPass(_, _) => {
+                Self::execute_rt_pass(cb, device, rt_loader, props, command_idx, commands, debug)
+            }
             Command::CopyBufferToBuffer(copy) => {
                 let src = copy.src.internal();
                 let dst = copy.dst.internal();
-                let region = [vk::BufferCopy::builder()
+                let region = [vk::BufferCopy::default()
                     .dst_offset(dst.offset(copy.dst_array_element) + copy.dst_offset)
                     .src_offset(src.offset(copy.src_array_element) + copy.src_offset)
-                    .size(copy.len)
-                    .build()];
+                    .size(copy.len)];
                 device.cmd_copy_buffer(cb, src.buffer, dst.buffer, &region);
             }
             Command::CopyTextureToTexture(copy) => {
                 let src = copy.src.internal();
                 let dst = copy.dst.internal();
-                let region = [vk::ImageCopy::builder()
+                let region = [vk::ImageCopy::default()
                     .dst_subresource(vk::ImageSubresourceLayers {
                         aspect_mask: dst.aspect_flags,
                         mip_level: copy.dst_mip_level as u32,
@@ -1295,8 +1302,7 @@ impl VulkanBackend {
                         width: copy.extent.0,
                         height: copy.extent.1,
                         depth: copy.extent.2,
-                    })
-                    .build()];
+                    })];
                 device.cmd_copy_image(
                     cb,
                     src.image,
@@ -1313,7 +1319,7 @@ impl VulkanBackend {
             } => {
                 let src = buffer.internal();
                 let dst = texture.internal();
-                let copy = [vk::BufferImageCopy::builder()
+                let copy = [vk::BufferImageCopy::default()
                     .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
                     .buffer_row_length(copy.buffer_row_length)
                     .buffer_image_height(copy.buffer_image_height)
@@ -1332,8 +1338,7 @@ impl VulkanBackend {
                         width: copy.texture_extent.0,
                         height: copy.texture_extent.1,
                         depth: copy.texture_extent.2,
-                    })
-                    .build()];
+                    })];
                 device.cmd_copy_buffer_to_image(
                     cb,
                     src.buffer,
@@ -1349,7 +1354,7 @@ impl VulkanBackend {
             } => {
                 let src = texture.internal();
                 let dst = buffer.internal();
-                let copy = [vk::BufferImageCopy::builder()
+                let copy = [vk::BufferImageCopy::default()
                     .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
                     .buffer_row_length(copy.buffer_row_length)
                     .buffer_image_height(copy.buffer_image_height)
@@ -1368,8 +1373,7 @@ impl VulkanBackend {
                         width: copy.texture_extent.0,
                         height: copy.texture_extent.1,
                         depth: copy.texture_extent.2,
-                    })
-                    .build()];
+                    })];
                 device.cmd_copy_image_to_buffer(
                     cb,
                     src.image,
@@ -1386,7 +1390,7 @@ impl VulkanBackend {
                 let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
                 let dst = cube_map.internal();
                 let src = buffer.internal();
-                let copy = [vk::BufferImageCopy::builder()
+                let copy = [vk::BufferImageCopy::default()
                     .buffer_offset(src.offset(copy.buffer_array_element) + copy.buffer_offset)
                     .buffer_row_length(0)
                     .buffer_image_height(0)
@@ -1401,8 +1405,7 @@ impl VulkanBackend {
                         width: size,
                         height: size,
                         depth: 1,
-                    })
-                    .build()];
+                    })];
                 device.cmd_copy_buffer_to_image(
                     cb,
                     src.buffer,
@@ -1419,7 +1422,7 @@ impl VulkanBackend {
                 let size = cube_map.dim().shr(copy.cube_map_mip_level).max(1);
                 let src = cube_map.internal();
                 let dst = buffer.internal();
-                let copy = [vk::BufferImageCopy::builder()
+                let copy = [vk::BufferImageCopy::default()
                     .buffer_offset(dst.offset(copy.buffer_array_element) + copy.buffer_offset)
                     .buffer_row_length(0)
                     .buffer_image_height(0)
@@ -1434,8 +1437,7 @@ impl VulkanBackend {
                         width: size,
                         height: size,
                         depth: 1,
-                    })
-                    .build()];
+                    })];
                 device.cmd_copy_image_to_buffer(
                     cb,
                     src.image,
@@ -1494,7 +1496,7 @@ impl VulkanBackend {
                     }
                 };
 
-                let vk_blit = [vk::ImageBlit::builder()
+                let vk_blit = [vk::ImageBlit::default()
                     .src_offsets([
                         vk::Offset3D {
                             x: blit.src_min.0 as i32,
@@ -1508,12 +1510,11 @@ impl VulkanBackend {
                         },
                     ])
                     .src_subresource(
-                        vk::ImageSubresourceLayers::builder()
+                        vk::ImageSubresourceLayers::default()
                             .aspect_mask(src_aspect_flags)
                             .mip_level(blit.src_mip as u32)
                             .base_array_layer(src_array_elem as u32)
-                            .layer_count(1)
-                            .build(),
+                            .layer_count(1),
                     )
                     .dst_offsets([
                         vk::Offset3D {
@@ -1528,14 +1529,12 @@ impl VulkanBackend {
                         },
                     ])
                     .dst_subresource(
-                        vk::ImageSubresourceLayers::builder()
+                        vk::ImageSubresourceLayers::default()
                             .aspect_mask(dst_aspect_flags)
                             .mip_level(blit.dst_mip as u32)
                             .base_array_layer(dst_array_elem as u32)
-                            .layer_count(1)
-                            .build(),
-                    )
-                    .build()];
+                            .layer_count(1),
+                    )];
 
                 device.cmd_blit_image(
                     cb,
@@ -1610,13 +1609,13 @@ impl VulkanBackend {
     unsafe fn execute_render_pass<'a>(
         cb: vk::CommandBuffer,
         device: &ash::Device,
-        mesh_shading: &ash::extensions::ext::MeshShader,
+        mesh_shading: &ash::ext::mesh_shader::Device,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
         render_passes: &RenderPassCache,
         framebuffers: &FramebufferCache,
         pipelines: &mut PipelineCache,
-        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+        debug: Option<&VkDebug>,
     ) {
         let mut active_layout = vk::PipelineLayout::default();
         let mut active_render_pass = VkRenderPass::default();
@@ -1625,10 +1624,10 @@ impl VulkanBackend {
             match command {
                 Command::BeginRenderPass(descriptor, debug_name) => {
                     if let Some(name) = *debug_name {
-                        if let Some((debug, _)) = debug {
+                        if let Some(debug) = debug {
                             let name = CString::new(name).unwrap();
-                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
-                            debug.cmd_begin_debug_utils_label(cb, &label);
+                            let label = vk::DebugUtilsLabelEXT::default().label_name(&name);
+                            debug.device.cmd_begin_debug_utils_label(cb, &label);
                         }
                     }
 
@@ -1892,7 +1891,7 @@ impl VulkanBackend {
                     device.cmd_set_scissor(cb, 0, &scissor);
 
                     // Begin the render pass
-                    let begin_info = vk::RenderPassBeginInfo::builder()
+                    let begin_info = vk::RenderPassBeginInfo::default()
                         .render_pass(active_render_pass.pass)
                         .clear_values(&clear_values)
                         .framebuffer(framebuffer)
@@ -1902,20 +1901,18 @@ impl VulkanBackend {
                                 width: dims.0,
                                 height: dims.1,
                             },
-                        })
-                        .build();
+                        });
 
-                    let subpass_info = vk::SubpassBeginInfo::builder()
-                        .contents(vk::SubpassContents::INLINE)
-                        .build();
+                    let subpass_info =
+                        vk::SubpassBeginInfo::default().contents(vk::SubpassContents::INLINE);
 
                     device.cmd_begin_render_pass2(cb, &begin_info, &subpass_info);
                 }
                 Command::EndRenderPass(debug_name) => {
                     device.cmd_end_render_pass(cb);
                     if debug_name.is_some() {
-                        if let Some((debug, _)) = debug {
-                            debug.cmd_end_debug_utils_label(cb);
+                        if let Some(debug) = debug {
+                            debug.device.cmd_end_debug_utils_label(cb);
                         }
                     }
                     break;
@@ -1925,7 +1922,7 @@ impl VulkanBackend {
                     let pipeline = pipeline.internal().get(
                         device,
                         pipelines,
-                        debug.as_ref().map(|(utils, _)| utils),
+                        debug.as_ref().map(|utils| &utils.device),
                         active_render_pass,
                     );
                     device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
@@ -2092,7 +2089,7 @@ impl VulkanBackend {
         device: &ash::Device,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
-        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+        debug: Option<&VkDebug>,
     ) {
         let mut active_layout = vk::PipelineLayout::default();
 
@@ -2100,10 +2097,10 @@ impl VulkanBackend {
             match command {
                 Command::BeginComputePass(pipeline, debug_name) => {
                     if let Some(name) = debug_name {
-                        if let Some((debug, _)) = debug {
+                        if let Some(debug) = debug {
                             let name = CString::new(*name).unwrap();
-                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
-                            debug.cmd_begin_debug_utils_label(cb, &label);
+                            let label = vk::DebugUtilsLabelEXT::default().label_name(&name);
+                            debug.device.cmd_begin_debug_utils_label(cb, &label);
                         }
                     }
 
@@ -2133,8 +2130,8 @@ impl VulkanBackend {
                     }
 
                     if debug_name.is_some() {
-                        if let Some((debug, _)) = debug {
-                            debug.cmd_end_debug_utils_label(cb);
+                        if let Some(debug) = debug {
+                            debug.device.cmd_end_debug_utils_label(cb);
                         }
                     }
                     break;
@@ -2184,11 +2181,11 @@ impl VulkanBackend {
     unsafe fn execute_rt_pass<'a>(
         cb: vk::CommandBuffer,
         device: &ash::Device,
-        rt_loader: &ash::extensions::khr::RayTracingPipeline,
-        rt_props: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+        rt_loader: &ash::khr::ray_tracing_pipeline::Device,
+        props: &PhysicalDeviceProperties,
         command_idx: usize,
         commands: &[Command<'a, crate::VulkanBackend>],
-        debug: Option<&(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+        debug: Option<&VkDebug>,
     ) {
         let mut active_layout = vk::PipelineLayout::default();
 
@@ -2196,10 +2193,10 @@ impl VulkanBackend {
             match command {
                 Command::BeginRayTracingPass(pipeline, debug_name) => {
                     if let Some(name) = debug_name {
-                        if let Some((debug, _)) = debug {
+                        if let Some(debug) = debug {
                             let name = CString::new(*name).unwrap();
-                            let label = vk::DebugUtilsLabelEXT::builder().label_name(&name).build();
-                            debug.cmd_begin_debug_utils_label(cb, &label);
+                            let label = vk::DebugUtilsLabelEXT::default().label_name(&name);
+                            debug.device.cmd_begin_debug_utils_label(cb, &label);
                         }
                     }
 
@@ -2211,30 +2208,27 @@ impl VulkanBackend {
                     );
                 }
                 Command::EndRayTracingPass(dispatch, debug_name) => {
-                    let entry_size = rt_props
+                    let entry_size = props
                         .shader_group_handle_size
-                        .next_multiple_of(rt_props.shader_group_handle_alignment)
+                        .next_multiple_of(props.shader_group_handle_alignment)
                         as u64;
 
                     let sbt_base = dispatch.shader_binding_table.device_ref(0);
 
-                    let raygen_region = vk::StridedDeviceAddressRegionKHR::builder()
+                    let raygen_region = vk::StridedDeviceAddressRegionKHR::default()
                         .device_address(sbt_base + dispatch.raygen_offset)
                         .stride(entry_size)
-                        .size(entry_size)
-                        .build();
+                        .size(entry_size);
 
-                    let miss_region = vk::StridedDeviceAddressRegionKHR::builder()
+                    let miss_region = vk::StridedDeviceAddressRegionKHR::default()
                         .device_address(sbt_base + dispatch.miss_offset)
                         .stride(entry_size)
-                        .size(entry_size)
-                        .build();
+                        .size(entry_size);
 
-                    let hit_region = vk::StridedDeviceAddressRegionKHR::builder()
+                    let hit_region = vk::StridedDeviceAddressRegionKHR::default()
                         .device_address(sbt_base + dispatch.hit_range.start)
                         .stride(entry_size)
-                        .size(dispatch.hit_range.end - dispatch.hit_range.start)
-                        .build();
+                        .size(dispatch.hit_range.end - dispatch.hit_range.start);
 
                     rt_loader.cmd_trace_rays(
                         cb,
@@ -2248,8 +2242,8 @@ impl VulkanBackend {
                     );
 
                     if debug_name.is_some() {
-                        if let Some((debug, _)) = debug {
-                            debug.cmd_end_debug_utils_label(cb);
+                        if let Some(debug) = debug {
+                            debug.device.cmd_end_debug_utils_label(cb);
                         }
                     }
                     break;
@@ -2358,8 +2352,10 @@ impl Drop for VulkanBackend {
             self.compute.get_mut().unwrap().release(&self.device);
             self.present.get_mut().unwrap().release(&self.device);
             self.device.destroy_device(None);
-            if let Some((loader, messenger)) = &self.debug {
-                loader.destroy_debug_utils_messenger(*messenger, None);
+            if let Some(debug) = &self.debug {
+                debug
+                    .instance
+                    .destroy_debug_utils_messenger(debug.messenger, None);
             }
             self.instance.destroy_instance(None);
         }
@@ -2371,8 +2367,7 @@ impl QueueFamilyIndices {
     fn find(
         instance: &ash::Instance,
         device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
-        surface_loader: &ash::extensions::khr::Surface,
+        presentation_support: &impl Fn(vk::PhysicalDevice, u32) -> bool,
     ) -> Option<QueueFamilyIndices> {
         let mut properties =
             unsafe { instance.get_physical_device_queue_family_properties(device) };
@@ -2400,16 +2395,7 @@ impl QueueFamilyIndices {
 
         // Find presentation queue. Would be nice to be different from main.
         for (family_idx, _) in properties.iter().enumerate() {
-            let surface_support = unsafe {
-                match surface_loader.get_physical_device_surface_support(
-                    device,
-                    family_idx as u32,
-                    surface,
-                ) {
-                    Ok(support) => support,
-                    Err(_) => return None,
-                }
-            };
+            let surface_support = presentation_support(device, family_idx as u32);
 
             if surface_support && properties[family_idx].queue_count > 0 {
                 present = family_idx;
@@ -2510,8 +2496,7 @@ unsafe impl Sync for VulkanBackend {}
 
 unsafe fn pick_physical_device(
     instance: &ash::Instance,
-    surface: vk::SurfaceKHR,
-    loader: &ash::extensions::khr::Surface,
+    presentation_support: impl Fn(vk::PhysicalDevice, u32) -> bool,
     extensions: &[*const i8],
 ) -> Option<PhysicalDeviceQuery> {
     let devices = match instance.enumerate_physical_devices() {
@@ -2527,11 +2512,10 @@ unsafe fn pick_physical_device(
         let mut accel_struct_props =
             vk::PhysicalDeviceAccelerationStructurePropertiesKHR::default();
 
-        let mut properties = vk::PhysicalDeviceProperties2::builder()
+        let mut properties = vk::PhysicalDeviceProperties2::default()
             .push_next(&mut mesh_shading_properties)
             .push_next(&mut rt_props)
-            .push_next(&mut accel_struct_props)
-            .build();
+            .push_next(&mut accel_struct_props);
 
         instance.get_physical_device_properties2(device, &mut properties);
         let features = instance.get_physical_device_features(device);
@@ -2542,38 +2526,32 @@ unsafe fn pick_physical_device(
             continue;
         }
 
-        // Must support surface stuff
-        let formats = match loader.get_physical_device_surface_formats(device, surface) {
-            Ok(formats) => formats,
-            Err(_) => continue,
-        };
-
-        let present_modes = match loader.get_physical_device_surface_present_modes(device, surface)
-        {
-            Ok(modes) => modes,
-            Err(_) => continue,
-        };
-
-        if formats.is_empty() || present_modes.is_empty() {
-            continue;
-        }
-
         // Must support all queue family indices
-        let qfi = QueueFamilyIndices::find(instance, device, surface, loader);
+        let qfi = QueueFamilyIndices::find(instance, device, &presentation_support);
         if qfi.is_none() {
             continue;
         }
 
         // Pick this device if it's better than the old one
         if device_type_rank(properties.properties.device_type) >= device_type_rank(device_type) {
+            let limits = properties.properties.limits;
+
             device_type = properties.properties.device_type;
             query = Some(PhysicalDeviceQuery {
                 device,
                 features,
-                properties,
-                accel_struct_props,
-                rt_props,
-                mesh_shading_properties,
+                properties: PhysicalDeviceProperties {
+                    shader_group_handle_size: rt_props.shader_group_handle_size,
+                    shader_group_handle_alignment: rt_props.shader_group_handle_alignment,
+                    max_preferred_mesh_work_group_invocations: mesh_shading_properties
+                        .max_preferred_mesh_work_group_invocations,
+                    max_preferred_task_work_group_invocations: mesh_shading_properties
+                        .max_preferred_task_work_group_invocations,
+                    min_acceleration_structure_scratch_offset_alignment: accel_struct_props
+                        .min_acceleration_structure_scratch_offset_alignment,
+                    shader_group_base_alignment: rt_props.shader_group_base_alignment,
+                    limits,
+                },
                 queue_family_indices: qfi.unwrap(),
             });
         }

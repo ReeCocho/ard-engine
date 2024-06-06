@@ -74,7 +74,7 @@ pub(crate) struct TimelineValues {
 
 pub(crate) struct GarbageCleanupArgs<'a> {
     pub device: &'a ash::Device,
-    pub as_loader: &'a ash::extensions::khr::AccelerationStructure,
+    pub as_loader: &'a ash::khr::acceleration_structure::Device,
     pub buffer_ids: &'a IdGenerator,
     pub image_ids: &'a IdGenerator,
     pub set_ids: &'a IdGenerator,

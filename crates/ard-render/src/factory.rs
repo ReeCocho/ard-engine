@@ -148,7 +148,12 @@ impl Factory {
                     pending_blas.append(id, mesh.blas_scratch.take().unwrap());
                 }
             }
-            StagingResource::Texture(id) => texture_factory.texture_ready(id),
+            StagingResource::Texture { id, loaded_mips } => {
+                if let Some(texture) = textures.get_mut(id) {
+                    texture.loaded_mips = loaded_mips;
+                }
+                texture_factory.texture_ready(id)
+            }
             StagingResource::TextureMip { id, mip_level } => {
                 if let Some(texture) = textures.get_mut(id) {
                     // Update mip level
@@ -437,11 +442,21 @@ impl FactoryInner {
         slot: TextureSlot,
         texture: Option<&Texture>,
     ) {
+        let textures = self.textures.lock().unwrap();
         let mut material_instances = self.material_instances.lock().unwrap();
         let mut material_factory = self.material_factory.lock().unwrap();
 
+        // Set the texture
         let inner = material_instances.get_mut(material_instance.id()).unwrap();
         inner.textures[slot.0 as usize] = texture.cloned();
+
+        // If the texture is `Some`, we need to check if it's ready
+        if let Some(texture) = texture {
+            if let Some(texture) = textures.get(texture.id()) {
+                let textures_ready = inner.textures_ready.get_mut();
+                *textures_ready &= texture.loaded_mips != 0;
+            }
+        }
 
         // Mark as dirty
         material_factory.mark_dirty(material_instance.clone());

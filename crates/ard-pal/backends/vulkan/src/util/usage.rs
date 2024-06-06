@@ -86,9 +86,9 @@ struct InternalGlobalImageUsage {
 
 #[derive(Copy, Clone)]
 pub(crate) enum PipelineBarrier {
-    Memory(vk::MemoryBarrier2),
-    Buffer(vk::BufferMemoryBarrier2),
-    Image(vk::ImageMemoryBarrier2),
+    Memory(vk::MemoryBarrier2<'static>),
+    Buffer(vk::BufferMemoryBarrier2<'static>),
+    Image(vk::ImageMemoryBarrier2<'static>),
 }
 
 impl GlobalResourceUsage {
@@ -475,30 +475,27 @@ impl GlobalBufferUsage {
         if requires_ownership_transfer(self.queue.as_ref(), other.queue.as_ref()) {
             match sharing_mode {
                 SharingMode::Exclusive => Some(PipelineBarrier::Buffer(
-                    vk::BufferMemoryBarrier2::builder()
+                    vk::BufferMemoryBarrier2::default()
                         .src_access_mask(vk::AccessFlags2::empty())
                         .src_stage_mask(vk::PipelineStageFlags2::empty())
                         .dst_access_mask(other.sub_resource.access)
-                        .dst_stage_mask(other.sub_resource.stage)
-                        .build(),
+                        .dst_stage_mask(other.sub_resource.stage),
                 )),
                 SharingMode::Concurrent => Some(PipelineBarrier::Memory(
-                    vk::MemoryBarrier2::builder()
+                    vk::MemoryBarrier2::default()
                         .src_access_mask(vk::AccessFlags2::empty())
                         .src_stage_mask(vk::PipelineStageFlags2::empty())
                         .dst_access_mask(other.sub_resource.access)
-                        .dst_stage_mask(other.sub_resource.stage)
-                        .build(),
+                        .dst_stage_mask(other.sub_resource.stage),
                 )),
             }
         } else if self.sub_resource.requires_barrier(&other.sub_resource) {
             Some(PipelineBarrier::Memory(
-                vk::MemoryBarrier2::builder()
+                vk::MemoryBarrier2::default()
                     .src_access_mask(self.sub_resource.access)
                     .src_stage_mask(self.sub_resource.stage)
                     .dst_access_mask(other.sub_resource.access)
-                    .dst_stage_mask(other.sub_resource.stage)
-                    .build(),
+                    .dst_stage_mask(other.sub_resource.stage),
             ))
         } else {
             None
@@ -538,7 +535,7 @@ impl GlobalImageUsage {
             || (other.layout != vk::ImageLayout::UNDEFINED && self.layout != other.layout)
         {
             Some(PipelineBarrier::Image(
-                vk::ImageMemoryBarrier2::builder()
+                vk::ImageMemoryBarrier2::default()
                     .src_access_mask(if req_owner_transfer {
                         vk::AccessFlags2::empty()
                     } else {
@@ -556,17 +553,15 @@ impl GlobalImageUsage {
                     } else {
                         self.layout
                     })
-                    .new_layout(other.layout)
-                    .build(),
+                    .new_layout(other.layout),
             ))
         } else if self.sub_resource.requires_barrier(&other.sub_resource) {
             Some(PipelineBarrier::Memory(
-                vk::MemoryBarrier2::builder()
+                vk::MemoryBarrier2::default()
                     .src_access_mask(self.sub_resource.access)
                     .src_stage_mask(self.sub_resource.stage)
                     .dst_access_mask(other.sub_resource.access)
-                    .dst_stage_mask(other.sub_resource.stage)
-                    .build(),
+                    .dst_stage_mask(other.sub_resource.stage),
             ))
         } else {
             None

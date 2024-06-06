@@ -1,5 +1,5 @@
 use api::graphics_pipeline::{GraphicsPipelineCreateInfo, ShaderStages};
-use ash::vk::{self, Handle};
+use ash::vk;
 use crossbeam_channel::Sender;
 use std::ffi::CString;
 
@@ -39,13 +39,12 @@ impl GraphicsPipeline {
         for layout in &descriptor.layouts {
             layouts.push(layout.internal().layout);
         }
-        let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
+        let layout_create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&layouts)
             .push_constant_ranges(match &push_constant_ranges {
                 Some(range) => range,
                 None => &[],
-            })
-            .build();
+            });
         let layout = device
             .create_pipeline_layout(&layout_create_info, None)
             .unwrap();
@@ -67,7 +66,7 @@ impl GraphicsPipeline {
         &self,
         device: &ash::Device,
         pipelines: &mut PipelineCache,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         render_pass: VkRenderPass,
     ) -> vk::Pipeline {
         if let Some(pipeline) = pipelines.get(self.layout, render_pass.pass) {
@@ -94,18 +93,15 @@ impl GraphicsPipeline {
             });
         }
 
-        let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
+        let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&bindings)
-            .vertex_attribute_descriptions(&attributes)
-            .build();
+            .vertex_attribute_descriptions(&attributes);
 
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
-            .topology(crate::util::to_vk_topology(
-                self.descriptor.vertex_input.topology,
-            ))
-            .build();
+        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(
+            crate::util::to_vk_topology(self.descriptor.vertex_input.topology),
+        );
 
-        let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+        let rasterizer = vk::PipelineRasterizationStateCreateInfo::default()
             .cull_mode(crate::util::to_vk_cull_mode(
                 self.descriptor.rasterization.cull_mode,
             ))
@@ -119,14 +115,14 @@ impl GraphicsPipeline {
                 Some(depth_stencil) => depth_stencil.depth_clamp,
                 None => false,
             })
-            .line_width(1.0)
-            .build();
+            .line_width(1.0);
 
-        let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .rasterization_samples(render_pass.samples)
             .alpha_to_coverage_enable(false)
-            .alpha_to_one_enable(false)
-            .build();
+            .alpha_to_one_enable(false);
+        // .sample_shading_enable(true)
+        // .min_sample_shading(0.5)
 
         // NOTE: For the viewport and scissor the width and height doesn't really matter
         // because the dynamic stage can change them.
@@ -147,33 +143,28 @@ impl GraphicsPipeline {
             },
         }];
 
-        let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
             .viewports(&viewports)
-            .scissors(&scissors)
-            .build();
+            .scissors(&scissors);
 
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
 
-        let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(&dynamic_states)
-            .build();
+        let dynamic_state =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
         let spec_map_entries = [
-            vk::SpecializationMapEntry::builder()
+            vk::SpecializationMapEntry::default()
                 .constant_id(0)
                 .offset(0)
-                .size(std::mem::size_of::<u32>())
-                .build(),
-            vk::SpecializationMapEntry::builder()
+                .size(std::mem::size_of::<u32>()),
+            vk::SpecializationMapEntry::default()
                 .constant_id(1)
                 .offset(std::mem::size_of::<u32>() as u32)
-                .size(std::mem::size_of::<u32>())
-                .build(),
-            vk::SpecializationMapEntry::builder()
+                .size(std::mem::size_of::<u32>()),
+            vk::SpecializationMapEntry::default()
                 .constant_id(2)
                 .offset(2 * std::mem::size_of::<u32>() as u32)
-                .size(std::mem::size_of::<u32>())
-                .build(),
+                .size(std::mem::size_of::<u32>()),
         ];
         let mesh_spec_map_values;
         let task_spec_map_values;
@@ -185,19 +176,17 @@ impl GraphicsPipeline {
             ShaderStages::Traditional { vertex, fragment } => {
                 let mut shader_stages = Vec::with_capacity(2);
                 shader_stages.push(
-                    vk::PipelineShaderStageCreateInfo::builder()
+                    vk::PipelineShaderStageCreateInfo::default()
                         .stage(vk::ShaderStageFlags::VERTEX)
                         .module(vertex.internal().module)
-                        .name(&entry_point)
-                        .build(),
+                        .name(&entry_point),
                 );
                 if let Some(stage) = fragment {
                     shader_stages.push(
-                        vk::PipelineShaderStageCreateInfo::builder()
+                        vk::PipelineShaderStageCreateInfo::default()
                             .stage(vk::ShaderStageFlags::FRAGMENT)
                             .module(stage.internal().module)
-                            .name(&entry_point)
-                            .build(),
+                            .name(&entry_point),
                     );
                 }
                 shader_stages
@@ -215,17 +204,16 @@ impl GraphicsPipeline {
                     mesh.work_group_size.2,
                 ];
 
-                mesh_spec = vk::SpecializationInfo::builder()
+                mesh_spec = vk::SpecializationInfo::default()
                     .map_entries(&spec_map_entries)
                     .data(bytemuck::cast_slice(&mesh_spec_map_values));
 
                 shader_stages.push(
-                    vk::PipelineShaderStageCreateInfo::builder()
+                    vk::PipelineShaderStageCreateInfo::default()
                         .stage(vk::ShaderStageFlags::MESH_EXT)
                         .module(mesh.shader.internal().module)
                         .name(&entry_point)
-                        .specialization_info(&mesh_spec)
-                        .build(),
+                        .specialization_info(&mesh_spec),
                 );
 
                 if let Some(stage) = task {
@@ -235,26 +223,24 @@ impl GraphicsPipeline {
                         stage.work_group_size.2,
                     ];
 
-                    task_spec = vk::SpecializationInfo::builder()
+                    task_spec = vk::SpecializationInfo::default()
                         .map_entries(&spec_map_entries)
                         .data(bytemuck::cast_slice(&task_spec_map_values));
 
                     shader_stages.push(
-                        vk::PipelineShaderStageCreateInfo::builder()
+                        vk::PipelineShaderStageCreateInfo::default()
                             .stage(vk::ShaderStageFlags::TASK_EXT)
                             .module(stage.shader.internal().module)
                             .name(&entry_point)
-                            .specialization_info(&task_spec)
-                            .build(),
+                            .specialization_info(&task_spec),
                     );
                 }
                 if let Some(stage) = fragment {
                     shader_stages.push(
-                        vk::PipelineShaderStageCreateInfo::builder()
+                        vk::PipelineShaderStageCreateInfo::default()
                             .stage(vk::ShaderStageFlags::FRAGMENT)
                             .module(stage.internal().module)
-                            .name(&entry_point)
-                            .build(),
+                            .name(&entry_point),
                     );
                 }
                 shader_stages
@@ -262,26 +248,22 @@ impl GraphicsPipeline {
         };
 
         let depth_stencil = match &self.descriptor.depth_stencil {
-            Some(depth_stencil) => vk::PipelineDepthStencilStateCreateInfo::builder()
+            Some(depth_stencil) => vk::PipelineDepthStencilStateCreateInfo::default()
                 .depth_test_enable(depth_stencil.depth_test)
                 .depth_write_enable(depth_stencil.depth_write && !render_pass.read_only_depth)
                 .depth_compare_op(crate::util::to_vk_compare_op(depth_stencil.depth_compare))
                 .min_depth_bounds(depth_stencil.min_depth)
-                .max_depth_bounds(depth_stencil.max_depth)
-                .build(),
+                .max_depth_bounds(depth_stencil.max_depth),
             None => vk::PipelineDepthStencilStateCreateInfo::default(),
         };
 
-        let (color_blend, _attachments) = if self.descriptor.color_blend.attachments.is_empty() {
-            (
-                vk::PipelineColorBlendStateCreateInfo::default(),
-                Vec::default(),
-            )
+        let mut attachments = Vec::with_capacity(self.descriptor.color_blend.attachments.len());
+        let color_blend = if self.descriptor.color_blend.attachments.is_empty() {
+            vk::PipelineColorBlendStateCreateInfo::default()
         } else {
-            let mut attachments = Vec::with_capacity(self.descriptor.color_blend.attachments.len());
             for attachment in &self.descriptor.color_blend.attachments {
                 attachments.push(
-                    vk::PipelineColorBlendAttachmentState::builder()
+                    vk::PipelineColorBlendAttachmentState::default()
                         .color_write_mask(crate::util::to_vk_color_components(
                             attachment.write_mask,
                         ))
@@ -299,21 +281,17 @@ impl GraphicsPipeline {
                         .dst_alpha_blend_factor(crate::util::to_vk_blend_factor(
                             attachment.dst_alpha_blend_factor,
                         ))
-                        .alpha_blend_op(crate::util::to_vk_blend_op(attachment.alpha_blend_op))
-                        .build(),
+                        .alpha_blend_op(crate::util::to_vk_blend_op(attachment.alpha_blend_op)),
                 );
             }
-            let color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
+            vk::PipelineColorBlendStateCreateInfo::default()
                 .attachments(&attachments)
                 .logic_op(vk::LogicOp::COPY)
                 .logic_op_enable(false)
                 .blend_constants([0.0, 0.0, 0.0, 0.0])
-                .build();
-
-            (color_blend, attachments)
         };
 
-        let create_info = [vk::GraphicsPipelineCreateInfo::builder()
+        let create_info = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly)
@@ -325,8 +303,7 @@ impl GraphicsPipeline {
             .layout(self.layout)
             .color_blend_state(&color_blend)
             .render_pass(render_pass.pass)
-            .subpass(0)
-            .build()];
+            .subpass(0)];
 
         let pipeline = device
             .create_graphics_pipelines(vk::PipelineCache::null(), &create_info, None)
@@ -341,15 +318,11 @@ impl GraphicsPipeline {
                     pipelines.count(self.layout)
                 ))
                 .unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::PIPELINE)
-                    .object_handle(pipeline.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(pipeline)
+                    .object_name(&name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
             }
         }
 

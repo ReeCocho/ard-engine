@@ -10,7 +10,7 @@ use api::{
     Backend,
 };
 use arc_swap::ArcSwap;
-use ash::vk::{self, AccelerationStructureGeometryKHR, Handle, QueryType};
+use ash::vk::{self, AccelerationStructureGeometryKHR, QueryType};
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use rustc_hash::FxHashMap;
@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub struct BottomLevelAccelerationStructure {
-    pub(crate) geometries: ArcSwap<Vec<AccelerationStructureGeometryKHR>>,
+    pub(crate) geometries: ArcSwap<Vec<AccelerationStructureGeometryKHR<'static>>>,
     pub(crate) build_ranges: ArcSwap<Vec<vk::AccelerationStructureBuildRangeInfoKHR>>,
     pub(crate) buffer_refs: ArcSwap<FxHashMap<(vk::Buffer, usize), BlasBufferRef>>,
     pub(crate) buffer: vk::Buffer,
@@ -71,7 +71,7 @@ impl BottomLevelAccelerationStructure {
                         .map(|geo| {
                             let mut tris = vk::AccelerationStructureGeometryDataKHR::default();
                             tris.triangles =
-                                vk::AccelerationStructureGeometryTrianglesDataKHR::builder()
+                                vk::AccelerationStructureGeometryTrianglesDataKHR::default()
                                     .vertex_format(crate::util::to_vk_format(geo.vertex_format))
                                     .vertex_data({
                                         let mut addr =
@@ -94,14 +94,12 @@ impl BottomLevelAccelerationStructure {
                                         addr.device_address += geo.index_data_offset;
                                         addr
                                     })
-                                    .transform_data(vk::DeviceOrHostAddressConstKHR::default())
-                                    .build();
+                                    .transform_data(vk::DeviceOrHostAddressConstKHR::default());
 
-                            vk::AccelerationStructureGeometryKHR::builder()
+                            vk::AccelerationStructureGeometryKHR::default()
                                 .flags(crate::util::to_vk_geometry_flags(geo.flags))
                                 .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
                                 .geometry(tris)
-                                .build()
                         })
                         .collect::<Vec<_>>(),
                 ));
@@ -110,12 +108,11 @@ impl BottomLevelAccelerationStructure {
                 build_ranges = ArcSwap::new(Arc::new(
                     data.iter()
                         .map(|geo| {
-                            vk::AccelerationStructureBuildRangeInfoKHR::builder()
+                            vk::AccelerationStructureBuildRangeInfoKHR::default()
                                 .primitive_count(geo.triangle_count as u32)
                                 .primitive_offset(0)
                                 .first_vertex(0)
                                 .transform_offset(0)
-                                .build()
                         })
                         .collect::<Vec<_>>(),
                 ));
@@ -153,16 +150,20 @@ impl BottomLevelAccelerationStructure {
 
                 // Figure out how big the BLAS needs to be
                 let geos = geometries.load();
-                let build_geo_info = vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+                let build_geo_info = vk::AccelerationStructureBuildGeometryInfoKHR::default()
                     .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
                     .flags(crate::util::to_vk_as_build_flags(build_info.flags))
                     .geometries(&geos);
 
+                let mut sizes = vk::AccelerationStructureBuildSizesInfoKHR::default();
                 ctx.as_loader.get_acceleration_structure_build_sizes(
                     vk::AccelerationStructureBuildTypeKHR::DEVICE,
                     &build_geo_info,
                     &num_triangles,
-                )
+                    &mut sizes,
+                );
+
+                sizes
             }
             // Size comes directly from the user
             BottomLevelAccelerationStructureData::CompactDst(size) => {
@@ -171,11 +172,10 @@ impl BottomLevelAccelerationStructure {
                 buffer_refs = ArcSwap::new(Arc::new(FxHashMap::default()));
                 geometries = ArcSwap::new(Arc::new(Vec::default()));
 
-                vk::AccelerationStructureBuildSizesInfoKHR::builder()
+                vk::AccelerationStructureBuildSizesInfoKHR::default()
                     .acceleration_structure_size(size)
                     .build_scratch_size(0)
                     .update_scratch_size(0)
-                    .build()
             }
         };
 
@@ -183,7 +183,7 @@ impl BottomLevelAccelerationStructure {
         let qfi = ctx
             .queue_family_indices
             .queue_types_to_indices(build_info.queue_types);
-        let buffer_create_info = vk::BufferCreateInfo::builder()
+        let buffer_create_info = vk::BufferCreateInfo::default()
             .size(sizes.acceleration_structure_size)
             .usage(
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
@@ -240,22 +240,21 @@ impl BottomLevelAccelerationStructure {
 
         // Setup debug name is requested
         if let Some(name) = build_info.debug_name {
-            if let Some((debug, _)) = &ctx.debug {
+            if let Some(debug) = &ctx.debug {
                 let name = CString::new(format!("{name}_buffer")).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::BUFFER)
-                    .object_handle(buffer.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(buffer)
+                    .object_name(&name);
 
                 debug
-                    .set_debug_utils_object_name(ctx.device.handle(), &name_info)
+                    .device
+                    .set_debug_utils_object_name(&name_info)
                     .unwrap();
             }
         }
 
         // Create the BLAS
-        let create_info = vk::AccelerationStructureCreateInfoKHR::builder()
+        let create_info = vk::AccelerationStructureCreateInfoKHR::default()
             .buffer(buffer)
             .size(sizes.acceleration_structure_size)
             .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL);
@@ -343,14 +342,14 @@ impl BottomLevelAccelerationStructure {
         &self,
         device: &ash::Device,
         commands: vk::CommandBuffer,
-        as_loader: &ash::extensions::khr::AccelerationStructure,
+        as_loader: &ash::khr::acceleration_structure::Device,
         scratch: &Buffer<crate::VulkanBackend>,
         scratch_array_element: usize,
     ) {
         let ranges = self.build_ranges.load();
         let geometries = self.geometries.load();
 
-        let build_geo_info = [vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+        let build_geo_info = [vk::AccelerationStructureBuildGeometryInfoKHR::default()
             .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
             .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
             .dst_acceleration_structure(self.acceleration_struct)
@@ -360,8 +359,7 @@ impl BottomLevelAccelerationStructure {
                 scratch
                     .internal()
                     .device_address(device, scratch_array_element),
-            )
-            .build()];
+            )];
         let infos = [ranges.as_slice()];
 
         as_loader.cmd_build_acceleration_structures(commands, &build_geo_info, &infos);
@@ -370,7 +368,7 @@ impl BottomLevelAccelerationStructure {
     pub(crate) unsafe fn write_compact_size(
         &self,
         commands: vk::CommandBuffer,
-        as_loader: &ash::extensions::khr::AccelerationStructure,
+        as_loader: &ash::khr::acceleration_structure::Device,
         queries: &Queries,
     ) {
         let query = self.compact_size_query.as_ref().unwrap();
@@ -386,7 +384,7 @@ impl BottomLevelAccelerationStructure {
     pub(crate) unsafe fn copy_from(
         &self,
         commands: vk::CommandBuffer,
-        as_loader: &ash::extensions::khr::AccelerationStructure,
+        as_loader: &ash::khr::acceleration_structure::Device,
         src: &Self,
     ) {
         // Copy buffer references and build ranges
@@ -394,7 +392,7 @@ impl BottomLevelAccelerationStructure {
         self.build_ranges.store(src.build_ranges.load().clone());
 
         // Copy acceleration structure
-        let copy_info = vk::CopyAccelerationStructureInfoKHR::builder()
+        let copy_info = vk::CopyAccelerationStructureInfoKHR::default()
             .src(src.acceleration_struct)
             .dst(self.acceleration_struct)
             .mode(vk::CopyAccelerationStructureModeKHR::COMPACT);

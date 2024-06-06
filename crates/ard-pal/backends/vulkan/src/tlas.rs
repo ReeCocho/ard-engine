@@ -5,7 +5,7 @@ use api::{
     tlas::{TopLevelAccelerationStructureCreateError, TopLevelAccelerationStructureCreateInfo},
     types::{BuildAccelerationStructureFlags, MemoryUsage, SharingMode},
 };
-use ash::vk::{self, Handle};
+use ash::vk;
 use crossbeam_channel::Sender;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 
@@ -35,33 +35,32 @@ impl TopLevelAccelerationStructure {
     ) -> Result<Self, TopLevelAccelerationStructureCreateError> {
         let mut allocator = ctx.allocator.lock().unwrap();
 
-        let instances = vk::AccelerationStructureGeometryInstancesDataKHR::builder()
-            .array_of_pointers(true)
-            .build();
+        let instances =
+            vk::AccelerationStructureGeometryInstancesDataKHR::default().array_of_pointers(true);
 
-        let geo = [vk::AccelerationStructureGeometryKHR::builder()
+        let geo = [vk::AccelerationStructureGeometryKHR::default()
             .geometry_type(vk::GeometryTypeKHR::INSTANCES)
             // TODO: Make configurable
             .flags(vk::GeometryFlagsKHR::OPAQUE)
-            .geometry(vk::AccelerationStructureGeometryDataKHR { instances })
-            .build()];
+            .geometry(vk::AccelerationStructureGeometryDataKHR { instances })];
 
-        let geo_info = vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+        let geo_info = vk::AccelerationStructureBuildGeometryInfoKHR::default()
             .flags(crate::util::to_vk_as_build_flags(create_info.flags))
             .geometries(&geo);
         let prim_count = [create_info.capacity as u32];
-
-        let sizes = ctx.as_loader.get_acceleration_structure_build_sizes(
+        let mut sizes = vk::AccelerationStructureBuildSizesInfoKHR::default();
+        ctx.as_loader.get_acceleration_structure_build_sizes(
             vk::AccelerationStructureBuildTypeKHR::DEVICE,
             &geo_info,
             &prim_count,
+            &mut sizes,
         );
 
         // Create the buffer to hold the TLAS
         let qfi = ctx
             .queue_family_indices
             .queue_types_to_indices(create_info.queue_types);
-        let buffer_create_info = vk::BufferCreateInfo::builder()
+        let buffer_create_info = vk::BufferCreateInfo::default()
             .size(sizes.acceleration_structure_size)
             .usage(
                 vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
@@ -118,22 +117,21 @@ impl TopLevelAccelerationStructure {
 
         // Setup debug name is requested
         if let Some(name) = create_info.debug_name {
-            if let Some((debug, _)) = &ctx.debug {
+            if let Some(debug) = &ctx.debug {
                 let name = CString::new(format!("{name}_buffer")).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::BUFFER)
-                    .object_handle(buffer.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(buffer)
+                    .object_name(&name);
 
                 debug
-                    .set_debug_utils_object_name(ctx.device.handle(), &name_info)
+                    .device
+                    .set_debug_utils_object_name(&name_info)
                     .unwrap();
             }
         }
 
         // Create the BLAS
-        let tlas_create_info = vk::AccelerationStructureCreateInfoKHR::builder()
+        let tlas_create_info = vk::AccelerationStructureCreateInfoKHR::default()
             .buffer(buffer)
             .size(sizes.acceleration_structure_size)
             .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL);
@@ -172,29 +170,27 @@ impl TopLevelAccelerationStructure {
         &self,
         device: &ash::Device,
         commands: vk::CommandBuffer,
-        as_loader: &ash::extensions::khr::AccelerationStructure,
+        as_loader: &ash::khr::acceleration_structure::Device,
         instance_count: usize,
         scratch: &Buffer<crate::VulkanBackend>,
         scratch_array_element: usize,
         src: &Buffer<crate::VulkanBackend>,
         src_array_element: usize,
     ) {
-        let instances = vk::AccelerationStructureGeometryInstancesDataKHR::builder()
+        let instances = vk::AccelerationStructureGeometryInstancesDataKHR::default()
             .array_of_pointers(true)
             .data(
                 src.internal()
                     .device_address_const(device, src_array_element),
-            )
-            .build();
+            );
 
-        let geo = [vk::AccelerationStructureGeometryKHR::builder()
+        let geo = [vk::AccelerationStructureGeometryKHR::default()
             .geometry_type(vk::GeometryTypeKHR::INSTANCES)
             // TODO: Make configurable
             .flags(vk::GeometryFlagsKHR::OPAQUE)
-            .geometry(vk::AccelerationStructureGeometryDataKHR { instances })
-            .build()];
+            .geometry(vk::AccelerationStructureGeometryDataKHR { instances })];
 
-        let build_geo_info = [vk::AccelerationStructureBuildGeometryInfoKHR::builder()
+        let build_geo_info = [vk::AccelerationStructureBuildGeometryInfoKHR::default()
             .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL)
             .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
             .dst_acceleration_structure(self.acceleration_struct)
@@ -204,15 +200,13 @@ impl TopLevelAccelerationStructure {
                 scratch
                     .internal()
                     .device_address(device, scratch_array_element),
-            )
-            .build()];
+            )];
 
-        let build_range = [vk::AccelerationStructureBuildRangeInfoKHR::builder()
+        let build_range = [vk::AccelerationStructureBuildRangeInfoKHR::default()
             .primitive_count(instance_count as u32)
             .primitive_offset(0)
             .first_vertex(0)
-            .transform_offset(0)
-            .build()];
+            .transform_offset(0)];
 
         let infos = [build_range.as_slice()];
 

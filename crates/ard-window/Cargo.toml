@@ -9,3 +9,6 @@ edition.workspace = true
 ard-ecs = { path = "../ard-ecs" }
 ard-core = { path = "../ard-core" }
 ard-math = { path = "../ard-math" }
+ard-input = { path = "../ard-input" }
+winit.workspace = true
+rustc-hash.workspace = true

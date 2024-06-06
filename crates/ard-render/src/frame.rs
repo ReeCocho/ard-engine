@@ -13,8 +13,9 @@ use ard_render_image_effects::{
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
 use ard_render_renderers::pathtracer::PathTracerSettings;
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
-use crate::{DebugSettings, MsaaSettings};
+use crate::{DebugSettings, MsaaSettings, PresentationSettings};
 
 /// Information used by the render system to draw things. This data is persisted between frames
 /// for reuse.
@@ -35,6 +36,7 @@ pub struct FrameDataInner {
     pub object_data: RenderObjects,
     /// Lights captured from the primary ECS.
     pub lights: Lights,
+    pub present_settings: PresentationSettings,
     pub tonemapping_settings: TonemappingSettings,
     pub ao_settings: AoSettings,
     pub sun_shafts_settings: SunShaftsSettings,
@@ -45,10 +47,18 @@ pub struct FrameDataInner {
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.
-    pub window_size: (u32, u32),
+    pub window: Option<WindowInfo>,
     /// The requested canvas size for this frame.
     pub canvas_size: (u32, u32),
 }
+
+pub struct WindowInfo {
+    pub size: (u32, u32),
+    pub window_handle: RawWindowHandle,
+    pub display_handle: RawDisplayHandle,
+}
+
+unsafe impl Send for WindowInfo {}
 
 pub type FrameData = Box<FrameDataInner>;
 

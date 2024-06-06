@@ -62,6 +62,11 @@ impl TextureResource {
         ctx: &Context,
         create_info: TextureCreateInfo<T>,
     ) -> Result<(Self, TextureUpload), TextureCreateError<T>> {
+        debug_assert!(
+            create_info.mip_type != MipType::Generate,
+            "mip generation not supported"
+        );
+
         let data = match create_info.source.into_texture_data() {
             Ok(data) => data,
             Err(err) => return Err(TextureCreateError::TextureDataErr(err)),
@@ -118,11 +123,12 @@ impl TextureResource {
                 texture,
                 sampler: create_info.sampler,
                 mip_levels: create_info.mip_count as u32,
-                loaded_mips,
+                loaded_mips: 0,
             },
             TextureUpload {
                 staging,
                 mip_type: create_info.mip_type,
+                loaded_mips,
             },
         ))
     }

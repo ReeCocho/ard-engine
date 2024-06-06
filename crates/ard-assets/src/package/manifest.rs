@@ -4,10 +4,11 @@ use std::{
 };
 
 use path_slash::PathExt;
+use rustc_hash::FxHashMap;
 
 /// A list of all the files within a package.
 pub struct Manifest {
-    pub assets: HashMap<PathBuf, FileMetaData>,
+    pub assets: FxHashMap<PathBuf, FileMetaData>,
 }
 
 /// Meta-data describing an asset within a package.

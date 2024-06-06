@@ -1,9 +1,14 @@
+use std::sync::atomic::Ordering;
+
 use ard_formats::vertex::VertexLayout;
 use ard_log::warn;
 use ard_render_base::resource::{ResourceAllocator, ResourceId};
-use ard_render_material::material::MaterialResource;
+use ard_render_material::{
+    material::MaterialResource, material_instance::MaterialInstanceResource,
+};
 use ard_render_meshes::mesh::MeshResource;
 use ard_render_objects::keys::SeparatedDrawKey;
+use ard_render_textures::texture::TextureResource;
 
 pub struct RenderStateTracker {
     last_material: ResourceId,
@@ -23,8 +28,10 @@ impl RenderStateTracker {
     pub fn compute_delta<'a>(
         &mut self,
         key: &SeparatedDrawKey,
+        textures: &'a ResourceAllocator<TextureResource>,
         meshes: &'a ResourceAllocator<MeshResource>,
         materials: &'a ResourceAllocator<MaterialResource>,
+        material_instances: &'a ResourceAllocator<MaterialInstanceResource>,
     ) -> BindingDelta {
         let mut delta = BindingDelta {
             skip: false,
@@ -64,6 +71,51 @@ impl RenderStateTracker {
                 return delta;
             }
         };
+
+        // Grab the material instance
+        let material_instance = match material_instances.get(key.material_instance_id) {
+            Some(material_instance) => material_instance,
+            None => {
+                warn!(
+                    "Attempt to render with material instance `{:?}` that did not exist. Skipping draw.",
+                    key.material_instance_id
+                );
+                delta.skip = true;
+                return delta;
+            }
+        };
+
+        // If the material instance thinks it's textures are not ready, we will verify
+        if !material_instance.textures_ready.load(Ordering::Relaxed) {
+            let mut textures_ready = true;
+            for texture in material_instance.textures.iter().flatten() {
+                let texture = match textures.get(texture.id()) {
+                    Some(texture) => texture,
+                    None => {
+                        warn!(
+                            "Attempt to render with texture `{:?}` that did not exist. Skipping draw.",
+                            texture.id()
+                        );
+                        delta.skip = true;
+                        return delta;
+                    }
+                };
+
+                if texture.loaded_mips == 0 {
+                    textures_ready = false;
+                    break;
+                }
+            }
+
+            if !textures_ready {
+                delta.skip = true;
+                return delta;
+            }
+
+            material_instance
+                .textures_ready
+                .store(true, Ordering::Relaxed);
+        }
 
         // We have everything we need. Mark what has changed
         if self.last_material != key.material_id {

@@ -36,7 +36,7 @@ pub(crate) enum StagingRequest {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum StagingResource {
     StaticMesh(ResourceId),
-    Texture(ResourceId),
+    Texture { id: ResourceId, loaded_mips: u32 },
     TextureMip { id: ResourceId, mip_level: u32 },
 }
 
@@ -155,7 +155,10 @@ impl Staging {
                             upload,
                         ),
                     }
-                    StagingResource::Texture(*id)
+                    StagingResource::Texture {
+                        id: *id,
+                        loaded_mips: upload.loaded_mips,
+                    }
                 }
                 StagingRequest::TextureMip { id, upload } => {
                     let texture = match textures.get(*id) {

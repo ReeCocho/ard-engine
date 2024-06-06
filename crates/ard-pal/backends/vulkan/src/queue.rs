@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, ffi::CString};
 
 use api::types::QueueType;
-use ash::vk::{self, Handle};
+use ash::vk;
 
 use crate::util::semaphores::{SemaphoreTracker, WaitInfo};
 
@@ -31,27 +31,24 @@ struct ActiveCommandBuffer {
 impl VkQueue {
     pub unsafe fn new(
         device: &ash::Device,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         queue: vk::Queue,
         ty: QueueType,
         queue_family: u32,
     ) -> Result<Self, vk::Result> {
         // Create timeline semaphore
-        let mut type_create_info = vk::SemaphoreTypeCreateInfo::builder()
+        let mut type_create_info = vk::SemaphoreTypeCreateInfo::default()
             .semaphore_type(vk::SemaphoreType::TIMELINE)
-            .initial_value(0)
-            .build();
-        let create_info = vk::SemaphoreCreateInfo::builder()
+            .initial_value(0);
+        let create_info = vk::SemaphoreCreateInfo::default()
             .push_next(&mut type_create_info)
-            .flags(vk::SemaphoreCreateFlags::empty())
-            .build();
+            .flags(vk::SemaphoreCreateFlags::empty());
         let semaphore = device.create_semaphore(&create_info, None)?;
 
         // Create command pool
-        let create_info = vk::CommandPoolCreateInfo::builder()
+        let create_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-            .queue_family_index(queue_family)
-            .build();
+            .queue_family_index(queue_family);
         let command_pool = device.create_command_pool(&create_info, None)?;
 
         // Name objects
@@ -79,33 +76,23 @@ impl VkQueue {
                 ),
             };
 
-            let queue_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                .object_type(vk::ObjectType::QUEUE)
-                .object_handle(queue.as_raw())
-                .object_name(&queue_name)
-                .build();
+            let queue_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_handle(queue)
+                .object_name(&queue_name);
 
-            let semaphore_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                .object_type(vk::ObjectType::SEMAPHORE)
-                .object_handle(semaphore.as_raw())
-                .object_name(&semaphore_name)
-                .build();
+            let semaphore_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_handle(semaphore)
+                .object_name(&semaphore_name);
 
-            let pool_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                .object_type(vk::ObjectType::COMMAND_POOL)
-                .object_handle(command_pool.as_raw())
-                .object_name(&pool_name)
-                .build();
+            let pool_name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_handle(command_pool)
+                .object_name(&pool_name);
 
+            debug.set_debug_utils_object_name(&queue_name_info).unwrap();
             debug
-                .set_debug_utils_object_name(device.handle(), &queue_name_info)
+                .set_debug_utils_object_name(&semaphore_name_info)
                 .unwrap();
-            debug
-                .set_debug_utils_object_name(device.handle(), &semaphore_name_info)
-                .unwrap();
-            debug
-                .set_debug_utils_object_name(device.handle(), &pool_name_info)
-                .unwrap();
+            debug.set_debug_utils_object_name(&pool_name_info).unwrap();
         }
 
         Ok(Self {
@@ -148,7 +135,7 @@ impl VkQueue {
     pub unsafe fn allocate_command_buffer(
         &mut self,
         device: &ash::Device,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
     ) -> vk::CommandBuffer {
         // Check current timeline value
         let cur_value = device.get_semaphore_counter_value(self.semaphore).unwrap();
@@ -168,11 +155,10 @@ impl VkQueue {
             Some(cb) => cb.command_buffer,
             // If there was no free command buffer, we will allocate one
             None => {
-                let alloc_info = vk::CommandBufferAllocateInfo::builder()
+                let alloc_info = vk::CommandBufferAllocateInfo::default()
                     .command_buffer_count(1)
                     .command_pool(self.command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
-                    .build();
+                    .level(vk::CommandBufferLevel::PRIMARY);
                 let cb = device.allocate_command_buffers(&alloc_info).unwrap()[0];
 
                 // Name the command buffer
@@ -197,14 +183,10 @@ impl VkQueue {
                     }
                     .unwrap();
 
-                    let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                        .object_type(vk::ObjectType::COMMAND_BUFFER)
-                        .object_handle(cb.as_raw())
-                        .object_name(&name)
-                        .build();
-                    debug
-                        .set_debug_utils_object_name(device.handle(), &name_info)
-                        .unwrap();
+                    let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(cb)
+                        .object_name(&name);
+                    debug.set_debug_utils_object_name(&name_info).unwrap();
                 }
 
                 self.command_buffer_count += 1;
@@ -258,16 +240,15 @@ impl VkQueue {
 
         // Submit to queue
         let command_buffer = [command_buffer];
-        let mut timeline_info = vk::TimelineSemaphoreSubmitInfo::builder()
+        let mut timeline_info = vk::TimelineSemaphoreSubmitInfo::default()
             .signal_semaphore_values(&signal_values)
             .wait_semaphore_values(&wait_values);
-        let submit_info = [vk::SubmitInfo::builder()
+        let submit_info = [vk::SubmitInfo::default()
             .command_buffers(&command_buffer)
             .signal_semaphores(&signals)
             .wait_semaphores(&waits)
             .wait_dst_stage_mask(&wait_stages)
-            .push_next(&mut timeline_info)
-            .build()];
+            .push_next(&mut timeline_info)];
         device.queue_submit(self.queue, &submit_info, vk::Fence::null())
     }
 

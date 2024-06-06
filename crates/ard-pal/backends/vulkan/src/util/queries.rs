@@ -26,7 +26,6 @@ impl Queries {
             .get_query_pool_results(
                 self.accel_struct_compact_pools[query.pool],
                 query.idx as u32,
-                1,
                 &mut res,
                 vk::QueryResultFlags::empty(),
             )
@@ -41,7 +40,7 @@ impl Queries {
         }
 
         // Otherwise, we need to make a new pool
-        let create_info = vk::QueryPoolCreateInfo::builder()
+        let create_info = vk::QueryPoolCreateInfo::default()
             .query_type(vk::QueryType::ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR)
             .query_count(QUERIES_PER_POOL);
         let pool = device.create_query_pool(&create_info, None).unwrap();

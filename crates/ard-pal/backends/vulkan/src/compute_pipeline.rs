@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
 use api::compute_pipeline::{ComputePipelineCreateError, ComputePipelineCreateInfo};
-use ash::vk::{self, Handle};
+use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use crossbeam_channel::Sender;
 
@@ -27,7 +27,7 @@ unsafe impl Zeroable for DispatchIndirect {}
 impl ComputePipeline {
     pub(crate) unsafe fn new(
         device: &ash::Device,
-        debug: Option<&ash::extensions::ext::DebugUtils>,
+        debug: Option<&ash::ext::debug_utils::Device>,
         garbage: Sender<Garbage>,
         create_info: ComputePipelineCreateInfo<crate::VulkanBackend>,
     ) -> Result<Self, ComputePipelineCreateError> {
@@ -44,34 +44,30 @@ impl ComputePipeline {
         for layout in &create_info.layouts {
             layouts.push(layout.internal().layout);
         }
-        let layout_create_info = vk::PipelineLayoutCreateInfo::builder()
+        let layout_create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&layouts)
             .push_constant_ranges(match &push_constant_ranges {
                 Some(range) => range,
                 None => &[],
-            })
-            .build();
+            });
         let layout = device
             .create_pipeline_layout(&layout_create_info, None)
             .unwrap();
 
         // Create the pipeline
         let map_entries = [
-            vk::SpecializationMapEntry::builder()
+            vk::SpecializationMapEntry::default()
                 .constant_id(0)
                 .offset(0)
-                .size(std::mem::size_of::<u32>())
-                .build(),
-            vk::SpecializationMapEntry::builder()
+                .size(std::mem::size_of::<u32>()),
+            vk::SpecializationMapEntry::default()
                 .constant_id(1)
                 .offset(std::mem::size_of::<u32>() as u32)
-                .size(std::mem::size_of::<u32>())
-                .build(),
-            vk::SpecializationMapEntry::builder()
+                .size(std::mem::size_of::<u32>()),
+            vk::SpecializationMapEntry::default()
                 .constant_id(2)
                 .offset(2 * std::mem::size_of::<u32>() as u32)
-                .size(std::mem::size_of::<u32>())
-                .build(),
+                .size(std::mem::size_of::<u32>()),
         ];
         let values = [
             create_info.work_group_size.0,
@@ -79,23 +75,20 @@ impl ComputePipeline {
             create_info.work_group_size.2,
         ];
 
-        let specialization = vk::SpecializationInfo::builder()
+        let specialization = vk::SpecializationInfo::default()
             .map_entries(&map_entries)
-            .data(bytemuck::cast_slice(&values))
-            .build();
+            .data(bytemuck::cast_slice(&values));
 
         let entry_point = std::ffi::CString::new("main").unwrap();
-        let stage = vk::PipelineShaderStageCreateInfo::builder()
+        let stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
             .module(create_info.module.internal().module)
             .name(&entry_point)
-            .specialization_info(&specialization)
-            .build();
+            .specialization_info(&specialization);
 
-        let pipeline_info = [vk::ComputePipelineCreateInfo::builder()
+        let pipeline_info = [vk::ComputePipelineCreateInfo::default()
             .stage(stage)
-            .layout(layout)
-            .build()];
+            .layout(layout)];
 
         let pipeline = match device.create_compute_pipelines(
             vk::PipelineCache::null(),
@@ -110,15 +103,11 @@ impl ComputePipeline {
         if let Some(name) = create_info.debug_name {
             if let Some(debug) = debug {
                 let name = CString::new(name).unwrap();
-                let name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
-                    .object_type(vk::ObjectType::PIPELINE)
-                    .object_handle(pipeline.as_raw())
-                    .object_name(&name)
-                    .build();
+                let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_handle(pipeline)
+                    .object_name(&name);
 
-                debug
-                    .set_debug_utils_object_name(device.handle(), &name_info)
-                    .unwrap();
+                debug.set_debug_utils_object_name(&name_info).unwrap();
             }
         }
 

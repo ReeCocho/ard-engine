@@ -4,11 +4,11 @@ use ard_pal::prelude::{Filter, Format, SamplerAddressMode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TextureHeader {
+    pub mips: Vec<PathBuf>,
     pub width: u32,
     pub height: u32,
-    pub mip_count: u32,
     pub format: Format,
     pub sampler: Sampler,
 }
@@ -55,6 +55,12 @@ impl TextureHeader {
     pub fn mip_path(root: impl Into<PathBuf>, mip: u32) -> PathBuf {
         let mut path: PathBuf = root.into();
         path.push(mip.to_string());
+        path
+    }
+
+    pub fn header_path(root: impl Into<PathBuf>) -> PathBuf {
+        let mut path: PathBuf = root.into();
+        path.push("header.ard_tex");
         path
     }
 }

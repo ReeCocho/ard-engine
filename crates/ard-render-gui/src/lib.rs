@@ -1,13 +1,8 @@
-use std::time::Duration;
-
 use ard_core::core::Tick;
 use ard_ecs::prelude::*;
 use ard_input::{InputState, Key, MouseButton};
 use ard_render_si::consts::GUI_SCENE_TEXTURE_ID;
-use ard_window::{
-    window::{Window, WindowId},
-    windows::Windows,
-};
+use ard_window::prelude::*;
 use view::GuiView;
 
 pub mod view;
@@ -51,6 +46,9 @@ impl Default for Gui {
             ],
         );
 
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Fill);
+
         ctx.set_fonts(fonts);
 
         // Define styling
@@ -83,10 +81,7 @@ impl Gui {
         self.views.push(Box::new(view));
     }
 
-    pub fn gather_input(&mut self, input: &InputState, window: &Window, dt: Duration) {
-        // Update predicted delta time even if the window is minimized
-        self.input.predicted_dt += dt.as_secs_f32();
-
+    pub fn gather_input(&mut self, input: &InputState, window: &Window) {
         // Canvas size hint
         self.input.screen_rect = Some(egui::Rect {
             min: egui::Pos2::ZERO,
@@ -96,10 +91,10 @@ impl Gui {
             ),
         });
 
-        // Don't bother gathering input if the mouse is locked
-        if window.cursor_locked() {
-            return;
-        }
+        // // Don't bother gathering input if the mouse is locked
+        // if window.set_cursor_grab() {
+        //     return;
+        // }
 
         // Copy-paste and text input
         if !input.input_string().is_empty() {
@@ -189,6 +184,7 @@ impl Gui {
         queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> GuiRunOutput {
+        self.input.predicted_dt = tick.0.as_secs_f32();
         let mut full = self.ctx.run(std::mem::take(&mut self.input), |ctx| {
             for view in &mut self.views {
                 view.show(tick, ctx, commands, queries, res);
@@ -236,7 +232,7 @@ impl Gui {
 impl GuiInputCaptureSystem {
     fn tick(
         &mut self,
-        tick: Tick,
+        _: Tick,
         _: Commands,
         _: Queries<()>,
         res: Res<(Write<Gui>, Read<InputState>, Read<Windows>)>,
@@ -245,7 +241,7 @@ impl GuiInputCaptureSystem {
         let input = res.get::<InputState>().unwrap();
         let windows = res.get::<Windows>().unwrap();
         let window = windows.get(WindowId::primary()).unwrap();
-        gui.gather_input(&input, window, tick.0);
+        gui.gather_input(&input, window);
     }
 }
 
