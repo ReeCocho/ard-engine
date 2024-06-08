@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 
 use crate::assets::{meta::MetaFile, EditorAssets};
 
-use super::EditorViewContext;
+use super::{drag_drop::DragDropPayload, EditorViewContext};
 
 pub struct AssetsView {}
 
@@ -64,7 +64,7 @@ impl AssetsView {
                 ui.vertical_centered_justified(|ui| {
                     ui.dnd_drag_source(
                         egui::Id::new(&meta_file.baked),
-                        String::from("blarg"),
+                        DragDropPayload::Asset(meta_file.clone()),
                         |ui| {
                             ui.add(
                                 egui::Label::new(icon)

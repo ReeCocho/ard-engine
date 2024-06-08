@@ -4,11 +4,12 @@ use path_macro::path;
 use std::path::PathBuf;
 
 use crate::{
-    assets::meta::{MetaData, MetaFile},
+    assets::{
+        meta::{MetaData, MetaFile},
+        EditorAssets,
+    },
     tasks::{EditorTask, TaskConfirmation},
 };
-
-use super::EditorAssets;
 
 pub struct ModelImportTask {
     path: PathBuf,
@@ -132,8 +133,8 @@ impl EditorTask for ModelImportTask {
 
     fn complete(
         &mut self,
-        commands: &Commands,
-        queries: &Queries<Everything>,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> Result<()> {
         let mut assets = res.get_mut::<EditorAssets>().unwrap();

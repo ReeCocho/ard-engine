@@ -1,3 +1,6 @@
+pub mod instantiate;
+pub mod model;
+
 use std::{collections::VecDeque, thread::JoinHandle};
 
 use anyhow::Result;
@@ -5,6 +8,10 @@ use ard_engine::{core::prelude::*, ecs::prelude::*, log::*, render::view::GuiVie
 use crossbeam_channel::{Receiver, Sender};
 
 pub trait EditorTask: Send {
+    fn has_confirm_ui(&self) -> bool {
+        true
+    }
+
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation>;
 
     fn run(&mut self) -> Result<()>;
@@ -62,11 +69,11 @@ impl TaskQueue {
 impl GuiView for TaskConfirmationGui {
     fn show(
         &mut self,
-        tick: Tick,
+        _tick: Tick,
         ctx: &egui::Context,
-        commands: &Commands,
-        queries: &Queries<Everything>,
-        res: &Res<Everything>,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        _res: &Res<Everything>,
     ) {
         // Handle new tasks and process existing ones
         match self.pending.take() {
@@ -96,6 +103,11 @@ impl GuiView for TaskConfirmationGui {
 
 impl PendingTask {
     fn show(&mut self, ctx: &egui::Context) -> TaskConfirmation {
+        // Early out if we don't have confirm UI
+        if !self.task.has_confirm_ui() {
+            return TaskConfirmation::Ready;
+        }
+
         let mut out = TaskConfirmation::Wait;
 
         egui::Window::new("Confirmation").show(ctx, |ui| {

@@ -35,6 +35,7 @@ pub mod window {
 pub mod render {
     pub mod prelude {
         pub use ard_pal::prelude::*;
+        pub use ard_render_base::RenderingMode;
     }
 
     pub use ard_pal::*;
@@ -42,5 +43,8 @@ pub mod render {
     pub use ard_render_assets::*;
     pub use ard_render_camera::*;
     pub use ard_render_gui::*;
+    pub use ard_render_material::material::*;
+    pub use ard_render_material::material_instance::*;
+    pub use ard_render_meshes::mesh::*;
     pub use ard_render_objects::*;
 }

@@ -1,8 +1,11 @@
 pub mod assets;
+pub mod drag_drop;
 pub mod menu_bar;
 pub mod scene;
+pub mod hierarchy;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
+use hierarchy::HierarchyView;
 
 use self::{assets::AssetsView, menu_bar::MenuBar, scene::SceneView};
 
@@ -10,6 +13,7 @@ use self::{assets::AssetsView, menu_bar::MenuBar, scene::SceneView};
 pub enum Pane {
     Scene,
     Assets,
+    Hierarchy,
 }
 
 pub struct EditorView {
@@ -17,6 +21,7 @@ pub struct EditorView {
     menu_bar: MenuBar,
     scene: SceneView,
     assets: AssetsView,
+    hierarchy: HierarchyView
 }
 
 pub struct EditorViewContext<'a> {
@@ -34,6 +39,7 @@ struct EditorViewBehavior<'a> {
     res: &'a Res<Everything>,
     scene: &'a mut SceneView,
     assets: &'a mut AssetsView,
+    hierarchy: &'a mut HierarchyView,
 }
 
 impl Default for EditorView {
@@ -43,6 +49,7 @@ impl Default for EditorView {
         let mut tabs = Vec::default();
         tabs.push(tiles.insert_pane(Pane::Scene));
         tabs.push(tiles.insert_pane(Pane::Assets));
+        tabs.push(tiles.insert_pane(Pane::Hierarchy));
 
         let root = tiles.insert_tab_tile(tabs);
 
@@ -51,6 +58,7 @@ impl Default for EditorView {
             menu_bar: MenuBar,
             scene: SceneView {},
             assets: AssetsView {},
+            hierarchy: HierarchyView {}
         }
     }
 }
@@ -76,6 +84,7 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
         match *pane {
             Pane::Scene => self.scene.show(ctx),
             Pane::Assets => self.assets.show(ctx),
+            Pane::Hierarchy => self.hierarchy.show(ctx),
         }
     }
 }
@@ -99,6 +108,7 @@ impl GuiView for EditorView {
                 res,
                 scene: &mut self.scene,
                 assets: &mut self.assets,
+                hierarchy: &mut self.hierarchy
             };
             self.tree.ui(&mut behavior, ui);
         });

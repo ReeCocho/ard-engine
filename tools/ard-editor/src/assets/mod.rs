@@ -1,6 +1,5 @@
 pub mod importer;
 pub mod meta;
-pub mod model;
 
 use anyhow::Result;
 use rustc_hash::FxHashMap;
@@ -15,12 +14,7 @@ use crate::assets::meta::MetaFile;
 
 #[derive(Resource)]
 pub struct EditorAssets {
-    // packages: Vec<EditorPackage>,
     root: Folder,
-}
-
-pub struct EditorPackage {
-    path: PathBuf,
 }
 
 #[derive(Default)]

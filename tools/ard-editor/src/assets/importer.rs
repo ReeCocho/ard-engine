@@ -1,8 +1,9 @@
 use ard_engine::{ecs::prelude::*, log::*, window::prelude::WindowFileDropped};
 
-use crate::{assets::meta::AssetType, tasks::TaskQueue};
-
-use super::model::ModelImportTask;
+use crate::{
+    assets::meta::AssetType,
+    tasks::{model::ModelImportTask, TaskQueue},
+};
 
 #[derive(SystemState, Default)]
 pub struct AssetImporter {}

@@ -81,6 +81,9 @@ impl ApplicationHandler for WinitApp {
         let ard_id = windows.winit_to_ard_id(window_id).unwrap();
         let window = windows.get_mut(ard_id).unwrap();
 
+        // Keep requesting redraw
+        window.winit_window.request_redraw();
+
         match event {
             WindowEvent::Resized(dims) => {
                 self.dispatcher.submit(WindowResized {
@@ -156,12 +159,6 @@ impl ApplicationHandler for WinitApp {
                     for window in windows.iter_mut() {
                         window.apply_commands();
                     }
-
-                    windows
-                        .get_mut(ard_id)
-                        .unwrap()
-                        .winit_window
-                        .request_redraw();
 
                     // Drop so systems in the dispatcher can access these
                     std::mem::drop(windows);

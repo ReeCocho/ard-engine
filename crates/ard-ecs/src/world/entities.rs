@@ -12,7 +12,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use crate::{
     archetype::{ArchetypeId, Archetypes},
-    component::pack::{ComponentPack, EmptyComponentPack},
+    component::pack::{ComponentPack, ComponentPackMover, EmptyComponentPack},
     entity::Entity,
     prelude::{Component, ComponentExt},
     tag::{pack::TagPack, Tag, TagCollectionId, TagExt, Tags},
@@ -46,7 +46,7 @@ pub struct EntityCommands {
 
 pub(crate) enum EntityCommand {
     Create {
-        components: Box<dyn ComponentPack>,
+        components: Box<ComponentPackMover>,
         tags: Option<Box<dyn TagPack>>,
         /// Entity handles for the newly created entities.
         entities: Vec<Entity>,
@@ -60,7 +60,7 @@ pub(crate) enum EntityCommand {
     },
     SetComponents {
         entities: Vec<Entity>,
-        components: Box<dyn ComponentPack>,
+        components: Box<ComponentPackMover>,
     },
     AddComponent {
         entity: Entity,
@@ -129,7 +129,7 @@ impl Entities {
         for command in self.commands_receiver.clone().try_iter() {
             match command {
                 EntityCommand::Create {
-                    mut components,
+                    components,
                     tags: tag_pack,
                     entities,
                 } => {
@@ -157,7 +157,7 @@ impl Entities {
                     }
 
                     // Move the components into their archetype
-                    let (archetype, begin) = components.move_into(&entities, archetypes);
+                    let (archetype, begin) = components(&entities, archetypes);
 
                     // Move tags into their storages if needed
                     let collection =
@@ -229,7 +229,7 @@ impl Entities {
                 }
                 EntityCommand::SetComponents {
                     entities,
-                    mut components,
+                    components,
                 } => {
                     // "Delete" all the entities so they have no components
                     for entity in &entities {
@@ -250,7 +250,7 @@ impl Entities {
                     }
 
                     // Move the components into their archetype
-                    let (archetype, begin) = components.move_into(&entities, archetypes);
+                    let (archetype, begin) = components(&entities, archetypes);
 
                     // Update the entities archetypes
                     for (i, entity) in entities.iter().enumerate() {
@@ -396,7 +396,9 @@ impl EntityCommands {
             .copy_from_slice(&new_entities[..(elen.min(new_entities.len()))]);
 
         let _ = self.sender.send(EntityCommand::Create {
-            components: Box::new(components),
+            components: Box::new(move |entities, archetypes| {
+                components.move_into(entities, archetypes)
+            }),
             tags: if tags.is_empty() {
                 None
             } else {
@@ -413,7 +415,9 @@ impl EntityCommands {
 
         let _ = self.sender.send(EntityCommand::SetComponents {
             entities: Vec::from(entities),
-            components: Box::new(components),
+            components: Box::new(move |entities, archetypes| {
+                components.move_into(entities, archetypes)
+            }),
         });
     }
 

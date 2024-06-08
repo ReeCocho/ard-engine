@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use ard_engine::assets::asset::AssetNameBuf;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MetaFile {
     pub raw: PathBuf,
     pub baked: AssetNameBuf,
     pub data: MetaData,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum MetaData {
     Model,
 }

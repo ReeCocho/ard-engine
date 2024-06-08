@@ -2,6 +2,7 @@ pub mod assets;
 pub mod camera;
 pub mod gui;
 pub mod tasks;
+pub mod scene_graph;
 
 use ard_engine::assets::prelude::*;
 use ard_engine::core::prelude::*;
@@ -13,6 +14,7 @@ use assets::importer::AssetImporter;
 use assets::EditorAssets;
 use camera::SceneViewCamera;
 use gui::EditorView;
+use scene_graph::SceneGraph;
 use tasks::TaskRunner;
 
 fn main() {
@@ -33,8 +35,8 @@ fn main() {
             window: WindowId::primary(),
             settings: RendererSettings {
                 present_scene: false,
-                render_time: None,
-                present_mode: PresentMode::Fifo,
+                render_time: Some(std::time::Duration::from_secs_f32(1.0 / 60.0)),
+                present_mode: PresentMode::Mailbox,
                 render_scale: 1.0,
                 canvas_size: CanvasSize(Some((512, 512))),
             },
@@ -45,6 +47,7 @@ fn main() {
         .add_resource(EditorAssets::new("./assets/").unwrap())
         .add_system(AssetImporter::default())
         .add_startup_function(setup)
+        .add_resource(SceneGraph::default())
         .run();
 }
 

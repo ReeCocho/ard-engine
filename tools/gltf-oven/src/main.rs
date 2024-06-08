@@ -198,11 +198,11 @@ fn create_header(
                     diffuse_map: diffuse_map.map(|v| texture_paths[v].clone()),
                     normal_map: normal_map.map(|v| {
                         texture_is_unorm[v].store(true, Ordering::Relaxed);
-                        texture_paths[v].clone()
+                        PathBuf::from(texture_paths[v].file_name().unwrap())
                     }),
                     metallic_roughness_map: metallic_roughness_map.map(|v| {
                         texture_is_unorm[v].store(true, Ordering::Relaxed);
-                        texture_paths[v].clone()
+                        PathBuf::from(texture_paths[v].file_name().unwrap())
                     }),
                 },
             },
@@ -218,7 +218,11 @@ fn create_header(
         let mut f = BufWriter::new(fs::File::create(&mat_path).unwrap());
         bincode::serialize_into(&mut f, &mat_header).unwrap();
 
-        header.materials.push(mat_path);
+        header.materials.push(if args.uuid_names {
+            PathBuf::from(mat_path.file_name().unwrap())
+        } else {
+            mat_path
+        });
     }
 
     for mesh_group in &gltf.mesh_groups {
@@ -362,7 +366,7 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
 
     // Save the header
     let header = MeshHeader {
-        data_path: mesh_data_path,
+        data_path: PathBuf::from(mesh_data_path.file_name().unwrap()),
         index_count: data.index_count() as u32,
         vertex_count: data.vertex_count() as u32,
         meshlet_count: data.meshlet_count() as u32,
@@ -371,7 +375,7 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
     let mut f = BufWriter::new(fs::File::create(&mesh_header_path).unwrap());
     bincode::serialize_into(&mut f, &header).unwrap();
 
-    mesh_header_path
+    PathBuf::from(mesh_header_path.file_name().unwrap())
 }
 
 fn save_textures(
@@ -419,9 +423,7 @@ fn save_textures(
                 mips: (0..mip_count)
                     .map(|mip| {
                         if args.uuid_names {
-                            let mut data_path = PathBuf::from(out);
-                            data_path.push(format!("{}", uuid::Uuid::new_v4().to_string()));
-                            data_path
+                            uuid::Uuid::new_v4().to_string().into()
                         } else {
                             TextureHeader::mip_path(&tex_path, mip as u32)
                         }
@@ -474,7 +476,15 @@ fn save_textures(
                 let tex_data = TextureData::new(bytes, width, height, format);
 
                 // Save the file to disk
-                let mut f = BufWriter::new(fs::File::create(&tex_header.mips[mip]).unwrap());
+                let mip_out_path = if args.uuid_names {
+                    let mut data_path = PathBuf::from(out);
+                    data_path.push(tex_header.mips[mip].clone());
+                    data_path
+                } else {
+                    tex_header.mips[mip].clone()
+                };
+
+                let mut f = BufWriter::new(fs::File::create(mip_out_path).unwrap());
                 bincode::serialize_into(&mut f, &tex_data).unwrap();
             }
         });
