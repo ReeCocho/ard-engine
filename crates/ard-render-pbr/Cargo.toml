@@ -12,8 +12,14 @@ ard-render-material = { path = "../ard-render-material" }
 ard-render-si = { path = "../ard-render-si" }
 ard-render-base = { path = "../ard-render-base" }
 bytemuck.workspace = true
+bincode.workspace = true
 
 [build-dependencies]
 ard-render-codegen = { path = "../ard-render-codegen" }
 ard-render-si = { path = "../ard-render-si" }
+ard-render-base = { path = "../ard-render-base" }
+ard-render-renderers = { path = "../ard-render-renderers" }
 ard-formats = { path = "../ard-formats" }
+ard-render-material = { path = "../ard-render-material" }
+ard-pal = { path = "../ard-pal" }
+bincode.workspace = true

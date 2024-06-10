@@ -1,11 +1,12 @@
 use ard_ecs::component::Component;
+use serde::{Deserialize, Serialize};
 
 pub mod ecs;
-pub mod module;
 pub mod resource;
+pub mod shader_variant;
 
 /// Describes what type of rendering is required for a particular entity.
-#[derive(Component, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Component, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RenderingMode {
     /// The entity is fully opaque.
     Opaque = 0,

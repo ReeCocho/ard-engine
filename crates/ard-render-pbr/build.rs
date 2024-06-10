@@ -1,24 +1,14 @@
-use std::{env, ffi::OsStr, path::PathBuf};
+use std::{collections::HashMap, env, ffi::OsStr, io::BufWriter, path::PathBuf};
 
 use ard_formats::vertex::VertexLayout;
-
-struct ShaderVariant {
-    pub vertex_layout: VertexLayout,
-    pub pass: Pass,
-}
-
-#[derive(Copy, Clone)]
-enum Pass {
-    HighZ,
-    Shadow,
-    ShadowAc,
-    DepthPrepass,
-    DepthPrepassAc,
-    Color,
-    ColorAc,
-    Transparent,
-    PathTrace,
-}
+use ard_pal::prelude::ShaderStage;
+use ard_render_base::{shader_variant::ShaderVariant, RenderingMode};
+use ard_render_material::factory::PassId;
+use ard_render_renderers::passes::{
+    COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
+    SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
+};
 
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -27,137 +17,190 @@ fn main() {
     println!("cargo:rurun-if-changed={}", ard_render_si::GLSL_INCLUDE_DIR);
 
     // List of shader variants
+    // NOTE: The shader stages used here have a special meaning.
+    // A shader with "AllGraphics" has a mesh, task, and fragment shader.
+    // A shader with "Vertex" only has mesh and task shaders.
     let variants = [
         // High Z passes
         ShaderVariant {
-            pass: Pass::HighZ,
+            pass: usize::from(HIGH_Z_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Vertex,
+            rendering_mode: RenderingMode::Opaque,
         },
         // Shadow passes
         ShaderVariant {
-            pass: Pass::Shadow,
+            pass: usize::from(SHADOW_OPAQUE_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Vertex,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::ShadowAc,
+            pass: usize::from(SHADOW_ALPHA_CUTOFF_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::Vertex,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         ShaderVariant {
-            pass: Pass::ShadowAc,
+            pass: usize::from(SHADOW_ALPHA_CUTOFF_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         // Depth prepasses
         ShaderVariant {
-            pass: Pass::DepthPrepass,
+            pass: usize::from(DEPTH_OPAQUE_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::DepthPrepass,
+            pass: usize::from(DEPTH_OPAQUE_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::DepthPrepass,
+            pass: usize::from(DEPTH_OPAQUE_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::DepthPrepassAc,
+            pass: usize::from(DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         ShaderVariant {
-            pass: Pass::DepthPrepassAc,
+            pass: usize::from(DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         ShaderVariant {
-            pass: Pass::DepthPrepassAc,
+            pass: usize::from(DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         // Color passes
         ShaderVariant {
-            pass: Pass::Color,
+            pass: usize::from(COLOR_OPAQUE_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::Color,
+            pass: usize::from(COLOR_OPAQUE_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::Color,
+            pass: usize::from(COLOR_OPAQUE_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
         },
         ShaderVariant {
-            pass: Pass::ColorAc,
+            pass: usize::from(COLOR_ALPHA_CUTOFF_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         ShaderVariant {
-            pass: Pass::ColorAc,
+            pass: usize::from(COLOR_ALPHA_CUTOFF_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         ShaderVariant {
-            pass: Pass::ColorAc,
+            pass: usize::from(COLOR_ALPHA_CUTOFF_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
         },
         // Transparent passes
         ShaderVariant {
-            pass: Pass::Transparent,
+            pass: usize::from(TRANSPARENT_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
         },
         ShaderVariant {
-            pass: Pass::Transparent,
+            pass: usize::from(TRANSPARENT_PASS_ID),
             vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
         },
         ShaderVariant {
-            pass: Pass::Transparent,
+            pass: usize::from(TRANSPARENT_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
         },
         // Path tracing
         ShaderVariant {
-            pass: Pass::PathTrace,
+            pass: usize::from(PATH_TRACER_PASS_ID),
             vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        ShaderVariant {
+            pass: usize::from(PATH_TRACER_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        ShaderVariant {
+            pass: usize::from(PATH_TRACER_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Transparent,
         },
     ];
 
+    let mut out = HashMap::default();
     for variant in variants {
-        compile_shader_variant(&out_dir, variant);
+        compile_shader_variant(&out_dir, variant, &mut out);
     }
+
+    let out_dir = PathBuf::from(&out_dir).join("pbr_variants.bin");
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(out_dir)
+        .unwrap();
+    let writer = BufWriter::new(file);
+    bincode::serialize_into(writer, &out).unwrap();
 }
 
-fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
-    let mut ext = format!(".{}", variant.pass);
-
-    if !variant.vertex_layout.is_empty() {
-        let mut vl = String::from(".");
-
-        if variant.vertex_layout.contains(VertexLayout::TANGENT) {
-            vl.push_str("t");
-        }
-
-        if variant.vertex_layout.contains(VertexLayout::UV0) {
-            vl.push_str("uv0");
-        }
-
-        if variant.vertex_layout.contains(VertexLayout::UV1) {
-            vl.push_str("uv1");
-        }
-
-        ext.push_str(&vl);
-    }
-
+fn compile_shader_variant(
+    out_dir: &OsStr,
+    variant: ShaderVariant,
+    out: &mut HashMap<ShaderVariant, Vec<u8>>,
+) {
     let mut defines = Vec::default();
 
     defines.push(
-        match variant.pass {
-            Pass::HighZ => "HIGH_Z_PASS",
-            Pass::Shadow | Pass::ShadowAc => "SHADOW_PASS",
-            Pass::DepthPrepass | Pass::DepthPrepassAc => "DEPTH_PREPASS",
-            Pass::Color | Pass::ColorAc => "COLOR_PASS",
-            Pass::Transparent => "TRANSPARENT_PASS",
-            Pass::PathTrace => "PATH_TRACE_PASS",
+        match PassId::new(variant.pass) {
+            HIGH_Z_PASS_ID => "HIGH_Z_PASS",
+            SHADOW_OPAQUE_PASS_ID | SHADOW_ALPHA_CUTOFF_PASS_ID => "SHADOW_PASS",
+            DEPTH_OPAQUE_PREPASS_PASS_ID | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID => "DEPTH_PREPASS",
+            COLOR_OPAQUE_PASS_ID | COLOR_ALPHA_CUTOFF_PASS_ID => "COLOR_PASS",
+            TRANSPARENT_PASS_ID => "TRANSPARENT_PASS",
+            PATH_TRACER_PASS_ID => "PATH_TRACE_PASS",
+            _ => unreachable!("must implement for all passes"),
         }
         .into(),
     );
 
-    match variant.pass {
-        Pass::DepthPrepassAc | Pass::ColorAc | Pass::ShadowAc => {
+    match PassId::new(variant.pass) {
+        DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
+        | COLOR_ALPHA_CUTOFF_PASS_ID
+        | SHADOW_ALPHA_CUTOFF_PASS_ID => {
             defines.push("ALPHA_CUTOFF_PASS".into());
         }
         _ => {}
@@ -176,56 +219,79 @@ fn compile_shader_variant(out_dir: &OsStr, variant: ShaderVariant) {
         variant.vertex_layout.contains(VertexLayout::UV1) as u32
     ));
 
-    match variant.pass {
-        Pass::PathTrace => {
-            let rchit_name = format!("pbr.rchit{}.spv", ext);
-
+    match PassId::new(variant.pass) {
+        PATH_TRACER_PASS_ID => {
+            let out_dir = PathBuf::from(&out_dir).join("pbr.rchit.spv");
             ard_render_codegen::vulkan_spirv::compile_shader(
                 "./shaders/pbr.rchit",
-                PathBuf::from(&out_dir).join(rchit_name),
+                &out_dir,
                 &["./shaders/", "../ard-render/shaders/"],
                 &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
             );
+
+            let bin = std::fs::read(out_dir).unwrap();
+            out.insert(variant, bin);
         }
         _ => {
-            let ts_name = format!("pbr.task{}.spv", ext);
-            let ms_name = format!("pbr.mesh{}.spv", ext);
-            let frag_name = format!("pbr.frag{}.spv", ext);
+            let ts_name = PathBuf::from(&out_dir).join("pbr.ts.spv");
+            let ms_name = PathBuf::from(&out_dir).join("pbr.ms.spv");
+            let fs_name = PathBuf::from(&out_dir).join("pbr.fs.spv");
+
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.ts.glsl",
+                &ts_name,
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+
+            let bin = std::fs::read(ts_name).unwrap();
+            out.insert(
+                ShaderVariant {
+                    pass: variant.pass,
+                    vertex_layout: variant.vertex_layout,
+                    stage: ShaderStage::Task,
+                    rendering_mode: variant.rendering_mode,
+                },
+                bin,
+            );
 
             ard_render_codegen::vulkan_spirv::compile_shader(
                 "./shaders/pbr.ms.glsl",
-                PathBuf::from(&out_dir).join(ms_name),
+                &ms_name,
                 &["./shaders/", "../ard-render/shaders/"],
                 &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
             );
-            ard_render_codegen::vulkan_spirv::compile_shader(
-                "./shaders/pbr.ts.glsl",
-                PathBuf::from(&out_dir).join(ts_name),
-                &["./shaders/", "../ard-render/shaders/"],
-                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-            );
-            ard_render_codegen::vulkan_spirv::compile_shader(
-                "./shaders/pbr.frag",
-                PathBuf::from(&out_dir).join(frag_name),
-                &["./shaders/", "../ard-render/shaders/"],
-                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-            );
-        }
-    }
-}
 
-impl std::fmt::Display for Pass {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Pass::HighZ => write!(f, "high_z"),
-            Pass::Shadow => write!(f, "shadow"),
-            Pass::ShadowAc => write!(f, "shadow_ac"),
-            Pass::DepthPrepass => write!(f, "depth_prepass"),
-            Pass::DepthPrepassAc => write!(f, "depth_prepass_ac"),
-            Pass::Color => write!(f, "color"),
-            Pass::ColorAc => write!(f, "color_ac"),
-            Pass::Transparent => write!(f, "transparent"),
-            Pass::PathTrace => write!(f, "pt"),
+            let bin = std::fs::read(ms_name).unwrap();
+            out.insert(
+                ShaderVariant {
+                    pass: variant.pass,
+                    vertex_layout: variant.vertex_layout,
+                    stage: ShaderStage::Mesh,
+                    rendering_mode: variant.rendering_mode,
+                },
+                bin,
+            );
+
+            if variant.stage == ShaderStage::AllGraphics {
+                ard_render_codegen::vulkan_spirv::compile_shader(
+                    "./shaders/pbr.frag",
+                    &fs_name,
+                    &["./shaders/", "../ard-render/shaders/"],
+                    &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                );
+
+                let bin = std::fs::read(fs_name).unwrap();
+                out.insert(
+                    ShaderVariant {
+                        pass: variant.pass,
+                        vertex_layout: variant.vertex_layout,
+                        stage: ShaderStage::Fragment,
+                        rendering_mode: variant.rendering_mode,
+                    },
+                    bin,
+                );
+            }
         }
     }
 }
