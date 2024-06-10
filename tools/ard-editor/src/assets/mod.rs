@@ -43,13 +43,15 @@ impl EditorAssets {
 
     pub fn add_meta_file(&mut self, meta_file: MetaFile) {
         let mut cur_folder = &mut self.root;
-        for component in meta_file.raw.clone().components() {
+        let path = meta_file.raw.clone();
+        let mut components = path.components().skip(2).peekable();
+        while let Some(component) = components.next() {
             let component = match component {
                 std::path::Component::Normal(component) => component,
                 _ => continue,
             };
 
-            if PathBuf::from(component).extension() != Some(&OsStr::new("meta")) {
+            if components.peek().is_none() {
                 cur_folder.assets.insert(component.into(), meta_file);
                 break;
             } else {

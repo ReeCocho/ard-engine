@@ -41,6 +41,9 @@ pub enum Format {
     Rg32SInt,
     Rg32SFloat,
 
+    // RGB32
+    Rgb32SFloat,
+
     // RGBA8
     Rgba8Unorm,
     Rgba8Snorm,

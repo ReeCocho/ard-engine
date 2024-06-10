@@ -1,5 +1,9 @@
 use anyhow::Result;
-use ard_engine::{ecs::prelude::*, log::*};
+use ard_engine::{
+    assets::{asset::AssetNameBuf, manager::Assets},
+    ecs::prelude::*,
+    log::*,
+};
 use path_macro::path;
 use std::path::PathBuf;
 
@@ -14,6 +18,7 @@ use crate::{
 pub struct ModelImportTask {
     path: PathBuf,
     meta_file: Option<MetaFile>,
+    new_assets: Vec<AssetNameBuf>,
 }
 
 impl ModelImportTask {
@@ -21,6 +26,7 @@ impl ModelImportTask {
         Self {
             path,
             meta_file: None,
+            new_assets: Vec::default(),
         }
     }
 }
@@ -72,6 +78,7 @@ impl EditorTask for ModelImportTask {
         let mut model_file = None;
         for entry in temp_folder.path().read_dir()? {
             let entry = entry?;
+            self.new_assets.push(entry.file_name().into());
             let path = entry.path();
             let ext = match path.extension() {
                 Some(ext) => ext,
@@ -80,7 +87,6 @@ impl EditorTask for ModelImportTask {
 
             if ext == "ard_mdl" {
                 model_file = Some(entry.file_name());
-                break;
             }
         }
 
@@ -137,9 +143,15 @@ impl EditorTask for ModelImportTask {
         _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> Result<()> {
-        let mut assets = res.get_mut::<EditorAssets>().unwrap();
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+        let assets = res.get::<Assets>().unwrap();
+
+        self.new_assets.drain(..).for_each(|new_asset| {
+            assets.scan_for(&new_asset);
+        });
+
         let meta_file = self.meta_file.take().unwrap();
-        assets.add_meta_file(meta_file);
+        editor_assets.add_meta_file(meta_file);
 
         println!("Task complete...");
 

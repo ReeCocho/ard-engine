@@ -731,7 +731,9 @@ impl VulkanBackend {
                 ash::khr::acceleration_structure::NAME,
                 ash::khr::ray_tracing_pipeline::NAME,
                 ash::khr::deferred_host_operations::NAME,
+                ash::ext::pipeline_library_group_handles::NAME,
                 c"VK_KHR_pipeline_library",
+                c"VK_KHR_ray_tracing_maintenance1",
             ];
             extensions
                 .into_iter()

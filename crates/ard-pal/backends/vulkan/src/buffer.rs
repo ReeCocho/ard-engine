@@ -100,7 +100,8 @@ impl Buffer {
         };
 
         // Allocate memory
-        let mem_reqs = device.get_buffer_memory_requirements(buffer);
+        let mut mem_reqs = device.get_buffer_memory_requirements(buffer);
+        mem_reqs.alignment = mem_reqs.alignment.max(alignment_req);
         let request = AllocationCreateDesc {
             name: match &create_info.debug_name {
                 Some(name) => name,

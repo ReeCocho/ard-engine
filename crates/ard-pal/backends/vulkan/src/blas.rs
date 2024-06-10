@@ -219,6 +219,10 @@ impl BottomLevelAccelerationStructure {
         let block = match allocator.allocate(&request) {
             Ok(block) => block,
             Err(err) => {
+                println!(
+                    "{} {} {}",
+                    buffer_create_info.size, mem_reqs.alignment, mem_reqs.size
+                );
                 ctx.device.destroy_buffer(buffer, None);
                 return Err(BottomLevelAccelerationStructureCreateError::Other(
                     err.to_string(),
@@ -332,10 +336,27 @@ impl BottomLevelAccelerationStructure {
             );
         }
 
-        ctx.queries
+        let s = ctx
+            .queries
             .lock()
             .unwrap()
-            .get_accel_struct_compact(&ctx.device, query)
+            .get_accel_struct_compact(&ctx.device, query);
+
+        if s == 0 {
+            println!("{}", self.buffer_size);
+            println!("{}", self.scratch_size);
+            let guard = self.buffer_refs.load();
+            for geo in guard.iter() {
+                println!("{}", geo.1.aligned_size);
+            }
+            println!("==========");
+            let guard = self.build_ranges.load();
+            for geo in guard.iter() {
+                println!("{}", geo.primitive_count);
+            }
+        }
+
+        s
     }
 
     pub(crate) unsafe fn build(

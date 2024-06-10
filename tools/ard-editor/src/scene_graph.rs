@@ -9,8 +9,8 @@ impl SceneGraph {
     #[inline]
     pub fn roots(&self) -> &[Entity] {
         &self.roots
-    } 
-    
+    }
+
     #[inline]
     pub fn add_roots(&mut self, new_roots: impl Iterator<Item = Entity>) {
         self.roots.extend(new_roots);

@@ -103,17 +103,11 @@ impl RenderPassCache {
                     }
                 };
 
-                let initial_layout = match attachment.load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => final_layout,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                };
-
                 sample_count = crate::util::to_vk_sample_count(attachment.samples);
 
                 attachments.push(
                     vk::AttachmentDescription2::default()
-                        .initial_layout(initial_layout)
+                        .initial_layout(final_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
@@ -150,15 +144,9 @@ impl RenderPassCache {
                     }
                 };
 
-                let initial_layout = match attachment.load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => final_layout,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                };
-
                 attachments.push(
                     vk::AttachmentDescription2::default()
-                        .initial_layout(initial_layout)
+                        .initial_layout(final_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
@@ -187,12 +175,6 @@ impl RenderPassCache {
 
                 let final_layout = crate::util::depth_store_op_to_layout(attachment.store_op);
 
-                let initial_layout = match attachment.load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => final_layout,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                };
-
                 if final_layout != vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL {
                     read_only_depth = false;
                 }
@@ -212,7 +194,7 @@ impl RenderPassCache {
 
                 attachments.push(
                     vk::AttachmentDescription2::default()
-                        .initial_layout(initial_layout)
+                        .initial_layout(final_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))
@@ -224,12 +206,6 @@ impl RenderPassCache {
             if let Some(attachment) = &pass.depth_stencil_resolve_attachment {
                 let final_layout = crate::util::depth_store_op_to_layout(attachment.store_op);
 
-                let initial_layout = match attachment.load_op {
-                    LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                    LoadOp::Load => final_layout,
-                    LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                };
-
                 if final_layout != vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL {
                     read_only_depth = false;
                 }
@@ -249,7 +225,7 @@ impl RenderPassCache {
 
                 attachments.push(
                     vk::AttachmentDescription2::default()
-                        .initial_layout(initial_layout)
+                        .initial_layout(final_layout)
                         .final_layout(final_layout)
                         .load_op(crate::util::to_vk_load_op(attachment.load_op))
                         .store_op(crate::util::to_vk_store_op(attachment.store_op))

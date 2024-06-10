@@ -140,6 +140,15 @@ impl CommandSorting {
         let mut buffer_barriers = Vec::default();
         let mut image_barriers = Vec::default();
 
+        let initial_memory_barrier = [vk::MemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+            .src_access_mask(vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE)
+            .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+            .dst_access_mask(vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE)];
+        let dependency_info =
+            vk::DependencyInfo::default().memory_barriers(&initial_memory_barrier);
+        device.cmd_pipeline_barrier2(cb, &dependency_info);
+
         while !next_commands.is_empty() {
             memory_barriers.clear();
             memory_barriers_map.clear();
@@ -460,14 +469,13 @@ impl CommandSorting {
         &mut self,
         info: &mut CommandSortingInfo,
         command_idx: usize,
-        load_op: &LoadOp,
+        _load_op: &LoadOp,
         destination: &ColorAttachmentDestination<'_, crate::VulkanBackend>,
     ) {
         struct InspectionSource {
             regions: ArrayVec<ImageRegion, 6>,
             image: vk::Image,
             sharing_mode: SharingMode,
-            initial_layout: vk::ImageLayout,
             final_layout: vk::ImageLayout,
         }
 
@@ -496,7 +504,6 @@ impl CommandSorting {
                     regions,
                     image: image.internal().image(),
                     sharing_mode: SharingMode::Concurrent,
-                    initial_layout: vk::ImageLayout::UNDEFINED,
                     final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 }
             }
@@ -517,11 +524,6 @@ impl CommandSorting {
                     regions,
                     image: texture.internal().image,
                     sharing_mode: texture.internal().sharing_mode,
-                    initial_layout: match load_op {
-                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                    },
                     final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 }
             }
@@ -544,11 +546,6 @@ impl CommandSorting {
                     regions,
                     image: cube_map.internal().image,
                     sharing_mode: cube_map.internal().sharing_mode,
-                    initial_layout: match load_op {
-                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                    },
                     final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 }
             }
@@ -571,17 +568,12 @@ impl CommandSorting {
                     regions,
                     image: cube_map.internal().image,
                     sharing_mode: cube_map.internal().sharing_mode,
-                    initial_layout: match load_op {
-                        LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-                        LoadOp::Load => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-                    },
                     final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 }
             }
         };
 
-        let mut new_usage = GlobalImageUsage {
+        let new_usage = GlobalImageUsage {
             queue: Some(QueueUsage {
                 queue: info.queue,
                 timeline_value: info.timeline_value,
@@ -602,7 +594,7 @@ impl CommandSorting {
                 .use_image(region, &new_usage, &mut old_usages[i..(i + 1)]);
         });
 
-        new_usage.layout = src.initial_layout;
+        // new_usage.layout = src.initial_layout;
 
         for (old_usage, image_region) in old_usages.iter().zip(src.regions.iter()) {
             self.image_barrier_check(
@@ -631,7 +623,7 @@ impl CommandSorting {
         info: &mut CommandSortingInfo,
         command_idx: usize,
         store_op: StoreOp,
-        load_op: &LoadOp,
+        _load_op: &LoadOp,
         destination: &DepthStencilAttachmentDestination<'_, crate::VulkanBackend>,
         is_resolve_attachment: bool,
     ) {
@@ -711,7 +703,7 @@ impl CommandSorting {
 
         let final_layout = crate::util::depth_store_op_to_layout(store_op);
 
-        let mut new_usage = GlobalImageUsage {
+        let new_usage = GlobalImageUsage {
             queue: Some(QueueUsage {
                 queue: info.queue,
                 timeline_value: info.timeline_value,
@@ -751,11 +743,13 @@ impl CommandSorting {
                 .use_image(region, &new_usage, &mut old_usages[i..(i + 1)]);
         });
 
+        /*
         new_usage.layout = match load_op {
             LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
             LoadOp::Load => final_layout,
             LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
         };
+        */
 
         for (old_usage, image_region) in old_usages.iter().zip(src.regions.iter()) {
             self.image_barrier_check(
@@ -2232,7 +2226,8 @@ impl CommandSorting {
                 is_async: info.is_async,
             }),
             sub_resource: SubResourceUsage {
-                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
+                access: vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR
+                    | vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR,
                 stage: vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
             },
         };
@@ -3026,14 +3021,39 @@ impl CommandSorting {
                     .base_array_layer(array_element)
                     .layer_count(1);
 
-                match &old.queue {
-                    Some(old) => {
-                        barrier.src_queue_family_index = queue_families.to_index(old.queue);
-                        barrier.dst_queue_family_index = dst_queue_family_index;
-                    }
-                    None => {
-                        barrier.src_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
-                        barrier.dst_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
+                // If this is an image layout transition for shader access, we have to synchronize
+                // with every possible operation in our queue, since the data from the layout
+                // transition needs to be made available to all possible operations
+                if barrier.old_layout != barrier.new_layout
+                    && new.queue.as_ref().unwrap().queue == QueueType::Main
+                    && (new.layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+                        || new.layout == vk::ImageLayout::GENERAL)
+                {
+                    let forced_stages = vk::PipelineStageFlags2::FRAGMENT_SHADER
+                        | vk::PipelineStageFlags2::VERTEX_SHADER
+                        | vk::PipelineStageFlags2::MESH_SHADER_EXT
+                        | vk::PipelineStageFlags2::TASK_SHADER_EXT
+                        | vk::PipelineStageFlags2::COMPUTE_SHADER
+                        | vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR;
+
+                    let forced_accesses = vk::AccessFlags2::SHADER_SAMPLED_READ
+                        | vk::AccessFlags2::SHADER_STORAGE_READ
+                        | vk::AccessFlags2::SHADER_WRITE;
+
+                    barrier.dst_stage_mask |= forced_stages;
+                    barrier.dst_access_mask |= forced_accesses;
+                }
+
+                if sharing_mode == SharingMode::Exclusive {
+                    match &old.queue {
+                        Some(old) => {
+                            barrier.src_queue_family_index = queue_families.to_index(old.queue);
+                            barrier.dst_queue_family_index = dst_queue_family_index;
+                        }
+                        None => {
+                            barrier.src_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
+                            barrier.dst_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
+                        }
                     }
                 }
 

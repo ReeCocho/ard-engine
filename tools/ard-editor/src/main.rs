@@ -1,8 +1,8 @@
 pub mod assets;
 pub mod camera;
 pub mod gui;
-pub mod tasks;
 pub mod scene_graph;
+pub mod tasks;
 
 use ard_engine::assets::prelude::*;
 use ard_engine::core::prelude::*;
@@ -40,7 +40,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: CanvasSize(Some((512, 512))),
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)

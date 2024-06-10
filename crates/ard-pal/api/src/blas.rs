@@ -53,6 +53,14 @@ impl<B: Backend> BottomLevelAccelerationStructure<B> {
         ctx: Context<B>,
         create_info: BottomLevelAccelerationStructureCreateInfo<'a, B>,
     ) -> Result<Self, BottomLevelAccelerationStructureCreateError> {
+        match &create_info.data {
+            BottomLevelAccelerationStructureData::Geometry(geo) => {
+                assert!(!geo.is_empty(), "BLAS must have geometries")
+            }
+            BottomLevelAccelerationStructureData::CompactDst(size) => {
+                assert_ne!(*size, 0, "BLAS must have storage capacity")
+            }
+        }
         let id = unsafe {
             ctx.0
                 .create_bottom_level_acceleration_structure(create_info)?

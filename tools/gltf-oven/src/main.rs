@@ -134,7 +134,7 @@ fn create_header(
     header.materials = Vec::with_capacity(gltf.materials.len());
     header.mesh_groups = Vec::with_capacity(gltf.mesh_groups.len());
     header.textures = Vec::with_capacity(gltf.textures.len());
-    header.roots = Vec::with_capacity(gltf.roots.len());
+    header.roots = Vec::with_capacity(1);
 
     for light in &gltf.lights {
         header.lights.push(match light {
@@ -195,7 +195,8 @@ fn create_header(
                     metallic: *metallic,
                     roughness: *roughness,
                     alpha_cutoff: *alpha_cutoff,
-                    diffuse_map: diffuse_map.map(|v| texture_paths[v].clone()),
+                    diffuse_map: diffuse_map
+                        .map(|v| PathBuf::from(texture_paths[v].file_name().unwrap())),
                     normal_map: normal_map.map(|v| {
                         texture_is_unorm[v].store(true, Ordering::Relaxed);
                         PathBuf::from(texture_paths[v].file_name().unwrap())
@@ -237,14 +238,10 @@ fn create_header(
         header.mesh_groups.push(MeshGroup(instances));
     }
 
-    fn parse_node(node: &ard_gltf::GltfNode, root: bool) -> Node {
+    fn parse_node(node: &ard_gltf::GltfNode) -> Node {
         let mut out_node = Node {
             name: node.name.clone(),
-            model: if root {
-                node.model * Mat4::from_cols(-Vec4::X, Vec4::Y, Vec4::Z, Vec4::W)
-            } else {
-                node.model
-            },
+            model: node.model,
             data: match &node.data {
                 ard_gltf::GltfNodeData::Empty => NodeData::Empty,
                 ard_gltf::GltfNodeData::MeshGroup(id) => NodeData::MeshGroup(*id as u32),
@@ -254,15 +251,25 @@ fn create_header(
         };
 
         for child in &node.children {
-            out_node.children.push(parse_node(child, false));
+            out_node.children.push(parse_node(child));
         }
 
         out_node
     }
 
-    for root in &gltf.roots {
-        header.roots.push(parse_node(root, true));
+    // GLTF files and right handed, so we add in a root to flip the coordinate system
+    let mut root = Node {
+        name: "__root".into(),
+        model: Mat4::from_cols(-Vec4::X, Vec4::Y, Vec4::Z, Vec4::W),
+        data: NodeData::Empty,
+        children: Vec::with_capacity(gltf.roots.len()),
+    };
+
+    for child in &gltf.roots {
+        root.children.push(parse_node(child));
     }
+
+    header.roots.push(root);
 
     header
 }

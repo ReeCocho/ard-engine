@@ -495,7 +495,7 @@ impl RenderEcs {
         //      Main: Render shadows.
         //      Comp: Generate HZB, generate main draw calls.
         let mut main_cb = self.ctx.main().command_buffer();
-        let mut compute_cb = self.ctx.main().command_buffer();
+        let mut compute_cb = self.ctx.compute().command_buffer();
 
         Self::render_shadows(
             &mut main_cb,
@@ -554,7 +554,7 @@ impl RenderEcs {
         //      Main: Opaque and transparent passes.
         //      Comp: Generate sun shafts.
         let mut main_cb = self.ctx.main().command_buffer();
-        let mut compute_cb = self.ctx.main().command_buffer();
+        let mut compute_cb = self.ctx.compute().command_buffer();
 
         // Render opaque and alpha masked geometry
         Self::render_opaque(
@@ -602,6 +602,8 @@ impl RenderEcs {
             QueueType::Main,
             None,
         );
+        // self.sun_shadows_renderer
+        //    .transfer_ownership(frame.frame, &mut compute_cb, QueueType::Main);
 
         self.ctx()
             .main()
@@ -888,6 +890,8 @@ impl RenderEcs {
                 },
             );
         }
+
+        // shadow_renderer.transfer_ownership(frame_data.frame, commands, QueueType::Compute);
     }
 
     #[inline(never)]

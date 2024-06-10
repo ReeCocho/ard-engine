@@ -80,6 +80,8 @@ pub(crate) const fn to_vk_format(format: Format) -> vk::Format {
         Format::Rg32UInt => vk::Format::R32G32_UINT,
         Format::Rg32SInt => vk::Format::R32G32_SINT,
         Format::Rg32SFloat => vk::Format::R32G32_SFLOAT,
+        // RGB32
+        Format::Rgb32SFloat => vk::Format::R32G32B32_SFLOAT,
         // RGBA8
         Format::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
         Format::Rgba8Snorm => vk::Format::R8G8B8A8_SNORM,

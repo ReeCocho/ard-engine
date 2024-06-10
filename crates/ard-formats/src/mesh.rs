@@ -169,7 +169,7 @@ impl MeshData {
                 AccelerationStructureGeometry {
                     // TODO: Make configurable
                     flags: GeometryFlags::OPAQUE,
-                    vertex_format: Format::Rgba32SFloat,
+                    vertex_format: Format::Rgb32SFloat,
                     vertex_data,
                     vertex_data_array_element,
                     vertex_data_offset: 0,

@@ -12,7 +12,10 @@ use ard_engine::{
     },
 };
 
-use crate::{assets::meta::{MetaData, MetaFile}, scene_graph::SceneGraph};
+use crate::{
+    assets::meta::{MetaData, MetaFile},
+    scene_graph::SceneGraph,
+};
 
 use super::{EditorTask, TaskConfirmation};
 
@@ -75,7 +78,9 @@ impl EditorTask for InstantiateTask {
             InstantiateAssetHandle::Model(handle) => {
                 let model = self.assets.get(&handle).unwrap();
                 let roots = instantiate(&model, commands, &self.assets);
-                res.get_mut::<SceneGraph>().unwrap().add_roots(roots.into_iter());
+                res.get_mut::<SceneGraph>()
+                    .unwrap()
+                    .add_roots(roots.into_iter());
             }
         }
 
@@ -107,6 +112,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
     }
 
     enum ObjectInstance {
+        None,
         Empty(EmptyInstance),
         Mesh(MeshInstance),
     }
@@ -124,6 +130,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
         res: &mut Vec<ObjectInstance>,
     ) -> Entity {
         let id = res.len();
+        res.push(ObjectInstance::None);
         let our_entity = entities[id];
         let us = Some(Parent(our_entity));
 
@@ -141,14 +148,14 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
 
         match &node.data {
             NodeData::Empty => {
-                res.push(ObjectInstance::Empty(EmptyInstance {
+                res[id] = ObjectInstance::Empty(EmptyInstance {
                     model,
                     position,
                     rotation,
                     scale,
                     children,
                     parent,
-                }));
+                });
             }
             NodeData::MeshGroup(mesh_group) => {
                 let mesh_group = &asset.mesh_groups[*mesh_group];
@@ -165,7 +172,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         .get(&asset.materials[mesh_instance.material as usize])
                         .unwrap();
 
-                    res.push(ObjectInstance::Mesh(MeshInstance {
+                    res[id] = ObjectInstance::Mesh(MeshInstance {
                         mesh,
                         material: material.instance.clone(),
                         render_mode: material.render_mode,
@@ -176,7 +183,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         scale,
                         children,
                         parent,
-                    }))
+                    });
                 } else {
                     let mut mesh_instances = (
                         Vec::with_capacity(mesh_group.0.len()),
@@ -210,19 +217,19 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     commands.entities.create(mesh_instances, &mut entities);
                     children.0.extend_from_slice(&entities);
 
-                    res.push(ObjectInstance::Empty(EmptyInstance {
+                    res[id] = ObjectInstance::Empty(EmptyInstance {
                         model,
                         position,
                         rotation,
                         scale,
                         children,
                         parent,
-                    }));
+                    });
                 }
             }
         }
 
-        entities[id]
+        our_entity
     }
 
     let mut roots = Vec::default();
@@ -235,6 +242,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
     res.into_iter().enumerate().for_each(|(i, obj)| {
         let entity = [entities[i]];
         match obj {
+            ObjectInstance::None => unreachable!("should all be some"),
             ObjectInstance::Empty(obj) => {
                 commands.entities.set_components(
                     &entity,

@@ -105,7 +105,6 @@ impl TransformUpdate {
             let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
             let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
             let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
-
             model.0 = Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
         }
 
@@ -137,7 +136,6 @@ impl TransformUpdate {
             let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
             let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
             let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
-
             model.0 = Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
         }
 
@@ -179,7 +177,6 @@ impl TransformUpdate {
                     let pos = pos.map(|p| p.0).unwrap_or(Vec3A::ZERO);
                     let rot = rot.map(|r| r.0).unwrap_or(Quat::IDENTITY);
                     let scl = scl.map(|s| s.0).unwrap_or(Vec3A::ONE);
-
                     model.0 = parent_global
                         * Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
                 }

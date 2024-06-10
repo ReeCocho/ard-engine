@@ -554,21 +554,12 @@ impl DescriptorSet {
             .into_iter()
             .map(|(mut write, range)| match write.descriptor_type {
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER | vk::DescriptorType::STORAGE_IMAGE => {
-                    if range.is_empty() {
-                        println!("empty");
-                    }
                     write.image_info(&images[range])
                 }
                 vk::DescriptorType::STORAGE_BUFFER | vk::DescriptorType::UNIFORM_BUFFER => {
-                    if range.is_empty() {
-                        println!("empty");
-                    }
                     write.buffer_info(&buffers[range])
                 }
                 vk::DescriptorType::ACCELERATION_STRUCTURE_KHR => {
-                    if range.is_empty() {
-                        println!("empty");
-                    }
                     write.p_next = <*const _>::cast(&tlas_writes[range.start]);
                     write.descriptor_count = 1;
                     write

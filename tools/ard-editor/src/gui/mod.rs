@@ -1,8 +1,8 @@
 pub mod assets;
 pub mod drag_drop;
+pub mod hierarchy;
 pub mod menu_bar;
 pub mod scene;
-pub mod hierarchy;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 use hierarchy::HierarchyView;
@@ -21,7 +21,7 @@ pub struct EditorView {
     menu_bar: MenuBar,
     scene: SceneView,
     assets: AssetsView,
-    hierarchy: HierarchyView
+    hierarchy: HierarchyView,
 }
 
 pub struct EditorViewContext<'a> {
@@ -58,7 +58,7 @@ impl Default for EditorView {
             menu_bar: MenuBar,
             scene: SceneView {},
             assets: AssetsView {},
-            hierarchy: HierarchyView {}
+            hierarchy: HierarchyView {},
         }
     }
 }
@@ -108,7 +108,7 @@ impl GuiView for EditorView {
                 res,
                 scene: &mut self.scene,
                 assets: &mut self.assets,
-                hierarchy: &mut self.hierarchy
+                hierarchy: &mut self.hierarchy,
             };
             self.tree.ui(&mut behavior, ui);
         });
