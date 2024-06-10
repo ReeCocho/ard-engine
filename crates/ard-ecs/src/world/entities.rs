@@ -1,13 +1,12 @@
 use std::{
     any::TypeId,
-    num::NonZeroU32,
+    num::NonZeroU8,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
 
-use bitvec::macros::internal::funty::Fundamental;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use crate::{
@@ -80,7 +79,7 @@ pub(crate) enum EntityCommand {
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct EntityInfo {
     /// Current version of the entity.
-    pub ver: NonZeroU32,
+    pub ver: NonZeroU8,
     /// ID of the archetype the entities components exist in.
     pub archetype: ArchetypeId,
     /// Index within each archetype buffer the entities components exists in.
@@ -148,7 +147,7 @@ impl Entities {
                         self.entities.resize(
                             max_id as usize + 1,
                             EntityInfo {
-                                ver: NonZeroU32::new(1).unwrap(),
+                                ver: NonZeroU8::new(1).unwrap(),
                                 archetype: ArchetypeId::default(),
                                 index: 0,
                                 collection: None,
@@ -179,11 +178,11 @@ impl Entities {
                         debug_assert!(ind < self.entities.len());
 
                         let info = &mut self.entities[ind];
-                        debug_assert!(info.ver.get() == entity.ver().as_u32());
+                        debug_assert!(info.ver.get() == entity.ver() as u8);
 
                         // Update version counter
                         info.ver = unsafe {
-                            NonZeroU32::new_unchecked(info.ver.get().wrapping_add(1).max(1))
+                            NonZeroU8::new_unchecked(info.ver.get().wrapping_add(1).max(1))
                         };
 
                         // Remove tags if needed
@@ -213,7 +212,7 @@ impl Entities {
                 }
                 EntityCommand::RemoveComponent { entity, id } => {
                     let info = &mut self.entities[entity.id() as usize];
-                    debug_assert!(info.ver.get() == entity.ver());
+                    debug_assert!(info.ver.get() == entity.ver() as u8);
 
                     if let Some((new_archetype, new_index, moved_entity)) =
                         archetypes.remove_component(entity, info.archetype, info.index as usize, id)
@@ -239,7 +238,7 @@ impl Entities {
                         debug_assert!(ind < self.entities.len());
 
                         let info = &mut self.entities[ind];
-                        debug_assert!(info.ver.get() == entity.ver().as_u32());
+                        debug_assert!(info.ver.get() == entity.ver() as u8);
 
                         // Remove components and swap the moved entity if needed
                         if let Some(moved_entity) =
@@ -261,7 +260,7 @@ impl Entities {
                 }
                 EntityCommand::AddComponent { entity, component } => {
                     let info = &mut self.entities[entity.id() as usize];
-                    debug_assert!(info.ver.get() == entity.ver());
+                    debug_assert!(info.ver.get() == entity.ver() as u8);
 
                     if let Some((new_archetype, new_index, moved_entity)) = archetypes
                         .add_component(entity, info.archetype, info.index as usize, component)
@@ -277,14 +276,14 @@ impl Entities {
                 }
                 EntityCommand::RemoveTag { entity, id } => {
                     let info = &mut self.entities[entity.id() as usize];
-                    assert!(info.ver.get() == entity.ver());
+                    assert!(info.ver.get() == entity.ver() as u8);
                     if let Some(collection) = info.collection {
                         info.collection = tags.remove_tag(entity, id, collection);
                     }
                 }
                 EntityCommand::AddTag { entity, tag } => {
                     let info = &mut self.entities[entity.id() as usize];
-                    assert!(info.ver.get() == entity.ver());
+                    assert!(info.ver.get() == entity.ver() as u8);
                     info.collection = Some(tags.add_tag(entity, info.collection, tag));
                 }
             }
@@ -385,7 +384,7 @@ impl EntityCommands {
 
             for id in base_id..(base_id + needed) {
                 new_entities.push(Entity::new(id as u32, unsafe {
-                    NonZeroU32::new_unchecked(1)
+                    NonZeroU8::new_unchecked(1)
                 }))
             }
         }

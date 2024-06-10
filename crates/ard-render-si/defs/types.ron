@@ -103,7 +103,7 @@
             // Everything past here is up for us to decide.
             (name: "model_inv", ty: Mat3x4),                // inv(model). Transpose is the normal matrix.
             (name: "material", ty: Pointer("ArdMaterial")), // Material pointer for properties lookup
-            (name: "entity_id", ty: U32),                   // ECS entity ID
+            (name: "entity", ty: U32),                      // ECS entity
             (name: "mesh", ty: U16),                        // Mesh ID
             (name: "textures", ty: U16),                    // Texture table slot
         ]

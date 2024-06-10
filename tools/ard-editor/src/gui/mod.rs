@@ -1,11 +1,13 @@
 pub mod assets;
 pub mod drag_drop;
 pub mod hierarchy;
+pub mod inspector;
 pub mod menu_bar;
 pub mod scene;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 use hierarchy::HierarchyView;
+use inspector::InspectorView;
 
 use self::{assets::AssetsView, menu_bar::MenuBar, scene::SceneView};
 
@@ -14,6 +16,7 @@ pub enum Pane {
     Scene,
     Assets,
     Hierarchy,
+    Inspector,
 }
 
 pub struct EditorView {
@@ -22,6 +25,7 @@ pub struct EditorView {
     scene: SceneView,
     assets: AssetsView,
     hierarchy: HierarchyView,
+    inspector: InspectorView,
 }
 
 pub struct EditorViewContext<'a> {
@@ -40,6 +44,7 @@ struct EditorViewBehavior<'a> {
     scene: &'a mut SceneView,
     assets: &'a mut AssetsView,
     hierarchy: &'a mut HierarchyView,
+    inspector: &'a mut InspectorView,
 }
 
 impl Default for EditorView {
@@ -50,6 +55,7 @@ impl Default for EditorView {
         tabs.push(tiles.insert_pane(Pane::Scene));
         tabs.push(tiles.insert_pane(Pane::Assets));
         tabs.push(tiles.insert_pane(Pane::Hierarchy));
+        tabs.push(tiles.insert_pane(Pane::Inspector));
 
         let root = tiles.insert_tab_tile(tabs);
 
@@ -59,6 +65,7 @@ impl Default for EditorView {
             scene: SceneView {},
             assets: AssetsView {},
             hierarchy: HierarchyView {},
+            inspector: InspectorView {},
         }
     }
 }
@@ -85,6 +92,7 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
             Pane::Scene => self.scene.show(ctx),
             Pane::Assets => self.assets.show(ctx),
             Pane::Hierarchy => self.hierarchy.show(ctx),
+            Pane::Inspector => self.inspector.show(ctx),
         }
     }
 }
@@ -109,6 +117,7 @@ impl GuiView for EditorView {
                 scene: &mut self.scene,
                 assets: &mut self.assets,
                 hierarchy: &mut self.hierarchy,
+                inspector: &mut self.inspector,
             };
             self.tree.ui(&mut behavior, ui);
         });

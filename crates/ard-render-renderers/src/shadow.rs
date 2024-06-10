@@ -260,17 +260,6 @@ impl SunShadowsRenderer {
             });
     }
 
-    pub fn transfer_ownership<'a>(
-        &'a self,
-        frame: Frame,
-        cb: &mut CommandBuffer<'a>,
-        new_queue: QueueType,
-    ) {
-        self.cascades.iter().for_each(|cascade| {
-            cb.transfer_texture_ownership(&cascade.image, 0, 0, 1, new_queue, None);
-        });
-    }
-
     pub fn render<'a>(&'a self, frame: Frame, args: ShadowRenderArgs<'a, '_>) {
         let cascade = &self.cascades[args.cascade];
         let render_area = Vec2::new(cascade.image.dims().0 as f32, cascade.image.dims().1 as f32);

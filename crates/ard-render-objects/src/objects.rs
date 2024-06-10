@@ -332,7 +332,7 @@ impl RenderObjects {
                 .tex_slot()
                 .map(|slot| u16::from(slot))
                 .unwrap_or_default(),
-            entity_id: entity.id(),
+            entity: u32::from(entity),
             material: mat
                 .data_ptrs()
                 .map(|ptrs| ptrs[usize::from(frame)])

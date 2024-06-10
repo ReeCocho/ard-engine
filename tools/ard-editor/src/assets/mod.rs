@@ -4,7 +4,7 @@ pub mod meta;
 use anyhow::Result;
 use rustc_hash::FxHashMap;
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 

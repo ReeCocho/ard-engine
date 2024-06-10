@@ -143,6 +143,14 @@ impl<S: SystemData> Queries<S> {
         self.filter().make::<T>()
     }
 
+    #[inline]
+    pub fn is_alive(&self, entity: Entity) -> bool {
+        unsafe {
+            let entities = self.entities.as_ref();
+            entities.entities()[entity.id() as usize].ver.get() as u32 == entity.ver()
+        }
+    }
+
     /// Queries a single entity for components and tags. Returns `None` if any one of the
     /// components is not contained within the entity.
     pub fn get<T: SystemData>(&self, entity: Entity) -> Option<T::SingleQuery> {
@@ -446,7 +454,7 @@ impl<C: ComponentFilter> SingleQuery<C, ()> for SingleComponentQuery<C> {
     ) -> Option<Self> {
         let (archetype, idx) = match entities.entities().get(entity.id() as usize) {
             Some(info) => {
-                if info.ver.get() != entity.ver() {
+                if info.ver.get() != entity.ver() as u8 {
                     return None;
                 }
 
@@ -593,7 +601,7 @@ impl<C: ComponentFilter, T: TagFilter> SingleQuery<C, T> for SingleComponentTagQ
     ) -> Option<Self> {
         let (archetype, idx) = match entities.entities().get(entity.id() as usize) {
             Some(info) => {
-                if info.ver.get() != entity.ver() {
+                if info.ver.get() != entity.ver() as u8 {
                     return None;
                 }
 

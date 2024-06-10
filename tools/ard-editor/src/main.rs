@@ -2,6 +2,7 @@ pub mod assets;
 pub mod camera;
 pub mod gui;
 pub mod scene_graph;
+pub mod selected;
 pub mod tasks;
 
 use ard_engine::assets::prelude::*;
@@ -15,6 +16,7 @@ use assets::EditorAssets;
 use camera::SceneViewCamera;
 use gui::EditorView;
 use scene_graph::SceneGraph;
+use selected::Selected;
 use tasks::TaskRunner;
 
 fn main() {
@@ -48,6 +50,7 @@ fn main() {
         .add_system(AssetImporter::default())
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
+        .add_resource(Selected::default())
         .run();
 }
 
