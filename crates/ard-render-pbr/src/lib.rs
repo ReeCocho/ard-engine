@@ -6,7 +6,7 @@ use ard_pal::prelude::{
     CullMode, DepthStencilState, FrontFace, GraphicsProperties, PolygonMode, RasterizationState,
     ShaderStage,
 };
-use ard_render_base::{shader_variant::ShaderVariant, RenderingMode};
+use ard_render_base::shader_variant::ShaderVariant;
 use ard_render_material::{
     factory::PassId,
     material::{Material, MaterialCreateInfo, MaterialVariantDescriptor, RtVariantDescriptor},
@@ -15,7 +15,8 @@ use ard_render_material::{
 };
 use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
-    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
+    DEPTH_OPAQUE_PREPASS_PASS_ID, ENTITIES_ALPHA_CUTOFF_PASS_ID, ENTITIES_OPAQUE_PASS_ID,
+    ENTITIES_TRANSPARENT_PASS_ID, HIGH_Z_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
     SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 use ard_render_si::{consts::*, types::GpuPbrMaterial};
@@ -206,6 +207,87 @@ pub fn create_pbr_material(
                 }],
             },
             debug_name: "pbr_depth_alpha_cutoff_prepass_pipeline".into(),
+        },
+    );
+
+    pass_templates.insert(
+        ENTITIES_OPAQUE_PASS_ID,
+        MaterialVariantTemplate {
+            rasterization: RasterizationState {
+                polygon_mode: PolygonMode::Fill,
+                cull_mode: CullMode::Back,
+                front_face: FrontFace::CounterClockwise,
+            },
+            depth_stencil: Some(DepthStencilState {
+                depth_clamp: false,
+                depth_test: true,
+                depth_write: true,
+                depth_compare: CompareOp::GreaterOrEqual,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }),
+            color_blend: ColorBlendState {
+                attachments: vec![ColorBlendAttachment {
+                    blend: false,
+                    write_mask: ColorComponents::R,
+                    ..Default::default()
+                }],
+            },
+            debug_name: "pbr_entity_opaque_pass_pipeline".into(),
+        },
+    );
+
+    pass_templates.insert(
+        ENTITIES_ALPHA_CUTOFF_PASS_ID,
+        MaterialVariantTemplate {
+            rasterization: RasterizationState {
+                polygon_mode: PolygonMode::Fill,
+                cull_mode: CullMode::Back,
+                front_face: FrontFace::CounterClockwise,
+            },
+            depth_stencil: Some(DepthStencilState {
+                depth_clamp: false,
+                depth_test: true,
+                depth_write: true,
+                depth_compare: CompareOp::GreaterOrEqual,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }),
+            color_blend: ColorBlendState {
+                attachments: vec![ColorBlendAttachment {
+                    blend: false,
+                    write_mask: ColorComponents::R,
+                    ..Default::default()
+                }],
+            },
+            debug_name: "pbr_entity_alpha_cutoff_pass_pipeline".into(),
+        },
+    );
+
+    pass_templates.insert(
+        ENTITIES_TRANSPARENT_PASS_ID,
+        MaterialVariantTemplate {
+            rasterization: RasterizationState {
+                polygon_mode: PolygonMode::Fill,
+                cull_mode: CullMode::Back,
+                front_face: FrontFace::CounterClockwise,
+            },
+            depth_stencil: Some(DepthStencilState {
+                depth_clamp: false,
+                depth_test: true,
+                depth_write: true,
+                depth_compare: CompareOp::GreaterOrEqual,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }),
+            color_blend: ColorBlendState {
+                attachments: vec![ColorBlendAttachment {
+                    blend: false,
+                    write_mask: ColorComponents::R,
+                    ..Default::default()
+                }],
+            },
+            debug_name: "pbr_entity_transparent_pass_pipeline".into(),
         },
     );
 

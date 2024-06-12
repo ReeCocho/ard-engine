@@ -4,11 +4,16 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
+use thiserror::Error;
 
 /// An entity is an identifier that is associated with a set of components in a world.
 #[derive(Debug, Copy, Clone, Eq)]
 #[repr(C)]
 pub struct Entity(NonZeroU32);
+
+#[derive(Error, Debug)]
+#[error("u32 cannot be 0 when converting to entity")]
+pub struct U32ToEntityError;
 
 unsafe impl Pod for Entity {}
 unsafe impl Zeroable for Entity {}
@@ -68,5 +73,18 @@ impl From<Entity> for u32 {
     #[inline]
     fn from(entity: Entity) -> Self {
         bytemuck::cast(entity)
+    }
+}
+
+impl TryFrom<u32> for Entity {
+    type Error = U32ToEntityError;
+
+    #[inline(always)]
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value == 0 {
+            Err(U32ToEntityError)
+        } else {
+            Ok(Entity(NonZeroU32::new(value).unwrap()))
+        }
     }
 }

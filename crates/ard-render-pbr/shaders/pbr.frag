@@ -11,6 +11,10 @@
     layout(location = 0) out vec4 OUT_COLOR;
 #endif
 
+#ifdef ENTITY_PASS
+    layout(location = 0) out uint OUT_ENTITY_ID;
+#endif
+
 #if defined(DEPTH_PREPASS)
     layout(location = 0) out vec4 OUT_NORMAL_SPEC;
 #endif
@@ -35,6 +39,12 @@ void main() {
 // Or just use the material color if we have no UVs
 #else
     const vec4 color = data.color;
+#endif
+
+// Entity pass just needs to output the entity ID
+#if defined(ENTITY_PASS)
+    OUT_ENTITY_ID = vs_in.entity;
+    return;
 #endif
 
 // We need to enter here in both color and depth prepass. Depth prepass needs the thin G buffer.

@@ -101,8 +101,8 @@ impl MeshFactory {
 
         let vertex_allocator = VertexBuffers::new(
             &ctx,
-            config.base_index_block_len,
-            config.default_index_buffer_len,
+            config.base_vertex_block_len,
+            config.default_vertex_buffer_len,
         );
 
         let sets = std::array::from_fn(|_| {

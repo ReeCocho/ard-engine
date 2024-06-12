@@ -4,6 +4,7 @@ use ard_render_si::{bindings::Layouts, types::*};
 
 pub mod color;
 pub mod depth_prepass;
+pub mod entities;
 pub mod hzb;
 pub mod pathtracer;
 pub mod shadow;
@@ -24,17 +25,22 @@ pub const DEPTH_OPAQUE_PREPASS_PASS_ID: PassId = PassId::new(3);
 /// The depth prepass results in a depth image containing opaque geometry.
 pub const DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID: PassId = PassId::new(4);
 
+/// Entity pass used for pixel-perfect entity selection in the editor.
+pub const ENTITIES_OPAQUE_PASS_ID: PassId = PassId::new(5);
+pub const ENTITIES_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(6);
+pub const ENTITIES_TRANSPARENT_PASS_ID: PassId = PassId::new(7);
+
 /// The opaque pass renders only opaque geometry.
-pub const COLOR_OPAQUE_PASS_ID: PassId = PassId::new(5);
+pub const COLOR_OPAQUE_PASS_ID: PassId = PassId::new(8);
 
 /// The alpha-cutoff pass renders only opaque geometry.
-pub const COLOR_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(6);
+pub const COLOR_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(9);
 
 /// The transparent pass renders only transparent materials.
-pub const TRANSPARENT_PASS_ID: PassId = PassId::new(7);
+pub const TRANSPARENT_PASS_ID: PassId = PassId::new(10);
 
 /// Pass used for path tracing.
-pub const PATH_TRACER_PASS_ID: PassId = PassId::new(8);
+pub const PATH_TRACER_PASS_ID: PassId = PassId::new(11);
 
 /// Defines primary passes.
 pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
@@ -112,6 +118,57 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
             PassDefinition {
                 layouts: vec![
                     layouts.depth_prepass.clone(),
+                    layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
+                    layouts.texture_slots.clone(),
+                    layouts.textures.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 1,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            ENTITIES_OPAQUE_PASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.entity_pass.clone(),
+                    layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
+                    layouts.texture_slots.clone(),
+                    layouts.textures.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 1,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            ENTITIES_ALPHA_CUTOFF_PASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.entity_pass.clone(),
+                    layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
+                    layouts.texture_slots.clone(),
+                    layouts.textures.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 1,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            ENTITIES_TRANSPARENT_PASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.entity_pass.clone(),
                     layouts.camera.clone(),
                     layouts.mesh_data.clone(),
                     layouts.texture_slots.clone(),

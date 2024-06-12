@@ -14,6 +14,13 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/entity_select.comp",
+        PathBuf::from(&out_dir).join("entity_select.comp.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/gui.vert",
         PathBuf::from(&out_dir).join("gui.vert.spv"),
         &["./shaders/"],

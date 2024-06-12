@@ -3,8 +3,8 @@ use ard_engine::{
     ecs::prelude::*,
     game::components::transform::{Position, Rotation},
     input::{InputState, Key},
-    math::{EulerRot, Mat4, Quat, Vec3A, Vec4Swizzles},
-    render::{CanvasSize, Gui},
+    math::{EulerRot, Mat4, Quat, Vec2, Vec3A, Vec4Swizzles},
+    render::{CanvasSize, Gui, SelectEntity},
 };
 
 use crate::{
@@ -21,6 +21,7 @@ impl SceneView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
         // Update the canvas size to match the viewport
         let canvas_size = ctx.ui.available_size_before_wrap();
+        let origin = ctx.ui.cursor().left_top();
         ctx.res.get_mut::<CanvasSize>().unwrap().0 = Some((
             (canvas_size.x.ceil() as u32).max(1),
             (canvas_size.y.ceil() as u32).max(1),
@@ -34,7 +35,7 @@ impl SceneView {
         .max_size(canvas_size)
         .fit_to_exact_size(canvas_size)
         .sense(egui::Sense {
-            click: false,
+            click: true,
             drag: true,
             focusable: true,
         });
@@ -57,6 +58,18 @@ impl SceneView {
             if valid {
                 let task_queue = ctx.res.get_mut::<TaskQueue>().unwrap();
                 task_queue.add(InstantiateTask::new(asset.clone(), assets.clone()));
+            }
+        }
+
+        // Entity selection
+        if let Some(pos) = response.interact_pointer_pos() {
+            if response.clicked() {
+                let norm_pos = pos - origin;
+                let uv = Vec2::new(
+                    norm_pos.x.max(0.0) / canvas_size.x,
+                    norm_pos.y.max(0.0) / canvas_size.y,
+                );
+                ctx.commands.events.submit(SelectEntity(uv));
             }
         }
 

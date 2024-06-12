@@ -12,7 +12,10 @@ use ard_render_image_effects::{
 };
 use ard_render_lighting::lights::Lights;
 use ard_render_objects::objects::RenderObjects;
-use ard_render_renderers::pathtracer::PathTracerSettings;
+use ard_render_renderers::{
+    entities::{EntitySelected, SelectEntity},
+    pathtracer::PathTracerSettings,
+};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
 use crate::{DebugSettings, MsaaSettings, PresentationSettings};
@@ -44,6 +47,8 @@ pub struct FrameDataInner {
     pub msaa_settings: MsaaSettings,
     pub debug_settings: DebugSettings,
     pub path_tracer_settings: PathTracerSettings,
+    pub select_entity: Option<SelectEntity>,
+    pub selected_entity: Option<EntitySelected>,
     /// Active cameras captured from the primary ECS.
     pub active_cameras: ActiveCameras,
     /// Physical size of the surface window for this frame.

@@ -3,7 +3,8 @@ use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
 use ard_render_camera::{
-    active::ActiveCamera, froxels::FroxelGenPipeline, ubo::CameraUbo, Camera, CameraClearColor,
+    active::ActiveCamera, froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, Camera,
+    CameraClearColor,
 };
 use ard_render_image_effects::{
     ao::{AmbientOcclusion, AoSettings},
@@ -18,6 +19,7 @@ use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
+    entities::{EntityIdRenderArgs, EntityIdRenderer, EntitySelected, SelectEntity},
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
     pathtracer::PathTracer,
@@ -38,6 +40,7 @@ pub(crate) struct RenderEcs {
     scene_renderer: SceneRenderer,
     sun_shadows_renderer: SunShadowsRenderer,
     hzb_render: HzbRenderer,
+    entity_renderer: EntityIdRenderer,
     rt_render: RaytracedRenderer,
     gui_renderer: GuiRenderer,
     lighting: LightClusters,
@@ -103,6 +106,7 @@ impl RenderEcs {
             &factory.inner.material_factory.lock().unwrap(),
             window_size,
         );
+        let entity_renderer = EntityIdRenderer::new(&ctx, &layouts);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
@@ -136,16 +140,6 @@ impl RenderEcs {
                 .sets()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
-            /*
-            scene_renderer
-                .color_pass_sets_mut()
-                .update_ao_image_binding(frame, canvas.ao().texture());
-
-            scene_renderer
-                .transparent_pass_sets_mut()
-                .update_ao_image_binding(frame, canvas.ao().texture());
-            */
-
             scene_renderer
                 .color_pass_sets_mut()
                 .update_light_clusters_binding(frame, &lighting);
@@ -164,6 +158,7 @@ impl RenderEcs {
                 sun_shadows_renderer,
                 rt_render,
                 gui_renderer,
+                entity_renderer,
                 lighting,
                 hzb_render,
                 path_tracer,
@@ -192,6 +187,7 @@ impl RenderEcs {
         puffin::profile_function!();
 
         // Upload factory resources
+        // frame.select_entity = Some(SelectEntity(Vec2::ONE * 0.5));
         self.factory.process(frame.frame);
 
         // If there is no window size, there is no window to render to.
@@ -356,6 +352,16 @@ impl RenderEcs {
             view_location,
         );
 
+        self.entity_renderer.upload(
+            frame.frame,
+            &frame.object_data,
+            &textures,
+            &meshes,
+            &materials,
+            &material_instances,
+            view_location,
+        );
+
         self.sun_shadows_renderer.upload(
             frame.frame,
             &frame.object_data,
@@ -377,6 +383,13 @@ impl RenderEcs {
 
         self.sun_shadows_renderer
             .update_bindings(frame.frame, &frame.object_data);
+
+        self.entity_renderer.update_bindings(
+            frame.frame,
+            &frame.object_data,
+            canvas.hzb(),
+            canvas.render_target().entity_ids(),
+        );
 
         self.path_tracer
             .update_bindings(frame.frame, self.rt_render.tlas(), &frame.object_data);
@@ -534,6 +547,23 @@ impl RenderEcs {
             &texture_factory,
         );
 
+        // Render entity IDs if requested
+        let mut temp_depth = None;
+        Self::entity_id_pass(
+            self.ctx.clone(),
+            &mut cb,
+            &frame,
+            canvas,
+            &self.camera,
+            &self.entity_renderer,
+            &materials,
+            &meshes,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+            &mut temp_depth,
+        );
+
         // Generate the AO image
         Self::generate_ao_image(
             &mut cb,
@@ -679,6 +709,14 @@ impl RenderEcs {
 
         // Submit for rendering
         frame.job = Some(self.ctx.main().submit(Some("primary"), cb));
+
+        // If we selected an entity this frame, read it back
+        if frame.select_entity.is_some() {
+            if let Some(entity) = self.entity_renderer.read_back_selected_entity() {
+                frame.selected_entity = Some(EntitySelected(entity));
+            }
+            frame.select_entity = None;
+        }
 
         // Reborrow canvas as mut
         let canvas = self.canvas.as_mut().unwrap();
@@ -835,6 +873,91 @@ impl RenderEcs {
         );
 
         canvas.render_target().copy_depth(commands);
+    }
+
+    #[inline(never)]
+    #[allow(clippy::too_many_arguments)]
+    fn entity_id_pass<'a>(
+        ctx: Context,
+        commands: &mut CommandBuffer<'a>,
+        frame_data: &FrameData,
+        canvas: &'a Canvas,
+        camera: &'a CameraUbo,
+        entity_render: &'a EntityIdRenderer,
+        materials: &'a ResourceAllocator<MaterialResource>,
+        meshes: &'a ResourceAllocator<MeshResource>,
+        mesh_factory: &'a MeshFactory,
+        material_factory: &'a MaterialFactory,
+        texture_factory: &'a TextureFactory,
+        temp_depth: &'a mut Option<Texture>,
+    ) {
+        puffin::profile_function!();
+
+        // Do nothing if we aren't selected an entity
+        let uv = match frame_data.select_entity {
+            Some(SelectEntity(uv)) => uv,
+            None => return,
+        };
+
+        let (width, height, _) = canvas.render_target().entity_ids().dims();
+        let render_area = Vec2::new(width as f32, height as f32);
+
+        // We create a temporary depth buffer for this pass since it's only used
+        // ocassionally, and it won't work if we used an MSAA resolved depth buffer
+        let (width, height) = canvas.render_target().dims();
+        *temp_depth = Some(
+            Texture::new(
+                ctx,
+                TextureCreateInfo {
+                    format: RenderTarget::DEPTH_FORMAT,
+                    ty: TextureType::Type2D,
+                    width,
+                    height,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::DEPTH_STENCIL_ATTACHMENT,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("entity_id_pass_depth_buffer".into()),
+                },
+            )
+            .unwrap(),
+        );
+
+        let mut pass = canvas.render_target().entities_pass();
+        pass.depth_stencil_attachment = Some(DepthStencilAttachment {
+            dst: DepthStencilAttachmentDestination::Texture {
+                texture: temp_depth.as_ref().unwrap(),
+                array_element: 0,
+                mip_level: 0,
+            },
+            load_op: LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
+            store_op: StoreOp::DontCare,
+            samples: MultiSamples::Count1,
+        });
+
+        commands.render_pass(pass, Some("entity_id_pass"), |pass| {
+            entity_render.render(
+                frame_data.frame,
+                EntityIdRenderArgs {
+                    pass,
+                    camera,
+                    render_area,
+                    lock_culling: frame_data.debug_settings.lock_culling,
+                    static_dirty: frame_data.object_data.static_dirty(),
+                    mesh_factory,
+                    material_factory,
+                    texture_factory,
+                    meshes,
+                    materials,
+                },
+            );
+        });
+
+        entity_render.select_entity(commands, uv);
     }
 
     #[inline(never)]

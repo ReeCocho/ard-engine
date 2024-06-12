@@ -1,4 +1,5 @@
 pub mod bins;
+pub mod entities;
 pub mod gui;
 pub mod highz;
 pub mod ids;

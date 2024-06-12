@@ -29,6 +29,10 @@
     #define ARD_SET_DEPTH_PREPASS 0
 #endif
 
+#if defined(ENTITY_PASS)
+    #define ARD_SET_ENTITY_PASS 0
+#endif
+
 #if defined(PATH_TRACE_PASS)
     #define ARD_SET_PATH_TRACER_PASS 0
 #endif
@@ -54,6 +58,9 @@ struct MsPayload {
     uint object_id;
     uint meshlet_base;
     uint meshlet_info_base;
+#if defined(ENTITY_PASS)
+    uint entity;
+#endif
 #if ARD_VS_HAS_UV0
     uint color_tex;
     uint met_rough_tex;

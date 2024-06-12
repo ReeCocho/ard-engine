@@ -16,7 +16,7 @@ use assets::EditorAssets;
 use camera::SceneViewCamera;
 use gui::EditorView;
 use scene_graph::SceneGraph;
-use selected::Selected;
+use selected::{SelectEntitySystem, Selected};
 use tasks::TaskRunner;
 
 fn main() {
@@ -48,6 +48,7 @@ fn main() {
         .add_plugin(GamePlugin)
         .add_resource(EditorAssets::new("./assets/").unwrap())
         .add_system(AssetImporter::default())
+        .add_system(SelectEntitySystem)
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())

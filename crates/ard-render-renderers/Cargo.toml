@@ -9,6 +9,7 @@ ard-pal = { path = "../ard-pal" }
 ard-log = { path = "../ard-log" }
 ard-formats = { path = "../ard-formats" }
 ard-ecs = { path = "../ard-ecs" }
+ard-core = { path = "../ard-core" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-material = { path = "../ard-render-material" }
 ard-render-si = { path = "../ard-render-si" }

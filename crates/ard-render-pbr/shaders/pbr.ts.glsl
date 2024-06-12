@@ -76,8 +76,8 @@ bool is_visible(vec3 center, float radius, vec3 min_pt, vec3 max_pt, mat4 view_m
         }
     }
 
-    // Only the depth prepass and transparent pass have occlusion culling.
-#if defined(DEPTH_PREPASS) || defined(TRANSPARENT_PASS)
+    // Occlusion culling
+#if defined(DEPTH_PREPASS) || defined(TRANSPARENT_PASS) || defined(ENTITY_PASS)
     BoundingBox bb = transform_bounding_box(view_model, min_pt, max_pt);
 
     // Determine the appropriate mip level to sample the HZB image
@@ -112,6 +112,9 @@ void manual_payload(const ObjectId id) {
     payload.model = transpose(object_data[id.data_idx].model);
     payload.normal = mat3(transpose(object_data[id.data_idx].model_inv));
     payload.object_id = id.data_idx;
+#if defined(ENTITY_PASS)
+    payload.entity = object_data[id.data_idx].entity;
+#endif
 #if ARD_VS_HAS_UV0
     payload.color_tex = uint(texture_slots[textures_slot][0]);
     payload.met_rough_tex = uint(texture_slots[textures_slot][2]);
@@ -122,7 +125,7 @@ void manual_payload(const ObjectId id) {
 }
 
 // Shared variables used by all invocations when culling is required.
-#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS)
+#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS) || defined(ENTITY_PASS)
     shared bool s_visible;
     shared mat4x3 s_model_mat;
     shared mat3 s_normal_mat;
@@ -133,6 +136,9 @@ void manual_payload(const ObjectId id) {
     shared uint s_meshlet_count;
     shared uint s_output_base;
     shared float s_max_scale_axis;
+#if defined(ENTITY_PASS)
+    shared uint s_entity;
+#endif
 #if ARD_VS_HAS_UV0
     shared uint s_color_tex;
     shared uint s_met_rough_tex;
@@ -151,7 +157,7 @@ void main() {
     const uint object_idx = consts.object_id_offset + gl_WorkGroupID.x;
 
     // If this is the depth prepass or shadow shaders, we need to decide visibility ourselves.
-#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS)
+#if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS) || defined(ENTITY_PASS)
 
     // Check for culling lock.
     if (consts.lock_culling == 1) {
@@ -180,6 +186,9 @@ void main() {
             vec4(model_mat[2], 0.0),
             vec4(model_mat[3], 1.0)
         );
+#if defined(ENTITY_PASS)
+        const uint entity = object_data[id.data_idx].entity;
+#endif
 
         // Compute bounds
         const ObjectBounds obj_bounds = mesh_info[mesh_id].bounds;
@@ -221,6 +230,9 @@ void main() {
         s_meshlet_offset = meshlet_offset;
         s_meshlet_count = meshlet_count;
         s_max_scale_axis = max_scale_axis;
+#if defined(ENTITY_PASS)
+        s_entity = entity;
+#endif
 #if ARD_VS_HAS_UV0
         s_color_tex = texture_slots[textures_slot][0];
         s_met_rough_tex = texture_slots[textures_slot][2];
@@ -307,6 +319,9 @@ void main() {
         payload.model = model_mat;
         payload.normal = s_normal_mat;
         payload.object_id = s_data_idx;
+#if defined(ENTITY_PASS)
+        payload.entity = s_entity;
+#endif
 #if ARD_VS_HAS_UV0
         payload.color_tex = s_color_tex;
         payload.met_rough_tex = s_met_rough_tex;

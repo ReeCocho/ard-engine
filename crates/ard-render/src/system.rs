@@ -16,7 +16,7 @@ use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
 use ard_render_objects::{objects::RenderObjects, Model, RenderFlags};
-use ard_render_renderers::pathtracer::PathTracerSettings;
+use ard_render_renderers::{entities::SelectEntity, pathtracer::PathTracerSettings};
 use ard_window::prelude::*;
 use crossbeam_channel::{self, Receiver, Sender};
 use raw_window_handle::HasDisplayHandle;
@@ -42,6 +42,8 @@ pub struct RenderSystem {
     last_frame_time: Instant,
     // Frame rate cap.
     render_time: Option<Duration>,
+    // Pending request to select an entity.
+    select_entity: Option<SelectEntity>,
 }
 
 #[derive(Debug, Event, Copy, Clone)]
@@ -92,6 +94,8 @@ impl RenderSystem {
                     msaa_settings: MsaaSettings::default(),
                     path_tracer_settings: PathTracerSettings::default(),
                     active_cameras: ActiveCameras::default(),
+                    select_entity: None,
+                    selected_entity: None,
                     job: None,
                     window: None,
                     canvas_size: (16, 16),
@@ -112,9 +116,14 @@ impl RenderSystem {
                 surface_window: window_id,
                 last_frame_time: Instant::now(),
                 render_time,
+                select_entity: None,
             },
             factory,
         )
+    }
+
+    fn select_entity(&mut self, evt: SelectEntity, _: Commands, _: Queries<()>, _: Res<()>) {
+        self.select_entity = Some(evt);
     }
 
     /// The render systems `tick` handler is responsible for signaling to the render ECS when
@@ -157,6 +166,11 @@ impl RenderSystem {
             Ok(frame) => frame,
             Err(_) => return,
         };
+
+        // If an entity was selected, send the event
+        if let Some(evt) = frame.selected_entity.take() {
+            commands.events.submit(evt);
+        }
 
         // Capture active cameras
         frame.active_cameras.clear();
@@ -288,6 +302,7 @@ impl RenderSystem {
         frame.msaa_settings = *res.get::<MsaaSettings>().unwrap();
         frame.debug_settings = *res.get::<DebugSettings>().unwrap();
         frame.path_tracer_settings = *res.get::<PathTracerSettings>().unwrap();
+        frame.select_entity = self.select_entity.take();
 
         self.last_frame_time = now;
 
@@ -340,6 +355,7 @@ impl From<RenderSystem> for System {
     fn from(state: RenderSystem) -> Self {
         SystemBuilder::new(state)
             .with_handler(RenderSystem::tick)
+            .with_handler(RenderSystem::select_entity)
             .run_after::<Tick, GuiInputCaptureSystem>()
             .build()
     }

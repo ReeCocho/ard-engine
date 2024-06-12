@@ -47,4 +47,5 @@ pub mod render {
     pub use ard_render_material::material_instance::*;
     pub use ard_render_meshes::mesh::*;
     pub use ard_render_objects::*;
+    pub use ard_render_renderers::entities::{EntitySelected, SelectEntity};
 }

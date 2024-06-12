@@ -122,6 +122,51 @@
             ),
         ]
     ),
+    // Pass used for rendering entities. 
+    (
+        name: "EntityPass",
+        bindings: [
+            (
+                name: "GlobalObjectData",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "InputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "input_ids", ty: Struct("ObjectId"))),
+                )
+            ),
+            (
+                name: "OutputIds",
+                stage: AllGraphics,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "output_ids", ty: U16)),
+                )
+            ),
+            (
+                name: "HzbImage",
+                stage: AllGraphics,
+                count: "1",
+                data: Texture("hzb_image"),
+            ),
+        ]
+    ),
     // Pass used for rendering opaque geometry.
     (
         name: "ColorPass",
@@ -1334,4 +1379,27 @@
             ),
         ]
     ),
+    // Entity selection.
+    (
+        name: "EntitySelect",
+        bindings: [
+            (
+                name: "Src",
+                stage: Compute,
+                count: "1",
+                data: UTexture("entity_map"),
+            ),
+            (
+                name: "Dst",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "dst", ty: U32)),
+                    unbounded_array: None,
+                )
+            ),
+        ]
+    )
 ]

@@ -433,5 +433,13 @@
         fields: [
             (name: "sample_batch", ty: U32),
         ]
+    ),
+    // Push constants for entity selection.
+    (
+        name: "EntitySelectPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "uv", ty: Vec2)
+        ]
     )
 ]

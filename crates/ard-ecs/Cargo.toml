@@ -16,3 +16,4 @@ smallvec.workspace = true
 paste.workspace = true
 unsafe_unwrap.workspace = true
 bitvec.workspace = true
+thiserror.workspace = true

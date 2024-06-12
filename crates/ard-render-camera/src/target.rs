@@ -18,6 +18,7 @@ struct Attachments {
     thin_g_target: Texture,
     thin_g_resolve: Texture,
     linear_color: Texture,
+    entities: Texture,
 }
 
 impl RenderTarget {
@@ -25,6 +26,7 @@ impl RenderTarget {
     pub const THIN_G_TARGET_FORMAT: Format = Format::Rgba8Snorm;
     pub const FINAL_COLOR_FORMAT: Format = Format::Rgba8Unorm;
     pub const DEPTH_FORMAT: Format = Format::D32Sfloat;
+    pub const ENTITIES_FORMAT: Format = Format::R32UInt;
 
     pub fn new(ctx: &Context, dims: (u32, u32), samples: MultiSamples) -> Self {
         debug_assert!(dims.0 > 0 && dims.1 > 0);
@@ -138,6 +140,24 @@ impl RenderTarget {
         });
     }
 
+    pub fn entities_pass(&self) -> RenderPassDescriptor {
+        RenderPassDescriptor {
+            color_attachments: vec![ColorAttachment {
+                dst: ColorAttachmentDestination::Texture {
+                    texture: &self.attachments.entities,
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::Clear(ClearColor::RU32(u32::from(Entity::null()))),
+                store_op: StoreOp::Store,
+                samples: MultiSamples::Count1,
+            }],
+            color_resolve_attachments: Vec::default(),
+            depth_stencil_attachment: None,
+            depth_stencil_resolve_attachment: None,
+        }
+    }
+
     pub fn opaque_pass(&self, clear_op: CameraClearColor) -> RenderPassDescriptor {
         RenderPassDescriptor {
             color_attachments: vec![ColorAttachment {
@@ -224,6 +244,11 @@ impl RenderTarget {
     #[inline(always)]
     pub fn color_target(&self) -> &Texture {
         &self.attachments.color_target
+    }
+
+    #[inline(always)]
+    pub fn entity_ids(&self) -> &Texture {
+        &self.attachments.entities
     }
 
     #[inline(always)]
@@ -403,6 +428,25 @@ impl RenderTarget {
                     queue_types: QueueTypes::MAIN,
                     sharing_mode: SharingMode::Exclusive,
                     debug_name: Some("linear_color".to_owned()),
+                },
+            )
+            .unwrap(),
+            entities: Texture::new(
+                ctx.clone(),
+                TextureCreateInfo {
+                    format: Self::ENTITIES_FORMAT,
+                    ty: TextureType::Type2D,
+                    width: dims.0,
+                    height: dims.1,
+                    depth: 1,
+                    array_elements: 1,
+                    mip_levels: 1,
+                    sample_count: MultiSamples::Count1,
+                    texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("entities_target".to_owned()),
                 },
             )
             .unwrap(),

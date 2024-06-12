@@ -6,7 +6,8 @@ use ard_render_base::{shader_variant::ShaderVariant, RenderingMode};
 use ard_render_material::factory::PassId;
 use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
-    DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
+    DEPTH_OPAQUE_PREPASS_PASS_ID, ENTITIES_ALPHA_CUTOFF_PASS_ID, ENTITIES_OPAQUE_PASS_ID,
+    ENTITIES_TRANSPARENT_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
     SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
 };
 
@@ -83,6 +84,25 @@ fn main() {
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::AllGraphics,
             rendering_mode: RenderingMode::AlphaCutout,
+        },
+        // Entity passes
+        ShaderVariant {
+            pass: usize::from(ENTITIES_OPAQUE_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        ShaderVariant {
+            pass: usize::from(ENTITIES_ALPHA_CUTOFF_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        ShaderVariant {
+            pass: usize::from(ENTITIES_TRANSPARENT_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
         },
         // Color passes
         ShaderVariant {
@@ -190,6 +210,9 @@ fn compile_shader_variant(
             SHADOW_OPAQUE_PASS_ID | SHADOW_ALPHA_CUTOFF_PASS_ID => "SHADOW_PASS",
             DEPTH_OPAQUE_PREPASS_PASS_ID | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID => "DEPTH_PREPASS",
             COLOR_OPAQUE_PASS_ID | COLOR_ALPHA_CUTOFF_PASS_ID => "COLOR_PASS",
+            ENTITIES_OPAQUE_PASS_ID
+            | ENTITIES_ALPHA_CUTOFF_PASS_ID
+            | ENTITIES_TRANSPARENT_PASS_ID => "ENTITY_PASS",
             TRANSPARENT_PASS_ID => "TRANSPARENT_PASS",
             PATH_TRACER_PASS_ID => "PATH_TRACE_PASS",
             _ => unreachable!("must implement for all passes"),
@@ -199,6 +222,7 @@ fn compile_shader_variant(
 
     match PassId::new(variant.pass) {
         DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
+        | ENTITIES_ALPHA_CUTOFF_PASS_ID
         | COLOR_ALPHA_CUTOFF_PASS_ID
         | SHADOW_ALPHA_CUTOFF_PASS_ID => {
             defines.push("ALPHA_CUTOFF_PASS".into());

@@ -26,6 +26,9 @@ layout(location = 0) out DataBlock {
 #if ARD_VS_HAS_UV0
     vec2 uv;
 #endif
+#if defined(ENTITY_PASS)
+    flat uint entity;
+#endif
 } vs_out[];
 
 #endif

@@ -1,6 +1,6 @@
 use ard_ecs::prelude::*;
 use ard_math::{Vec2, Vec3A};
-use ard_pal::prelude::{Context, RenderPass};
+use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{
@@ -12,38 +12,43 @@ use ard_render_objects::{
     objects::RenderObjects,
     set::{RenderableSet, RenderableSetUpdate},
 };
-use ard_render_si::bindings::Layouts;
+use ard_render_si::{bindings::*, types::*};
 use ard_render_textures::{factory::TextureFactory, texture::TextureResource};
+use ordered_float::NotNan;
 
 use crate::{
     bins::{DrawBins, RenderArgs},
     highz::HzbImage,
     ids::RenderIds,
     passes::{
-        color::ColorPassSets, depth_prepass::DepthPrepassSets, hzb::HzbPassSets,
-        transparent::TransparentPassSets, COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID,
-        DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID, DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID,
-        TRANSPARENT_PASS_ID,
+        entities::EntityPassSets, ENTITIES_ALPHA_CUTOFF_PASS_ID, ENTITIES_OPAQUE_PASS_ID,
+        ENTITIES_TRANSPARENT_PASS_ID,
     },
 };
 
+/// Event to send when you want to select and entity on the canvas.
+/// Contained is a UV coordinate on the canvas to select at.
+#[derive(Event, Clone, Copy)]
+pub struct SelectEntity(pub Vec2);
+
+/// Event sent by the renderer when an entity was selected on the canvas.
+#[derive(Event, Clone, Copy)]
+pub struct EntitySelected(pub Entity);
+
 /// Primary GPU driven scene renderer.
 #[derive(Resource)]
-pub struct SceneRenderer {
+pub struct EntityIdRenderer {
     ctx: Context,
-    /// Object IDs.
     ids: RenderIds,
-    /// Draw bins.
     bins: DrawBins,
-    /// Object information.
     set: RenderableSet,
-    hzb_pass_sets: HzbPassSets,
-    depth_prepass_sets: DepthPrepassSets,
-    color_sets: ColorPassSets,
-    transparent_sets: TransparentPassSets,
+    entity_pass_sets: EntityPassSets,
+    entity_select_pipeline: ComputePipeline,
+    entity_select_set: DescriptorSet,
+    selected_entity: Buffer,
 }
 
-pub struct SceneRenderArgs<'a, 'b> {
+pub struct EntityIdRenderArgs<'a, 'b> {
     pub pass: &'b mut RenderPass<'a>,
     pub render_area: Vec2,
     pub static_dirty: bool,
@@ -56,33 +61,93 @@ pub struct SceneRenderArgs<'a, 'b> {
     pub materials: &'a ResourceAllocator<MaterialResource>,
 }
 
-impl SceneRenderer {
+const ENTITY_SELECT_SAMPLER: Sampler = Sampler {
+    min_filter: Filter::Nearest,
+    mag_filter: Filter::Nearest,
+    mipmap_filter: Filter::Nearest,
+    address_u: SamplerAddressMode::ClampToEdge,
+    address_v: SamplerAddressMode::ClampToEdge,
+    address_w: SamplerAddressMode::ClampToEdge,
+    anisotropy: None,
+    compare: None,
+    min_lod: unsafe { NotNan::new_unchecked(0.0) },
+    max_lod: Some(unsafe { NotNan::new_unchecked(0.0) }),
+    unnormalize_coords: false,
+    border_color: None,
+};
+
+impl EntityIdRenderer {
     pub fn new(ctx: &Context, layouts: &Layouts) -> Self {
+        let module = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!(concat!(env!("OUT_DIR"), "./entity_select.comp.spv")),
+                debug_name: Some("entity_select_shader".into()),
+            },
+        )
+        .unwrap();
+
+        let entity_select_pipeline = ComputePipeline::new(
+            ctx.clone(),
+            ComputePipelineCreateInfo {
+                layouts: vec![layouts.entity_select.clone()],
+                module,
+                work_group_size: (1, 1, 1),
+                push_constants_size: Some(
+                    std::mem::size_of::<GpuEntitySelectPushConstants>() as u32
+                ),
+                debug_name: Some("entity_select_pipeline".into()),
+            },
+        )
+        .unwrap();
+
+        let selected_entity = Buffer::new(
+            ctx.clone(),
+            BufferCreateInfo {
+                size: std::mem::size_of::<u32>() as u64,
+                array_elements: 1,
+                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                memory_usage: MemoryUsage::GpuToCpu,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("selected_entity_buffer".into()),
+            },
+        )
+        .unwrap();
+
+        let mut entity_select_set = DescriptorSet::new(
+            ctx.clone(),
+            DescriptorSetCreateInfo {
+                layout: layouts.entity_select.clone(),
+                debug_name: Some("entity_select_set".into()),
+            },
+        )
+        .unwrap();
+
+        entity_select_set.update(&[DescriptorSetUpdate {
+            binding: ENTITY_SELECT_SET_DST_BINDING,
+            array_element: 0,
+            value: DescriptorValue::StorageBuffer {
+                buffer: &selected_entity,
+                array_element: 0,
+            },
+        }]);
+
         Self {
             ctx: ctx.clone(),
             ids: RenderIds::new(ctx),
             bins: DrawBins::new(),
             set: RenderableSet::default(),
-            hzb_pass_sets: HzbPassSets::new(ctx, layouts),
-            depth_prepass_sets: DepthPrepassSets::new(ctx, layouts),
-            color_sets: ColorPassSets::new(ctx, layouts),
-            transparent_sets: TransparentPassSets::new(ctx, layouts),
+            selected_entity,
+            entity_pass_sets: EntityPassSets::new(ctx, layouts),
+            entity_select_pipeline,
+            entity_select_set,
         }
     }
 
     #[inline(always)]
     pub fn object_set(&self) -> &RenderableSet {
         &self.set
-    }
-
-    #[inline(always)]
-    pub fn color_pass_sets_mut(&mut self) -> &mut ColorPassSets {
-        &mut self.color_sets
-    }
-
-    #[inline(always)]
-    pub fn transparent_pass_sets_mut(&mut self) -> &mut TransparentPassSets {
-        &mut self.transparent_sets
     }
 
     pub fn upload(
@@ -135,54 +200,40 @@ impl SceneRenderer {
         );
     }
 
-    pub fn update_bindings(&mut self, frame: Frame, objects: &RenderObjects, hzb_image: &HzbImage) {
-        self.hzb_pass_sets
+    pub fn update_bindings(
+        &mut self,
+        frame: Frame,
+        objects: &RenderObjects,
+        hzb_image: &HzbImage,
+        entity_image: &Texture,
+    ) {
+        self.entity_pass_sets
             .update_object_data_bindings(frame, objects.object_data(), &self.ids);
+        self.entity_pass_sets.update_hzb_binding(frame, hzb_image);
 
-        self.depth_prepass_sets.update_object_data_bindings(
-            frame,
-            objects.object_data(),
-            &self.ids,
-        );
-        self.depth_prepass_sets.update_hzb_binding(frame, hzb_image);
-
-        self.color_sets
-            .update_object_data_bindings(frame, objects.object_data(), &self.ids);
-
-        self.transparent_sets
-            .update_object_data_bindings(frame, objects.object_data(), &self.ids);
-        self.transparent_sets.update_hzb_binding(frame, hzb_image);
+        self.entity_select_set.update(&[DescriptorSetUpdate {
+            binding: ENTITY_SELECT_SET_SRC_BINDING,
+            array_element: 0,
+            value: DescriptorValue::Texture {
+                texture: entity_image,
+                array_element: 0,
+                sampler: ENTITY_SELECT_SAMPLER,
+                base_mip: 0,
+                mip_count: 1,
+            },
+        }])
     }
 
-    pub fn render_hzb<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
-        // Render static opaque geometry
-        self.bins.render_static_opaque_bins(RenderArgs {
-            ctx: &self.ctx,
-            pass_id: HIGH_Z_PASS_ID,
-            lock_culling: args.lock_culling,
-            frame,
-            render_area: args.render_area,
-            camera: args.camera,
-            global_set: self.hzb_pass_sets.get_set(frame),
-            pass: args.pass,
-            mesh_factory: args.mesh_factory,
-            material_factory: args.material_factory,
-            texture_factory: args.texture_factory,
-            meshes: args.meshes,
-            materials: args.materials,
-        });
-    }
-
-    pub fn render_depth_prepass<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
+    pub fn render<'a>(&'a self, frame: Frame, args: EntityIdRenderArgs<'a, '_>) {
         // Render opaque and alpha cut objects
         self.bins.render_static_opaque_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            pass_id: ENTITIES_OPAQUE_PASS_ID,
             frame,
             lock_culling: args.lock_culling,
             render_area: args.render_area,
             camera: args.camera,
-            global_set: self.depth_prepass_sets.get_set(frame),
+            global_set: self.entity_pass_sets.get_set(frame),
             pass: args.pass,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
@@ -193,12 +244,12 @@ impl SceneRenderer {
 
         self.bins.render_dynamic_opaque_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: DEPTH_OPAQUE_PREPASS_PASS_ID,
+            pass_id: ENTITIES_OPAQUE_PASS_ID,
             frame,
             camera: args.camera,
             lock_culling: args.lock_culling,
             render_area: args.render_area,
-            global_set: self.depth_prepass_sets.get_set(frame),
+            global_set: self.entity_pass_sets.get_set(frame),
             pass: args.pass,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
@@ -209,12 +260,12 @@ impl SceneRenderer {
 
         self.bins.render_static_alpha_cutoff_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            pass_id: ENTITIES_ALPHA_CUTOFF_PASS_ID,
             frame,
             render_area: args.render_area,
             camera: args.camera,
             lock_culling: args.lock_culling,
-            global_set: self.depth_prepass_sets.get_set(frame),
+            global_set: self.entity_pass_sets.get_set(frame),
             pass: args.pass,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
@@ -225,30 +276,12 @@ impl SceneRenderer {
 
         self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
+            pass_id: ENTITIES_ALPHA_CUTOFF_PASS_ID,
             frame,
             lock_culling: args.lock_culling,
             render_area: args.render_area,
             camera: args.camera,
-            global_set: self.depth_prepass_sets.get_set(frame),
-            pass: args.pass,
-            mesh_factory: args.mesh_factory,
-            material_factory: args.material_factory,
-            texture_factory: args.texture_factory,
-            meshes: args.meshes,
-            materials: args.materials,
-        });
-    }
-
-    pub fn render_opaque<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
-        self.bins.render_static_opaque_bins(RenderArgs {
-            ctx: &self.ctx,
-            pass_id: COLOR_OPAQUE_PASS_ID,
-            lock_culling: args.lock_culling,
-            frame,
-            render_area: args.render_area,
-            camera: args.camera,
-            global_set: self.color_sets.get_set(frame),
+            global_set: self.entity_pass_sets.get_set(frame),
             pass: args.pass,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
@@ -257,64 +290,14 @@ impl SceneRenderer {
             materials: args.materials,
         });
 
-        self.bins.render_dynamic_opaque_bins(RenderArgs {
-            ctx: &self.ctx,
-            pass_id: COLOR_OPAQUE_PASS_ID,
-            lock_culling: args.lock_culling,
-            frame,
-            render_area: args.render_area,
-            camera: args.camera,
-            global_set: self.color_sets.get_set(frame),
-            pass: args.pass,
-            mesh_factory: args.mesh_factory,
-            material_factory: args.material_factory,
-            texture_factory: args.texture_factory,
-            meshes: args.meshes,
-            materials: args.materials,
-        });
-
-        self.bins.render_static_alpha_cutoff_bins(RenderArgs {
-            ctx: &self.ctx,
-            pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
-            lock_culling: args.lock_culling,
-            frame,
-            render_area: args.render_area,
-            camera: args.camera,
-            global_set: self.color_sets.get_set(frame),
-            pass: args.pass,
-            mesh_factory: args.mesh_factory,
-            material_factory: args.material_factory,
-            texture_factory: args.texture_factory,
-            meshes: args.meshes,
-            materials: args.materials,
-        });
-
-        self.bins.render_dynamic_alpha_cutoff_bins(RenderArgs {
-            ctx: &self.ctx,
-            pass_id: COLOR_ALPHA_CUTOFF_PASS_ID,
-            lock_culling: args.lock_culling,
-            frame,
-            render_area: args.render_area,
-            camera: args.camera,
-            global_set: self.color_sets.get_set(frame),
-            pass: args.pass,
-            mesh_factory: args.mesh_factory,
-            material_factory: args.material_factory,
-            texture_factory: args.texture_factory,
-            meshes: args.meshes,
-            materials: args.materials,
-        });
-    }
-
-    pub fn render_transparent<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         self.bins.render_transparent_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: TRANSPARENT_PASS_ID,
+            pass_id: ENTITIES_TRANSPARENT_PASS_ID,
             lock_culling: args.lock_culling,
             frame,
             render_area: args.render_area,
             camera: args.camera,
-            global_set: self.transparent_sets.get_set(frame),
+            global_set: self.entity_pass_sets.get_set(frame),
             pass: args.pass,
             mesh_factory: args.mesh_factory,
             material_factory: args.material_factory,
@@ -322,5 +305,27 @@ impl SceneRenderer {
             meshes: args.meshes,
             materials: args.materials,
         });
+    }
+
+    pub fn select_entity<'a>(&'a self, commands: &mut CommandBuffer<'a>, uv: Vec2) {
+        commands.compute_pass(
+            &self.entity_select_pipeline,
+            Some("select_entity"),
+            |pass| {
+                let constants = [GpuEntitySelectPushConstants { uv }];
+                pass.bind_sets(0, vec![&self.entity_select_set]);
+                pass.push_constants(bytemuck::cast_slice(&constants));
+                ComputePassDispatch::Inline(1, 1, 1)
+            },
+        );
+    }
+
+    // NOTE: This function will stall rendering when called.
+    pub fn read_back_selected_entity(&self) -> Option<Entity> {
+        let view = self.selected_entity.read(0).unwrap();
+        let u32_slice: &[u32] = bytemuck::cast_slice(view.as_ref());
+        Entity::try_from(u32_slice[0])
+            .ok()
+            .filter(|e| *e != Entity::null())
     }
 }

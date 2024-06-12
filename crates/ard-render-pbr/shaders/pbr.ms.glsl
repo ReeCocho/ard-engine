@@ -19,6 +19,9 @@ shared uint s_vertex_offset;
 shared uint s_index_offset;
 shared uint s_vert_prim_counts;
 
+#if defined(ENTITY_PASS)
+shared uint s_entity;
+#endif
 #if ARD_VS_HAS_UV0
 shared uint s_color_slot;
 shared uint s_met_rough_slot;
@@ -42,6 +45,9 @@ void main() {
         s_model_mat = payload.model;
         s_normal_mat = payload.normal;
         s_object_id = payload.object_id;
+#if defined(ENTITY_PASS)
+        s_entity = payload.entity;
+#endif
 #if ARD_VS_HAS_UV0
         s_color_slot = payload.color_tex;
         s_met_rough_slot = payload.met_rough_tex;
@@ -63,6 +69,9 @@ void main() {
     const uint vert_count = vp_count & 0xFF;
     const uint prim_count = (vp_count >> 8) & 0xFF;
 
+#if defined(ENTITY_PASS)
+    const uint entity = s_entity;
+#endif
 #if ARD_VS_HAS_UV0
     const uint color_slot = s_color_slot;
     const uint met_rough_slot = s_met_rough_slot;
@@ -141,6 +150,10 @@ void main() {
         );
 #endif
         
+#if defined(ENTITY_PASS)
+        vs_out[vert_idx].entity = entity;
+#endif
+
 #if ARD_VS_HAS_UV0
         const vec2 ard_uv0 = unpackHalf2x16(ard_uv0_raw);
 #endif
