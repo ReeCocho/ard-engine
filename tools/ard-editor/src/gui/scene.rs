@@ -1,21 +1,26 @@
 use ard_engine::{
     assets::manager::Assets,
     ecs::prelude::*,
-    game::components::transform::{Position, Rotation},
+    game::components::transform::{Parent, Position, Rotation, Scale},
     input::{InputState, Key},
-    math::{EulerRot, Mat4, Quat, Vec2, Vec3A, Vec4Swizzles},
-    render::{CanvasSize, Gui, SelectEntity},
+    math::*,
+    render::{Camera, CanvasSize, Gui, Model, SelectEntity},
 };
+use transform_gizmo_egui::{math::Transform, prelude::*};
 
 use crate::{
     assets::meta::MetaData,
     camera::SceneViewCamera,
+    selected::Selected,
     tasks::{instantiate::InstantiateTask, TaskQueue},
 };
 
-use super::{drag_drop::DragDropPayload, EditorViewContext};
+use super::{drag_drop::DragDropPayload, transform::TransformGizmo, EditorViewContext};
 
-pub struct SceneView {}
+#[derive(Default)]
+pub struct SceneView {
+    gizmo: TransformGizmo,
+}
 
 impl SceneView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
@@ -72,6 +77,9 @@ impl SceneView {
                 ctx.commands.events.submit(SelectEntity(uv));
             }
         }
+
+        self.gizmo
+            .show(&ctx, Vec2::new(canvas_size.x, canvas_size.y), response.rect);
 
         // Camera movement
         if response.dragged_by(egui::PointerButton::Secondary) {

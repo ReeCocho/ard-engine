@@ -7,7 +7,7 @@ use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
 };
-use ard_render_gui::{Gui, GuiInputCaptureSystem, GuiRunOutput};
+use ard_render_gui::{Gui, GuiRunOutput};
 use ard_render_image_effects::{
     ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
     tonemapping::TonemappingSettings,
@@ -47,7 +47,7 @@ pub struct RenderSystem {
 }
 
 #[derive(Debug, Event, Copy, Clone)]
-pub struct PostRender;
+pub struct PreRender;
 
 enum RenderSystemMessage {
     Shutdown,
@@ -129,13 +129,7 @@ impl RenderSystem {
     /// The render systems `tick` handler is responsible for signaling to the render ECS when
     /// a new frame should be rendered, and additionally preparing all the data that needs to be
     /// sent from the main ECS to the render ECS.
-    fn tick(
-        &mut self,
-        _: Tick,
-        commands: Commands,
-        queries: Queries<Everything>,
-        res: Res<Everything>,
-    ) {
+    fn tick(&mut self, _: Tick, commands: Commands, _: Queries<()>, res: Res<(Read<Windows>,)>) {
         // Do not render if enough time has not passed
         if let Some(rate) = self.render_time {
             if Instant::now().duration_since(self.last_frame_time) < rate {
@@ -156,16 +150,44 @@ impl RenderSystem {
             return;
         }
 
+        std::mem::drop(windows);
+
+        // See if we have a new frame that's ready for rendering
+        if self.complete_frames.is_empty() {
+            return;
+        }
+
+        // Send a message to all other systems that rendering just finished
+        commands.events.submit(PreRender);
+    }
+
+    /// This pre render command prepares all the data for rendering and submits the request.
+    fn pre_render(
+        &mut self,
+        _: PreRender,
+        commands: Commands,
+        queries: Queries<Everything>,
+        res: Res<Everything>,
+    ) {
+        let windows = res.get::<Windows>().unwrap();
+
+        // Do not render if the window is minimized or not created yet
+        let window = match windows.get(self.surface_window) {
+            Some(window) => window,
+            None => return,
+        };
+        let physical_width = window.physical_width();
+        let physical_height = window.physical_height();
+        if physical_width == 0 || physical_height == 0 {
+            return;
+        }
+
         let window_handle = window.window_handle();
         let display_handle = window.display_handle();
 
         std::mem::drop(windows);
 
-        // See if we have a new frame that's ready for rendering
-        let mut frame = match self.complete_frames.try_recv() {
-            Ok(frame) => frame,
-            Err(_) => return,
-        };
+        let mut frame = self.complete_frames.recv().unwrap();
 
         // If an entity was selected, send the event
         if let Some(evt) = frame.selected_entity.take() {
@@ -308,9 +330,6 @@ impl RenderSystem {
 
         // Send a message to the render thread to begin rendering the frame
         let _ = self.messages.send(RenderSystemMessage::RenderFrame(frame));
-
-        // Send a message to all other systems that rendering just finished
-        commands.events.submit(PostRender);
     }
 
     fn message_pump(
@@ -355,8 +374,8 @@ impl From<RenderSystem> for System {
     fn from(state: RenderSystem) -> Self {
         SystemBuilder::new(state)
             .with_handler(RenderSystem::tick)
+            .with_handler(RenderSystem::pre_render)
             .with_handler(RenderSystem::select_entity)
-            .run_after::<Tick, GuiInputCaptureSystem>()
             .build()
     }
 }

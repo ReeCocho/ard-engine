@@ -24,7 +24,7 @@ bitflags! {
 impl Model {
     #[inline(always)]
     pub fn position(&self) -> Vec3A {
-        self.0.col(3).into()
+        self.0.col(3).xyz().into()
     }
 
     #[inline(always)]

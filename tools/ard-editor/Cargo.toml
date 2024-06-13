@@ -22,3 +22,4 @@ fs_extra.workspace = true
 egui_tiles = "0.8"
 tempfile = "3.10"
 path_macro = "1.0.0"
+transform-gizmo-egui = "0.2.0"

@@ -4,6 +4,7 @@ pub mod hierarchy;
 pub mod inspector;
 pub mod menu_bar;
 pub mod scene;
+pub mod transform;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 use hierarchy::HierarchyView;
@@ -62,7 +63,7 @@ impl Default for EditorView {
         EditorView {
             tree: egui_tiles::Tree::new("editor_view_tree", root, tiles),
             menu_bar: MenuBar,
-            scene: SceneView {},
+            scene: SceneView::default(),
             assets: AssetsView {},
             hierarchy: HierarchyView {},
             inspector: InspectorView {},

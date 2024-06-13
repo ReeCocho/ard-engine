@@ -192,7 +192,6 @@ impl From<TransformUpdate> for System {
         SystemBuilder::new(sys)
             .with_handler(TransformUpdate::on_tick)
             .run_before::<Tick, Destroyer>()
-            .run_before::<Tick, RenderSystem>()
             .build()
     }
 }
