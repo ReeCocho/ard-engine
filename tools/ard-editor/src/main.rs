@@ -15,7 +15,7 @@ use assets::importer::AssetImporter;
 use assets::EditorAssets;
 use camera::SceneViewCamera;
 use gui::EditorView;
-use scene_graph::SceneGraph;
+use scene_graph::{DiscoverSceneGraphRoots, SceneGraph};
 use selected::{SelectEntitySystem, Selected};
 use tasks::TaskRunner;
 
@@ -42,13 +42,14 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: CanvasSize(Some((512, 512))),
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)
         .add_resource(EditorAssets::new("./assets/").unwrap())
         .add_system(AssetImporter::default())
         .add_system(SelectEntitySystem)
+        .add_system(DiscoverSceneGraphRoots)
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())

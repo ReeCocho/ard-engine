@@ -1,5 +1,6 @@
 use std::ops::Mul;
 
+use ::serde::{Deserialize, Serialize};
 use ard_ecs::prelude::Component;
 use ard_math::{Mat3, Mat4, Quat, Vec3, Vec3A, Vec4Swizzles};
 use bitflags::*;
@@ -9,12 +10,12 @@ pub mod objects;
 pub mod set;
 
 /// Model matrix to describe the transformation of a renderable object.
-#[derive(Component, Default, Clone, Copy)]
+#[derive(Component, Deserialize, Serialize, Default, Clone, Copy)]
 pub struct Model(pub Mat4);
 
 bitflags! {
     /// Flags for renderable objects.
-    #[derive(Debug, Component, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Serialize, Deserialize, Component, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
     pub struct RenderFlags: u32 {
         /// The object will cast shadows if it is not transparent.
         const SHADOW_CASTER = 0b0000_0001;

@@ -2,11 +2,13 @@ use ard_assets::prelude::Assets;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_render::factory::Factory;
+use loader::{MaterialLoaderSystem, MeshLoaderSystem};
 use material::{MaterialAsset, MaterialLoader};
 use mesh::{MeshAsset, MeshLoader};
 use model::{ModelAsset, ModelLoader};
 use texture::{TextureAsset, TextureLoader};
 
+pub mod loader;
 pub mod material;
 pub mod mesh;
 pub mod model;
@@ -18,6 +20,8 @@ pub struct RenderAssetsPlugin;
 impl Plugin for RenderAssetsPlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.add_startup_function(late_init);
+        app.add_system(MeshLoaderSystem);
+        app.add_system(MaterialLoaderSystem);
     }
 }
 

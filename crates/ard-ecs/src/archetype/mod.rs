@@ -14,12 +14,12 @@ use crate::{
 /// An archetype represents a logical set of components.
 #[derive(Debug)]
 pub struct Archetype {
-    pub(crate) type_key: TypeKey,
+    pub type_key: TypeKey,
     /// Maps the type id of the components in the archetype to the indices of the component vectors
     /// inside the associated `ArchetypeStorage` object.
-    pub(crate) map: TypeIdMap<usize>,
+    pub map: TypeIdMap<usize>,
     /// Index for the entity buffer within the entity storage.
-    pub(crate) entities: usize,
+    pub entities: usize,
 }
 
 /// Unique ID for an archetype.

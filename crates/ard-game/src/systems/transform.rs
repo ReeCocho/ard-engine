@@ -1,7 +1,6 @@
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_math::*;
-use ard_render::system::RenderSystem;
 use ard_render_objects::Model;
 
 use crate::components::{

@@ -151,6 +151,31 @@ impl<S: SystemData> Queries<S> {
         }
     }
 
+    #[inline]
+    pub fn component_types(&self, entity: Entity) -> TypeKey {
+        unsafe {
+            let entities = self.entities.as_ref();
+            let archetypes = self.archetypes.as_ref();
+            let archetype_id = entities.entities()[entity.id() as usize].archetype;
+            archetypes.archetypes()[usize::from(archetype_id)]
+                .type_key
+                .clone()
+        }
+    }
+
+    #[inline]
+    pub fn tag_types(&self, entity: Entity) -> TypeKey {
+        unsafe {
+            let entities = self.entities.as_ref();
+            let tags = self.tags.as_ref();
+            let collection = match entities.entities()[entity.id() as usize].collection {
+                Some(collection) => collection,
+                None => return TypeKey::default(),
+            };
+            tags.get_collection(collection).unwrap().type_key().clone()
+        }
+    }
+
     /// Queries a single entity for components and tags. Returns `None` if any one of the
     /// components is not contained within the entity.
     pub fn get<T: SystemData>(&self, entity: Entity) -> Option<T::SingleQuery> {

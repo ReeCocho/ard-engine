@@ -17,8 +17,11 @@ pub fn component(input: TokenStream) -> TokenStream {
 
 fn impl_component(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let name_str = name.to_string();
     let gen = quote! {
-        impl Component for #name {}
+        impl Component for #name {
+            const NAME: &'static str = #name_str;
+        }
     };
     gen.into()
 }
@@ -46,6 +49,7 @@ pub fn tag(input: TokenStream) -> TokenStream {
 
 fn impl_tag(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
+    let name_str = name.to_string();
 
     let storage = ast
         .attrs
@@ -59,7 +63,10 @@ fn impl_tag(ast: &syn::DeriveInput) -> TokenStream {
         .unwrap_or_else(|| parse_quote!(UncommonStorage));
 
     let gen = quote! {
-        impl Tag for #name { type Storage = #storage<Self>; }
+        impl Tag for #name {
+            const NAME: &'static str = #name_str;
+            type Storage = #storage<Self>;
+        }
     };
     gen.into()
 }

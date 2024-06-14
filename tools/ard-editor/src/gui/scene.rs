@@ -1,17 +1,15 @@
 use ard_engine::{
     assets::manager::Assets,
     ecs::prelude::*,
-    game::components::transform::{Parent, Position, Rotation, Scale},
+    game::components::transform::{Position, Rotation},
     input::{InputState, Key},
     math::*,
-    render::{Camera, CanvasSize, Gui, Model, SelectEntity},
+    render::{CanvasSize, Gui, SelectEntity},
 };
-use transform_gizmo_egui::{math::Transform, prelude::*};
 
 use crate::{
     assets::meta::MetaData,
     camera::SceneViewCamera,
-    selected::Selected,
     tasks::{instantiate::InstantiateTask, TaskQueue},
 };
 

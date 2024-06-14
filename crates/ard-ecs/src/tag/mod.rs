@@ -21,6 +21,8 @@ pub use ard_ecs_derive::Tag;
 
 /// A tag is like a component, except they can be added and removed from entities quickly.
 pub trait Tag: Sized + Send + Sync {
+    const NAME: &'static str;
+
     /// Type of storage used to hold components.
     type Storage: TagStorage<Self>;
 }
@@ -50,7 +52,7 @@ pub struct Tags {
 /// A tag collection represents a logical set of tags.
 #[derive(Debug)]
 pub struct TagCollection {
-    pub(crate) type_key: TypeKey,
+    pub type_key: TypeKey,
 }
 
 /// Unique storage ID.
@@ -260,6 +262,24 @@ impl Tags {
         } else {
             Some(self.add_collection(TagCollection { type_key }))
         }
+    }
+
+    pub fn remove_entity(&mut self, entity: Entity, collection: TagCollectionId) {
+        self.collections[usize::from(collection)]
+            .type_key
+            .iter()
+            .for_each(|tag_ty| {
+                if let Some(storage) = self.to_storage.get(tag_ty) {
+                    self.storages[usize::from(*storage)].remove(&[entity]);
+                }
+            });
+    }
+}
+
+impl TagCollection {
+    #[inline(always)]
+    pub fn type_key(&self) -> &TypeKey {
+        &self.type_key
     }
 }
 

@@ -6,16 +6,13 @@ use ard_engine::{
     log::warn,
     math::Mat4,
     render::{
+        loader::{MaterialHandle, MeshHandle},
         model::{ModelAsset, Node, NodeData},
-        prelude::*,
-        MaterialInstance, Mesh, Model, RenderFlags,
+        Model, RenderFlags,
     },
 };
 
-use crate::{
-    assets::meta::{MetaData, MetaFile},
-    scene_graph::SceneGraph,
-};
+use crate::assets::meta::{MetaData, MetaFile};
 
 use super::{EditorTask, TaskConfirmation};
 
@@ -64,7 +61,7 @@ impl EditorTask for InstantiateTask {
         &mut self,
         commands: &Commands,
         _queries: &Queries<Everything>,
-        res: &Res<Everything>,
+        _res: &Res<Everything>,
     ) -> Result<()> {
         let handle = match self.handle.take() {
             Some(handle) => handle,
@@ -77,10 +74,7 @@ impl EditorTask for InstantiateTask {
         match handle {
             InstantiateAssetHandle::Model(handle) => {
                 let model = self.assets.get(&handle).unwrap();
-                let roots = instantiate(&model, commands, &self.assets);
-                res.get_mut::<SceneGraph>()
-                    .unwrap()
-                    .add_roots(roots.into_iter());
+                instantiate(&model, commands, &self.assets);
             }
         }
 
@@ -99,9 +93,8 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
     }
 
     struct MeshInstance {
-        mesh: Mesh,
-        material: MaterialInstance,
-        render_mode: RenderingMode,
+        mesh: MeshHandle,
+        material: MaterialHandle,
         flags: RenderFlags,
         model: Model,
         position: Position,
@@ -163,19 +156,12 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
 
                 if mesh_group.0.len() == 1 {
                     let mesh_instance = &mesh_group.0[0];
-                    let mesh = assets
-                        .get(&asset.meshes[mesh_instance.mesh as usize])
-                        .unwrap()
-                        .mesh
-                        .clone();
-                    let material = assets
-                        .get(&asset.materials[mesh_instance.material as usize])
-                        .unwrap();
+                    let mesh = asset.meshes[mesh_instance.mesh as usize].clone();
+                    let material = asset.materials[mesh_instance.material as usize].clone();
 
                     res[id] = ObjectInstance::Mesh(MeshInstance {
-                        mesh,
-                        material: material.instance.clone(),
-                        render_mode: material.render_mode,
+                        mesh: MeshHandle(mesh),
+                        material: MaterialHandle(material),
                         flags: RenderFlags::SHADOW_CASTER,
                         model,
                         position,
@@ -188,7 +174,6 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     let mut mesh_instances = (
                         Vec::with_capacity(mesh_group.0.len()),
                         Vec::with_capacity(mesh_group.0.len()),
-                        Vec::with_capacity(mesh_group.0.len()),
                         vec![Model(Mat4::IDENTITY); mesh_group.0.len()],
                         vec![Position::default(); mesh_group.0.len()],
                         vec![Rotation::default(); mesh_group.0.len()],
@@ -199,18 +184,10 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     );
 
                     mesh_group.0.iter().for_each(|mesh_instance| {
-                        let mesh = assets
-                            .get(&asset.meshes[mesh_instance.mesh as usize])
-                            .unwrap()
-                            .mesh
-                            .clone();
-                        let material = assets
-                            .get(&asset.materials[mesh_instance.material as usize])
-                            .unwrap();
-
-                        mesh_instances.0.push(mesh);
-                        mesh_instances.1.push(material.instance.clone());
-                        mesh_instances.2.push(material.render_mode);
+                        let mesh = asset.meshes[mesh_instance.mesh as usize].clone();
+                        let material = asset.materials[mesh_instance.material as usize].clone();
+                        mesh_instances.0.push(MeshHandle(mesh));
+                        mesh_instances.1.push(MaterialHandle(material));
                     });
 
                     let mut entities = vec![Entity::null(); mesh_group.0.len()];
@@ -262,7 +239,6 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     (
                         Some(obj.mesh),
                         Some(obj.material),
-                        Some(obj.render_mode),
                         Some(obj.flags),
                         Some(obj.children),
                         Some(obj.model),

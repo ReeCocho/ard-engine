@@ -10,7 +10,9 @@ use crate::archetype::storage::{AnyArchetypeStorage, ArchetypeStorage};
 
 /// A component represents a unique piece of data in an ECS. Components are associated with a
 /// particular entity within a world.
-pub trait Component: Send + Sync {}
+pub trait Component: Send + Sync {
+    const NAME: &'static str;
+}
 
 pub trait ComponentExt: Send + Sync {
     fn type_id(&self) -> TypeId;

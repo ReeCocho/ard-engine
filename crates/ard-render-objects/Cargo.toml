@@ -11,6 +11,7 @@ ard-pal = { path = "../ard-pal" }
 ard-ecs = { path = "../ard-ecs" }
 ard-formats = { path = "../ard-formats" }
 ard-alloc = { path = "../ard-alloc" }
+ard-save-load = { path = "../ard-save-load" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-si = { path = "../ard-render-si" }
 ard-render-material = { path = "../ard-render-material" }

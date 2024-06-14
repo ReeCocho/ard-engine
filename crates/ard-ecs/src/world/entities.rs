@@ -61,6 +61,10 @@ pub(crate) enum EntityCommand {
         entities: Vec<Entity>,
         components: Box<ComponentPackMover>,
     },
+    SetTags {
+        entities: Vec<Entity>,
+        tags: Box<dyn TagPack>,
+    },
     AddComponent {
         entity: Entity,
         component: Box<dyn ComponentExt>,
@@ -258,6 +262,35 @@ impl Entities {
                         info.index = (begin + i) as u32;
                     }
                 }
+                EntityCommand::SetTags {
+                    entities,
+                    tags: mut tag_pack,
+                } => {
+                    // Remove tags from each entities
+                    for entity in &entities {
+                        let ind = entity.id() as usize;
+                        debug_assert!(ind < self.entities.len());
+
+                        let info = &mut self.entities[ind];
+                        debug_assert_eq!(info.ver.get(), entity.ver() as u8);
+
+                        let collection = match info.collection {
+                            Some(collection) => collection,
+                            None => continue,
+                        };
+
+                        tags.remove_entity(*entity, collection);
+                        info.collection = None;
+                    }
+
+                    let collection = tag_pack.move_into(&entities, tags);
+
+                    for entity in &entities {
+                        let ind = entity.id() as usize;
+                        let info = &mut self.entities[ind];
+                        info.collection = Some(collection);
+                    }
+                }
                 EntityCommand::AddComponent { entity, component } => {
                     let info = &mut self.entities[entity.id() as usize];
                     debug_assert!(info.ver.get() == entity.ver() as u8);
@@ -417,6 +450,17 @@ impl EntityCommands {
             components: Box::new(move |entities, archetypes| {
                 components.move_into(entities, archetypes)
             }),
+        });
+    }
+
+    #[inline]
+    pub fn set_tags(&self, entities: &[Entity], tags: impl TagPack + 'static) {
+        debug_assert!(tags.is_valid());
+        debug_assert_eq!(entities.len(), tags.len());
+
+        let _ = self.sender.send(EntityCommand::SetTags {
+            entities: Vec::from(entities),
+            tags: Box::new(tags),
         });
     }
 
