@@ -18,4 +18,7 @@ ron.workspace = true
 crossbeam-utils.workspace = true
 dashmap.workspace = true
 rustc-hash.workspace = true
+zstd.workspace = true
+bytemuck.workspace = true
+bincode.workspace = true
 path-slash = "0.2"

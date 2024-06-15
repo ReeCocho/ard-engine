@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::prelude::{
-    AnyAssetLoader, Asset, AssetLoadResult, AssetLoader, AssetName, AssetNameBuf,
+    lof::LofPackage, AnyAssetLoader, Asset, AssetLoadResult, AssetLoader, AssetName, AssetNameBuf,
     AssetPostLoadResult, FolderPackage, Package, PackageId, PackageInterface,
 };
 use crate::{handle::Handle, prelude::RawHandle};
@@ -115,18 +115,35 @@ impl Assets {
             }
         }
 
-        // Attempt to open packages
-        let mut packages = Vec::<Package>::default();
-        for name in package_names {
-            let mut path: PathBuf = Path::new("./packages/").into();
-            path.extend(Path::new(&name));
+        // Create the tokio runtime
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            // TODO: Make configurable
+            .worker_threads(8)
+            .thread_name("asset-loading-thread")
+            .build()
+            .unwrap();
 
-            // TODO: Implement non-folder packages
-            match FolderPackage::open(&path) {
-                Ok(package) => packages.push(package.into()),
-                Err(err) => println!("error loading package `{}` : {}", &name, err),
+        // Attempt to open packages
+        let packages = runtime.block_on(async {
+            let mut packages = Vec::<Package>::default();
+            for name in package_names {
+                let mut path: PathBuf = Path::new("./packages/").into();
+                path.extend(Path::new(&name));
+
+                if path.is_dir() {
+                    match FolderPackage::open(&path) {
+                        Ok(package) => packages.push(package.into()),
+                        Err(err) => println!("error loading package `{}` : {}", &name, err),
+                    }
+                } else {
+                    match LofPackage::open(&path).await {
+                        Ok(package) => packages.push(package.into()),
+                        Err(err) => println!("error loading package `{}` : {}", &name, err),
+                    }
+                }
             }
-        }
+            packages
+        });
 
         // Find all assets in every package, and shadow old assets.
         let mut available = HashMap::<AssetNameBuf, usize>::default();
@@ -158,12 +175,7 @@ impl Assets {
         let id_counter = AtomicU32::new(name_to_id.len() as u32);
 
         Self(Arc::new(AssetsInner {
-            runtime: tokio::runtime::Builder::new_multi_thread()
-                // TODO: Make configurable
-                .worker_threads(8)
-                .thread_name("asset-loading-thread")
-                .build()
-                .unwrap(),
+            runtime,
             packages,
             assets,
             extensions: Default::default(),

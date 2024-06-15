@@ -11,23 +11,33 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     entity_map::EntityMap,
+    format::SaveFormat,
     loader::{ComponentLoader, GenericComponentLoader, GenericTagLoader, TagLoader},
     save_data::SaveData,
     LoadContext, SaveLoad,
 };
 
-#[derive(Default)]
-pub struct Loader {
+pub struct Loader<F: SaveFormat> {
     meta_data: FxHashMap<String, LoadingMetaData>,
+    _format: std::marker::PhantomData<F>,
 }
 
-impl Loader {
+impl<F: SaveFormat> Default for Loader<F> {
+    fn default() -> Self {
+        Self {
+            meta_data: FxHashMap::default(),
+            _format: Default::default(),
+        }
+    }
+}
+
+impl<F: SaveFormat + 'static> Loader<F> {
     pub fn load_component<C: Component + SaveLoad + 'static>(mut self) -> Self {
         self.meta_data.insert(
             C::NAME.into(),
             LoadingMetaData::Component {
                 new_loader: |ctx, raw| {
-                    let mut loader = ComponentLoader::<C>::default();
+                    let mut loader = ComponentLoader::<F, C>::default();
                     loader.deserialize_all(ctx, raw);
                     Box::new(loader)
                 },
@@ -41,7 +51,7 @@ impl Loader {
             T::NAME.into(),
             LoadingMetaData::Tag {
                 new_loader: |ctx, raw| {
-                    let mut loader = TagLoader::<T>::default();
+                    let mut loader = TagLoader::<F, T>::default();
                     loader.deserialize_all(ctx, raw);
                     Box::new(loader)
                 },

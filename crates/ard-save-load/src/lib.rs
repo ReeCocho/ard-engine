@@ -3,6 +3,7 @@ use entity_map::EntityMap;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub mod entity_map;
+pub mod format;
 pub mod load_data;
 pub mod loader;
 pub mod save_data;

@@ -1,32 +1,36 @@
 use std::any::TypeId;
 
-use crate::{LoadContext, SaveLoad};
+use crate::{format::SaveFormat, LoadContext, SaveLoad};
 use ard_ecs::{
     archetype::{storage::AnyArchetypeStorage, Archetypes},
     prelude::*,
     tag::storage::TagStorage,
 };
 
-pub struct ComponentLoader<C: SaveLoad> {
+pub struct ComponentLoader<F: SaveFormat, C: SaveLoad> {
     to_load: Vec<C>,
+    _format: std::marker::PhantomData<F>,
 }
 
-pub struct TagLoader<T: SaveLoad> {
+pub struct TagLoader<F: SaveFormat, T: SaveLoad> {
     to_load: Vec<T>,
+    _format: std::marker::PhantomData<F>,
 }
 
-impl<C: SaveLoad> Default for ComponentLoader<C> {
+impl<F: SaveFormat, C: SaveLoad> Default for ComponentLoader<F, C> {
     fn default() -> Self {
         Self {
             to_load: Vec::default(),
+            _format: Default::default(),
         }
     }
 }
 
-impl<C: SaveLoad> Default for TagLoader<C> {
+impl<F: SaveFormat, C: SaveLoad> Default for TagLoader<F, C> {
     fn default() -> Self {
         Self {
             to_load: Vec::default(),
+            _format: Default::default(),
         }
     }
 }
@@ -49,13 +53,15 @@ pub trait GenericTagLoader: Send + Sync {
     fn move_into(&mut self, tags: &mut Tags, entities: &[Entity]);
 }
 
-impl<C: Component + SaveLoad + 'static> GenericComponentLoader for ComponentLoader<C> {
+impl<F: SaveFormat + 'static, C: Component + SaveLoad + 'static> GenericComponentLoader
+    for ComponentLoader<F, C>
+{
     fn type_id(&self) -> TypeId {
         TypeId::of::<C>()
     }
 
     fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>) {
-        let intermediates = bincode::deserialize::<Vec<C::Intermediate>>(&raw).unwrap();
+        let intermediates = F::deserialize::<Vec<C::Intermediate>>(raw);
         self.to_load = intermediates.into_iter().map(|i| C::load(ctx, i)).collect();
     }
 
@@ -76,13 +82,13 @@ impl<C: Component + SaveLoad + 'static> GenericComponentLoader for ComponentLoad
     }
 }
 
-impl<T: Tag + SaveLoad + 'static> GenericTagLoader for TagLoader<T> {
+impl<F: SaveFormat + 'static, T: Tag + SaveLoad + 'static> GenericTagLoader for TagLoader<F, T> {
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
 
     fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>) {
-        let intermediates = bincode::deserialize::<Vec<T::Intermediate>>(&raw).unwrap();
+        let intermediates = F::deserialize::<Vec<T::Intermediate>>(raw);
         self.to_load = intermediates.into_iter().map(|i| T::load(ctx, i)).collect();
     }
 

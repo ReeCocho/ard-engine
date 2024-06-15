@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use ard_engine::{
     ecs::prelude::*,
     game::components::transform::{Parent, Position, Rotation, Scale},
@@ -6,7 +8,7 @@ use ard_engine::{
 };
 use transform_gizmo_egui::{math::Transform, prelude::*};
 
-use crate::{camera::SceneViewCamera, selected::Selected};
+use crate::{camera::SceneViewCamera, inspect::transform::EulerRotation, selected::Selected};
 
 use super::EditorViewContext;
 
@@ -75,16 +77,18 @@ impl TransformGizmo {
             );
         }
 
-        let parent_model_inv = match ctx.queries.get::<Read<Parent>>(selected_entity) {
-            Some(parent) => {
-                let parent_model = ctx.queries.get::<Read<Model>>(parent.0).unwrap();
-                parent_model.0.inverse()
-            }
+        let parent_model = match ctx.queries.get::<Read<Parent>>(selected_entity) {
+            Some(parent) => ctx.queries.get::<Read<Model>>(parent.0).unwrap().0,
             None => Mat4::IDENTITY,
         };
+        let parent_model_inv = parent_model.inverse();
 
+        let model = *ctx.queries.get::<Read<Model>>(selected_entity).unwrap();
         let mut position = ctx.queries.get::<Write<Position>>(selected_entity).unwrap();
-        let mut rotation = ctx.queries.get::<Write<Rotation>>(selected_entity).unwrap();
+        let mut rotation = ctx
+            .queries
+            .get::<(Entity, Write<Rotation>, Write<EulerRotation>)>(selected_entity)
+            .unwrap();
         let mut scale = ctx.queries.get::<Write<Scale>>(selected_entity).unwrap();
 
         if let Some((r, t)) = self.gizmo.interact(ctx.ui, &[self.transform]) {
@@ -103,7 +107,12 @@ impl TransformGizmo {
 
             match r {
                 GizmoResult::Rotation { .. } | GizmoResult::Arcball { .. } => {
+                    let (rotation, euler_rot) = rotation.deref_mut();
                     rotation.0 = new_local_model.rotation();
+                    if let Some(euler_rot) = euler_rot {
+                        let (y, x, z) = rotation.0.to_euler(EulerRot::YXZ);
+                        euler_rot.0 = Vec3A::new(x.to_degrees(), y.to_degrees(), z.to_degrees());
+                    }
                 }
                 GizmoResult::Translation { .. } => {
                     position.0 = new_local_model.position();
@@ -111,6 +120,34 @@ impl TransformGizmo {
                 GizmoResult::Scale { .. } => {
                     scale.0 = new_local_model.scale();
                 }
+            }
+        }
+        // If the transform changed, but it wasn't from the gizmo, we need to apply transformations
+        else {
+            let our_pos = DVec3::from(self.transform.translation).as_vec3a();
+            let our_rot = DQuat::from(self.transform.rotation).as_quat();
+            let our_scl = DVec3::from(self.transform.scale).as_vec3a();
+
+            let pos = model.position();
+            let rot = model.rotation();
+            let scl = model.scale();
+
+            let del = (our_pos - pos).length();
+            if del > 0.01 {
+                self.transform.translation = pos.as_dvec3().into();
+            }
+
+            if our_rot.angle_between(rot) > 0.01 {
+                let (_, euler_rot) = rotation.deref_mut();
+                self.transform.rotation = rot.as_dquat().into();
+                if let Some(euler_rot) = euler_rot {
+                    let (y, x, z) = rot.to_euler(EulerRot::YXZ);
+                    euler_rot.0 = Vec3A::new(x.to_degrees(), y.to_degrees(), z.to_degrees());
+                }
+            }
+
+            if (our_scl - scl).length() > 0.01 {
+                self.transform.scale = scl.as_dvec3().into();
             }
         }
 

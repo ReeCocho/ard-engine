@@ -159,6 +159,14 @@ impl Archetypes {
         );
     }
 
+    /// Deallocates storage for all empty archetypes. Call periodically to keep memory in check.
+    pub fn prune_empty_archetypes(&mut self) {
+        self.entities.prune_empty();
+        self.storages
+            .iter_mut()
+            .for_each(|storage| storage.prune_empty());
+    }
+
     /// Adds a component to an entity. The entity that was moved from the original archetype to
     /// fill its place is returned if there was one, along with the new archetype ID and index of
     /// the entity. If the entity already contained the component, the component is replaced and

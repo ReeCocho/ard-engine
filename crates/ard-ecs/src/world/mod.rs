@@ -42,5 +42,6 @@ impl World {
     /// Processes all pending entities.
     pub fn process_entities(&mut self) {
         self.entities.process(&mut self.archetypes, &mut self.tags);
+        self.archetypes.prune_empty_archetypes();
     }
 }

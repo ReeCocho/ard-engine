@@ -7,11 +7,13 @@ use path_slash::PathExt;
 use rustc_hash::FxHashMap;
 
 /// A list of all the files within a package.
+#[derive(Default)]
 pub struct Manifest {
     pub assets: FxHashMap<PathBuf, FileMetaData>,
 }
 
 /// Meta-data describing an asset within a package.
+#[derive(Default)]
 pub struct FileMetaData {
     /// Compressed size of the file in bytes.
     pub compressed_size: usize,

@@ -1,4 +1,5 @@
 pub mod folder;
+pub mod lof;
 pub mod manifest;
 
 use std::path::{Path, PathBuf};
@@ -6,6 +7,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use crossbeam_utils::sync::{ShardedLockReadGuard, ShardedLockWriteGuard};
 use enum_dispatch::enum_dispatch;
+use lof::LofPackage;
 use thiserror::Error;
 
 use crate::prelude::AssetName;
@@ -20,6 +22,7 @@ pub struct PackageId(usize);
 #[derive(Clone)]
 pub enum Package {
     Folder(FolderPackage),
+    Lof(LofPackage),
 }
 
 #[derive(Debug, Error)]

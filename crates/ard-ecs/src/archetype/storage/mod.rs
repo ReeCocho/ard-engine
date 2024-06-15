@@ -42,6 +42,9 @@ pub trait AnyArchetypeStorage: Send + Sync {
 
     /// Replaces an object in a buffer with a new one.
     fn replace(&mut self, object: Box<dyn Any>, buffer: usize, index: usize);
+
+    /// Deallocates memory for every empty buffer.
+    fn prune_empty(&mut self);
 }
 
 impl<T: Send + Sync> Default for ArchetypeStorage<T> {
@@ -121,5 +124,14 @@ impl<T: Send + Sync + 'static> AnyArchetypeStorage for ArchetypeStorage<T> {
         self.buffers[buffer].write()[index] = *object
             .downcast::<T>()
             .expect("wrong type for replacement in archetype storage");
+    }
+
+    fn prune_empty(&mut self) {
+        self.buffers.iter_mut().for_each(|buffer| {
+            let mut buffer = buffer.write();
+            if buffer.is_empty() {
+                *buffer = Vec::default();
+            }
+        })
     }
 }

@@ -10,6 +10,7 @@ use ard_engine::{
 use crate::{
     assets::meta::MetaData,
     camera::SceneViewCamera,
+    selected::Selected,
     tasks::{instantiate::InstantiateTask, TaskQueue},
 };
 
@@ -67,6 +68,7 @@ impl SceneView {
         // Entity selection
         if let Some(pos) = response.interact_pointer_pos() {
             if response.clicked() {
+                *ctx.res.get_mut::<Selected>().unwrap() = Selected::None;
                 let norm_pos = pos - origin;
                 let uv = Vec2::new(
                     norm_pos.x.max(0.0) / canvas_size.x,

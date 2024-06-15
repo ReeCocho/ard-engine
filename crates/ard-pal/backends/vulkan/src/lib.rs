@@ -2524,7 +2524,11 @@ unsafe fn pick_physical_device(
 
         // Must support requested extensions
         if let Some(missing) = check_device_extensions(instance, device, extensions) {
-            ard_log::info!("Missing ext {missing}");
+            let device_name = CStr::from_bytes_until_nul(bytemuck::cast_slice(
+                properties.properties.device_name.as_slice(),
+            ))
+            .unwrap();
+            ard_log::info!("{device_name:?} missing ext {missing}");
             continue;
         }
 

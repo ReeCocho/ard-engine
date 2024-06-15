@@ -1,10 +1,24 @@
 use ard_engine::{ecs::prelude::*, game::components::destroy::Destroy};
 
-use crate::selected::Selected;
+use crate::{
+    inspect::{transform::TransformInspector, Inspectors},
+    selected::Selected,
+};
 
 use super::EditorViewContext;
 
-pub struct InspectorView {}
+pub struct InspectorView {
+    inspectors: Inspectors,
+}
+
+impl Default for InspectorView {
+    fn default() -> Self {
+        let mut inspectors = Inspectors::default();
+        inspectors.with(TransformInspector);
+
+        Self { inspectors }
+    }
+}
 
 impl InspectorView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
@@ -29,5 +43,8 @@ impl InspectorView {
         if ctx.ui.button("Delete").clicked() {
             ctx.commands.entities.add_component(entity, Destroy);
         }
+
+        self.inspectors
+            .show(ctx.ui, entity, ctx.commands, ctx.queries, ctx.res);
     }
 }

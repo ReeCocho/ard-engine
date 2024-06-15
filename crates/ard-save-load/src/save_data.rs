@@ -7,16 +7,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     entity_map::{EntityMap, MappedEntity},
+    format::SaveFormat,
     saver::{ComponentSaver, GenericSaver, TagSaver},
     SaveContext, SaveLoad,
 };
 
-#[derive(Default)]
-pub struct Saver {
+pub struct Saver<F: SaveFormat> {
     meta_data: FxHashMap<TypeId, SavingMetaData>,
+    _format: std::marker::PhantomData<F>,
 }
 
-impl Saver {
+impl<F: SaveFormat> Default for Saver<F> {
+    fn default() -> Self {
+        Self {
+            meta_data: FxHashMap::default(),
+            _format: Default::default(),
+        }
+    }
+}
+
+impl<F: SaveFormat + 'static> Saver<F> {
     pub fn ignore<T: 'static>(mut self) -> Self {
         self.meta_data
             .insert(TypeId::of::<T>(), SavingMetaData::Ignore);
@@ -28,7 +38,7 @@ impl Saver {
             TypeId::of::<T>(),
             SavingMetaData::Info {
                 type_name: T::NAME.to_owned(),
-                new_saver: || Box::new(ComponentSaver::<T>::default()),
+                new_saver: || Box::new(ComponentSaver::<F, T>::default()),
             },
         );
         self
@@ -39,7 +49,7 @@ impl Saver {
             TypeId::of::<T>(),
             SavingMetaData::Info {
                 type_name: T::NAME.to_owned(),
-                new_saver: || Box::new(TagSaver::<T>::default()),
+                new_saver: || Box::new(TagSaver::<F, T>::default()),
             },
         );
         self
@@ -164,7 +174,7 @@ struct SavingData {
 }
 
 impl SavingData {
-    fn to_saved(self, saver: &Saver, map: &EntityMap) -> SavedSet {
+    fn to_saved<F: SaveFormat>(self, saver: &Saver<F>, map: &EntityMap) -> SavedSet {
         let buffers = self
             .savers
             .into_iter()

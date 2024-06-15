@@ -9,4 +9,5 @@ ard-ecs = { path = "../ard-ecs" }
 ard-assets = { path = "../ard-assets" }
 serde.workspace = true
 bincode.workspace = true
+ron.workspace = true
 rustc-hash.workspace = true

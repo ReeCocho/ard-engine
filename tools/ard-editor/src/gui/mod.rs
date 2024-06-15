@@ -66,7 +66,7 @@ impl Default for EditorView {
             scene: SceneView::default(),
             assets: AssetsView {},
             hierarchy: HierarchyView {},
-            inspector: InspectorView {},
+            inspector: InspectorView::default(),
         }
     }
 }

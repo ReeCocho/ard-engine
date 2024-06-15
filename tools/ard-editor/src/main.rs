@@ -1,6 +1,7 @@
 pub mod assets;
 pub mod camera;
 pub mod gui;
+pub mod inspect;
 pub mod scene_graph;
 pub mod selected;
 pub mod tasks;
