@@ -41,6 +41,7 @@ pub struct TextureResource {
     pub texture: PalTexture,
     pub sampler: Sampler,
     pub mip_levels: u32,
+    pub version: u32,
     /// Bit mask that indicates which mip levels of the texture are loaded into memory. The least
     /// significant bit represents LOD0 (the highest detail image).
     pub loaded_mips: u32,
@@ -124,6 +125,7 @@ impl TextureResource {
                 sampler: create_info.sampler,
                 mip_levels: create_info.mip_count as u32,
                 loaded_mips: 0,
+                version: u32::MAX,
             },
             TextureUpload {
                 staging,
@@ -136,11 +138,16 @@ impl TextureResource {
     /// Determine the base mip and number of mips.
     #[inline(always)]
     pub fn loaded_mips(&self) -> (u32, u32) {
-        let loaded_mips = self.loaded_mips << (u32::BITS - self.mip_levels);
-        let lz = loaded_mips.leading_zeros();
-        let loaded_mips = (loaded_mips << lz).leading_ones();
-        let base_mip_level = self.mip_levels - (lz + loaded_mips);
-        (base_mip_level, loaded_mips)
+        let mut mip_count = 0;
+        for bit in (0..self.mip_levels).into_iter().rev() {
+            if self.loaded_mips & (1 << bit) != 0 {
+                mip_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        (self.mip_levels - mip_count.max(1), mip_count)
     }
 }
 

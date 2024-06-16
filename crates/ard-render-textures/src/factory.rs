@@ -35,7 +35,7 @@ pub struct TextureFactory {
 
 #[derive(Copy, Clone)]
 pub enum MipUpdate {
-    Texture(ResourceId),
+    Texture { id: ResourceId, version: u32 },
     CubeMap(ResourceId),
 }
 
@@ -209,7 +209,7 @@ impl TextureFactory {
         // Update mips
         self.mip_updates[frame].drain(..).for_each(|update| {
             match update {
-                MipUpdate::Texture(id) => {
+                MipUpdate::Texture { id, version } => {
                     if !observed.insert(id) {
                         return;
                     }
@@ -221,6 +221,10 @@ impl TextureFactory {
                             return;
                         }
                     };
+
+                    if version != textures.version_of(id).unwrap() {
+                        return;
+                    }
 
                     let (base_mip, mip_count) = texture.loaded_mips();
                     updates.push(DescriptorSetUpdate {

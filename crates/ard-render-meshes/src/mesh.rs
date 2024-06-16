@@ -46,6 +46,7 @@ pub struct Mesh {
 }
 
 pub struct MeshResource {
+    pub version: u32,
     pub block: MeshBlock,
     pub bounds: ObjectBounds,
     pub index_count: usize,
@@ -168,6 +169,7 @@ impl MeshResource {
 
         Ok((
             MeshResource {
+                version: u32::MAX,
                 block,
                 index_count: data.index_count(),
                 vertex_count: data.vertex_count(),

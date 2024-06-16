@@ -1,4 +1,5 @@
 use std::{
+    cell::UnsafeCell,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -14,7 +15,7 @@ pub struct PrwLock<T>(Arc<PrwLockInner<T>>);
 
 #[derive(Debug)]
 pub struct PrwLockInner<T> {
-    data: T,
+    data: UnsafeCell<T>,
     #[cfg(debug_assertions)]
     access_state: std::sync::atomic::AtomicU32,
 }
@@ -29,7 +30,7 @@ impl<T> PrwLock<T> {
     #[inline]
     pub fn new(data: T) -> Self {
         Self(Arc::new(PrwLockInner {
-            data,
+            data: UnsafeCell::new(data),
             #[cfg(debug_assertions)]
             access_state: std::sync::atomic::AtomicU32::new(0),
         }))
@@ -102,7 +103,7 @@ impl<T> Deref for PrwReadLock<T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.data
+        unsafe { self.0.data.get().as_ref().unsafe_unwrap() }
     }
 }
 
@@ -125,19 +126,14 @@ impl<T> Deref for PrwWriteLock<T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.data
+        unsafe { self.0.data.get().as_ref().unsafe_unwrap() }
     }
 }
 
 impl<T> DerefMut for PrwWriteLock<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // Safe to unwrap because the PrwWriteLock guarantees there are no other references
-        unsafe {
-            (&self.0.data as *const T as *mut T)
-                .as_mut()
-                .unsafe_unwrap()
-        }
+        unsafe { self.0.data.get().as_mut().unsafe_unwrap() }
     }
 }
 

@@ -2,8 +2,10 @@ pub mod access;
 pub mod filter;
 pub mod res;
 
-use anymap::{any::Any, AnyMap};
+use std::any::{Any, TypeId};
+
 pub use ard_ecs_derive::Resource;
+use rustc_hash::FxHashMap;
 
 use crate::prw_lock::{PrwLock, PrwReadLock, PrwWriteLock};
 
@@ -15,7 +17,7 @@ pub trait Resource {
 
 /// Container of resources.
 pub struct Resources {
-    resources: AnyMap,
+    resources: FxHashMap<TypeId, Box<dyn Any>>,
 }
 
 unsafe impl Send for Resources {}
@@ -25,7 +27,7 @@ unsafe impl Sync for Resources {}
 impl Default for Resources {
     fn default() -> Self {
         Resources {
-            resources: AnyMap::new(),
+            resources: FxHashMap::default(),
         }
     }
 }
@@ -38,21 +40,26 @@ impl Resources {
     /// Creates a new resource. If a resource of the same type was already registered, it is
     /// replaced by the new resource.
     pub fn add<R: Resource + Any>(&mut self, resource: R) {
-        self.resources.insert(PrwLock::new(resource));
+        self.resources
+            .insert(TypeId::of::<R>(), Box::new(PrwLock::new(resource)));
     }
 
     /// Checks that a resource exists in the container.
     pub fn contains<R: Resource + Any>(&self) -> bool {
-        self.resources.contains::<PrwLock<R>>()
+        self.resources.contains_key(&TypeId::of::<R>())
     }
 
     /// Attempts to get read only access to a resource.
     pub fn get<R: Resource + Any>(&self) -> Option<PrwReadLock<R>> {
-        self.resources.get::<PrwLock<R>>().map(|lock| lock.read())
+        self.resources
+            .get(&TypeId::of::<R>())
+            .map(|lock| lock.downcast_ref::<PrwLock<R>>().unwrap().read())
     }
 
     /// Attempts to get mutable access to a resource.
     pub fn get_mut<R: Resource + Any>(&self) -> Option<PrwWriteLock<R>> {
-        self.resources.get::<PrwLock<R>>().map(|lock| lock.write())
+        self.resources
+            .get(&TypeId::of::<R>())
+            .map(|lock| lock.downcast_ref::<PrwLock<R>>().unwrap().write())
     }
 }

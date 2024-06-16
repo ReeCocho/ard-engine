@@ -3,7 +3,10 @@ use std::collections::VecDeque;
 use ard_formats::texture::MipType;
 use ard_pal::prelude::*;
 use ard_render_base::resource::{ResourceAllocator, ResourceId};
-use ard_render_meshes::factory::{MeshFactory, MeshUpload};
+use ard_render_meshes::{
+    factory::{MeshFactory, MeshUpload},
+    mesh::MeshResource,
+};
 use ard_render_textures::{
     factory::{TextureFactory, TextureMipUpload, TextureUpload},
     texture::TextureResource,
@@ -21,23 +24,37 @@ pub(crate) struct Staging {
 pub(crate) enum StagingRequest {
     Mesh {
         id: ResourceId,
+        version: u32,
         upload: MeshUpload,
     },
     Texture {
         id: ResourceId,
+        version: u32,
         upload: TextureUpload,
     },
     TextureMip {
         id: ResourceId,
+        version: u32,
         upload: TextureMipUpload,
     },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum StagingResource {
-    StaticMesh(ResourceId),
-    Texture { id: ResourceId, loaded_mips: u32 },
-    TextureMip { id: ResourceId, mip_level: u32 },
+    StaticMesh {
+        id: ResourceId,
+        version: u32,
+    },
+    Texture {
+        id: ResourceId,
+        version: u32,
+        loaded_mips: u32,
+    },
+    TextureMip {
+        id: ResourceId,
+        version: u32,
+        mip_level: u32,
+    },
 }
 
 struct Upload {
@@ -109,6 +126,7 @@ impl Staging {
         &mut self,
         mesh_factory: &mut MeshFactory,
         textures: &ResourceAllocator<TextureResource>,
+        meshes: &ResourceAllocator<MeshResource>,
     ) {
         if self.pending.is_empty() {
             return;
@@ -130,16 +148,40 @@ impl Staging {
             upload_size += request.upload_size();
 
             let resc = match request {
-                StagingRequest::Mesh { id, upload } => {
+                StagingRequest::Mesh {
+                    id,
+                    version,
+                    upload,
+                } => {
+                    let cur_ver = match meshes.version_of(*id) {
+                        Some(ver) => ver,
+                        None => continue,
+                    };
+
+                    if cur_ver != *version {
+                        continue;
+                    }
+
                     mesh_factory.upload(commands.transfer(), upload);
-                    StagingResource::StaticMesh(*id)
+                    StagingResource::StaticMesh {
+                        id: *id,
+                        version: *version,
+                    }
                 }
-                StagingRequest::Texture { id, upload } => {
+                StagingRequest::Texture {
+                    id,
+                    upload,
+                    version,
+                } => {
                     let texture = match textures.get(*id) {
                         Some(texture) => texture,
                         // Texture was dropped so upload is no longer needed
                         None => continue,
                     };
+
+                    if textures.version_of(*id).unwrap() != *version {
+                        continue;
+                    }
 
                     match upload.mip_type {
                         MipType::Generate => TextureFactory::upload_gen_mip(
@@ -157,19 +199,29 @@ impl Staging {
                     }
                     StagingResource::Texture {
                         id: *id,
+                        version: *version,
                         loaded_mips: upload.loaded_mips,
                     }
                 }
-                StagingRequest::TextureMip { id, upload } => {
+                StagingRequest::TextureMip {
+                    id,
+                    version,
+                    upload,
+                } => {
                     let texture = match textures.get(*id) {
                         Some(texture) => texture,
                         // Texture was dropped so upload is no longer needed
                         None => continue,
                     };
 
+                    if textures.version_of(*id).unwrap() != *version {
+                        continue;
+                    }
+
                     TextureFactory::upload_mip(commands.transfer(), &texture.texture, upload);
                     StagingResource::TextureMip {
                         id: *id,
+                        version: *version,
                         mip_level: upload.mip_level,
                     }
                 }

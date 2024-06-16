@@ -137,42 +137,80 @@ impl Factory {
         let mut pending_blas = self.inner.pending_blas.lock().unwrap();
 
         // Check for new upload requests
-        staging.upload(&mut mesh_factory, &textures);
+        staging.upload(&mut mesh_factory, &textures, &static_meshes);
 
         // Check if any uploads are complete, and if they are, handle them appropriately
         staging.flush_complete_uploads(false, |resc| match resc {
-            StagingResource::StaticMesh(id) => {
+            StagingResource::StaticMesh { id, version } => {
+                let cur_ver = match static_meshes.version_of(id) {
+                    Some(ver) => ver,
+                    None => return,
+                };
+
+                if cur_ver != version {
+                    return;
+                }
+
                 // Flag mesh as being ready for rendering and pending BLAS construction
-                if let Some(mesh) = static_meshes.get_mut(id) {
-                    mesh.mesh_ready = true;
-                    pending_blas.append(id, mesh.blas_scratch.take().unwrap());
-                }
+                let mesh = static_meshes.get_mut(id).unwrap();
+
+                mesh.mesh_ready = true;
+                pending_blas.append(id, mesh.blas_scratch.take().unwrap());
             }
-            StagingResource::Texture { id, loaded_mips } => {
-                if let Some(texture) = textures.get_mut(id) {
-                    texture.loaded_mips = loaded_mips;
+            StagingResource::Texture {
+                id,
+                version,
+                loaded_mips,
+            } => {
+                let cur_ver = match textures.version_of(id) {
+                    Some(ver) => ver,
+                    None => return,
+                };
+
+                if cur_ver != version {
+                    return;
                 }
+
+                let texture = textures.get_mut(id).unwrap();
+
+                texture.loaded_mips = loaded_mips;
                 texture_factory.texture_ready(id)
             }
-            StagingResource::TextureMip { id, mip_level } => {
-                if let Some(texture) = textures.get_mut(id) {
-                    // Update mip level
-                    texture.loaded_mips |= 1 << mip_level;
+            StagingResource::TextureMip {
+                id,
+                version,
+                mip_level,
+            } => {
+                let cur_ver = match textures.version_of(id) {
+                    Some(ver) => ver,
+                    None => return,
+                };
 
-                    // Tell the factory about the new mip
-                    texture_factory.mip_update(MipUpdate::Texture(id));
+                if cur_ver != version {
+                    return;
                 }
+
+                let texture = textures.get_mut(id).unwrap();
+
+                // Update mip level
+                texture.loaded_mips |= 1 << mip_level;
+
+                // Tell the factory about the new mip
+                texture_factory.mip_update(MipUpdate::Texture { id, version });
             }
         });
 
         // Swap out BLAS' that are fully ready
         for blas in pending_blas.to_swap(frame) {
-            if let Some(mesh) = static_meshes.get_mut(blas.mesh_id) {
-                mesh.blas_ref
-                    .store(blas.new_blas.device_ref(), Ordering::Relaxed);
-                mesh.blas = blas.new_blas;
-                mesh.blas_ready = true;
-            }
+            let mesh = match static_meshes.get_mut(blas.mesh_id) {
+                Some(mesh) => mesh,
+                None => continue,
+            };
+
+            mesh.blas_ref
+                .store(blas.new_blas.device_ref(), Ordering::Relaxed);
+            mesh.blas = blas.new_blas;
+            mesh.blas_ready = true;
         }
 
         // Build the updated pending BLAS build list
@@ -191,16 +229,23 @@ impl Factory {
                 mesh_factory.free(mesh.block);
             },
             |_, _| {},
+            // We only drop meshes when they have been fully uploaded
+            |_, mesh| mesh.mesh_ready,
         );
         textures.drop_pending(
             frame,
-            |_, _| {},
             |id, _| {
                 texture_factory.texture_dropped(id);
             },
+            |_, _| {},
+            // Only drop textures when all mips are loaded
+            |_, tex| {
+                let (_, loaded_mips) = tex.loaded_mips();
+                loaded_mips == tex.mip_levels
+            },
         );
-        shaders.drop_pending(frame, |_, _| {}, |_, _| {});
-        materials.drop_pending(frame, |_, _| {}, |_, _| {});
+        shaders.drop_pending(frame, |_, _| {}, |_, _| {}, |_, _| true);
+        materials.drop_pending(frame, |_, _| {}, |_, _| {}, |_, _| true);
         material_instances.drop_pending(
             frame,
             |_, material| {
@@ -212,6 +257,7 @@ impl Factory {
                 }
             },
             |_, _| {},
+            |_, _| true,
         );
 
         // Bind textures
@@ -303,12 +349,16 @@ impl FactoryInner {
         let bounding_sphere = mesh.bounds.bounding_sphere();
         let handle = static_meshes.insert(mesh);
 
+        let version = static_meshes.version_of(handle.id()).unwrap();
+        static_meshes.get_mut(handle.id()).unwrap().version = version;
+
         // Upload info
         mesh_factory.set_mesh_info(handle.id(), info);
 
         // Submit the upload request
         staging.add(StagingRequest::Mesh {
             id: handle.id(),
+            version,
             upload,
         });
 
@@ -327,10 +377,13 @@ impl FactoryInner {
 
         // Create the resource handle
         let handle = textures.insert(texture);
+        let version = textures.version_of(handle.id()).unwrap();
+        textures.get_mut(handle.id()).unwrap().version = version;
 
         // Submit the upload request
         staging.add(StagingRequest::Texture {
             id: handle.id(),
+            version,
             upload,
         });
 
@@ -412,6 +465,7 @@ impl FactoryInner {
 
         staging.add(StagingRequest::TextureMip {
             id,
+            version: texture_inner.version,
             upload: TextureMipUpload {
                 staging: staging_buffer,
                 mip_level: level as u32,

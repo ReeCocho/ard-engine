@@ -7,13 +7,18 @@ use crate::{ecs::Frame, FRAMES_IN_FLIGHT};
 pub struct ResourceAllocator<R> {
     max: usize,
     ignore_drop: bool,
-    resources: Vec<Option<R>>,
+    resources: Vec<Resource<R>>,
     free: Vec<ResourceId>,
     dropped: Receiver<ResourceId>,
     on_drop: Sender<ResourceId>,
     /// First dim is for frames in flight. Second dim is for latency. Third is for the resources
     /// to drop.
     pending_drop: [Vec<Vec<ResourceId>>; FRAMES_IN_FLIGHT],
+}
+
+pub struct Resource<R> {
+    pub resource: Option<R>,
+    version: u32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -56,6 +61,7 @@ impl<R> ResourceAllocator<R> {
         frame: Frame,
         mut on_drop: impl FnMut(ResourceId, R),
         mut on_found: impl FnMut(ResourceId, &mut R),
+        mut should_drop: impl FnMut(ResourceId, &R) -> bool,
     ) {
         if self.ignore_drop {
             return;
@@ -64,10 +70,16 @@ impl<R> ResourceAllocator<R> {
         let frame = usize::from(frame);
 
         // Drop everything that needs dropping now
-        for id in self.pending_drop[frame][0].drain(..) {
-            on_drop(id, self.resources.get_mut(id.0).unwrap().take().unwrap());
-            self.free.push(id);
-        }
+        self.pending_drop[frame][0].retain_mut(|id| {
+            let resc = self.resources.get_mut(id.0).unwrap();
+            let drop = should_drop(*id, resc.resource.as_ref().unwrap());
+            if drop {
+                on_drop(*id, resc.resource.take().unwrap());
+                resc.version += 1;
+                self.free.push(*id);
+            }
+            !drop
+        });
 
         // Cycle every one of the "latency" lists
         let mut latency_lists = std::mem::take(&mut self.pending_drop[frame]);
@@ -83,13 +95,13 @@ impl<R> ResourceAllocator<R> {
         // Move things that are just now being dropped to the "later" spot
         let last_list = self.pending_drop[frame].last_mut().unwrap();
         for id in self.dropped.try_iter() {
-            on_found(id, self.resources[id.0].as_mut().unwrap());
+            on_found(id, self.resources[id.0].resource.as_mut().unwrap());
             last_list.push(id);
         }
     }
 
     #[inline(always)]
-    pub fn all(&self) -> &[Option<R>] {
+    pub fn all(&self) -> &[Resource<R>] {
         &self.resources
     }
 
@@ -101,12 +113,16 @@ impl<R> ResourceAllocator<R> {
     pub fn insert(&mut self, resource: R) -> ResourceHandle {
         let id = match self.free.pop() {
             Some(id) => {
-                self.resources[id.0] = Some(resource);
+                let resc = &mut self.resources[id.0];
+                resc.resource = Some(resource);
                 id
             }
             None => {
                 assert_ne!(self.resources.len(), self.max, "max number of allocations");
-                self.resources.push(Some(resource));
+                self.resources.push(Resource::<R> {
+                    resource: Some(resource),
+                    version: 0,
+                });
                 ResourceId(self.resources.len() - 1)
             }
         };
@@ -117,19 +133,20 @@ impl<R> ResourceAllocator<R> {
     }
 
     #[inline(always)]
+    pub fn version_of(&self, id: ResourceId) -> Option<u32> {
+        self.resources.get(id.0).map(|r| r.version)
+    }
+
+    #[inline(always)]
     pub fn get(&self, id: ResourceId) -> Option<&R> {
-        match self.resources.get(id.0) {
-            Some(Some(v)) => Some(v),
-            _ => None,
-        }
+        self.resources.get(id.0).and_then(|r| r.resource.as_ref())
     }
 
     #[inline(always)]
     pub fn get_mut(&mut self, id: ResourceId) -> Option<&mut R> {
-        match self.resources.get_mut(id.0) {
-            Some(Some(v)) => Some(v),
-            _ => None,
-        }
+        self.resources
+            .get_mut(id.0)
+            .and_then(|r| r.resource.as_mut())
     }
 }
 
@@ -149,13 +166,7 @@ impl Drop for ResourceHandleInner {
 impl From<ResourceId> for usize {
     #[inline(always)]
     fn from(id: ResourceId) -> Self {
-        id.0
-    }
-}
-
-impl From<usize> for ResourceId {
-    fn from(value: usize) -> Self {
-        ResourceId(value)
+        id.0 as usize
     }
 }
 
@@ -165,8 +176,14 @@ impl From<ResourceId> for u64 {
     }
 }
 
+impl From<usize> for ResourceId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
 impl From<u64> for ResourceId {
     fn from(value: u64) -> Self {
-        ResourceId(value as usize)
+        Self(value as usize)
     }
 }

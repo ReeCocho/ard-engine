@@ -7,7 +7,6 @@ edition.workspace = true
 
 [dependencies]
 ard-ecs-derive = { path = "./ard-ecs-derive/" }
-anymap.workspace = true
 rayon.workspace = true
 crossbeam-channel.workspace = true
 num_cpus.workspace = true
@@ -17,3 +16,4 @@ paste.workspace = true
 unsafe_unwrap.workspace = true
 bitvec.workspace = true
 thiserror.workspace = true
+rustc-hash.workspace = true

@@ -31,7 +31,6 @@ impl Model {
     #[inline(always)]
     pub fn scale(&self) -> Vec3A {
         let det = self.0.determinant();
-        debug_assert!(det != 0.0);
         Vec3A::new(
             self.0.col(0).length() * det.signum(),
             self.0.col(1).length(),

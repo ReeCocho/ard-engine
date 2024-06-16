@@ -141,7 +141,7 @@ impl RayTracingMaterialPipeline {
         // Materials are all pipeline libraries
         let mut libraries = Vec::default();
         for material in create_info.materials.all().iter() {
-            let material = match material {
+            let material = match material.resource.as_ref() {
                 Some(mat) => mat,
                 None => break,
             };

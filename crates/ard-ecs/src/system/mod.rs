@@ -5,8 +5,11 @@ pub mod query;
 
 use std::{
     any::{Any, TypeId},
+    cell::UnsafeCell,
     collections::HashMap,
 };
+
+use unsafe_unwrap::UnsafeUnwrap;
 
 use self::{commands::Commands, handler::EventHandler};
 use crate::{
@@ -22,7 +25,7 @@ pub struct System {
     pub(crate) id: TypeId,
     pub(crate) main_thread: bool,
     /// Maps ID's of events to the handlers that handle them.
-    pub(crate) handlers: TypeIdMap<Box<dyn EventHandler>>,
+    pub(crate) handlers: TypeIdMap<UnsafeCell<Box<dyn EventHandler>>>,
     // Which systems must run before/after this one for a particular event type. The first value in
     // the tuple is the event type. The second is the system state type. If the mapped value is
     // `true`, the system will not run if the associated system does not exist. Otherwise, it will
@@ -69,7 +72,9 @@ impl System {
 
     /// Get the handler for the given event type ID.
     pub fn handler_by_id(&self, id: TypeId) -> Option<&dyn EventHandler> {
-        self.handlers.get(&id).map(|e| e.as_ref())
+        self.handlers
+            .get(&id)
+            .map(|e| unsafe { e.get().as_ref().unsafe_unwrap().as_ref() })
     }
 }
 
@@ -145,7 +150,11 @@ impl<S: SystemState + 'static> SystemBuilder<S> {
             state: Box::new(self.state),
             id: TypeId::of::<S>(),
             main_thread: S::MAIN_THREAD,
-            handlers: self.handlers,
+            handlers: self
+                .handlers
+                .into_iter()
+                .map(|(k, v)| (k, UnsafeCell::new(v)))
+                .collect(),
             run_after: self.run_after,
             run_before: self.run_before,
         }

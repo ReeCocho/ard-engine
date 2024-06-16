@@ -322,8 +322,15 @@ impl Dispatcher {
                                 ),
                                 thread_sender: dispatcher_state.states[idx].thread_sender.clone(),
                                 handler: NonNull::new_unchecked(
-                                    primary_sys.handlers.get(&event_id).unwrap().as_ref()
-                                        as *const _ as *mut _,
+                                    // LOL
+                                    primary_sys
+                                        .handlers
+                                        .get(&event_id)
+                                        .unwrap()
+                                        .get()
+                                        .as_mut()
+                                        .unwrap()
+                                        .as_mut() as *mut _,
                                 ),
                                 resources: NonNull::new_unchecked(resources as *const _ as *mut _),
                                 tags: NonNull::new_unchecked((&world.tags) as *const _ as *mut _),
@@ -438,15 +445,15 @@ impl DispatcherBuilder {
             }
         }
 
-        let systems = std::mem::take(&mut self.systems)
+        let mut systems = std::mem::take(&mut self.systems)
             .into_values()
             .collect::<Vec<_>>();
         let mut event_to_systems: TypeIdMap<DispatcherState> = TypeIdMap::default();
 
         // First loop over every system to initialize dispatcher state objects.
-        for (system_idx, system) in systems.iter().enumerate() {
+        for (system_idx, system) in systems.iter_mut().enumerate() {
             // Loop over every event handler for this system
-            for (event_id, handler) in &system.handlers {
+            for (event_id, handler) in system.handlers.iter_mut() {
                 // Intitialize the dispatcher state
                 let dispatcher_state = event_to_systems.entry(*event_id).or_default();
                 let (thread_sender, finished) = crossbeam_channel::bounded(1);
@@ -459,7 +466,7 @@ impl DispatcherBuilder {
                     dependency_count: 0,
                     waiting_on: 0,
                     dependents: Vec::default(),
-                    accesses: handler.accesses(),
+                    accesses: handler.get_mut().accesses(),
                 });
 
                 dispatcher_state
