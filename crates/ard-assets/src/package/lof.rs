@@ -116,8 +116,7 @@ impl PackageInterface for LofPackage {
         let mut file = self.0.file.lock().await;
         file.seek(SeekFrom::Start(*offset)).await.unwrap();
         file.read_exact(&mut contents).await.unwrap();
-
-        let contents = zstd::decode_all(Cursor::new(contents)).unwrap();
+        let contents = async { zstd::decode_all(Cursor::new(contents)).unwrap() }.await;
 
         Ok(contents)
     }
@@ -137,8 +136,8 @@ impl PackageInterface for LofPackage {
         file.seek(SeekFrom::Start(*offset)).await.unwrap();
         file.read_exact(&mut contents).await.unwrap();
 
-        let contents = zstd::decode_all(Cursor::new(contents)).unwrap();
-        let contents = String::from_utf8(contents).unwrap();
+        let contents = async { zstd::decode_all(Cursor::new(contents)).unwrap() }.await;
+        let contents = async { String::from_utf8(contents).unwrap() }.await;
 
         Ok(contents)
     }

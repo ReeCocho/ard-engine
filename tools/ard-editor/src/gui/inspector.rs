@@ -1,8 +1,4 @@
-use ard_engine::{
-    ecs::prelude::*,
-    game::components::destroy::Destroy,
-    render::{Mesh, Model},
-};
+use ard_engine::{ecs::prelude::*, render::Model};
 
 use crate::{
     command::{entity::DestroyEntity, EditorCommands},

@@ -13,12 +13,14 @@ A game engine designed for open world 3D games.
 
 ### General
 
-- High performance ECS.
+- High performance parallelized ECS.
 - Event driven game loop.
 - Plugin system.
 - Async asset loading.
 
 ### Rendering
+
+⚠️**WARNING**: In order to use the renderer, you need a GPU with support for Vulkan 1.3, mesh shading, and ray tracing. I do not have plans to support GPUs without these features.
 
 - 3D rendering.
 - Bindless textures and materials.
@@ -28,21 +30,22 @@ A game engine designed for open world 3D games.
 - Cascaded shadow mapping.
 - Forward rendering with a Z-prepass.
 - Clustered lighting.
-- Hierarchical Z-buffer occlusion culling.
+- GPU occlusion culling.
 - PBR rendering with realtime image based lighting.
+- Effects like ambient occlusion, crepuscular rays, bloom, and more.
 - Mesh shading.
+- Hardware accelerated path tracing reference.
 
 ## Directory Structure
 
 - **crates**: Contains all the crates that make up the engine.
-- **data**: Contains assets and configuration defaults for the editor.
 - **src**: Contains the high-level crate for the entire engine which re-exports other crates.
 - **tools**: Binaries used by the editor.
 
 ## Building
 
-⚠️**WARNING**: The build files included are designed for a Windows environment. They will fail if
-you attempt to build on another platform such as MacOS or Linux.
+⚠️**WARNING**: The build files are tested in a Windows environment. They might fail if
+you attempt to build on another platform. If you encounter any problems, please feel free to open an issue ticket.
 
 ### Dependencies
 
@@ -50,11 +53,11 @@ Before following the build instructions, install the following dependencies.
 
 | Dependency | Tested Version |
 | - | - |
-| [Rust](https://rustup.rs/) | 1.77.0 |
-| [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.36.4 |
-| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.275.0 |
+| [Rust](https://rustup.rs/) | 1.79.0 |
+| [cargo-make](https://github.com/sagiegurari/cargo-make) | 0.37.12 |
+| [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) | 1.3.283.0 |
 
 ### Instructions
 
-1. Run `cargo make build_dbg` to compile the editor.
-2. Run `/build/debug/ard-editor.exe` to use the editor.
+1. Run `cargo make --profile=opt-dev build-editor` to compile the editor.
+2. Run `/build/opt-dev/ard-editor.exe` to use the editor.

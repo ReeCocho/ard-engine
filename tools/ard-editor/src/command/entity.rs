@@ -2,7 +2,6 @@ pub use ard_engine::ecs::prelude::*;
 use ard_engine::{
     assets::manager::Assets,
     ecs::{component::pack::EmptyComponentPack, tag::pack::EmptyTagPack},
-    game::components::destroy::Destroy,
     save_load::{format::Bincode, save_data::SaveData},
 };
 
@@ -73,7 +72,7 @@ impl EditorCommand for DestroyEntity {
 
     fn clear(
         &mut self,
-        commands: &Commands,
+        _commands: &Commands,
         _queries: &Queries<Everything>,
         _res: &Res<Everything>,
     ) {

@@ -52,13 +52,18 @@ impl Default for EditorView {
     fn default() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
-        let mut tabs = Vec::default();
-        tabs.push(tiles.insert_pane(Pane::Scene));
-        tabs.push(tiles.insert_pane(Pane::Assets));
-        tabs.push(tiles.insert_pane(Pane::Hierarchy));
-        tabs.push(tiles.insert_pane(Pane::Inspector));
+        let horizontal = vec![
+            tiles.insert_pane(Pane::Hierarchy),
+            tiles.insert_pane(Pane::Scene),
+            tiles.insert_pane(Pane::Inspector),
+        ];
 
-        let root = tiles.insert_tab_tile(tabs);
+        let vertical = vec![
+            tiles.insert_horizontal_tile(horizontal),
+            tiles.insert_pane(Pane::Assets),
+        ];
+
+        let root = tiles.insert_vertical_tile(vertical);
 
         EditorView {
             tree: egui_tiles::Tree::new("editor_view_tree", root, tiles),
@@ -82,19 +87,49 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
         _tile_id: egui_tiles::TileId,
         pane: &mut Pane,
     ) -> egui_tiles::UiResponse {
-        let ctx = EditorViewContext {
-            tick: self.tick,
-            ui,
-            commands: self.commands,
-            queries: self.queries,
-            res: self.res,
-        };
-        match *pane {
-            Pane::Scene => self.scene.show(ctx),
-            Pane::Assets => self.assets.show(ctx),
-            Pane::Hierarchy => self.hierarchy.show(ctx),
-            Pane::Inspector => self.inspector.show(ctx),
+        egui::Frame::window(ui.style())
+            .stroke(egui::Stroke::NONE)
+            .show(ui, |ui| {
+                let ctx = EditorViewContext {
+                    tick: self.tick,
+                    ui,
+                    commands: self.commands,
+                    queries: self.queries,
+                    res: self.res,
+                };
+                match *pane {
+                    Pane::Scene => self.scene.show(ctx),
+                    Pane::Assets => self.assets.show(ctx),
+                    Pane::Hierarchy => self.hierarchy.show(ctx),
+                    Pane::Inspector => self.inspector.show(ctx),
+                }
+            })
+            .inner
+    }
+
+    fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
+        egui_tiles::SimplificationOptions {
+            all_panes_must_have_tabs: true,
+            ..Default::default()
         }
+    }
+
+    fn tab_bar_color(&self, visuals: &egui::Visuals) -> egui::Color32 {
+        (egui::Rgba::from(visuals.panel_fill) * egui::Rgba::from_gray(0.6)).into()
+    }
+
+    fn tab_outline_stroke(
+        &self,
+        _visuals: &egui::Visuals,
+        _tiles: &egui_tiles::Tiles<Pane>,
+        _tile_id: egui_tiles::TileId,
+        _active: bool,
+    ) -> egui::Stroke {
+        egui::Stroke::NONE
+    }
+
+    fn gap_width(&self, _style: &egui::Style) -> f32 {
+        2.0
     }
 }
 

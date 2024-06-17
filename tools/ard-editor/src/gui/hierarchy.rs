@@ -1,9 +1,5 @@
 use crate::{scene_graph::SceneGraph, selected::Selected};
-use ard_engine::{
-    core::core::Tick,
-    ecs::prelude::*,
-    game::components::transform::{Children, Parent},
-};
+use ard_engine::{core::core::Tick, ecs::prelude::*, game::components::transform::Children};
 
 use super::EditorViewContext;
 
