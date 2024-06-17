@@ -1,9 +1,11 @@
 pub mod assets;
 pub mod camera;
+pub mod command;
 pub mod gui;
 pub mod inspect;
 pub mod scene_graph;
 pub mod selected;
+pub mod ser;
 pub mod tasks;
 
 use ard_engine::assets::prelude::*;
@@ -15,6 +17,7 @@ use ard_engine::window::prelude::*;
 use assets::importer::AssetImporter;
 use assets::EditorAssets;
 use camera::SceneViewCamera;
+use command::{EditorCommandSystem, EditorCommands};
 use gui::EditorView;
 use scene_graph::{DiscoverSceneGraphRoots, SceneGraph};
 use selected::{SelectEntitySystem, Selected};
@@ -51,9 +54,11 @@ fn main() {
         .add_system(AssetImporter::default())
         .add_system(SelectEntitySystem)
         .add_system(DiscoverSceneGraphRoots)
+        .add_system(EditorCommandSystem::default())
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())
+        .add_resource(EditorCommands::default())
         .run();
 }
 

@@ -254,7 +254,6 @@ impl RenderObjects {
             if disabled.is_some() {
                 continue;
             }
-
             Self::write_renderable(
                 frame,
                 e,

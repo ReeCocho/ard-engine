@@ -14,7 +14,10 @@ use crate::{
     component::pack::{ComponentPack, ComponentPackMover, EmptyComponentPack},
     entity::Entity,
     prelude::{Component, ComponentExt},
-    tag::{pack::TagPack, Tag, TagCollectionId, TagExt, Tags},
+    tag::{
+        pack::{EmptyTagPack, TagPack},
+        Tag, TagCollectionId, TagExt, Tags,
+    },
 };
 
 /// Container for entities belonging to a world.
@@ -364,7 +367,8 @@ impl EntityCommands {
     /// An alias for `EntityCommands::create_with_tags(components, (), entities)`.
     #[inline]
     pub fn create<C: ComponentPack + 'static>(&self, components: C, entities: &mut [Entity]) {
-        self.create_with_tags(components, (), entities);
+        let count = components.len();
+        self.create_with_tags(components, EmptyTagPack { count }, entities);
     }
 
     /// Takes a component and tag pack of lengths 'm' and a mutable slice of length `n` of entity

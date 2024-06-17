@@ -19,7 +19,7 @@ use ard_render_objects::set::DrawGroup;
 use ard_render_si::types::*;
 use ard_render_textures::{factory::TextureFactory, texture::TextureResource};
 
-use crate::state::{BindingDelta, RenderStateTracker};
+use crate::state::RenderStateTracker;
 
 pub struct DrawBins {
     bins: [DrawBinSet; FRAMES_IN_FLIGHT],
@@ -201,12 +201,12 @@ impl DrawBins {
     /// Appends bins from the provided grouped draws.
     fn gen_bins_inner<'a>(
         bins: &mut Vec<DrawBin>,
-        groups: impl Iterator<Item = &'a DrawGroup>,
+        mut groups: impl Iterator<Item = &'a DrawGroup>,
         textures: &ResourceAllocator<TextureResource>,
         meshes: &ResourceAllocator<MeshResource>,
         materials: &ResourceAllocator<MaterialResource>,
         material_instances: &ResourceAllocator<MaterialInstanceResource>,
-        mut object_id_offset: usize,
+        object_id_offset: usize,
         has_valid_draws: &mut bool,
     ) -> BinGenOutput {
         let mut out = BinGenOutput {
@@ -216,14 +216,56 @@ impl DrawBins {
 
         // State tracking to generate bins
         let mut state = RenderStateTracker::default();
-        let mut draw_count: usize = 0;
-        let mut delta = BindingDelta::default();
-        let mut first = true;
 
-        let mut object_offset = object_id_offset;
-        let mut bin_object_count = 0;
+        let mut cur_bin = DrawBin {
+            count: 0,
+            offset: object_id_offset,
+            skip: false,
+            material: None,
+            vertices: None,
+            data_size: None,
+        };
 
         // Generate bins for all groups
+        while let Some(group) = groups.next() {
+            let separated_key = group.key.separate();
+
+            let new_delta = state.compute_delta(
+                &separated_key,
+                textures,
+                meshes,
+                materials,
+                material_instances,
+            );
+
+            if new_delta.draw_required() || cur_bin.skip {
+                if cur_bin.count > 0 || cur_bin.skip {
+                    bins.push(cur_bin);
+
+                    cur_bin.offset += cur_bin.count;
+                    cur_bin.count = 0;
+
+                    *has_valid_draws |= !cur_bin.skip;
+                    out.bin_count += 1;
+                }
+
+                cur_bin.skip = new_delta.skip;
+                cur_bin.material = new_delta.new_material;
+                cur_bin.vertices = new_delta.new_vertices;
+                cur_bin.data_size = new_delta.new_data_size;
+            }
+
+            cur_bin.count += group.len;
+            out.object_count += group.len;
+        }
+
+        if cur_bin.count > 0 {
+            bins.push(cur_bin);
+            *has_valid_draws |= cur_bin.skip;
+            out.bin_count += 1;
+        }
+
+        /*
         for group in groups {
             let separated_key = group.key.separate();
 
@@ -237,6 +279,9 @@ impl DrawBins {
                     materials,
                     material_instances,
                 );
+                cur_bin.material = delta.new_material;
+                cur_bin.vertices = delta.new_vertices;
+                cur_bin.data_size = delta.new_data_size;
                 first = false;
             }
 
@@ -248,6 +293,10 @@ impl DrawBins {
                 materials,
                 material_instances,
             );
+
+            // Write the draw call for this group
+            draw_count += 1;
+            out.object_count += group.len;
 
             // If it is, we submit the current group
             if new_delta.draw_required() {
@@ -272,14 +321,12 @@ impl DrawBins {
                 delta = new_delta;
             }
 
-            // Write the draw call for this group
-            object_id_offset += group.len;
-            out.object_count += group.len;
             bin_object_count += group.len;
-            draw_count += 1;
         }
 
         // Add in the final draw if it wasn't registered
+        // NOTE: We know this draw is valid because, if it wasn't, it would've been caught in the
+        // last iteration of the loop
         if draw_count > 0 {
             bins.push(DrawBin {
                 count: bin_object_count,
@@ -290,7 +337,9 @@ impl DrawBins {
                 data_size: delta.new_data_size,
             });
             out.bin_count += 1;
+            *has_valid_draws = true;
         }
+        */
 
         out
     }
@@ -335,6 +384,7 @@ impl DrawBins {
         // even if we aren't rendering anything.
         args.bind_global();
 
+        let mut count = 0;
         for bin in self.bins[usize::from(args.frame)]
             .bins
             .iter()
@@ -425,6 +475,11 @@ impl DrawBins {
             }];
             args.pass.push_constants(bytemuck::cast_slice(&constants));
             args.pass.draw_mesh_tasks(bin.count as u32, 1, 1);
+            count += bin.count;
+        }
+
+        if count > 0 {
+            // println!("{count}");
         }
     }
 }

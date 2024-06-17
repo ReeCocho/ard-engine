@@ -61,18 +61,42 @@ impl<F: SaveFormat + 'static> Loader<F> {
     }
 
     pub fn load(self, data: SaveData, assets: Assets, commands: &EntityCommands) {
-        let mut entities = Vec::with_capacity(data.entity_count);
-        entities.resize(data.entity_count, Entity::null());
-        commands.create_empty(&mut entities);
+        self.load_with_external(data, assets, commands, None, &[])
+    }
 
-        let entity_map = EntityMap::new_from_entities(&entities);
-        let ctx = LoadContext { entity_map, assets };
+    pub fn load_with_external(
+        self,
+        data: SaveData,
+        assets: Assets,
+        commands: &EntityCommands,
+        load_into: Option<&[Entity]>,
+        external: &[Entity],
+    ) {
+        let entities = match load_into {
+            Some(entities) => {
+                assert_eq!(entities.len(), data.entity_count);
+                Vec::from_iter(entities.iter().cloned())
+            }
+            None => {
+                let mut entities = Vec::with_capacity(data.entity_count);
+                entities.resize(data.entity_count, Entity::null());
+                commands.create_empty(&mut entities);
+                entities
+            }
+        };
+
+        let mut entity_map = EntityMap::new_from_entities(&entities);
+        external.iter().for_each(|e| {
+            entity_map.to_map_or_insert(*e);
+        });
+
+        let mut ctx = LoadContext { entity_map, assets };
 
         data.archetypes.into_iter().for_each(|archetype| {
             let remapped_entities: Vec<_> = archetype
                 .entities
                 .into_iter()
-                .map(|e| ctx.entity_map.from_map(e))
+                .map(|e| ctx.entity_map.from_map_or_null(e))
                 .collect();
 
             commands.set_components(
@@ -86,7 +110,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
                             let meta = self.meta_data.get(&buffer.type_name).unwrap();
                             match meta {
                                 LoadingMetaData::Component { new_loader, .. } => {
-                                    new_loader(&ctx, buffer.raw)
+                                    new_loader(&mut ctx, buffer.raw)
                                 }
                                 _ => unreachable!(),
                             }
@@ -100,7 +124,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
             let remapped_entities: Vec<_> = collection
                 .entities
                 .into_iter()
-                .map(|e| ctx.entity_map.from_map(e))
+                .map(|e| ctx.entity_map.from_map_or_null(e))
                 .collect();
 
             commands.set_tags(
@@ -114,7 +138,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
                             let meta = self.meta_data.get(&buffer.type_name).unwrap();
                             match meta {
                                 LoadingMetaData::Tag { new_loader, .. } => {
-                                    new_loader(&ctx, buffer.raw)
+                                    new_loader(&mut ctx, buffer.raw)
                                 }
                                 _ => unreachable!(),
                             }
@@ -129,10 +153,10 @@ impl<F: SaveFormat + 'static> Loader<F> {
 #[derive(Clone, Copy)]
 enum LoadingMetaData {
     Component {
-        new_loader: fn(&LoadContext, Vec<u8>) -> Box<dyn GenericComponentLoader>,
+        new_loader: fn(&mut LoadContext, Vec<u8>) -> Box<dyn GenericComponentLoader>,
     },
     Tag {
-        new_loader: fn(&LoadContext, Vec<u8>) -> Box<dyn GenericTagLoader>,
+        new_loader: fn(&mut LoadContext, Vec<u8>) -> Box<dyn GenericTagLoader>,
     },
 }
 

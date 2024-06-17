@@ -40,7 +40,7 @@ pub trait GenericComponentLoader: Send + Sync {
 
     fn new_storage(&self, archetypes: &mut Archetypes) -> usize;
 
-    fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>);
+    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>);
 
     fn move_into(&mut self, archetypes: &Archetypes, idx: usize);
 }
@@ -48,7 +48,7 @@ pub trait GenericComponentLoader: Send + Sync {
 pub trait GenericTagLoader: Send + Sync {
     fn type_id(&self) -> TypeId;
 
-    fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>);
+    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>);
 
     fn move_into(&mut self, tags: &mut Tags, entities: &[Entity]);
 }
@@ -60,7 +60,7 @@ impl<F: SaveFormat + 'static, C: Component + SaveLoad + 'static> GenericComponen
         TypeId::of::<C>()
     }
 
-    fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>) {
+    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>) {
         let intermediates = F::deserialize::<Vec<C::Intermediate>>(raw);
         self.to_load = intermediates.into_iter().map(|i| C::load(ctx, i)).collect();
     }
@@ -87,7 +87,7 @@ impl<F: SaveFormat + 'static, T: Tag + SaveLoad + 'static> GenericTagLoader for 
         TypeId::of::<T>()
     }
 
-    fn deserialize_all(&mut self, ctx: &LoadContext, raw: Vec<u8>) {
+    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>) {
         let intermediates = F::deserialize::<Vec<T::Intermediate>>(raw);
         self.to_load = intermediates.into_iter().map(|i| T::load(ctx, i)).collect();
     }

@@ -30,11 +30,11 @@ pub struct SavedMaterialHandle(pub AssetNameBuf);
 impl SaveLoad for MeshHandle {
     type Intermediate = SavedMeshHandle;
 
-    fn load(ctx: &LoadContext, intermediate: Self::Intermediate) -> Self {
+    fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
         MeshHandle(ctx.assets.load(&intermediate.0))
     }
 
-    fn save(&self, ctx: &SaveContext) -> Self::Intermediate {
+    fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
         SavedMeshHandle(ctx.assets.get_name(&self.0))
     }
 }
@@ -42,11 +42,11 @@ impl SaveLoad for MeshHandle {
 impl SaveLoad for MaterialHandle {
     type Intermediate = SavedMaterialHandle;
 
-    fn load(ctx: &LoadContext, intermediate: Self::Intermediate) -> Self {
+    fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
         MaterialHandle(ctx.assets.load(&intermediate.0))
     }
 
-    fn save(&self, ctx: &SaveContext) -> Self::Intermediate {
+    fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
         SavedMaterialHandle(ctx.assets.get_name(&self.0))
     }
 }

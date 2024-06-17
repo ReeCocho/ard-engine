@@ -44,12 +44,13 @@ impl SceneGraph {
 
     #[inline]
     pub fn all_entities(&self, queries: &Queries<Everything>) -> Vec<Entity> {
-        let mut entities = Vec::new();
-        entities.extend_from_slice(&self.roots);
+        Self::collect_children(queries, self.roots.clone())
+    }
 
+    pub fn collect_children(queries: &Queries<Everything>, mut roots: Vec<Entity>) -> Vec<Entity> {
         let mut i = 0;
-        while i < entities.len() {
-            let entity = entities[i];
+        while i < roots.len() {
+            let entity = roots[i];
             let children = match queries.get::<Read<Children>>(entity) {
                 Some(children) => children,
                 None => {
@@ -58,11 +59,10 @@ impl SceneGraph {
                 }
             };
 
-            children.0.iter().for_each(|c| entities.push(*c));
+            children.0.iter().for_each(|c| roots.push(*c));
             i += 1;
         }
-
-        entities
+        roots
     }
 
     #[inline]

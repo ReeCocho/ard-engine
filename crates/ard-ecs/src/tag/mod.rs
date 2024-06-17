@@ -265,7 +265,7 @@ impl Tags {
     }
 
     pub fn remove_entity(&mut self, entity: Entity, collection: TagCollectionId) {
-        self.collections[usize::from(collection)]
+        self.collections[usize::from(collection) - 1]
             .type_key
             .iter()
             .for_each(|tag_ty| {
@@ -346,11 +346,5 @@ impl From<TagCollectionId> for usize {
     #[inline]
     fn from(item: TagCollectionId) -> Self {
         item.0.get() as usize
-    }
-}
-
-impl Default for TagCollectionId {
-    fn default() -> Self {
-        TagCollectionId(NonZeroU32::new(1).unwrap())
     }
 }

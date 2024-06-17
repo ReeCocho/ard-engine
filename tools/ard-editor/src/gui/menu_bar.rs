@@ -35,23 +35,8 @@ impl MenuBar {
                 let assets = res.get::<Assets>().unwrap();
                 if ui.button("Saved").clicked() {
                     let entities = res.get::<SceneGraph>().unwrap().all_entities(queries);
-                    let save_data = Saver::<Ron>::default()
-                        .include_component::<Position>()
-                        .include_component::<Rotation>()
-                        .include_component::<Scale>()
-                        .include_component::<Parent>()
-                        .include_component::<Children>()
-                        .include_component::<Model>()
-                        .include_component::<RenderingMode>()
-                        .include_component::<RenderFlags>()
-                        .include_component::<MeshHandle>()
-                        .include_component::<MaterialHandle>()
-                        .ignore::<Mesh>()
-                        .ignore::<MaterialInstance>()
-                        .ignore::<Destroy>()
-                        .ignore::<SetParent>()
-                        .ignore::<EulerRotation>()
-                        .save(assets.clone(), queries, &entities);
+                    let (save_data, _) =
+                        crate::ser::saver::<Ron>().save(assets.clone(), queries, &entities);
 
                     let save_data = bincode::serialize(&save_data).unwrap();
                     std::fs::write("./save.dat", &save_data).unwrap();
@@ -60,18 +45,7 @@ impl MenuBar {
                 if ui.button("Load").clicked() {
                     let save_data = std::fs::read("./save.dat").unwrap();
                     let save_data = bincode::deserialize::<SaveData>(&save_data).unwrap();
-                    Loader::<Ron>::default()
-                        .load_component::<Position>()
-                        .load_component::<Rotation>()
-                        .load_component::<Scale>()
-                        .load_component::<Parent>()
-                        .load_component::<Children>()
-                        .load_component::<Model>()
-                        .load_component::<RenderingMode>()
-                        .load_component::<RenderFlags>()
-                        .load_component::<MeshHandle>()
-                        .load_component::<MaterialHandle>()
-                        .load(save_data, assets.clone(), &commands.entities);
+                    crate::ser::loader::<Ron>().load(save_data, assets.clone(), &commands.entities);
                 }
 
                 if ui.button("Make Lof").clicked() {

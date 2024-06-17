@@ -28,8 +28,11 @@ pub trait TagPack: Send + Sync {
     fn type_key(&self) -> TypeKey;
 }
 
-/// Implementation of tag pack for empty tuple. Used for entity creation without tags.
-impl TagPack for () {
+pub struct EmptyTagPack {
+    pub count: usize,
+}
+
+impl TagPack for EmptyTagPack {
     #[inline]
     fn is_valid(&self) -> bool {
         true
@@ -37,17 +40,24 @@ impl TagPack for () {
 
     #[inline]
     fn len(&self) -> usize {
-        0
+        self.count
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        true
+        self.count == 0
     }
 
     #[inline]
-    fn move_into(&mut self, _: &[Entity], _: &mut Tags) -> TagCollectionId {
-        TagCollectionId::default()
+    fn move_into(&mut self, _: &[Entity], tags: &mut Tags) -> TagCollectionId {
+        let type_key = self.type_key();
+
+        if let Some(id) = tags.get_collection_id(&type_key) {
+            id
+        } else {
+            // Create and add collection
+            tags.add_collection(TagCollection { type_key })
+        }
     }
 
     #[inline]

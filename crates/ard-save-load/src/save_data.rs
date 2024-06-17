@@ -60,7 +60,7 @@ impl<F: SaveFormat + 'static> Saver<F> {
         assets: Assets,
         queries: &Queries<Everything>,
         entities: &[Entity],
-    ) -> SaveData {
+    ) -> (SaveData, EntityMap) {
         let mut archetypes = FxHashMap::<TypeKey, SavingData>::default();
         let mut collections = FxHashMap::<TypeKey, SavingData>::default();
 
@@ -69,29 +69,33 @@ impl<F: SaveFormat + 'static> Saver<F> {
             entity_map: EntityMap::new_from_entities(entities),
         };
 
+        let entity_count = ctx.entity_map.len();
+
         entities.iter().for_each(|e| {
             let e = *e;
             self.save_components(&mut archetypes, &mut ctx, queries, e);
             self.save_tags(&mut collections, &mut ctx, queries, e);
         });
 
-        SaveData {
-            entity_count: ctx.entity_map.len(),
+        let save_data = SaveData {
+            entity_count,
             archetypes: archetypes
                 .into_values()
-                .map(|a| a.to_saved(&self, &ctx.entity_map))
+                .map(|a| a.to_saved(&self, &mut ctx.entity_map))
                 .collect(),
             collections: collections
                 .into_values()
-                .map(|c| c.to_saved(&self, &ctx.entity_map))
+                .map(|c| c.to_saved(&self, &mut ctx.entity_map))
                 .collect(),
-        }
+        };
+
+        (save_data, ctx.entity_map)
     }
 
     fn save_components(
         &mut self,
         archetypes: &mut FxHashMap<TypeKey, SavingData>,
-        ctx: &SaveContext,
+        ctx: &mut SaveContext,
         queries: &Queries<Everything>,
         entity: Entity,
     ) {
@@ -119,14 +123,14 @@ impl<F: SaveFormat + 'static> Saver<F> {
         entry.entities.push(entity);
 
         final_key.iter().for_each(|ty| {
-            entry.savers.get_mut(ty).unwrap().add(&ctx, entity, queries);
+            entry.savers.get_mut(ty).unwrap().add(ctx, entity, queries);
         });
     }
 
     fn save_tags(
         &mut self,
         collections: &mut FxHashMap<TypeKey, SavingData>,
-        ctx: &SaveContext,
+        ctx: &mut SaveContext,
         queries: &Queries<Everything>,
         entity: Entity,
     ) {
@@ -154,7 +158,7 @@ impl<F: SaveFormat + 'static> Saver<F> {
         entry.entities.push(entity);
 
         final_key.iter().for_each(|ty| {
-            entry.savers.get_mut(ty).unwrap().add(&ctx, entity, queries);
+            entry.savers.get_mut(ty).unwrap().add(ctx, entity, queries);
         });
     }
 }
@@ -174,7 +178,7 @@ struct SavingData {
 }
 
 impl SavingData {
-    fn to_saved<F: SaveFormat>(self, saver: &Saver<F>, map: &EntityMap) -> SavedSet {
+    fn to_saved<F: SaveFormat>(self, saver: &Saver<F>, map: &mut EntityMap) -> SavedSet {
         let buffers = self
             .savers
             .into_iter()
@@ -192,26 +196,30 @@ impl SavingData {
             .collect();
 
         SavedSet {
-            entities: self.entities.into_iter().map(|e| map.to_map(e)).collect(),
+            entities: self
+                .entities
+                .into_iter()
+                .map(|e| map.to_map_or_insert(e))
+                .collect(),
             buffers,
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct SaveData {
     pub entity_count: usize,
     pub archetypes: Vec<SavedSet>,
     pub collections: Vec<SavedSet>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SavedSet {
     pub entities: Vec<MappedEntity>,
     pub buffers: Vec<SavedDataBuffer>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SavedDataBuffer {
     pub type_name: String,
     pub raw: Vec<u8>,

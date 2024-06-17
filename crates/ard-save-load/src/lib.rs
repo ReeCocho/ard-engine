@@ -12,21 +12,21 @@ pub mod saver;
 pub trait SaveLoad {
     type Intermediate: Serialize + DeserializeOwned;
 
-    fn save(&self, ctx: &SaveContext) -> Self::Intermediate;
+    fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate;
 
-    fn load(ctx: &LoadContext, intermediate: Self::Intermediate) -> Self;
+    fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self;
 }
 
 impl<T: Serialize + DeserializeOwned + Clone> SaveLoad for T {
     type Intermediate = Self;
 
     #[inline(always)]
-    fn save(&self, _: &SaveContext) -> Self::Intermediate {
+    fn save(&self, _: &mut SaveContext) -> Self::Intermediate {
         self.clone()
     }
 
     #[inline(always)]
-    fn load(_: &LoadContext, intermediate: Self::Intermediate) -> Self {
+    fn load(_: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
         intermediate
     }
 }

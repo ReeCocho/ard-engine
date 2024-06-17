@@ -342,20 +342,6 @@ impl BottomLevelAccelerationStructure {
             .unwrap()
             .get_accel_struct_compact(&ctx.device, query);
 
-        if s == 0 {
-            println!("{}", self.buffer_size);
-            println!("{}", self.scratch_size);
-            let guard = self.buffer_refs.load();
-            for geo in guard.iter() {
-                println!("{}", geo.1.aligned_size);
-            }
-            println!("==========");
-            let guard = self.build_ranges.load();
-            for geo in guard.iter() {
-                println!("{}", geo.primitive_count);
-            }
-        }
-
         s
     }
 

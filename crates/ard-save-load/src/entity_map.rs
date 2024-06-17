@@ -30,12 +30,24 @@ impl EntityMap {
     }
 
     #[inline(always)]
-    pub fn to_map(&self, entity: Entity) -> MappedEntity {
-        *self.src_to_dst.get(&entity).unwrap()
+    pub fn mapped(&self) -> &[Entity] {
+        &self.dst_to_src
     }
 
     #[inline(always)]
-    pub fn from_map(&self, mapped: MappedEntity) -> Entity {
-        *self.dst_to_src.get(mapped.0 as usize).unwrap()
+    pub fn to_map_or_insert(&mut self, entity: Entity) -> MappedEntity {
+        *self.src_to_dst.entry(entity).or_insert_with(|| {
+            let new_id = MappedEntity(self.dst_to_src.len() as u32);
+            self.dst_to_src.push(entity);
+            new_id
+        })
+    }
+
+    #[inline(always)]
+    pub fn from_map_or_null(&self, mapped: MappedEntity) -> Entity {
+        self.dst_to_src
+            .get(mapped.0 as usize)
+            .cloned()
+            .unwrap_or(Entity::null())
     }
 }

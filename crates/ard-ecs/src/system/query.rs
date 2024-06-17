@@ -639,8 +639,7 @@ impl<C: ComponentFilter, T: TagFilter> SingleQuery<C, T> for SingleComponentTagQ
             &archetypes.archetypes()[usize::from(archetype)],
             archetypes,
             idx as usize + 1,
-        )
-        .unwrap();
+        )?;
         let data = unsafe { set.fetch(idx as usize) };
 
         let tag_set = T::StorageSet::from_tags(tags);

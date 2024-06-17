@@ -1,5 +1,9 @@
 use crate::{scene_graph::SceneGraph, selected::Selected};
-use ard_engine::{core::core::Tick, ecs::prelude::*, game::components::transform::Children};
+use ard_engine::{
+    core::core::Tick,
+    ecs::prelude::*,
+    game::components::transform::{Children, Parent},
+};
 
 use super::EditorViewContext;
 
@@ -27,13 +31,13 @@ impl HierarchyView {
         queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) {
+        let children = match queries.get::<Read<Children>>(entity) {
+            Some(children) => children,
+            None => return,
+        };
+
         let response = ui
             .collapsing(format!("Entity {}", entity.id()), |ui| {
-                let children = match queries.get::<Read<Children>>(entity) {
-                    Some(children) => children,
-                    None => return,
-                };
-
                 children.0.iter().for_each(|child| {
                     Self::show_entity(*child, ui, tick, commands, queries, res);
                 });

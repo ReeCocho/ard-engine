@@ -1,6 +1,11 @@
-use ard_engine::{ecs::prelude::*, game::components::destroy::Destroy};
+use ard_engine::{
+    ecs::prelude::*,
+    game::components::destroy::Destroy,
+    render::{Mesh, Model},
+};
 
 use crate::{
+    command::{entity::DestroyEntity, EditorCommands},
     inspect::{transform::TransformInspector, Inspectors},
     selected::Selected,
 };
@@ -28,7 +33,13 @@ impl InspectorView {
             Selected::None => {
                 ctx.ui.label("Nothing");
             }
-            Selected::Entity(e) => self.inspect_entity(ctx, &mut selected, e),
+            Selected::Entity(e) => {
+                if ctx.queries.get::<Read<Model>>(e).is_none() {
+                    *selected = Selected::None;
+                    return egui_tiles::UiResponse::None;
+                }
+                self.inspect_entity(ctx, &mut selected, e)
+            }
         };
 
         egui_tiles::UiResponse::None
@@ -41,7 +52,10 @@ impl InspectorView {
         }
 
         if ctx.ui.button("Delete").clicked() {
-            ctx.commands.entities.add_component(entity, Destroy);
+            ctx.res
+                .get_mut::<EditorCommands>()
+                .unwrap()
+                .submit(DestroyEntity::new(entity));
         }
 
         self.inspectors

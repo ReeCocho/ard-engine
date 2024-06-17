@@ -35,7 +35,7 @@ pub trait ComponentPack: Send + Sync {
 
 pub type ComponentPackMover = dyn FnOnce(&[Entity], &mut Archetypes) -> (ArchetypeId, usize);
 
-pub(crate) struct EmptyComponentPack {
+pub struct EmptyComponentPack {
     pub count: usize,
 }
 

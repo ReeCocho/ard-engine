@@ -39,6 +39,12 @@ impl TransformGizmo {
             return;
         }
 
+        if ctx.queries.get::<Read<Model>>(selected_entity).is_none() {
+            self.in_use = false;
+            self.selected = None;
+            return;
+        }
+
         let scene_camera = ctx.res.get::<SceneViewCamera>().unwrap();
         let camera = ctx
             .queries
