@@ -46,6 +46,7 @@ pub mod render {
     pub use ard_render::*;
     pub use ard_render_assets::*;
     pub use ard_render_camera::*;
+    pub use ard_render_debug::*;
     pub use ard_render_gui::*;
     pub use ard_render_material::material::*;
     pub use ard_render_material::material_instance::*;

@@ -3,6 +3,7 @@ use std::time::Duration;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
+use ard_render_debug::DebugDrawing;
 use ard_render_gui::{Gui, GuiInputCaptureSystem};
 use ard_render_image_effects::{
     ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
@@ -74,6 +75,7 @@ impl Plugin for RenderPlugin {
         app.add_resource(MsaaSettings::default());
         app.add_resource(DebugSettings::default());
         app.add_resource(PathTracerSettings::default());
+        app.add_resource(DebugDrawing::default());
         app.add_resource(Gui::default());
         app.add_system(GuiInputCaptureSystem);
         app.add_startup_function(late_render_init);

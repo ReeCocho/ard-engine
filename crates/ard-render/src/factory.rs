@@ -346,7 +346,7 @@ impl FactoryInner {
         // Create the resource handle
         let layout = mesh.block.layout();
         let blas_ref = mesh.blas_ref.clone();
-        let bounding_sphere = mesh.bounds.bounding_sphere();
+        let bounds = mesh.bounds;
         let handle = static_meshes.insert(mesh);
 
         let version = static_meshes.version_of(handle.id()).unwrap();
@@ -362,7 +362,7 @@ impl FactoryInner {
             upload,
         });
 
-        Ok(Mesh::new(handle, layout, blas_ref, bounding_sphere))
+        Ok(Mesh::new(handle, layout, blas_ref, bounds))
     }
 
     fn create_texture<T: TextureSource>(

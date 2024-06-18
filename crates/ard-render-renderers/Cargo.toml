@@ -21,6 +21,7 @@ ard-render-lighting = { path = "../ard-render-lighting" }
 ard-render-textures = { path = "../ard-render-textures" }
 ard-render-raytracing = { path = "../ard-render-raytracing" }
 ard-render-image-effects = { path = "../ard-render-image-effects" }
+ard-render-debug = { path = "../ard-render-debug" }
 bytemuck.workspace = true
 ordered-float.workspace = true
 rayon.workspace = true

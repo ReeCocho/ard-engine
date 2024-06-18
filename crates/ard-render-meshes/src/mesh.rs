@@ -12,7 +12,7 @@ use ard_formats::{
     meshlet::Meshlet,
     vertex::{VertexAttribute, VertexLayout},
 };
-use ard_math::{UVec4, Vec4, Vec4Swizzles};
+use ard_math::{UVec4, Vec4Swizzles};
 use ard_pal::prelude::*;
 use ard_render_base::resource::{ResourceHandle, ResourceId};
 use ard_render_si::types::{GpuMeshInfo, GpuMeshlet, GpuObjectBounds};
@@ -40,7 +40,7 @@ pub enum MeshCreateError {
 #[derive(Clone, Component)]
 pub struct Mesh {
     layout: VertexLayout,
-    bounding_sphere: Vec4,
+    bounds: ObjectBounds,
     blas: Arc<AtomicU64>,
     handle: ResourceHandle,
 }
@@ -65,13 +65,13 @@ impl Mesh {
         handle: ResourceHandle,
         layout: VertexLayout,
         blas: Arc<AtomicU64>,
-        bounding_sphere: Vec4,
+        bounds: ObjectBounds,
     ) -> Self {
         Mesh {
             layout,
             handle,
             blas,
-            bounding_sphere,
+            bounds,
         }
     }
 
@@ -81,8 +81,8 @@ impl Mesh {
     }
 
     #[inline(always)]
-    pub fn bounding_sphere(&self) -> Vec4 {
-        self.bounding_sphere
+    pub fn bounds(&self) -> ObjectBounds {
+        self.bounds
     }
 
     #[inline(always)]

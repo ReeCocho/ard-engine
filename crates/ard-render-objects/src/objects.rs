@@ -302,7 +302,7 @@ impl RenderObjects {
         let mdl_inv = mdl.0.inverse();
 
         // Transform the bounding sphere to be in world space
-        let mut bounding_sphere = mesh.bounding_sphere();
+        let mut bounding_sphere = mesh.bounds().bounding_sphere();
         let new_center = mdl.0 * Vec4::from((bounding_sphere.xyz(), 1.0));
         let new_radius = bounding_sphere.w * mdl.scale().max_element();
         bounding_sphere = Vec4::from((new_center.xyz(), new_radius));

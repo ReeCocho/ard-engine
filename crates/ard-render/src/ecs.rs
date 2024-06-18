@@ -19,6 +19,7 @@ use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{Model, RenderFlags};
 use ard_render_renderers::{
+    debug::DebugRenderer,
     entities::{EntityIdRenderArgs, EntityIdRenderer, EntitySelected, SelectEntity},
     gui::{GuiDrawPrepare, GuiRenderer},
     highz::HzbRenderer,
@@ -41,6 +42,7 @@ pub(crate) struct RenderEcs {
     sun_shadows_renderer: SunShadowsRenderer,
     hzb_render: HzbRenderer,
     entity_renderer: EntityIdRenderer,
+    debug_renderer: DebugRenderer,
     rt_render: RaytracedRenderer,
     gui_renderer: GuiRenderer,
     lighting: LightClusters,
@@ -107,6 +109,7 @@ impl RenderEcs {
             window_size,
         );
         let entity_renderer = EntityIdRenderer::new(&ctx, &layouts);
+        let debug_renderer = DebugRenderer::new(&ctx, &layouts);
 
         let proc_skybox = ProceduralSkyBox::new(&ctx, &layouts);
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
@@ -162,6 +165,7 @@ impl RenderEcs {
                 lighting,
                 hzb_render,
                 path_tracer,
+                debug_renderer,
                 _fxaa: fxaa,
                 smaa,
                 sun_shafts,
@@ -680,6 +684,40 @@ impl RenderEcs {
                         array_element: 1,
                         mip_level: 0,
                     }
+                },
+            );
+        }
+
+        // Debug rendering
+        if frame.debug_vertices.vertex_count() > 0 {
+            cb.render_pass(
+                RenderPassDescriptor {
+                    color_attachments: vec![ColorAttachment {
+                        dst: if frame.present_scene {
+                            ColorAttachmentDestination::SurfaceImage(canvas.image())
+                        } else {
+                            ColorAttachmentDestination::Texture {
+                                texture: canvas.render_target().linear_color(),
+                                array_element: 1,
+                                mip_level: 0,
+                            }
+                        },
+                        load_op: LoadOp::Load,
+                        store_op: StoreOp::Store,
+                        samples: MultiSamples::Count1,
+                    }],
+                    depth_stencil_attachment: None,
+                    color_resolve_attachments: Vec::default(),
+                    depth_stencil_resolve_attachment: None,
+                },
+                Some("debug_drawing"),
+                |pass| {
+                    self.debug_renderer.render(
+                        frame.frame,
+                        pass,
+                        &frame.debug_vertices,
+                        &self.camera,
+                    );
                 },
             );
         }

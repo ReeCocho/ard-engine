@@ -35,6 +35,20 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/debug.vert",
+        PathBuf::from(&out_dir).join("debug.vert.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/debug.frag",
+        PathBuf::from(&out_dir).join("debug.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/pathtracer/pathtracer.rgen",
         PathBuf::from(&out_dir).join("pathtracer.rgen.spv"),
         &["./shaders/", "../ard-render-pbr/shaders/"],

@@ -127,6 +127,14 @@ impl SceneView {
             if input.key(Key::D) {
                 position.0 += Vec3A::from(right.xyz() * dt * 8.0);
             }
+
+            if input.key(Key::Q) {
+                position.0.y -= dt * 8.0;
+            }
+
+            if input.key(Key::E) {
+                position.0.y += dt * 8.0;
+            }
         }
 
         egui_tiles::UiResponse::None

@@ -5,6 +5,7 @@ use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_base::ecs::Frame;
 use ard_render_camera::active::ActiveCameras;
+use ard_render_debug::buffer::DebugVertexBuffer;
 use ard_render_gui::GuiRunOutput;
 use ard_render_image_effects::{
     ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
@@ -39,6 +40,8 @@ pub struct FrameDataInner {
     pub object_data: RenderObjects,
     /// Lights captured from the primary ECS.
     pub lights: Lights,
+    /// Debug drawing vertex buffer.
+    pub debug_vertices: DebugVertexBuffer,
     pub present_settings: PresentationSettings,
     pub tonemapping_settings: TonemappingSettings,
     pub ao_settings: AoSettings,

@@ -35,6 +35,7 @@ ard-render-gui = { path = "./crates/ard-render-gui" }
 ard-render-renderers = { path = "./crates/ard-render-renderers" }
 ard-render = { path = "./crates/ard-render" }
 ard-render-assets = { path = "./crates/ard-render-assets" }
+ard-render-debug = { path = "./crates/ard-render-debug" }
 ard-pal = { path = "./crates/ard-pal" }
 
 [workspace.dependencies]

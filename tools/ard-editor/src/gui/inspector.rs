@@ -1,4 +1,8 @@
-use ard_engine::{ecs::prelude::*, render::Model};
+use ard_engine::{
+    ecs::prelude::*,
+    math::{Vec4, Vec4Swizzles},
+    render::{shape::Shape, DebugDraw, DebugDrawing, Mesh, Model},
+};
 
 use crate::{
     command::{entity::DestroyEntity, EditorCommands},
@@ -45,6 +49,19 @@ impl InspectorView {
         if !ctx.queries.is_alive(entity) {
             *selected = Selected::None;
             return;
+        }
+
+        if let Some(query) = ctx.queries.get::<(Read<Model>, Read<Mesh>)>(entity) {
+            let (model, mesh) = *query;
+            let bounds = mesh.bounds();
+            ctx.res.get_mut::<DebugDrawing>().unwrap().draw(DebugDraw {
+                color: Vec4::new(1.0, 1.0, 0.0, 1.0),
+                shape: Shape::Box {
+                    min_pt: bounds.min_pt.xyz(),
+                    max_pt: bounds.max_pt.xyz(),
+                    model: model.0,
+                },
+            });
         }
 
         if ctx.ui.button("Delete").clicked() {

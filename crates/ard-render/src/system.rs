@@ -7,6 +7,7 @@ use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,
 };
+use ard_render_debug::{buffer::DebugVertexBuffer, DebugDrawing};
 use ard_render_gui::{Gui, GuiRunOutput};
 use ard_render_image_effects::{
     ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
@@ -85,6 +86,7 @@ impl RenderSystem {
                     gui_output: GuiRunOutput::default(),
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
+                    debug_vertices: DebugVertexBuffer::new(render_ecs.ctx()),
                     present_settings: PresentationSettings { present_mode },
                     debug_settings: DebugSettings::default(),
                     tonemapping_settings: TonemappingSettings::default(),
@@ -170,15 +172,20 @@ impl RenderSystem {
         res: Res<Everything>,
     ) {
         let windows = res.get::<Windows>().unwrap();
+        let mut debug_draw = res.get_mut::<DebugDrawing>().unwrap();
 
         // Do not render if the window is minimized or not created yet
         let window = match windows.get(self.surface_window) {
             Some(window) => window,
-            None => return,
+            None => {
+                debug_draw.clear();
+                return;
+            }
         };
         let physical_width = window.physical_width();
         let physical_height = window.physical_height();
         if physical_width == 0 || physical_height == 0 {
+            debug_draw.clear();
             return;
         }
 
@@ -186,6 +193,7 @@ impl RenderSystem {
         let display_handle = window.display_handle();
 
         std::mem::drop(windows);
+        std::mem::drop(debug_draw);
 
         let mut frame = self.complete_frames.recv().unwrap();
 
@@ -263,6 +271,11 @@ impl RenderSystem {
         let dt = now.duration_since(self.last_frame_time);
         let mut gui = res.get_mut::<Gui>().unwrap();
         frame.gui_output = gui.run(Tick(dt), &commands, &queries, &res);
+
+        // Capture debugging draws.
+        let mut debug_draws = res.get_mut::<DebugDrawing>().unwrap();
+        frame.debug_vertices.write_draws(debug_draws.draws());
+        debug_draws.clear();
 
         // Set cursor icon
         let mut windows = res.get_mut::<Windows>().unwrap();

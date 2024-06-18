@@ -1,0 +1,13 @@
+[package]
+name = "ard-render-debug"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-ecs = { path = "../ard-ecs" }
+ard-core = { path = "../ard-core" }
+ard-pal = { path = "../ard-pal" }
+ard-math = { path = "../ard-math" }
+egui.workspace = true
+egui-phosphor.workspace = true
+bytemuck.workspace = true
