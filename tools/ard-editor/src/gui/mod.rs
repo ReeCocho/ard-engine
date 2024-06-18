@@ -70,7 +70,7 @@ impl Default for EditorView {
             menu_bar: MenuBar,
             scene: SceneView::default(),
             assets: AssetsView {},
-            hierarchy: HierarchyView {},
+            hierarchy: HierarchyView::default(),
             inspector: InspectorView::default(),
         }
     }
@@ -88,6 +88,8 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
         pane: &mut Pane,
     ) -> egui_tiles::UiResponse {
         egui::Frame::window(ui.style())
+            .inner_margin(pane.margin())
+            .outer_margin(egui::Margin::ZERO)
             .stroke(egui::Stroke::NONE)
             .show(ui, |ui| {
                 let ctx = EditorViewContext {
@@ -157,5 +159,19 @@ impl GuiView for EditorView {
             };
             self.tree.ui(&mut behavior, ui);
         });
+    }
+}
+
+impl Pane {
+    fn margin(&self) -> egui::Margin {
+        match self {
+            Pane::Scene => egui::Margin::ZERO,
+            _ => egui::Margin {
+                left: 4.0,
+                right: 4.0,
+                top: 4.0,
+                bottom: 4.0,
+            },
+        }
     }
 }

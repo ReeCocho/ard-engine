@@ -74,6 +74,7 @@ serde = { version = "1", features = [ "derive" ] }
 serde_with = { version = "3" }
 smallvec = { version = "1", features = ["serde", "union"] }
 thiserror = { version = "1" }
+thread-priority = { version = "1" }
 tokio = { version = "1", features = [ "rt", "rt-multi-thread", "sync", "fs", "io-util", "io-std", "macros" ] }
 tokio-stream = { version = "0.1" }
 unsafe_unwrap = { version = "0.1" }

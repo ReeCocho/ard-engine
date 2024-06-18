@@ -1,6 +1,7 @@
 use anyhow::Result;
 use ard_engine::{
     assets::prelude::*,
+    core::prelude::*,
     ecs::prelude::*,
     game::components::transform::{Children, Parent, Position, Rotation, Scale},
     log::warn,
@@ -48,7 +49,15 @@ impl EditorTask for InstantiateTask {
     fn run(&mut self) -> anyhow::Result<()> {
         match &self.asset.data {
             MetaData::Model => {
-                let handle = self.assets.load::<ModelAsset>(&self.asset.baked);
+                let handle = match self.assets.load::<ModelAsset>(&self.asset.baked) {
+                    Some(handle) => handle,
+                    None => {
+                        return Err(anyhow::Error::msg(format!(
+                            "could not load {:?}",
+                            self.asset.raw
+                        )))
+                    }
+                };
                 self.assets.wait_for_load(&handle);
                 self.handle = Some(InstantiateAssetHandle::Model(handle));
             }
@@ -90,6 +99,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
         scale: Scale,
         children: Children,
         parent: Option<Parent>,
+        name: Option<Name>,
     }
 
     struct MeshInstance {
@@ -102,6 +112,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
         scale: Scale,
         children: Children,
         parent: Option<Parent>,
+        name: Option<Name>,
     }
 
     enum ObjectInstance {
@@ -148,6 +159,11 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     scale,
                     children,
                     parent,
+                    name: if node.name.is_empty() {
+                        None
+                    } else {
+                        Some(Name(node.name.clone()))
+                    },
                 });
             }
             NodeData::MeshGroup(mesh_group) => {
@@ -160,8 +176,8 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                     let material = asset.materials[mesh_instance.material as usize].clone();
 
                     res[id] = ObjectInstance::Mesh(MeshInstance {
-                        mesh: MeshHandle(mesh),
-                        material: MaterialHandle(material),
+                        mesh: MeshHandle(Some(mesh)),
+                        material: MaterialHandle(Some(material)),
                         flags: RenderFlags::SHADOW_CASTER,
                         model,
                         position,
@@ -169,6 +185,11 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         scale,
                         children,
                         parent,
+                        name: if node.name.is_empty() {
+                            None
+                        } else {
+                            Some(Name(node.name.clone()))
+                        },
                     });
                 } else {
                     let mut mesh_instances = (
@@ -181,13 +202,17 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         vec![RenderFlags::SHADOW_CASTER; mesh_group.0.len()],
                         vec![Children::default(); mesh_group.0.len()],
                         vec![Parent(our_entity); mesh_group.0.len()],
+                        (0..mesh_group.0.len())
+                            .into_iter()
+                            .map(|i| Name(format!("mesh.{i}")))
+                            .collect::<Vec<_>>(),
                     );
 
                     mesh_group.0.iter().for_each(|mesh_instance| {
                         let mesh = asset.meshes[mesh_instance.mesh as usize].clone();
                         let material = asset.materials[mesh_instance.material as usize].clone();
-                        mesh_instances.0.push(MeshHandle(mesh));
-                        mesh_instances.1.push(MaterialHandle(material));
+                        mesh_instances.0.push(MeshHandle(Some(mesh)));
+                        mesh_instances.1.push(MaterialHandle(Some(material)));
                     });
 
                     let mut entities = vec![Entity::null(); mesh_group.0.len()];
@@ -201,6 +226,11 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         scale,
                         children,
                         parent,
+                        name: if node.name.is_empty() {
+                            None
+                        } else {
+                            Some(Name(node.name.clone()))
+                        },
                     });
                 }
             }
@@ -227,6 +257,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         Some(obj.children),
                         Some(obj.model),
                         obj.parent,
+                        obj.name,
                         Some(obj.position),
                         Some(obj.rotation),
                         Some(obj.scale),
@@ -243,6 +274,7 @@ fn instantiate(model: &ModelAsset, commands: &Commands, assets: &Assets) -> Vec<
                         Some(obj.children),
                         Some(obj.model),
                         obj.parent,
+                        obj.name,
                         Some(obj.position),
                         Some(obj.rotation),
                         Some(obj.scale),

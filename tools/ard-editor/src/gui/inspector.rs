@@ -5,7 +5,6 @@ use ard_engine::{
 };
 
 use crate::{
-    command::{entity::DestroyEntity, EditorCommands},
     inspect::{transform::TransformInspector, Inspectors},
     selected::Selected,
 };
@@ -62,13 +61,6 @@ impl InspectorView {
                     model: model.0,
                 },
             });
-        }
-
-        if ctx.ui.button("Delete").clicked() {
-            ctx.res
-                .get_mut::<EditorCommands>()
-                .unwrap()
-                .submit(DestroyEntity::new(entity));
         }
 
         self.inspectors

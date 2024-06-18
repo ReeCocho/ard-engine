@@ -35,34 +35,47 @@ impl<F: SaveFormat, C: SaveLoad> Default for TagLoader<F, C> {
     }
 }
 
-pub trait GenericComponentLoader: Send + Sync {
+pub trait GenericComponentLoader<F: SaveFormat>: Send + Sync {
     fn type_id(&self) -> TypeId;
 
     fn new_storage(&self, archetypes: &mut Archetypes) -> usize;
 
-    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>);
+    fn deserialize_all(
+        &mut self,
+        ctx: &mut LoadContext,
+        raw: Vec<u8>,
+    ) -> Result<(), F::DeserializeError>;
 
     fn move_into(&mut self, archetypes: &Archetypes, idx: usize);
 }
 
-pub trait GenericTagLoader: Send + Sync {
+pub trait GenericTagLoader<F: SaveFormat>: Send + Sync {
     fn type_id(&self) -> TypeId;
 
-    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>);
+    fn deserialize_all(
+        &mut self,
+        ctx: &mut LoadContext,
+        raw: Vec<u8>,
+    ) -> Result<(), F::DeserializeError>;
 
     fn move_into(&mut self, tags: &mut Tags, entities: &[Entity]);
 }
 
-impl<F: SaveFormat + 'static, C: Component + SaveLoad + 'static> GenericComponentLoader
+impl<F: SaveFormat + 'static, C: Component + SaveLoad + 'static> GenericComponentLoader<F>
     for ComponentLoader<F, C>
 {
     fn type_id(&self) -> TypeId {
         TypeId::of::<C>()
     }
 
-    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>) {
-        let intermediates = F::deserialize::<Vec<C::Intermediate>>(raw);
+    fn deserialize_all(
+        &mut self,
+        ctx: &mut LoadContext,
+        raw: Vec<u8>,
+    ) -> Result<(), F::DeserializeError> {
+        let intermediates = F::deserialize::<Vec<C::Intermediate>>(raw)?;
         self.to_load = intermediates.into_iter().map(|i| C::load(ctx, i)).collect();
+        Ok(())
     }
 
     fn move_into(&mut self, archetypes: &Archetypes, idx: usize) {
@@ -82,14 +95,19 @@ impl<F: SaveFormat + 'static, C: Component + SaveLoad + 'static> GenericComponen
     }
 }
 
-impl<F: SaveFormat + 'static, T: Tag + SaveLoad + 'static> GenericTagLoader for TagLoader<F, T> {
+impl<F: SaveFormat + 'static, T: Tag + SaveLoad + 'static> GenericTagLoader<F> for TagLoader<F, T> {
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
 
-    fn deserialize_all(&mut self, ctx: &mut LoadContext, raw: Vec<u8>) {
-        let intermediates = F::deserialize::<Vec<T::Intermediate>>(raw);
+    fn deserialize_all(
+        &mut self,
+        ctx: &mut LoadContext,
+        raw: Vec<u8>,
+    ) -> Result<(), F::DeserializeError> {
+        let intermediates = F::deserialize::<Vec<T::Intermediate>>(raw)?;
         self.to_load = intermediates.into_iter().map(|i| T::load(ctx, i)).collect();
+        Ok(())
     }
 
     fn move_into(&mut self, tags: &mut Tags, entities: &[Entity]) {

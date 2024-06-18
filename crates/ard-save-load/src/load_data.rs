@@ -18,15 +18,13 @@ use crate::{
 };
 
 pub struct Loader<F: SaveFormat> {
-    meta_data: FxHashMap<String, LoadingMetaData>,
-    _format: std::marker::PhantomData<F>,
+    meta_data: FxHashMap<String, LoadingMetaData<F>>,
 }
 
 impl<F: SaveFormat> Default for Loader<F> {
     fn default() -> Self {
         Self {
             meta_data: FxHashMap::default(),
-            _format: Default::default(),
         }
     }
 }
@@ -38,8 +36,8 @@ impl<F: SaveFormat + 'static> Loader<F> {
             LoadingMetaData::Component {
                 new_loader: |ctx, raw| {
                     let mut loader = ComponentLoader::<F, C>::default();
-                    loader.deserialize_all(ctx, raw);
-                    Box::new(loader)
+                    loader.deserialize_all(ctx, raw)?;
+                    Ok(Box::new(loader))
                 },
             },
         );
@@ -52,15 +50,20 @@ impl<F: SaveFormat + 'static> Loader<F> {
             LoadingMetaData::Tag {
                 new_loader: |ctx, raw| {
                     let mut loader = TagLoader::<F, T>::default();
-                    loader.deserialize_all(ctx, raw);
-                    Box::new(loader)
+                    loader.deserialize_all(ctx, raw)?;
+                    Ok(Box::new(loader))
                 },
             },
         );
         self
     }
 
-    pub fn load(self, data: SaveData, assets: Assets, commands: &EntityCommands) {
+    pub fn load(
+        self,
+        data: SaveData,
+        assets: Assets,
+        commands: &EntityCommands,
+    ) -> Result<(), F::DeserializeError> {
         self.load_with_external(data, assets, commands, None, &[])
     }
 
@@ -71,7 +74,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
         commands: &EntityCommands,
         load_into: Option<&[Entity]>,
         external: &[Entity],
-    ) {
+    ) -> Result<(), F::DeserializeError> {
         let entities = match load_into {
             Some(entities) => {
                 assert_eq!(entities.len(), data.entity_count);
@@ -92,85 +95,115 @@ impl<F: SaveFormat + 'static> Loader<F> {
 
         let mut ctx = LoadContext { entity_map, assets };
 
-        data.archetypes.into_iter().for_each(|archetype| {
+        for archetype in data.archetypes {
             let remapped_entities: Vec<_> = archetype
                 .entities
                 .into_iter()
                 .map(|e| ctx.entity_map.from_map_or_null(e))
                 .collect();
 
+            let loaders = archetype
+                .buffers
+                .into_iter()
+                .map(|buffer| {
+                    let meta = self.meta_data.get(&buffer.type_name).unwrap();
+                    match meta {
+                        LoadingMetaData::Component { new_loader, .. } => {
+                            new_loader(&mut ctx, buffer.raw)
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>();
+
+            let loaders = match loaders {
+                Ok(loaders) => loaders,
+                Err(err) => {
+                    if load_into.is_none() {
+                        commands.destroy(&entities);
+                    }
+                    return Err(err);
+                }
+            };
+
             commands.set_components(
                 &remapped_entities,
                 LoadedComponentPack {
                     entity_count: remapped_entities.len(),
-                    loaders: archetype
-                        .buffers
-                        .into_iter()
-                        .map(|buffer| {
-                            let meta = self.meta_data.get(&buffer.type_name).unwrap();
-                            match meta {
-                                LoadingMetaData::Component { new_loader, .. } => {
-                                    new_loader(&mut ctx, buffer.raw)
-                                }
-                                _ => unreachable!(),
-                            }
-                        })
-                        .collect(),
+                    loaders,
                 },
             );
-        });
+        }
 
-        data.collections.into_iter().for_each(|collection| {
+        for collection in data.collections {
             let remapped_entities: Vec<_> = collection
                 .entities
                 .into_iter()
                 .map(|e| ctx.entity_map.from_map_or_null(e))
                 .collect();
 
+            let loaders = collection
+                .buffers
+                .into_iter()
+                .map(|buffer| {
+                    let meta = self.meta_data.get(&buffer.type_name).unwrap();
+                    match meta {
+                        LoadingMetaData::Tag { new_loader, .. } => new_loader(&mut ctx, buffer.raw),
+                        _ => unreachable!(),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>();
+
+            let loaders = match loaders {
+                Ok(loaders) => loaders,
+                Err(err) => {
+                    if load_into.is_none() {
+                        commands.destroy(&entities);
+                    }
+                    return Err(err);
+                }
+            };
+
             commands.set_tags(
                 &remapped_entities,
                 LoadedTagPack {
                     entity_count: remapped_entities.len(),
-                    loaders: collection
-                        .buffers
-                        .into_iter()
-                        .map(|buffer| {
-                            let meta = self.meta_data.get(&buffer.type_name).unwrap();
-                            match meta {
-                                LoadingMetaData::Tag { new_loader, .. } => {
-                                    new_loader(&mut ctx, buffer.raw)
-                                }
-                                _ => unreachable!(),
-                            }
-                        })
-                        .collect(),
+                    loaders,
                 },
             );
-        });
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Clone, Copy)]
-enum LoadingMetaData {
+enum LoadingMetaData<F: SaveFormat> {
     Component {
-        new_loader: fn(&mut LoadContext, Vec<u8>) -> Box<dyn GenericComponentLoader>,
+        new_loader: fn(
+            &mut LoadContext,
+            Vec<u8>,
+        ) -> Result<Box<dyn GenericComponentLoader<F>>, F::DeserializeError>,
     },
     Tag {
-        new_loader: fn(&mut LoadContext, Vec<u8>) -> Box<dyn GenericTagLoader>,
+        new_loader: fn(
+            &mut LoadContext,
+            Vec<u8>,
+        ) -> Result<Box<dyn GenericTagLoader<F>>, F::DeserializeError>,
     },
 }
 
-struct LoadedComponentPack {
+struct LoadedComponentPack<F: SaveFormat> {
     entity_count: usize,
-    loaders: Vec<Box<dyn GenericComponentLoader>>,
+    loaders: Vec<Box<dyn GenericComponentLoader<F>>>,
 }
 
-struct LoadedTagPack {
+struct LoadedTagPack<F: SaveFormat> {
     entity_count: usize,
-    loaders: Vec<Box<dyn GenericTagLoader>>,
+    loaders: Vec<Box<dyn GenericTagLoader<F>>>,
 }
 
-impl ComponentPack for LoadedComponentPack {
+impl<F: SaveFormat> ComponentPack for LoadedComponentPack<F> {
     fn is_valid(&self) -> bool {
         true
     }
@@ -232,7 +265,7 @@ impl ComponentPack for LoadedComponentPack {
     }
 }
 
-impl TagPack for LoadedTagPack {
+impl<F: SaveFormat> TagPack for LoadedTagPack<F> {
     fn is_valid(&self) -> bool {
         true
     }

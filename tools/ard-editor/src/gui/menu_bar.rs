@@ -22,17 +22,29 @@ impl MenuBar {
                 let assets = res.get::<Assets>().unwrap();
                 if ui.button("Saved").clicked() {
                     let entities = res.get::<SceneGraph>().unwrap().all_entities(queries);
-                    let (save_data, _) =
-                        crate::ser::saver::<Ron>().save(assets.clone(), queries, &entities);
+                    let res = crate::ser::saver::<Ron>().save(assets.clone(), queries, &entities);
 
-                    let save_data = bincode::serialize(&save_data).unwrap();
-                    std::fs::write("./save.dat", &save_data).unwrap();
+                    match res {
+                        Ok((save_data, _)) => {
+                            let save_data = bincode::serialize(&save_data).unwrap();
+                            std::fs::write("./save.dat", &save_data).unwrap();
+                        }
+                        Err(err) => {
+                            println!("{err:?}");
+                        }
+                    }
                 }
 
                 if ui.button("Load").clicked() {
                     let save_data = std::fs::read("./save.dat").unwrap();
                     let save_data = bincode::deserialize::<SaveData>(&save_data).unwrap();
-                    crate::ser::loader::<Ron>().load(save_data, assets.clone(), &commands.entities);
+                    if let Err(err) = crate::ser::loader::<Ron>().load(
+                        save_data,
+                        assets.clone(),
+                        &commands.entities,
+                    ) {
+                        println!("{err:?}");
+                    }
                 }
 
                 if ui.button("Make Lof").clicked() {

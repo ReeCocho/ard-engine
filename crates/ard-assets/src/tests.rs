@@ -144,7 +144,9 @@ fn asset_loading() {
     let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
-    let asset = assets.load::<TestAsset>(AssetName::new("test_file.dat"));
+    let asset = assets
+        .load::<TestAsset>(AssetName::new("test_file.dat"))
+        .unwrap();
 
     assets.wait_for_load(&asset);
 
@@ -162,7 +164,9 @@ fn shadowing() {
     let assets = Assets::new();
     assets.register::<TestAsset>(TestAssetLoader);
 
-    let asset = assets.load::<TestAsset>(AssetName::new("shadowed.dat"));
+    let asset = assets
+        .load::<TestAsset>(AssetName::new("shadowed.dat"))
+        .unwrap();
     assets.wait_for_load(&asset);
 
     let asset = assets.get(&asset).unwrap();
@@ -178,7 +182,9 @@ fn ref_counting() {
     let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
-    let handle = assets.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
+    let handle = assets
+        .load::<DropSignalAsset>(AssetName::new("dummy.drp"))
+        .unwrap();
     assets.wait_for_load(&handle);
 
     let asset = assets.get(&handle).unwrap();
@@ -199,7 +205,9 @@ fn default_assets() {
     let assets = Assets::new();
     assets.register::<DropSignalAsset>(DropSignalAssetLoader);
 
-    let handle = assets.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
+    let handle = assets
+        .load::<DropSignalAsset>(AssetName::new("dummy.drp"))
+        .unwrap();
     assets.wait_for_load(&handle);
 
     let drop_signal = assets.get(&handle).unwrap().signal.clone();
@@ -213,7 +221,9 @@ fn default_assets() {
     );
 
     // Load a new asset
-    let new_handle = assets.load::<DropSignalAsset>(AssetName::new("dummy2.drp"));
+    let new_handle = assets
+        .load::<DropSignalAsset>(AssetName::new("dummy2.drp"))
+        .unwrap();
     assets.wait_for_load(&new_handle);
 
     let drop_signal_new = assets.get(&new_handle).unwrap().signal.clone();
@@ -249,8 +259,12 @@ fn many_requests() {
 
             handles.push(std::thread::spawn(move || {
                 c.wait();
-                let h1 = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
-                let h2 = assets_clone.load::<DropSignalAsset>(AssetName::new("dummy.drp"));
+                let h1 = assets_clone
+                    .load::<TestAsset>(AssetName::new("test_file.dat"))
+                    .unwrap();
+                let h2 = assets_clone
+                    .load::<DropSignalAsset>(AssetName::new("dummy.drp"))
+                    .unwrap();
                 assets_clone.wait_for_load(&h1);
                 assets_clone.wait_for_load(&h2);
             }));
@@ -284,7 +298,9 @@ fn load_drop() {
         let assets_clone = assets.clone();
         handles.push(std::thread::spawn(move || {
             // Load the asset in one thread
-            let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
+            let handle = assets_clone
+                .load::<TestAsset>(AssetName::new("test_file.dat"))
+                .unwrap();
 
             // Wait for the asset loader to finish
             assets_clone.wait_for_load(&handle);
@@ -303,7 +319,9 @@ fn load_drop() {
             c.wait();
 
             // Load the asset
-            let handle = assets_clone.load::<TestAsset>(AssetName::new("test_file.dat"));
+            let handle = assets_clone
+                .load::<TestAsset>(AssetName::new("test_file.dat"))
+                .unwrap();
             assets_clone.wait_for_load(&handle);
         }));
 
@@ -320,7 +338,9 @@ fn persistent_assets() {
     assets.register::<PersistentAsset>(PersistentAssetLoader);
 
     // Load the asset
-    let asset = assets.load::<PersistentAsset>(AssetName::new("persistent.per"));
+    let asset = assets
+        .load::<PersistentAsset>(AssetName::new("persistent.per"))
+        .unwrap();
     assets.wait_for_load(&asset);
 
     // Ensure it is loaded correctly

@@ -79,7 +79,12 @@ impl AssetLoader for MaterialLoader {
 
                 // Apply material textures
                 if let Some(tex) = diffuse_map {
-                    let tex_handle = assets.load_async(&tex).await;
+                    let tex_handle = match assets.load_async(&tex).await {
+                        Some(handle) => handle,
+                        None => {
+                            return Err(AssetLoadError::Other("could not get texture asset".into()))
+                        }
+                    };
                     let tex_asset = match assets.get::<TextureAsset>(&tex_handle) {
                         Some(asset) => asset,
                         None => {
@@ -95,7 +100,12 @@ impl AssetLoader for MaterialLoader {
                 }
 
                 if let Some(tex) = normal_map {
-                    let tex_handle = assets.load_async(&tex).await;
+                    let tex_handle = match assets.load_async(&tex).await {
+                        Some(handle) => handle,
+                        None => {
+                            return Err(AssetLoadError::Other("could not get texture asset".into()))
+                        }
+                    };
                     let tex_asset = match assets.get::<TextureAsset>(&tex_handle) {
                         Some(asset) => asset,
                         None => {
@@ -111,7 +121,12 @@ impl AssetLoader for MaterialLoader {
                 }
 
                 if let Some(tex) = metallic_roughness_map {
-                    let tex_handle = assets.load_async(&tex).await;
+                    let tex_handle = match assets.load_async(&tex).await {
+                        Some(handle) => handle,
+                        None => {
+                            return Err(AssetLoadError::Other("could not get texture asset".into()))
+                        }
+                    };
                     let tex_asset = match assets.get::<TextureAsset>(&tex_handle) {
                         Some(asset) => asset,
                         None => {

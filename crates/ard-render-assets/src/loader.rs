@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::{material::MaterialAsset, mesh::MeshAsset};
 
 #[derive(Component)]
-pub struct MeshHandle(pub Handle<MeshAsset>);
+pub struct MeshHandle(pub Option<Handle<MeshAsset>>);
 
 #[derive(Component)]
-pub struct MaterialHandle(pub Handle<MaterialAsset>);
+pub struct MaterialHandle(pub Option<Handle<MaterialAsset>>);
 
 #[derive(SystemState)]
 pub(crate) struct MeshLoaderSystem;
@@ -22,20 +22,20 @@ pub(crate) struct MeshLoaderSystem;
 pub(crate) struct MaterialLoaderSystem;
 
 #[derive(Serialize, Deserialize)]
-pub struct SavedMeshHandle(pub AssetNameBuf);
+pub struct SavedMeshHandle(pub Option<AssetNameBuf>);
 
 #[derive(Serialize, Deserialize)]
-pub struct SavedMaterialHandle(pub AssetNameBuf);
+pub struct SavedMaterialHandle(pub Option<AssetNameBuf>);
 
 impl SaveLoad for MeshHandle {
     type Intermediate = SavedMeshHandle;
 
     fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
-        MeshHandle(ctx.assets.load(&intermediate.0))
+        MeshHandle(intermediate.0.and_then(|name| ctx.assets.load(&name)))
     }
 
     fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
-        SavedMeshHandle(ctx.assets.get_name(&self.0))
+        SavedMeshHandle(self.0.as_ref().map(|handle| ctx.assets.get_name(&handle)))
     }
 }
 
@@ -43,11 +43,11 @@ impl SaveLoad for MaterialHandle {
     type Intermediate = SavedMaterialHandle;
 
     fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
-        MaterialHandle(ctx.assets.load(&intermediate.0))
+        MaterialHandle(intermediate.0.and_then(|name| ctx.assets.load(&name)))
     }
 
     fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
-        SavedMaterialHandle(ctx.assets.get_name(&self.0))
+        SavedMaterialHandle(self.0.as_ref().map(|handle| ctx.assets.get_name(&handle)))
     }
 }
 
@@ -66,7 +66,12 @@ impl MeshLoaderSystem {
             .make::<(Entity, (Write<MeshHandle>,))>()
             .into_iter()
             .for_each(|(e, (handle,))| {
-                let asset = match assets.get(&handle.0) {
+                let handle = match &handle.0 {
+                    Some(handle) => handle,
+                    None => return,
+                };
+
+                let asset = match assets.get(handle) {
                     Some(asset) => asset,
                     None => return,
                 };
@@ -93,7 +98,12 @@ impl MaterialLoaderSystem {
             )>()
             .into_iter()
             .for_each(|(e, (handle, render_mode))| {
-                let asset = match assets.get(&handle.0) {
+                let handle = match &handle.0 {
+                    Some(handle) => handle,
+                    None => return,
+                };
+
+                let asset = match assets.get(handle) {
                     Some(asset) => asset,
                     None => return,
                 };

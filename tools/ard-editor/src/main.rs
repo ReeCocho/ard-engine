@@ -46,7 +46,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: CanvasSize(Some((512, 512))),
             },
-            debug: true,
+            debug: false,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)

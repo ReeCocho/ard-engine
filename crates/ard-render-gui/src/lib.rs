@@ -140,6 +140,14 @@ impl Gui {
                 )));
         }
 
+        let (del_x, del_y) = input.mouse_scroll();
+        if del_x != 0.0 || del_y != 0.0 {
+            self.input.events.push(egui::Event::Scroll(egui::Vec2::new(
+                del_x as f32,
+                del_y as f32,
+            )));
+        }
+
         // Keyboard input
         fn keyboard_input(
             ard_key: Key,

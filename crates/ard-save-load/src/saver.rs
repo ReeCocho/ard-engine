@@ -29,34 +29,34 @@ impl<F: SaveFormat, T: SaveLoad> Default for TagSaver<F, T> {
     }
 }
 
-pub trait GenericSaver {
+pub trait GenericSaver<F: SaveFormat> {
     fn add(&mut self, ctx: &mut SaveContext, entity: Entity, queries: &Queries<Everything>);
 
-    fn serialize_all(&mut self) -> Vec<u8>;
+    fn serialize_all(&mut self) -> Result<Vec<u8>, F::SerializeError>;
 }
 
-impl<F: SaveFormat, C: Component + SaveLoad + 'static> GenericSaver for ComponentSaver<F, C> {
+impl<F: SaveFormat, C: Component + SaveLoad + 'static> GenericSaver<F> for ComponentSaver<F, C> {
     fn add(&mut self, ctx: &mut SaveContext, entity: Entity, queries: &Queries<Everything>) {
         let component = queries.get::<Read<C>>(entity).unwrap();
         self.to_save.push(component.save(ctx));
     }
 
-    fn serialize_all(&mut self) -> Vec<u8> {
-        let res = F::serialize(&self.to_save);
+    fn serialize_all(&mut self) -> Result<Vec<u8>, F::SerializeError> {
+        let res = F::serialize(&self.to_save)?;
         self.to_save.clear();
-        res
+        Ok(res)
     }
 }
 
-impl<F: SaveFormat, T: Tag + SaveLoad + 'static> GenericSaver for TagSaver<F, T> {
+impl<F: SaveFormat, T: Tag + SaveLoad + 'static> GenericSaver<F> for TagSaver<F, T> {
     fn add(&mut self, ctx: &mut SaveContext, entity: Entity, queries: &Queries<Everything>) {
         let tag = queries.get_tag::<Read<T>>(entity).unwrap();
         self.to_save.push(tag.save(ctx));
     }
 
-    fn serialize_all(&mut self) -> Vec<u8> {
-        let res = F::serialize(&self.to_save);
+    fn serialize_all(&mut self) -> Result<Vec<u8>, F::SerializeError> {
+        let res = F::serialize(&self.to_save)?;
         self.to_save.clear();
-        res
+        Ok(res)
     }
 }

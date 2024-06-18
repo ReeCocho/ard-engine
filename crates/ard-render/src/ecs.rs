@@ -330,12 +330,12 @@ impl RenderEcs {
         let view_location = main_camera.model.position();
 
         let textures = self.factory.inner.textures.lock().unwrap();
-        let meshes = self.factory.inner.meshes.lock().unwrap();
         let mesh_factory = self.factory.inner.mesh_factory.lock().unwrap();
-        let materials = self.factory.inner.materials.lock().unwrap();
-        let material_instances = self.factory.inner.material_instances.lock().unwrap();
         let texture_factory = self.factory.inner.texture_factory.lock().unwrap();
         let material_factory = self.factory.inner.material_factory.lock().unwrap();
+        let meshes = self.factory.inner.meshes.lock().unwrap();
+        let materials = self.factory.inner.materials.lock().unwrap();
+        let material_instances = self.factory.inner.material_instances.lock().unwrap();
         let mut pending_blas = self.factory.inner.pending_blas.lock().unwrap();
 
         // Check objects for uploaded BLAS'
@@ -375,6 +375,9 @@ impl RenderEcs {
             &material_instances,
             view_location,
         );
+
+        std::mem::drop(textures);
+        std::mem::drop(material_instances);
 
         self.rt_render
             .upload(frame.frame, view_location, &frame.object_data, &meshes);
@@ -507,6 +510,7 @@ impl RenderEcs {
 
         // Setup BLAS building/compacting for next frame
         pending_blas.build_next_frame_lists(frame.frame);
+        std::mem::drop(pending_blas);
 
         // Phase 2:
         //      Main: Render shadows.
@@ -642,6 +646,12 @@ impl RenderEcs {
         self.ctx()
             .main()
             .submit_with_async_compute(Some("Phase 4"), main_cb, compute_cb);
+
+        std::mem::drop(mesh_factory);
+        std::mem::drop(texture_factory);
+        std::mem::drop(material_factory);
+        std::mem::drop(meshes);
+        std::mem::drop(materials);
 
         // Phase 5:
         // Image effects/tonemapping and final output.

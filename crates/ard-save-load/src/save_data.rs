@@ -13,15 +13,13 @@ use crate::{
 };
 
 pub struct Saver<F: SaveFormat> {
-    meta_data: FxHashMap<TypeId, SavingMetaData>,
-    _format: std::marker::PhantomData<F>,
+    meta_data: FxHashMap<TypeId, SavingMetaData<F>>,
 }
 
 impl<F: SaveFormat> Default for Saver<F> {
     fn default() -> Self {
         Self {
             meta_data: FxHashMap::default(),
-            _format: Default::default(),
         }
     }
 }
@@ -60,9 +58,9 @@ impl<F: SaveFormat + 'static> Saver<F> {
         assets: Assets,
         queries: &Queries<Everything>,
         entities: &[Entity],
-    ) -> (SaveData, EntityMap) {
-        let mut archetypes = FxHashMap::<TypeKey, SavingData>::default();
-        let mut collections = FxHashMap::<TypeKey, SavingData>::default();
+    ) -> Result<(SaveData, EntityMap), F::SerializeError> {
+        let mut archetypes = FxHashMap::<TypeKey, SavingData<F>>::default();
+        let mut collections = FxHashMap::<TypeKey, SavingData<F>>::default();
 
         let mut ctx = SaveContext {
             assets,
@@ -82,19 +80,19 @@ impl<F: SaveFormat + 'static> Saver<F> {
             archetypes: archetypes
                 .into_values()
                 .map(|a| a.to_saved(&self, &mut ctx.entity_map))
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             collections: collections
                 .into_values()
                 .map(|c| c.to_saved(&self, &mut ctx.entity_map))
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
         };
 
-        (save_data, ctx.entity_map)
+        Ok((save_data, ctx.entity_map))
     }
 
     fn save_components(
         &mut self,
-        archetypes: &mut FxHashMap<TypeKey, SavingData>,
+        archetypes: &mut FxHashMap<TypeKey, SavingData<F>>,
         ctx: &mut SaveContext,
         queries: &Queries<Everything>,
         entity: Entity,
@@ -129,7 +127,7 @@ impl<F: SaveFormat + 'static> Saver<F> {
 
     fn save_tags(
         &mut self,
-        collections: &mut FxHashMap<TypeKey, SavingData>,
+        collections: &mut FxHashMap<TypeKey, SavingData<F>>,
         ctx: &mut SaveContext,
         queries: &Queries<Everything>,
         entity: Entity,
@@ -144,7 +142,7 @@ impl<F: SaveFormat + 'static> Saver<F> {
         });
 
         let entry = collections.entry(final_key.clone()).or_insert_with(|| {
-            let mut data = SavingData::default();
+            let mut data = SavingData::<F>::default();
             final_key
                 .iter()
                 .for_each(|ty| match self.meta_data.get(ty).unwrap() {
@@ -163,22 +161,34 @@ impl<F: SaveFormat + 'static> Saver<F> {
     }
 }
 
-enum SavingMetaData {
+enum SavingMetaData<F: SaveFormat> {
     Ignore,
     Info {
         type_name: String,
-        new_saver: fn() -> Box<dyn GenericSaver>,
+        new_saver: fn() -> Box<dyn GenericSaver<F>>,
     },
 }
 
-#[derive(Default)]
-struct SavingData {
+struct SavingData<F: SaveFormat> {
     pub entities: Vec<Entity>,
-    pub savers: FxHashMap<TypeId, Box<dyn GenericSaver>>,
+    pub savers: FxHashMap<TypeId, Box<dyn GenericSaver<F>>>,
 }
 
-impl SavingData {
-    fn to_saved<F: SaveFormat>(self, saver: &Saver<F>, map: &mut EntityMap) -> SavedSet {
+impl<F: SaveFormat> Default for SavingData<F> {
+    fn default() -> Self {
+        Self {
+            entities: Vec::default(),
+            savers: FxHashMap::default(),
+        }
+    }
+}
+
+impl<F: SaveFormat> SavingData<F> {
+    fn to_saved(
+        self,
+        saver: &Saver<F>,
+        map: &mut EntityMap,
+    ) -> Result<SavedSet, F::SerializeError> {
         let buffers = self
             .savers
             .into_iter()
@@ -188,21 +198,21 @@ impl SavingData {
                     SavingMetaData::Info { type_name, .. } => type_name.clone(),
                 };
 
-                SavedDataBuffer {
+                Ok(SavedDataBuffer {
                     type_name,
-                    raw: buff_saver.serialize_all(),
-                }
+                    raw: buff_saver.serialize_all()?,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
-        SavedSet {
+        Ok(SavedSet {
             entities: self
                 .entities
                 .into_iter()
                 .map(|e| map.to_map_or_insert(e))
                 .collect(),
             buffers,
-        }
+        })
     }
 }
 

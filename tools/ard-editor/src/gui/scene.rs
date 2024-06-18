@@ -19,6 +19,7 @@ use super::{drag_drop::DragDropPayload, transform::TransformGizmo, EditorViewCon
 #[derive(Default)]
 pub struct SceneView {
     gizmo: TransformGizmo,
+    moving_time: f32,
 }
 
 impl SceneView {
@@ -43,9 +44,15 @@ impl SceneView {
             drag: true,
             focusable: true,
         });
-        let (response, dnd) = ctx
-            .ui
-            .dnd_drop_zone::<DragDropPayload, _>(egui::Frame::none(), |ui| ui.add(scene_image));
+        let (response, dnd) =
+            ctx.ui
+                .dnd_drop_zone::<DragDropPayload, _>(egui::Frame::none(), |ui| {
+                    ui.add(scene_image.sense(egui::Sense {
+                        click: true,
+                        drag: true,
+                        focusable: true,
+                    }))
+                });
         let response = response.inner;
 
         // See if anything was dragged onto the scene view that an be instantiated.
@@ -81,16 +88,23 @@ impl SceneView {
         self.gizmo
             .show(&ctx, Vec2::new(canvas_size.x, canvas_size.y), response.rect);
 
-        // Camera movement
+        self.move_camera(&ctx, response);
+
+        egui_tiles::UiResponse::None
+    }
+
+    fn move_camera(&mut self, ctx: &EditorViewContext, response: egui::Response) {
+        let scene_camera = ctx.res.get::<SceneViewCamera>().unwrap();
+        let input = ctx.res.get::<InputState>().unwrap();
+
+        let mut query = ctx
+            .queries
+            .get::<(Write<Rotation>, Write<Position>)>(scene_camera.camera())
+            .unwrap();
+
+        let (ref mut rotation, ref mut position) = *query;
+
         if response.dragged_by(egui::PointerButton::Secondary) {
-            let scene_camera = ctx.res.get::<SceneViewCamera>().unwrap();
-
-            let mut query = ctx
-                .queries
-                .get::<(Write<Rotation>, Write<Position>)>(scene_camera.camera())
-                .unwrap();
-            let rotation = &mut query.0;
-
             let (mut ry, mut rx, rz) = rotation.0.to_euler(EulerRot::YXZ);
 
             rx += response.drag_delta().y * 0.007;
@@ -108,35 +122,65 @@ impl SceneView {
             // Move the camera
             let right = rot.col(0);
             let forward = rot.col(2);
-            let position = &mut query.1;
-            let input = ctx.res.get::<InputState>().unwrap();
 
             let dt = ctx.tick.0.as_secs_f32();
+            let mut any_held = false;
+
+            let mult = 8.0 + (self.moving_time.powf(3.0) * 2.0);
             if input.key(Key::W) {
-                position.0 += Vec3A::from(forward.xyz() * dt * 8.0);
+                any_held = true;
+                position.0 += Vec3A::from(forward.xyz() * dt * mult);
             }
 
             if input.key(Key::S) {
-                position.0 -= Vec3A::from(forward.xyz() * dt * 8.0);
+                any_held = true;
+                position.0 -= Vec3A::from(forward.xyz() * dt * mult);
             }
 
             if input.key(Key::A) {
-                position.0 -= Vec3A::from(right.xyz() * dt * 8.0);
+                any_held = true;
+                position.0 -= Vec3A::from(right.xyz() * dt * mult);
             }
 
             if input.key(Key::D) {
-                position.0 += Vec3A::from(right.xyz() * dt * 8.0);
+                any_held = true;
+                position.0 += Vec3A::from(right.xyz() * dt * mult);
             }
 
             if input.key(Key::Q) {
-                position.0.y -= dt * 8.0;
+                any_held = true;
+                position.0.y -= dt * mult;
             }
 
             if input.key(Key::E) {
-                position.0.y += dt * 8.0;
+                any_held = true;
+                position.0.y += dt * mult;
+            }
+
+            if any_held {
+                self.moving_time += ctx.tick.0.as_secs_f32();
+            } else {
+                self.moving_time = 0.0;
             }
         }
 
-        egui_tiles::UiResponse::None
+        if response.dragged_by(egui::PointerButton::Middle) {
+            let rot = Mat4::from_quat(rotation.0);
+
+            const SENSITIVITY: f32 = 0.1;
+            let right = Vec3A::from(rot.col(0).xyz());
+            let up = Vec3A::from(rot.col(1).xyz());
+            let del = response.drag_delta() * SENSITIVITY;
+
+            position.0 += (-right * del.x) + (up * del.y);
+        }
+
+        if response.hovered() {
+            let yscroll = ctx.ui.input(|input| input.raw_scroll_delta.y);
+            let rot = Mat4::from_quat(rotation.0);
+            let forward = rot.col(2);
+
+            position.0 += Vec3A::from(forward.xyz()) * (yscroll as f32);
+        }
     }
 }

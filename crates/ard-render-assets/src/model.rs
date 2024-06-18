@@ -86,35 +86,51 @@ impl AssetLoader for ModelLoader {
         // If we don't do this, we might end up seeing error textures while they load
         let meshes = futures::future::join_all(header.meshes.into_iter().map(|path| {
             let assets = assets.clone();
-            async move { assets.load_async::<MeshAsset>(&path).await }
+            async move {
+                let res = assets.load_async::<MeshAsset>(&path).await;
+                match res {
+                    Some(handle) => Ok(handle),
+                    None => Err(AssetLoadError::Other(format!(
+                        "could not load mesh {path:?}"
+                    ))),
+                }
+            }
         }))
-        .await;
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
         let materials = futures::future::join_all(header.materials.into_iter().map(|path| {
             let assets = assets.clone();
-            async move { assets.load_async::<MaterialAsset>(&path).await }
+            async move {
+                let res = assets.load_async::<MaterialAsset>(&path).await;
+                match res {
+                    Some(handle) => Ok(handle),
+                    None => Err(AssetLoadError::Other(format!(
+                        "could not load material {path:?}"
+                    ))),
+                }
+            }
         }))
-        .await;
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
         let textures = futures::future::join_all(header.textures.into_iter().map(|path| {
             let assets = assets.clone();
-            async move { assets.load_async::<TextureAsset>(&path).await }
+            async move {
+                let res = assets.load_async::<TextureAsset>(&path).await;
+                match res {
+                    Some(handle) => Ok(handle),
+                    None => Err(AssetLoadError::Other(format!(
+                        "could not load texture {path:?}"
+                    ))),
+                }
+            }
         }))
-        .await;
-
-        /*
-        let (meshes, materials) = futures::future::join(
-            futures::future::join_all(header.meshes.into_iter().map(|path| {
-                let assets = assets.clone();
-                async move { assets.load_async::<MeshAsset>(&path).await }
-            })),
-            futures::future::join_all(header.materials.into_iter().map(|path| {
-                let assets = assets.clone();
-                async move { assets.load_async::<MaterialAsset>(&path).await }
-            })),
-        )
-        .await;
-        */
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
         // Begin constructing the asset
         let mut model = ModelAsset {

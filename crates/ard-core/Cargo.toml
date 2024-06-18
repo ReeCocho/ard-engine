@@ -13,3 +13,4 @@ num_cpus.workspace = true
 crossbeam-channel.workspace = true
 rustc-hash.workspace = true
 dashmap.workspace = true
+serde.workspace = true

@@ -43,6 +43,7 @@ pub struct TaskConfirmationGui {
     /// Sends tasks to the runner after confirmation.
     send: Sender<JoinHandle<Result<Box<dyn EditorTask>>>>,
     pending: Option<PendingTask>,
+    errors: Vec<anyhow::Error>,
 }
 
 #[derive(SystemState)]
@@ -75,6 +76,11 @@ impl GuiView for TaskConfirmationGui {
         _queries: &Queries<Everything>,
         _res: &Res<Everything>,
     ) {
+        // Receive errors
+        while let Ok(new_err) = self.err_recv.try_recv() {
+            self.errors.push(new_err);
+        }
+
         // Handle new tasks and process existing ones
         match self.pending.take() {
             Some(mut pending) => match pending.show(ctx) {
@@ -96,6 +102,22 @@ impl GuiView for TaskConfirmationGui {
                 if let Ok(task) = self.task_recv.try_recv() {
                     self.pending = Some(PendingTask { task });
                 }
+            }
+        }
+
+        if let Some(err) = self.errors.last() {
+            let mut pop_err = false;
+            let err_idx = self.errors.len();
+            egui::Window::new(format!("Error ({err_idx})"))
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label(err.to_string());
+                    if ui.button("Close").clicked() {
+                        pop_err = true;
+                    }
+                });
+            if pop_err {
+                self.errors.pop();
             }
         }
     }
@@ -137,6 +159,7 @@ impl TaskRunner {
             err_recv,
             send: gui_send,
             pending: None,
+            errors: Vec::default(),
         };
 
         let runner = TaskRunner {
@@ -173,11 +196,16 @@ impl TaskRunner {
 
             let thread_result = handle.join();
 
-            // TODO: Put errors onto GUI
             let result = match thread_result {
                 Ok(result) => result,
                 Err(err) => {
-                    error!("{err:?}");
+                    let err = anyhow::Error::msg(
+                        err.downcast::<String>().map(|s| *s).unwrap_or_else(|s| {
+                            s.downcast::<&'static str>()
+                                .map_or_else(|_| "unknown error".into(), |s| s.to_string())
+                        }),
+                    );
+                    let _ = self.err_send.send(err);
                     continue;
                 }
             };
@@ -185,13 +213,13 @@ impl TaskRunner {
             let mut task = match result {
                 Ok(task) => task,
                 Err(err) => {
-                    error!("{err:?}");
+                    let _ = self.err_send.send(err);
                     continue;
                 }
             };
 
             if let Err(err) = task.complete(&commands, &queries, &res) {
-                error!("{err:?}");
+                let _ = self.err_send.send(err);
             }
         }
     }

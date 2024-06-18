@@ -47,16 +47,16 @@ pub struct Factory {
 }
 
 pub(crate) struct FactoryInner {
-    staging: Mutex<Staging>,
-    pub(crate) meshes: Mutex<ResourceAllocator<MeshResource>>,
     pub(crate) textures: Mutex<ResourceAllocator<TextureResource>>,
     pub(crate) shaders: Mutex<ResourceAllocator<ShaderResource>>,
-    pub(crate) materials: Mutex<ResourceAllocator<MaterialResource>>,
-    pub(crate) material_instances: Mutex<ResourceAllocator<MaterialInstanceResource>>,
     pub(crate) mesh_factory: Mutex<MeshFactory>,
     pub(crate) texture_factory: Mutex<TextureFactory>,
     pub(crate) material_factory: Mutex<MaterialFactory>,
+    pub(crate) meshes: Mutex<ResourceAllocator<MeshResource>>,
+    pub(crate) materials: Mutex<ResourceAllocator<MaterialResource>>,
+    pub(crate) material_instances: Mutex<ResourceAllocator<MaterialInstanceResource>>,
     pub(crate) pending_blas: Mutex<PendingBlasBuilder>,
+    staging: Mutex<Staging>,
     ctx: Context,
 }
 
@@ -125,16 +125,16 @@ impl Factory {
     pub(crate) fn process(&self, frame: Frame) {
         puffin::profile_function!();
 
-        let mut staging = self.inner.staging.lock().unwrap();
-        let mut static_meshes = self.inner.meshes.lock().unwrap();
         let mut textures = self.inner.textures.lock().unwrap();
         let mut shaders = self.inner.shaders.lock().unwrap();
-        let mut materials = self.inner.materials.lock().unwrap();
-        let mut material_instances = self.inner.material_instances.lock().unwrap();
         let mut mesh_factory = self.inner.mesh_factory.lock().unwrap();
         let mut texture_factory = self.inner.texture_factory.lock().unwrap();
         let mut material_factory = self.inner.material_factory.lock().unwrap();
+        let mut static_meshes = self.inner.meshes.lock().unwrap();
+        let mut materials = self.inner.materials.lock().unwrap();
+        let mut material_instances = self.inner.material_instances.lock().unwrap();
         let mut pending_blas = self.inner.pending_blas.lock().unwrap();
+        let mut staging = self.inner.staging.lock().unwrap();
 
         // Check for new upload requests
         staging.upload(&mut mesh_factory, &textures, &static_meshes);
@@ -336,8 +336,6 @@ impl FactoryInner {
         &self,
         create_info: MeshCreateInfo<M>,
     ) -> Result<Mesh, MeshCreateError> {
-        let mut staging = self.staging.lock().unwrap();
-        let mut static_meshes = self.meshes.lock().unwrap();
         let mut mesh_factory = self.mesh_factory.lock().unwrap();
 
         // Create the mesh instance
@@ -347,20 +345,25 @@ impl FactoryInner {
         let layout = mesh.block.layout();
         let blas_ref = mesh.blas_ref.clone();
         let bounds = mesh.bounds;
+        let mut static_meshes = self.meshes.lock().unwrap();
         let handle = static_meshes.insert(mesh);
-
-        let version = static_meshes.version_of(handle.id()).unwrap();
-        static_meshes.get_mut(handle.id()).unwrap().version = version;
 
         // Upload info
         mesh_factory.set_mesh_info(handle.id(), info);
+        std::mem::drop(mesh_factory);
+
+        let version = static_meshes.version_of(handle.id()).unwrap();
+        static_meshes.get_mut(handle.id()).unwrap().version = version;
+        std::mem::drop(static_meshes);
 
         // Submit the upload request
+        let mut staging = self.staging.lock().unwrap();
         staging.add(StagingRequest::Mesh {
             id: handle.id(),
             version,
             upload,
         });
+        std::mem::drop(staging);
 
         Ok(Mesh::new(handle, layout, blas_ref, bounds))
     }
@@ -369,23 +372,24 @@ impl FactoryInner {
         &self,
         create_info: TextureCreateInfo<T>,
     ) -> Result<Texture, TextureCreateError<T>> {
-        let mut staging = self.staging.lock().unwrap();
-        let mut textures = self.textures.lock().unwrap();
-
         // Create the texture instance
         let (texture, upload) = TextureResource::new(&self.ctx, create_info)?;
 
         // Create the resource handle
+        let mut textures = self.textures.lock().unwrap();
         let handle = textures.insert(texture);
         let version = textures.version_of(handle.id()).unwrap();
         textures.get_mut(handle.id()).unwrap().version = version;
+        std::mem::drop(textures);
 
         // Submit the upload request
+        let mut staging = self.staging.lock().unwrap();
         staging.add(StagingRequest::Texture {
             id: handle.id(),
             version,
             upload,
         });
+        std::mem::drop(staging);
 
         Ok(Texture::new(handle))
     }
@@ -407,14 +411,17 @@ impl FactoryInner {
         create_info: MaterialCreateInfo,
     ) -> Result<Material, MaterialCreateError> {
         let shaders = self.shaders.lock().unwrap();
-        let mut materials = self.materials.lock().unwrap();
         let material_factory = self.material_factory.lock().unwrap();
 
         let data_size = create_info.data_size;
         let texture_slots = create_info.texture_slots;
         let material = MaterialResource::new(&self.ctx, &material_factory, &shaders, create_info)?;
+        std::mem::drop(shaders);
+        std::mem::drop(material_factory);
 
+        let mut materials = self.materials.lock().unwrap();
         let handle = materials.insert(material);
+        std::mem::drop(materials);
 
         Ok(Material::new(handle, data_size, texture_slots))
     }
@@ -423,24 +430,26 @@ impl FactoryInner {
         &self,
         create_info: MaterialInstanceCreateInfo,
     ) -> Result<MaterialInstance, MaterialInstanceCreateError> {
-        let mut material_instances = self.material_instances.lock().unwrap();
         let mut material_factory = self.material_factory.lock().unwrap();
 
         let material = create_info.material.clone();
         let material_instance = MaterialInstanceResource::new(create_info, &mut material_factory)?;
+        std::mem::drop(material_factory);
 
         let data_ptrs = material_instance.data_ptrs.clone();
         let tex_slot = material_instance.textures_slot;
+        let mut material_instances = self.material_instances.lock().unwrap();
         let handle = material_instances.insert(material_instance);
+        std::mem::drop(material_instances);
 
         Ok(MaterialInstance::new(handle, material, data_ptrs, tex_slot))
     }
 
     fn load_texture_mip(&self, texture: &Texture, level: usize, source: impl TextureSource) {
-        let mut staging = self.staging.lock().unwrap();
-        let textures = self.textures.lock().unwrap();
+        let data = source.into_texture_data().unwrap();
 
         let id = texture.id();
+        let textures = self.textures.lock().unwrap();
         let texture_inner = textures.get(id).unwrap();
 
         // Mip level must not already be loaded
@@ -448,12 +457,12 @@ impl FactoryInner {
             return;
         }
 
-        let data = source.into_texture_data().unwrap();
-
         let (width, height, _) = texture_inner.texture.dims();
+        let version = texture_inner.version;
         assert_eq!(data.width(), width >> level);
         assert_eq!(data.height(), height >> level);
         assert_eq!(data.format(), texture_inner.texture.format());
+        std::mem::drop(textures);
 
         let staging_buffer = Buffer::new_staging(
             self.ctx.clone(),
@@ -463,9 +472,10 @@ impl FactoryInner {
         )
         .unwrap();
 
+        let mut staging = self.staging.lock().unwrap();
         staging.add(StagingRequest::TextureMip {
             id,
-            version: texture_inner.version,
+            version,
             upload: TextureMipUpload {
                 staging: staging_buffer,
                 mip_level: level as u32,
@@ -478,16 +488,17 @@ impl FactoryInner {
         material_instance: &MaterialInstance,
         data: &(impl Pod + Zeroable),
     ) {
-        let mut material_instances = self.material_instances.lock().unwrap();
         let mut material_factory = self.material_factory.lock().unwrap();
+        let mut material_instances = self.material_instances.lock().unwrap();
 
         let inner = material_instances.get_mut(material_instance.id()).unwrap();
 
-        // Mark as dirty
-        material_factory.mark_dirty(material_instance.clone());
-
         // Write in the data
         inner.data.copy_from_slice(bytemuck::bytes_of(data));
+        std::mem::drop(material_instances);
+
+        // Mark as dirty
+        material_factory.mark_dirty(material_instance.clone());
     }
 
     fn set_material_texture_slot(
@@ -504,6 +515,10 @@ impl FactoryInner {
         let inner = material_instances.get_mut(material_instance.id()).unwrap();
         inner.textures[slot.0 as usize] = texture.cloned();
 
+        // Mark as dirty
+        material_factory.mark_dirty(material_instance.clone());
+        std::mem::drop(material_factory);
+
         // If the texture is `Some`, we need to check if it's ready
         if let Some(texture) = texture {
             if let Some(texture) = textures.get(texture.id()) {
@@ -511,8 +526,5 @@ impl FactoryInner {
                 *textures_ready &= texture.loaded_mips != 0;
             }
         }
-
-        // Mark as dirty
-        material_factory.mark_dirty(material_instance.clone());
     }
 }

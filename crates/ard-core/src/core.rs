@@ -4,6 +4,7 @@ use std::{
 };
 
 use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     prelude::{App, AppBuilder, Plugin},
@@ -57,9 +58,13 @@ pub struct ArdCoreState {
 /// A tag indicating that a particular entity is not enabled. It is up to systems to query for
 /// this tag and turn off functionality when it exists. Assume that all entities without this
 /// tag are enabled.
-#[derive(Debug, Tag, Copy, Clone)]
+#[derive(Debug, Tag, Copy, Clone, Serialize, Deserialize)]
 #[storage(CommonStorage)]
 pub struct Disabled;
+
+/// A name for an entity.
+#[derive(Debug, Component, Clone, Serialize, Deserialize)]
+pub struct Name(pub String);
 
 /// The base engine plugin.
 ///

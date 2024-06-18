@@ -1,4 +1,5 @@
 use ard_engine::{
+    core::core::Name,
     game::components::{
         destroy::Destroy,
         transform::{Children, Parent, Position, Rotation, Scale, SetParent},
@@ -25,6 +26,7 @@ pub fn saver<F: SaveFormat + 'static>() -> Saver<F> {
         .include_component::<RenderFlags>()
         .include_component::<MeshHandle>()
         .include_component::<MaterialHandle>()
+        .include_component::<Name>()
         .ignore::<Mesh>()
         .ignore::<MaterialInstance>()
         .ignore::<Destroy>()
@@ -44,4 +46,5 @@ pub fn loader<F: SaveFormat + 'static>() -> Loader<F> {
         .load_component::<RenderFlags>()
         .load_component::<MeshHandle>()
         .load_component::<MaterialHandle>()
+        .load_component::<Name>()
 }

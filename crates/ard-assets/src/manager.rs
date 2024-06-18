@@ -120,6 +120,10 @@ impl Assets {
             // TODO: Make configurable
             .worker_threads(8)
             .thread_name("asset-loading-thread")
+            .on_thread_start(|| {
+                // use thread_priority::*;
+                // set_current_thread_priority(ThreadPriority::Min).unwrap();
+            })
             .build()
             .unwrap();
 
@@ -391,12 +395,18 @@ impl Assets {
 
     /// Load an asset asyncronously. Returns a handle to the asset. You should use this when
     /// loading dependent assets.
-    pub async fn load_async<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
+    ///
+    /// Returns `None` if the asset does not exist.
+    pub async fn load_async<A: Asset + 'static>(&self, name: &AssetName) -> Option<Handle<A>> {
+        if !self.exists(name) {
+            return None;
+        }
+
         // Get a handle for the asset and return if it already existed
         let (handle, needs_init) = self.get_and_mark_for_load(name);
 
         if !needs_init {
-            return handle;
+            return Some(handle);
         }
 
         // Load the asset
@@ -417,19 +427,25 @@ impl Assets {
             );
         }
 
-        handle
+        Some(handle)
     }
 
     /// Load an asset. Returns a handle to the asset.
     ///
     /// If the asset has not yet been loaded, a request will be made to load the asset.
+    ///
+    /// Returns `None` if the asset doesn't exist.
     #[inline]
-    pub fn load<A: Asset + 'static>(&self, name: &AssetName) -> Handle<A> {
+    pub fn load<A: Asset + 'static>(&self, name: &AssetName) -> Option<Handle<A>> {
+        if !self.exists(name) {
+            return None;
+        }
+
         // Get a handle for the asset and return if it already existed
         let (handle, needs_init) = self.get_and_mark_for_load(name);
 
         if !needs_init {
-            return handle;
+            return Some(handle);
         }
 
         // Spawn a task to load the asset
@@ -451,7 +467,7 @@ impl Assets {
             }),
         );
 
-        handle
+        Some(handle)
     }
 
     /// Submits a request to reload an asset.
