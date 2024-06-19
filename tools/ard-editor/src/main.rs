@@ -6,6 +6,7 @@ pub mod inspect;
 pub mod scene_graph;
 pub mod selected;
 pub mod ser;
+pub mod shlooper;
 pub mod tasks;
 
 use ard_engine::assets::prelude::*;
@@ -21,6 +22,7 @@ use command::{EditorCommandSystem, EditorCommands};
 use gui::EditorView;
 use scene_graph::{DiscoverSceneGraphRoots, SceneGraph};
 use selected::{SelectEntitySystem, Selected};
+use shlooper::Shlooper;
 use tasks::TaskRunner;
 
 fn main() {
@@ -55,6 +57,7 @@ fn main() {
         .add_system(SelectEntitySystem)
         .add_system(DiscoverSceneGraphRoots)
         .add_system(EditorCommandSystem::default())
+        .add_system(Shlooper::default())
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())
