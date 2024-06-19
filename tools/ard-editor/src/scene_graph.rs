@@ -2,7 +2,7 @@ use ard_engine::{
     core::core::Tick,
     ecs::prelude::*,
     game::{
-        components::transform::{Children, Parent},
+        components::transform::{Children, Parent, SetParent},
         systems::transform::TransformUpdate,
     },
 };
@@ -20,18 +20,51 @@ impl DiscoverSceneGraphRoots {
         &mut self,
         _: Tick,
         _: Commands,
-        queries: Queries<(Read<Children>,)>,
+        queries: Queries<(Read<Children>, Read<SetParent>)>,
         res: Res<(Write<SceneGraph>,)>,
     ) {
         let mut scene_graph = res.get_mut::<SceneGraph>().unwrap();
-        scene_graph.roots.clear();
+
+        // Remove entities that are destroyed
+        scene_graph
+            .roots_mut()
+            .retain(|root| queries.is_alive(*root));
+
+        // Add entities if they are new
         queries
             .filter()
             .without::<Parent>()
             .make::<(Entity, (Read<Children>,))>()
             .into_iter()
             .for_each(|(e, _)| {
-                scene_graph.roots.push(e);
+                if !scene_graph.roots.contains(&e) {
+                    scene_graph.roots.push(e);
+                }
+            });
+
+        // Insert entities into the correct spot if their parent was updated
+        queries
+            .make::<(Entity, (Read<SetParent>,))>()
+            .into_iter()
+            .for_each(|(e, (new_parent,))| {
+                let mut index = None;
+                for (i, entity) in scene_graph.roots.iter().enumerate() {
+                    if *entity == e {
+                        index = Some(i);
+                        break;
+                    }
+                }
+
+                if let Some(index) = index {
+                    scene_graph.roots.remove(index);
+                }
+
+                if new_parent.new_parent.is_some() {
+                    return;
+                }
+
+                let new_index = new_parent.index.min(scene_graph.roots.len());
+                scene_graph.roots.insert(new_index, e);
             });
     }
 }

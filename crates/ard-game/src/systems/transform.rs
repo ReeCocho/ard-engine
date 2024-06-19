@@ -57,21 +57,22 @@ impl TransformUpdate {
                         children.0.retain(|e| *e != entity);
                     }
 
-                    if let Some(new) = new.0 {
+                    if let Some(new) = new.new_parent {
                         parent.0 = new;
                     }
                 }
                 None => {
-                    if let Some(new) = new.0 {
+                    if let Some(new) = new.new_parent {
                         commands.entities.add_component(entity, Parent(new));
                     }
                 }
             }
 
             // Put self into new parents child list
-            if let Some(parent) = new.0 {
+            if let Some(parent) = new.new_parent {
                 if let Some(mut children) = queries.get::<Write<Children>>(parent) {
-                    children.0.push(entity);
+                    let index = new.index.min(children.0.len());
+                    children.0.insert(index, entity);
                 }
             }
 
@@ -126,7 +127,7 @@ impl TransformUpdate {
         self.hierarchy.reserve(possible_roots.len());
 
         for (entity, (set_parent, pos, rot, scl, model)) in possible_roots {
-            if set_parent.0.is_some() {
+            if set_parent.new_parent.is_some() {
                 continue;
             }
 

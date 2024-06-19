@@ -29,9 +29,7 @@ impl InspectorView {
         let mut selected = ctx.res.get_mut::<Selected>().unwrap();
 
         match *selected {
-            Selected::None => {
-                ctx.ui.label("Nothing");
-            }
+            Selected::None => {}
             Selected::Entity(e) => {
                 if ctx.queries.get::<Read<Model>>(e).is_none() {
                     *selected = Selected::None;

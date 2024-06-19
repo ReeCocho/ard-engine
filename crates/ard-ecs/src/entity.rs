@@ -1,5 +1,5 @@
 use std::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     num::{NonZeroU32, NonZeroU8},
 };
 
@@ -7,7 +7,7 @@ use bytemuck::{Pod, Zeroable};
 use thiserror::Error;
 
 /// An entity is an identifier that is associated with a set of components in a world.
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 #[repr(C)]
 pub struct Entity(NonZeroU32);
 
@@ -59,13 +59,6 @@ impl PartialEq for Entity {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
-    }
-}
-
-impl Hash for Entity {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        u32::from(*self).hash(state);
     }
 }
 

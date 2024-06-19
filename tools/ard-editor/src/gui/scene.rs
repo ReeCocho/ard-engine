@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ard_engine::{
     assets::manager::Assets,
     ecs::prelude::*,
@@ -56,20 +58,8 @@ impl SceneView {
         let response = response.inner;
 
         // See if anything was dragged onto the scene view that an be instantiated.
-        if let Some(blarg) = dnd {
-            let asset = match blarg.as_ref() {
-                DragDropPayload::Asset(asset) => asset,
-            };
-
-            let assets = ctx.res.get::<Assets>().unwrap();
-            let valid = match &asset.data {
-                MetaData::Model => true,
-            };
-
-            if valid {
-                let task_queue = ctx.res.get_mut::<TaskQueue>().unwrap();
-                task_queue.add(InstantiateTask::new(asset.clone(), assets.clone()));
-            }
+        if let Some(payload) = dnd {
+            Self::drag_drop(payload, ctx.res);
         }
 
         // Entity selection
@@ -181,6 +171,23 @@ impl SceneView {
             let forward = rot.col(2);
 
             position.0 += Vec3A::from(forward.xyz()) * (yscroll as f32);
+        }
+    }
+
+    fn drag_drop(payload: Arc<DragDropPayload>, res: &Res<Everything>) {
+        let asset = match payload.as_ref() {
+            DragDropPayload::Asset(asset) => asset,
+            _ => return,
+        };
+
+        let assets = res.get::<Assets>().unwrap();
+        let valid = match &asset.data {
+            MetaData::Model => true,
+        };
+
+        if valid {
+            let task_queue = res.get_mut::<TaskQueue>().unwrap();
+            task_queue.add(InstantiateTask::new(asset.clone(), assets.clone()));
         }
     }
 }

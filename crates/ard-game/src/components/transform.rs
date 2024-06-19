@@ -23,7 +23,11 @@ pub struct Parent(pub Entity);
 
 /// Attach to an entity to update it's parent.
 #[derive(Debug, Component, Copy, Clone)]
-pub struct SetParent(pub Option<Entity>);
+pub struct SetParent {
+    pub new_parent: Option<Entity>,
+    /// Index in the parent's child list to insert the entity at. Saturates when OOB.
+    pub index: usize,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SavedParent(MappedEntity);
