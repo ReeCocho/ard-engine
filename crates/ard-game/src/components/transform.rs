@@ -35,6 +35,19 @@ pub struct SavedParent(MappedEntity);
 #[derive(Serialize, Deserialize)]
 pub struct SavedChildren(SmallVec<[MappedEntity; INLINE_CHILDREN]>);
 
+impl Children {
+    pub fn index_of(&self, target: Entity) -> Option<usize> {
+        let mut index = None;
+        for (i, entity) in self.0.iter().enumerate() {
+            if *entity == target {
+                index = Some(i);
+                break;
+            }
+        }
+        index
+    }
+}
+
 impl SaveLoad for Parent {
     type Intermediate = SavedParent;
 

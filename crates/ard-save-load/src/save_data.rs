@@ -216,6 +216,28 @@ impl<F: SaveFormat> SavingData<F> {
     }
 }
 
+impl SaveData {
+    pub fn contains_component<C: Component>(&self) -> bool {
+        for set in self.archetypes.iter() {
+            if set.contains_component::<C>() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl SavedSet {
+    pub fn contains_component<C: Component>(&self) -> bool {
+        for buffer in self.buffers.iter() {
+            if buffer.type_name == C::NAME {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct SaveData {
     pub entity_count: usize,

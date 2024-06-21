@@ -408,6 +408,7 @@ impl<'a> RenderableSetUpdate<'a> {
         }
 
         let mut cur_key = instances[0].key;
+
         let mut cur_mesh = meshes.get(cur_key.separate().mesh_id).unwrap();
         groups.push(DrawGroup {
             key: cur_key,

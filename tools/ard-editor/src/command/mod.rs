@@ -1,4 +1,5 @@
 pub mod entity;
+pub mod instantiate;
 
 use std::collections::VecDeque;
 
@@ -21,6 +22,10 @@ pub struct EditorCommandSystem {
 
 pub trait EditorCommand: Send + Sync + 'static {
     fn apply(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>);
+
+    fn redo(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>) {
+        self.apply(commands, queries, res);
+    }
 
     fn undo(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>);
 
@@ -86,7 +91,7 @@ impl EditorCommandSystem {
 
         if redo {
             if let Some(mut command) = self.undone_stack.pop() {
-                command.apply(&commands, &queries, &res);
+                command.redo(&commands, &queries, &res);
                 self.stack.push(command);
             }
         }

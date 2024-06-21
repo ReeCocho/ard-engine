@@ -1,6 +1,7 @@
 use std::ops::DerefMut;
 
 use ard_engine::{
+    core::stat::Static,
     ecs::prelude::*,
     game::components::transform::{Parent, Position, Rotation, Scale},
     math::*,
@@ -42,6 +43,10 @@ impl TransformGizmo {
         if ctx.queries.get::<Read<Model>>(selected_entity).is_none() {
             self.in_use = false;
             self.selected = None;
+            return;
+        }
+
+        if ctx.queries.get::<Read<Static>>(selected_entity).is_some() {
             return;
         }
 

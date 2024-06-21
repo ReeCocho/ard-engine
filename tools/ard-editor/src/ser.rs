@@ -1,7 +1,8 @@
 use ard_engine::{
-    core::core::Name,
+    core::{core::Name, stat::Static},
     game::components::{
         destroy::Destroy,
+        stat::MarkStatic,
         transform::{Children, Parent, Position, Rotation, Scale, SetParent},
     },
     render::{
@@ -27,6 +28,8 @@ pub fn saver<F: SaveFormat + 'static>() -> Saver<F> {
         .include_component::<MeshHandle>()
         .include_component::<MaterialHandle>()
         .include_component::<Name>()
+        .include_component::<MarkStatic>()
+        .ignore::<Static>()
         .ignore::<Mesh>()
         .ignore::<MaterialInstance>()
         .ignore::<Destroy>()
@@ -47,4 +50,5 @@ pub fn loader<F: SaveFormat + 'static>() -> Loader<F> {
         .load_component::<MeshHandle>()
         .load_component::<MaterialHandle>()
         .load_component::<Name>()
+        .load_component::<MarkStatic>()
 }

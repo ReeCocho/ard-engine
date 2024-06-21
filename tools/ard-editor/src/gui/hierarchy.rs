@@ -2,17 +2,13 @@ use std::{any::Any, sync::Arc};
 
 use crate::{
     command::{
-        entity::{CreateEmptyEntity, DestroyEntity},
+        entity::{CreateEmptyEntity, DestroyEntity, SetParentCommand},
         EditorCommands,
     },
     scene_graph::SceneGraph,
     selected::Selected,
 };
-use ard_engine::{
-    core::core::Name,
-    ecs::prelude::*,
-    game::components::transform::{Children, Parent, SetParent},
-};
+use ard_engine::{core::core::Name, ecs::prelude::*, game::components::transform::Children};
 
 use super::{drag_drop::DragDropPayload, EditorViewContext};
 
@@ -117,17 +113,16 @@ impl HierarchyView {
 
         if let Some(payload) = payload {
             if let DragDropPayload::Entity(entity) = *payload {
-                if Self::will_create_loop(ctx.queries, parent, entity) {
-                    return;
-                }
-
-                ctx.commands.entities.add_component(
-                    entity,
-                    SetParent {
-                        new_parent: parent,
+                ctx.res
+                    .get_mut::<EditorCommands>()
+                    .unwrap()
+                    .submit(SetParentCommand::new(
+                        entity,
+                        parent,
                         index,
-                    },
-                );
+                        ctx.queries,
+                        ctx.res,
+                    ));
             }
         }
     }
@@ -228,20 +223,6 @@ impl HierarchyView {
         });
 
         Some(response)
-    }
-
-    fn will_create_loop(
-        queries: &Queries<Everything>,
-        mut new_parent: Option<Entity>,
-        entity: Entity,
-    ) -> bool {
-        while let Some(parent) = new_parent {
-            if parent == entity {
-                return true;
-            }
-            new_parent = queries.get::<Read<Parent>>(parent).map(|p| p.0);
-        }
-        false
     }
 
     // NOTE: We don't use the built in function since it applies styling we don't want.

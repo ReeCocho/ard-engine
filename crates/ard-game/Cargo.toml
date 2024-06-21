@@ -13,6 +13,7 @@ ard-assets = { path = "../ard-assets" }
 ard-render = { path = "../ard-render" }
 ard-save-load = { path = "../ard-save-load" }
 ard-render-objects = { path = "../ard-render-objects" }
+ard-render-assets = { path = "../ard-render-assets" }
 crossbeam-channel.workspace = true
 smallvec.workspace = true
 serde.workspace = true

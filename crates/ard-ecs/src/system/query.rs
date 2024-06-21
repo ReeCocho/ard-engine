@@ -153,6 +153,10 @@ impl<S: SystemData> Queries<S> {
 
     #[inline]
     pub fn component_types(&self, entity: Entity) -> TypeKey {
+        if !self.is_alive(entity) {
+            return TypeKey::default();
+        }
+
         unsafe {
             let entities = self.entities.as_ref();
             let archetypes = self.archetypes.as_ref();
@@ -165,6 +169,10 @@ impl<S: SystemData> Queries<S> {
 
     #[inline]
     pub fn tag_types(&self, entity: Entity) -> TypeKey {
+        if !self.is_alive(entity) {
+            return TypeKey::default();
+        }
+
         unsafe {
             let entities = self.entities.as_ref();
             let tags = self.tags.as_ref();

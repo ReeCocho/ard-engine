@@ -1,9 +1,12 @@
+pub mod stat;
 pub mod transform;
 
 use ard_engine::ecs::prelude::*;
+use stat::StaticInspector;
 
 #[derive(Default)]
 pub struct Inspectors {
+    static_inspector: StaticInspector,
     inspectors: Vec<Box<dyn Inspector>>,
 }
 
@@ -36,6 +39,14 @@ impl Inspectors {
         queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) {
+        self.static_inspector.show(InspectorContext {
+            ui,
+            entity,
+            commands,
+            queries,
+            res,
+        });
+
         self.inspectors.iter_mut().for_each(|inspector| {
             if !inspector.should_inspect(InspectorContext {
                 ui,
@@ -47,14 +58,14 @@ impl Inspectors {
                 return;
             }
 
-            ui.heading(inspector.title());
-            ui.separator();
-            inspector.show(InspectorContext {
-                ui,
-                entity,
-                commands,
-                queries,
-                res,
+            ui.collapsing(inspector.title(), |ui| {
+                inspector.show(InspectorContext {
+                    ui,
+                    entity,
+                    commands,
+                    queries,
+                    res,
+                });
             });
         });
     }

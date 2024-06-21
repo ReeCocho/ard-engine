@@ -75,6 +75,17 @@ impl SceneGraph {
         &self.roots
     }
 
+    pub fn find_in_roots(&self, target: Entity) -> Option<usize> {
+        let mut index = None;
+        for (i, entity) in self.roots.iter().enumerate() {
+            if *entity == target {
+                index = Some(i);
+                break;
+            }
+        }
+        index
+    }
+
     #[inline]
     pub fn all_entities(&self, queries: &Queries<Everything>) -> Vec<Entity> {
         Self::collect_children(queries, self.roots.clone())
