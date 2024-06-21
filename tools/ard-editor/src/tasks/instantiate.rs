@@ -45,7 +45,7 @@ impl EditorTask for InstantiateTask {
                     None => {
                         return Err(anyhow::Error::msg(format!(
                             "could not load {:?}",
-                            self.asset.raw
+                            self.asset.baked
                         )))
                     }
                 };

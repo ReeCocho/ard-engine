@@ -5,6 +5,7 @@ pub mod inspector;
 pub mod menu_bar;
 pub mod scene;
 pub mod transform;
+pub mod util;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 use hierarchy::HierarchyView;
@@ -52,24 +53,24 @@ impl Default for EditorView {
     fn default() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
-        let horizontal = vec![
-            tiles.insert_pane(Pane::Hierarchy),
-            tiles.insert_pane(Pane::Scene),
-            tiles.insert_pane(Pane::Inspector),
-        ];
-
         let vertical = vec![
-            tiles.insert_horizontal_tile(horizontal),
+            tiles.insert_pane(Pane::Scene),
             tiles.insert_pane(Pane::Assets),
         ];
 
-        let root = tiles.insert_vertical_tile(vertical);
+        let horizontal = vec![
+            tiles.insert_pane(Pane::Hierarchy),
+            tiles.insert_vertical_tile(vertical),
+            tiles.insert_pane(Pane::Inspector),
+        ];
+
+        let root = tiles.insert_horizontal_tile(horizontal);
 
         EditorView {
             tree: egui_tiles::Tree::new("editor_view_tree", root, tiles),
             menu_bar: MenuBar,
             scene: SceneView::default(),
-            assets: AssetsView {},
+            assets: AssetsView::default(),
             hierarchy: HierarchyView::default(),
             inspector: InspectorView::default(),
         }

@@ -1,3 +1,4 @@
+pub mod asset;
 pub mod instantiate;
 pub mod model;
 

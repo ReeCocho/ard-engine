@@ -10,14 +10,14 @@ use std::path::PathBuf;
 use crate::{
     assets::{
         meta::{MetaData, MetaFile},
-        EditorAssets,
+        EditorAssets, ASSETS_FOLDER,
     },
     tasks::{EditorTask, TaskConfirmation},
 };
 
 pub struct ModelImportTask {
     path: PathBuf,
-    meta_file: Option<MetaFile>,
+    meta_file_path: PathBuf,
     new_assets: Vec<AssetNameBuf>,
 }
 
@@ -25,7 +25,7 @@ impl ModelImportTask {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            meta_file: None,
+            meta_file_path: PathBuf::default(),
             new_assets: Vec::default(),
         }
     }
@@ -123,16 +123,16 @@ impl EditorTask for ModelImportTask {
 
         // Create the meta file for the asset
         let meta = MetaFile {
-            raw: out_path,
             baked: model_file.into(),
             data: MetaData::Model,
         };
 
-        let file = std::fs::File::create(path!("./assets" / meta_path))?;
+        let meta_file_path = path!("./assets" / meta_path);
+        let file = std::fs::File::create(&meta_file_path)?;
         let writer = std::io::BufWriter::new(file);
         ron::ser::to_writer(writer, &meta)?;
 
-        self.meta_file = Some(meta);
+        self.meta_file_path = meta_file_path;
 
         Ok(())
     }
@@ -150,8 +150,11 @@ impl EditorTask for ModelImportTask {
             assets.scan_for(&new_asset);
         });
 
-        let meta_file = self.meta_file.take().unwrap();
-        editor_assets.add_meta_file(meta_file);
+        editor_assets.add_meta_file(
+            self.meta_file_path
+                .strip_prefix(path!(ASSETS_FOLDER / "main"))
+                .unwrap(),
+        );
 
         println!("Task complete...");
 

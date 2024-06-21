@@ -52,7 +52,7 @@ fn main() {
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)
-        .add_resource(EditorAssets::new("./assets/").unwrap())
+        .add_resource(EditorAssets::new().unwrap())
         .add_system(AssetImporter::default())
         .add_system(SelectEntitySystem)
         .add_system(DiscoverSceneGraphRoots)

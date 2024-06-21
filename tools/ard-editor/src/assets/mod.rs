@@ -2,36 +2,38 @@ pub mod importer;
 pub mod meta;
 
 use anyhow::Result;
+use path_macro::path;
 use rustc_hash::FxHashMap;
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::{ffi::OsString, path::PathBuf};
 
 use ard_engine::ecs::prelude::*;
 
 use crate::assets::meta::MetaFile;
+
+pub const ASSETS_FOLDER: &'static str = "./assets/";
 
 #[derive(Resource)]
 pub struct EditorAssets {
     root: Folder,
 }
 
-#[derive(Default)]
 pub struct Folder {
+    path: PathBuf,
     sub_folders: FxHashMap<OsString, Folder>,
-    assets: FxHashMap<OsString, MetaFile>,
+    assets: FxHashMap<OsString, FolderAsset>,
+}
+
+#[derive(Clone)]
+pub struct FolderAsset {
+    pub meta: MetaFile,
+    pub meta_path: PathBuf,
+    pub raw_path: PathBuf,
 }
 
 impl EditorAssets {
-    pub fn new(packages_folder: impl Into<PathBuf>) -> Result<Self> {
-        let packages_folder: PathBuf = packages_folder.into();
-
-        let mut root = Folder::default();
-        for entry in packages_folder.read_dir()? {
-            let entry = entry?;
-            root.inspect(entry.path())?;
-        }
+    pub fn new() -> Result<Self> {
+        let mut root = Folder::new("./");
+        root.inspect()?;
 
         Ok(Self { root })
     }
@@ -41,43 +43,53 @@ impl EditorAssets {
         &self.root
     }
 
-    pub fn add_meta_file(&mut self, meta_file: MetaFile) {
-        let mut cur_folder = &mut self.root;
-        let path = meta_file.raw.clone();
-        let mut components = path.components().skip(2).peekable();
-        while let Some(component) = components.next() {
-            let component = match component {
-                std::path::Component::Normal(component) => component,
-                _ => continue,
-            };
-
-            if components.peek().is_none() {
-                cur_folder.assets.insert(component.into(), meta_file);
-                break;
-            } else {
-                cur_folder = cur_folder.sub_folders.entry(component.into()).or_default();
-            }
+    pub fn find_folder_mut(&mut self, path: impl Into<PathBuf>) -> Option<&mut Folder> {
+        let path: PathBuf = path.into();
+        let mut folder = &mut self.root;
+        for component in path.iter() {
+            folder = folder.sub_folders.get_mut(component)?;
         }
+        Some(folder)
+    }
+
+    pub fn add_meta_file(&mut self, path: impl Into<PathBuf>) {
+        let path: PathBuf = path.into();
+        let parent = path.parent().map(|p| p.to_owned()).unwrap_or_default();
+        self.find_folder_mut(parent).map(|f| f.inspect());
     }
 }
 
 impl Folder {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            sub_folders: FxHashMap::default(),
+            assets: FxHashMap::default(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn abs_path(&self) -> PathBuf {
+        path!(ASSETS_FOLDER / "main" / self.path)
+    }
+
     #[inline(always)]
     pub fn sub_folders(&self) -> &FxHashMap<OsString, Folder> {
         &self.sub_folders
     }
 
     #[inline(always)]
-    pub fn assets(&self) -> &FxHashMap<OsString, MetaFile> {
+    pub fn assets(&self) -> &FxHashMap<OsString, FolderAsset> {
         &self.assets
     }
 
-    pub fn inspect(&mut self, folder: impl Into<PathBuf>) -> Result<()> {
-        let root: PathBuf = folder.into();
-        self.inspect_recurse(&root, root.clone())
-    }
+    pub fn inspect(&mut self) -> Result<()> {
+        let root = path!(ASSETS_FOLDER / "main");
+        let folder = path!(root / self.path);
 
-    fn inspect_recurse(&mut self, root: &Path, folder: PathBuf) -> Result<()> {
+        self.sub_folders.clear();
+        self.assets.clear();
+
         for entry in folder.read_dir()? {
             let entry = entry?;
             let path = entry.path();
@@ -90,17 +102,30 @@ impl Folder {
             }
             // Recurse if this is another folder
             else if file_ty.is_dir() {
-                let dir = self.sub_folders.entry(name).or_default();
-                dir.inspect_recurse(root, path.clone())?;
+                let path = path.strip_prefix(&root).unwrap();
+                self.sub_folders
+                    .entry(name)
+                    .or_insert_with(|| Folder::new(path));
             }
             // Read in the meta file
             else if file_ty.is_file()
                 && path.extension() == Some(std::ffi::OsStr::new(MetaFile::EXTENSION))
             {
-                let f = std::fs::File::open(path)?;
+                let f = std::fs::File::open(&path)?;
                 let reader = std::io::BufReader::new(f);
                 let meta_data = ron::de::from_reader::<_, MetaFile>(reader)?;
-                self.assets.insert(name, meta_data);
+                self.assets.insert(
+                    name,
+                    FolderAsset {
+                        meta: meta_data,
+                        raw_path: {
+                            let mut path = path.clone();
+                            path.set_extension("");
+                            path
+                        },
+                        meta_path: path,
+                    },
+                );
             }
         }
 
