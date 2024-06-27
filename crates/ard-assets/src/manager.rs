@@ -66,6 +66,8 @@ pub struct AssetData {
     pub(crate) asset: ShardedLock<Option<Box<dyn Any>>>,
     /// Asset name.
     pub(crate) name: AssetNameBuf,
+    /// Indicates more than one package has an asset with the same name.
+    pub(crate) has_shadow: bool,
     /// Index of the package the asset was loaded from.
     pub(crate) package: PackageId,
     /// Flag indicating that this asset is being loaded.
@@ -150,10 +152,11 @@ impl Assets {
         });
 
         // Find all assets in every package, and shadow old assets.
-        let mut available = HashMap::<AssetNameBuf, usize>::default();
+        let mut available = HashMap::<AssetNameBuf, (usize, bool)>::default();
         for (i, package) in packages.iter().enumerate() {
             for asset_name in package.manifest().assets.keys() {
-                available.insert(asset_name.clone(), i);
+                let has_shadow = available.contains_key(asset_name);
+                available.insert(asset_name.clone(), (i, has_shadow));
             }
         }
 
@@ -161,7 +164,7 @@ impl Assets {
         let name_to_id = DashMap::default();
         let assets = DashMap::default();
 
-        for (asset, package) in available {
+        for (asset, (package, has_shadow)) in available {
             let id = assets.len() as u32;
             name_to_id.insert(asset.clone(), id);
             assets.insert(
@@ -169,6 +172,7 @@ impl Assets {
                 AssetData {
                     asset: ShardedLock::new(None),
                     name: asset,
+                    has_shadow,
                     package: PackageId::from(package),
                     loading: AtomicBool::new(false),
                     outstanding_handles: AtomicU32::new(0),
@@ -189,6 +193,11 @@ impl Assets {
             default_assets: Default::default(),
             loading: Default::default(),
         }))
+    }
+
+    #[inline(always)]
+    pub fn packages(&self) -> &[Package] {
+        &self.0.packages
     }
 
     /// Register a new asset type to load.
@@ -246,6 +255,14 @@ impl Assets {
         }
 
         None
+    }
+
+    #[inline]
+    pub fn get_package_path(&self, id: PackageId) -> Option<&Path> {
+        self.0
+            .packages
+            .get(usize::from(id))
+            .map(|package| package.path())
     }
 
     /// Get an asset via it's handle.
@@ -507,11 +524,33 @@ impl Assets {
     /// Checks if an asset has been loaded or not.
     #[inline]
     pub fn loaded(&self, name: &AssetName) -> bool {
-        // Asset must be from the available list
-        let id = *self.0.name_to_id.get(name).expect("asset does not exist");
+        let id = match self.0.name_to_id.get(name) {
+            Some(id) => *id,
+            None => return false,
+        };
         let asset_data = self.0.assets.get(&id).unwrap();
         let loaded = asset_data.asset.read().unwrap().is_some();
         loaded
+    }
+
+    /// Checks if an asset has a shadow. I.e., there are two packages that have an asset with the
+    /// given name.
+    #[inline]
+    pub fn has_shadow(&self, name: &AssetName) -> bool {
+        let id = match self.0.name_to_id.get(name) {
+            Some(id) => *id,
+            None => return false,
+        };
+        let asset_data = self.0.assets.get(&id).unwrap();
+        asset_data.has_shadow
+    }
+
+    #[inline]
+    pub fn get_asset_package_id(&self, name: &AssetName) -> Option<PackageId> {
+        self.0.name_to_id.get(name).map(|id| {
+            let asset_data = self.0.assets.get(&id).unwrap();
+            asset_data.package
+        })
     }
 
     /// Scans for a new asset by name. Returns `true` if the asset was found.
@@ -522,13 +561,21 @@ impl Assets {
             return true;
         }
 
-        // Scan packages in reverse order. The first package to have the asset is the one we care
-        // about.
+        let mut package_id = None;
+        let mut has_shadow = false;
         for (i, package) in self.0.packages.iter().enumerate().rev() {
             if package.register_asset(name) {
-                // Package contained the asset. Add it to our list
-                let id = self.0.id_counter.fetch_add(1, Ordering::Relaxed);
+                if package_id.is_some() {
+                    has_shadow = true;
+                } else {
+                    package_id = Some(PackageId::from(i));
+                }
+            }
+        }
 
+        match package_id {
+            Some(package) => {
+                let id = self.0.id_counter.fetch_add(1, Ordering::Relaxed);
                 self.0.name_to_id.insert(AssetNameBuf::from(name), id);
 
                 self.0.assets.insert(
@@ -536,17 +583,16 @@ impl Assets {
                     AssetData {
                         asset: ShardedLock::new(None),
                         name: AssetNameBuf::from(name),
-                        package: PackageId::from(i),
+                        has_shadow,
+                        package,
                         loading: AtomicBool::new(false),
                         outstanding_handles: AtomicU32::new(0),
                     },
                 );
-
-                return true;
+                true
             }
+            None => false,
         }
-
-        false
     }
 
     /// Checks if a particular asset exists.

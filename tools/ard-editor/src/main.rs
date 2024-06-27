@@ -16,7 +16,7 @@ use ard_engine::render::prelude::PresentMode;
 use ard_engine::render::{CanvasSize, Gui, RenderAssetsPlugin, RenderPlugin, RendererSettings};
 use ard_engine::window::prelude::*;
 use assets::importer::AssetImporter;
-use assets::EditorAssets;
+use assets::{AssetManifestLoader, EditorAssets, EditorAssetsManifest};
 use camera::SceneViewCamera;
 use command::{EditorCommandSystem, EditorCommands};
 use gui::EditorView;
@@ -52,7 +52,6 @@ fn main() {
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)
-        .add_resource(EditorAssets::new().unwrap())
         .add_system(AssetImporter::default())
         .add_system(SelectEntitySystem)
         .add_system(DiscoverSceneGraphRoots)
@@ -66,6 +65,10 @@ fn main() {
 }
 
 fn setup(app: &mut App) {
+    let assets = app.resources.get::<Assets>().unwrap().clone();
+    assets.register::<EditorAssetsManifest>(AssetManifestLoader);
+    app.resources.add(EditorAssets::new(&assets).unwrap());
+
     let (task_runner, task_gui, task_queue) = TaskRunner::new();
 
     app.dispatcher.add_system(task_runner);

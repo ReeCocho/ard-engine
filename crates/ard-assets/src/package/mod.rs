@@ -73,6 +73,12 @@ impl From<std::io::Error> for PackageReadError {
     }
 }
 
+impl Default for PackageId {
+    fn default() -> Self {
+        Self(usize::MAX)
+    }
+}
+
 impl From<usize> for PackageId {
     #[inline(always)]
     fn from(id: usize) -> Self {

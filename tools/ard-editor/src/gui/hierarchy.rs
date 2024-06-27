@@ -1,5 +1,3 @@
-use std::{any::Any, sync::Arc};
-
 use crate::{
     command::{
         entity::{CreateEmptyEntity, DestroyEntity, SetParentCommand},
@@ -10,7 +8,7 @@ use crate::{
 };
 use ard_engine::{core::core::Name, ecs::prelude::*, game::components::transform::Children};
 
-use super::{drag_drop::DragDropPayload, EditorViewContext};
+use super::{drag_drop::DragDropPayload, util, EditorViewContext};
 
 #[derive(Default)]
 pub struct HierarchyView {
@@ -64,7 +62,7 @@ impl HierarchyView {
     ) {
         let frame = egui::Frame::none();
         let mut index = 0;
-        let (_, payload) = Self::drop_zone::<DragDropPayload, _>(ctx.ui, frame, |ui| {
+        let (_, payload) = util::hidden_drop_zone::<DragDropPayload, _>(ctx.ui, frame, |ui| {
             entities.iter().enumerate().for_each(|(i, entity)| {
                 let ctx = EditorViewContext {
                     tick: ctx.tick,
@@ -223,29 +221,6 @@ impl HierarchyView {
         });
 
         Some(response)
-    }
-
-    // NOTE: We don't use the built in function since it applies styling we don't want.
-    fn drop_zone<Payload, R>(
-        ui: &mut egui::Ui,
-        frame: egui::Frame,
-        add_contents: impl FnOnce(&mut egui::Ui) -> R,
-    ) -> (egui::InnerResponse<R>, Option<Arc<Payload>>)
-    where
-        Payload: Any + Send + Sync,
-    {
-        let mut frame = frame.begin(ui);
-        let inner = add_contents(&mut frame.content_ui);
-        let response = frame.allocate_space(ui);
-
-        // frame.frame.fill = fill;
-        // frame.frame.stroke = stroke;
-
-        frame.paint(ui);
-
-        let payload = response.dnd_release_payload::<Payload>();
-
-        (egui::InnerResponse { inner, response }, payload)
     }
 }
 

@@ -5,7 +5,7 @@ use ard_engine::{
     save_load::{format::Ron, save_data::SaveData},
 };
 
-use crate::scene_graph::SceneGraph;
+use crate::{assets::EditorAssets, scene_graph::SceneGraph};
 
 pub struct MenuBar;
 
@@ -48,6 +48,16 @@ impl MenuBar {
                 }
 
                 if ui.button("Make Lof").clicked() {
+                    let editor_assets = res.get::<EditorAssets>().unwrap();
+                    let manifest = editor_assets.build_manifest();
+                    let f = std::fs::File::options()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open("./packages/main/main.manifest")
+                        .unwrap();
+                    bincode::serialize_into(f, &manifest).unwrap();
+
                     ard_engine::assets::package::lof::create_lof_from_folder(
                         "./test.lof",
                         "./packages/main/",

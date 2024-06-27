@@ -1,34 +1,36 @@
 use std::{ffi::OsStr, path::PathBuf};
 
+use ard_engine::{
+    assets::package::PackageId,
+    ecs::{resource::res::Res, system::data::Everything},
+};
+use camino::Utf8PathBuf;
+use path_macro::path;
+
 use crate::{
-    assets::{meta::MetaFile, EditorAssets},
-    tasks::{
-        asset::{NewFolderTask, RenameAssetTask, RenameFolderTask},
-        TaskQueue,
-    },
+    assets::{EditorAsset, EditorAssets, Folder},
+    tasks::TaskQueue,
 };
 
-use super::{drag_drop::DragDropPayload, EditorViewContext};
+use super::{drag_drop::DragDropPayload, util, EditorViewContext};
 
 #[derive(Default)]
 pub struct AssetsView {
-    cur_path: PathBuf,
+    cur_path: Utf8PathBuf,
 }
 
 impl AssetsView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
         let mut assets = ctx.res.get_mut::<EditorAssets>().unwrap();
-        let tasks = ctx.res.get::<TaskQueue>().unwrap();
+        let active_package = assets.active_package_id();
 
-        let folder = match assets.find_folder_mut(&self.cur_path) {
+        let folder = match assets.find_folder(&self.cur_path) {
             Some(folder) => folder,
             None => {
                 self.cur_path.pop();
                 return egui_tiles::UiResponse::None;
             }
         };
-
-        let mut new_folder = false;
 
         let rect = ctx.ui.available_rect_before_wrap();
         ctx.ui
@@ -40,28 +42,37 @@ impl AssetsView {
             .context_menu(|ui| {
                 if ui.button("Back").clicked() {
                     self.cur_path.pop();
-                    new_folder = true;
                 }
 
                 if ui.button("New Folder").clicked() {
-                    tasks.add(NewFolderTask::new(&self.cur_path));
+                    /*
+                    ctx.res
+                        .get_mut::<TaskQueue>()
+                        .unwrap()
+                        .add(NewFolderTask::new(&self.cur_path, &package_root));
+                    */
                 }
             });
+
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .hscroll(false)
             .show(ctx.ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for (folder_name, folder) in folder.sub_folders() {
-                        let response = Self::folder_ui(ui, folder_name);
+                        let response = Self::folder_ui(ui, ctx.res, folder, folder_name);
                         if response.double_clicked() {
                             self.cur_path.push(folder_name);
-                            new_folder = true;
                         }
 
                         response.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
-                                tasks.add(RenameFolderTask::new(folder.abs_path()));
+                                /*
+                                ctx.res
+                                    .get_mut::<TaskQueue>()
+                                    .unwrap()
+                                    .add(RenameFolderTask::new(folder.abs_path()));
+                                */
                             }
                         });
                     }
@@ -70,70 +81,112 @@ impl AssetsView {
                         let response = Self::asset_ui(
                             ui,
                             asset
-                                .raw_path
+                                .meta_path()
+                                .with_extension("")
                                 .file_name()
-                                .unwrap_or(OsStr::new("(INVALID CHARACTERS)")),
-                            &asset.meta,
+                                .unwrap_or("(INVALID CHARACTERS)"),
+                            &asset,
+                            active_package,
                         );
                         response.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
-                                tasks.add(RenameAssetTask::new(asset.clone()));
+                                /*
+                                ctx.res
+                                    .get_mut::<TaskQueue>()
+                                    .unwrap()
+                                    .add(RenameAssetTask::new(asset.clone()));
+                                */
+                            }
+
+                            if self.cur_path != PathBuf::default()
+                                && ui.button("Move up a folder").clicked()
+                            {
+                                /*
+                                let task_queue = ctx.res.get_mut::<TaskQueue>().unwrap();
+                                let mut dst = self.cur_path.clone();
+                                dst.pop();
+                                let dst = path!(folder.package_root() / dst);
+
+                                task_queue.add(MoveTask::new(&asset.raw_path, &dst));
+                                task_queue.add(MoveTask::new(&asset.meta_path, &dst));
+                                */
                             }
                         });
                     }
                 });
             });
 
-        if new_folder {
-            assets
-                .find_folder_mut(&self.cur_path)
-                .map(|folder| folder.inspect());
-        }
-
         egui_tiles::UiResponse::None
     }
 
-    fn folder_ui(ui: &mut egui::Ui, name: &OsStr) -> egui::Response {
+    fn folder_ui(
+        ui: &mut egui::Ui,
+        res: &Res<Everything>,
+        folder: &Folder,
+        name: &str,
+    ) -> egui::Response {
         let icon = egui::RichText::new(egui_phosphor::fill::FOLDER).size(64.0);
         let size = [100.0, 160.0];
         let layout = egui::Layout::centered_and_justified(ui.layout().main_dir());
-        let folder_name = name.to_string_lossy();
 
-        ui.allocate_ui_with_layout(size.into(), layout, |ui| {
-            ui.group(|ui| {
-                ui.vertical_centered_justified(|ui| {
-                    let r = ui.add(
-                        egui::Label::new(icon)
-                            .selectable(false)
-                            .sense(egui::Sense::click()),
-                    );
-                    ui.add(
-                        egui::Label::new(folder_name)
-                            .selectable(false)
-                            .truncate(true),
-                    );
-                    r
+        let result = util::hidden_drop_zone::<DragDropPayload, _>(ui, egui::Frame::none(), |ui| {
+            ui.allocate_ui_with_layout(size.into(), layout, |ui| {
+                ui.group(|ui| {
+                    ui.vertical_centered_justified(|ui| {
+                        let r = ui.add(
+                            egui::Label::new(icon)
+                                .selectable(false)
+                                .sense(egui::Sense::click()),
+                        );
+                        ui.add(egui::Label::new(name).selectable(false).truncate(true));
+                        r
+                    })
+                    .inner
                 })
                 .inner
             })
             .inner
-        })
-        .inner
+        });
+
+        if let Some(dropped) = result.1 {
+            match dropped.as_ref() {
+                DragDropPayload::Asset(asset) => {
+                    /*
+                    let task_queue = res.get_mut::<TaskQueue>().unwrap();
+                    task_queue.add(MoveTask::new(&asset.raw_path, folder.abs_path()));
+                    task_queue.add(MoveTask::new(&asset.meta_path, folder.abs_path()));
+                    */
+                }
+                _ => {}
+            }
+        }
+
+        result.0.inner
     }
 
-    fn asset_ui(ui: &mut egui::Ui, file_name: &OsStr, meta_file: &MetaFile) -> egui::Response {
+    fn asset_ui(
+        ui: &mut egui::Ui,
+        file_name: &str,
+        asset: &EditorAsset,
+        active_package: PackageId,
+    ) -> egui::Response {
         let icon = egui::RichText::new(egui_phosphor::fill::FILE).size(64.0);
         let size = [100.0, 160.0];
         let layout = egui::Layout::centered_and_justified(ui.layout().main_dir());
-        let asset_name = file_name.to_string_lossy();
+
+        let label = match (asset.is_shadowing(), active_package == asset.package()) {
+            (true, true) => format!("{} {file_name}", egui_phosphor::fill::LOCK_SIMPLE_OPEN),
+            (true, false) => format!("{} {file_name}", egui_phosphor::fill::LOCK_SIMPLE),
+            _ => file_name.to_owned(),
+        };
 
         ui.allocate_ui_with_layout(size.into(), layout, |ui| {
             ui.group(|ui| {
                 ui.vertical_centered_justified(|ui| {
                     let r = ui
                         .dnd_drag_source(
-                            egui::Id::new(&meta_file.baked),
-                            DragDropPayload::Asset(meta_file.clone()),
+                            egui::Id::new(&asset.meta_file().baked),
+                            DragDropPayload::Asset(asset.clone()),
                             |ui| {
                                 ui.add(
                                     egui::Label::new(icon)
@@ -144,7 +197,7 @@ impl AssetsView {
                         )
                         .response;
                     ui.add(
-                        egui::Label::new(asset_name)
+                        egui::Label::new(label)
                             .selectable(false)
                             .sense(egui::Sense::click())
                             .truncate(true),

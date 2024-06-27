@@ -98,8 +98,8 @@ impl PackageInterface for LofPackage {
         unimplemented!("lof packages are immutable")
     }
 
-    fn register_asset(&self, _name: &AssetName) -> bool {
-        unimplemented!("lof packages are immutable")
+    fn register_asset(&self, name: &AssetName) -> bool {
+        self.0.lof_manifest.assets.contains_key(name)
     }
 
     async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError> {

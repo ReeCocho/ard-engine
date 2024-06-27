@@ -4,15 +4,48 @@ use path_macro::path;
 use std::path::PathBuf;
 
 use crate::{
-    assets::{EditorAssets, FolderAsset, ASSETS_FOLDER},
+    assets::{op::AssetOps, EditorAssets},
     gui::util,
     tasks::TaskConfirmation,
 };
 
 use super::EditorTask;
 
+pub struct RenameAssetTask2<A> {
+    op: A,
+}
+
+impl<A: AssetOps> EditorTask for RenameAssetTask2<A> {
+    fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
+        todo!()
+    }
+
+    fn run(&mut self) -> Result<()> {
+        let assets = self.op.assets();
+        let root = self.op.root_asset();
+
+        if assets.has_shadow(root) {
+            let is_leaf = self.op.is_leaf();
+        } else {
+        }
+
+        todo!()
+    }
+
+    fn complete(
+        &mut self,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        todo!()
+    }
+}
+
+/*
 pub struct NewFolderTask {
     parent: PathBuf,
+    package_root: PathBuf,
     name: String,
 }
 
@@ -30,10 +63,16 @@ pub struct RenameFolderTask {
     new_name: String,
 }
 
+pub struct MoveTask {
+    src: PathBuf,
+    dst_dir: PathBuf,
+}
+
 impl NewFolderTask {
-    pub fn new(parent: impl Into<PathBuf>) -> Self {
+    pub fn new(parent: impl Into<PathBuf>, package_root: impl Into<PathBuf>) -> Self {
         Self {
             parent: parent.into(),
+            package_root: package_root.into(),
             name: String::default(),
         }
     }
@@ -73,6 +112,15 @@ impl RenameFolderTask {
     }
 }
 
+impl MoveTask {
+    pub fn new(src: impl Into<PathBuf>, dst_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            src: src.into(),
+            dst_dir: dst_dir.into(),
+        }
+    }
+}
+
 impl EditorTask for NewFolderTask {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
         ui.label("Folder Name:");
@@ -93,7 +141,7 @@ impl EditorTask for NewFolderTask {
     }
 
     fn run(&mut self) -> Result<()> {
-        let final_path = path!(ASSETS_FOLDER / "main" / self.parent / self.name);
+        let final_path = path!(self.package_root / self.parent / self.name);
         Ok(std::fs::create_dir_all(final_path)?)
     }
 
@@ -219,7 +267,7 @@ impl EditorTask for RenameAssetTask {
             .map(|p| p.to_owned())
             .unwrap_or_default();
         let parent_folder = parent_folder
-            .strip_prefix(path!(ASSETS_FOLDER / "main"))
+            .strip_prefix(assets.active_package_path())
             .unwrap();
         assets
             .find_folder_mut(&parent_folder)
@@ -269,7 +317,7 @@ impl EditorTask for RenameFolderTask {
         let mut assets = res.get_mut::<EditorAssets>().unwrap();
         let parent_folder = self.path.parent().map(|p| p.to_owned()).unwrap_or_default();
         let parent_folder = parent_folder
-            .strip_prefix(path!(ASSETS_FOLDER / "main"))
+            .strip_prefix(assets.active_package_path())
             .unwrap();
         assets
             .find_folder_mut(&parent_folder)
@@ -277,3 +325,44 @@ impl EditorTask for RenameFolderTask {
         Ok(())
     }
 }
+
+impl EditorTask for MoveTask {
+    fn has_confirm_ui(&self) -> bool {
+        false
+    }
+
+    fn confirm_ui(&mut self, _ui: &mut egui::Ui) -> Result<TaskConfirmation> {
+        Ok(TaskConfirmation::Ready)
+    }
+
+    fn run(&mut self) -> Result<()> {
+        let file_name = match self.src.file_name() {
+            Some(file_name) => file_name,
+            None => return Err(anyhow::Error::msg("File had no name.")),
+        };
+
+        let dst_path = path!(self.dst_dir / file_name);
+        Ok(std::fs::rename(&self.src, dst_path)?)
+    }
+
+    fn complete(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+        let parent_dir = self.src.parent().map(|p| p.to_owned()).unwrap_or_default();
+        let parent_dir = parent_dir
+            .strip_prefix(editor_assets.active_package_path())
+            .map(|d| d.to_path_buf())
+            .unwrap_or_default();
+
+        editor_assets
+            .find_folder_mut(parent_dir)
+            .map(|folder| folder.inspect());
+
+        Ok(())
+    }
+}
+*/

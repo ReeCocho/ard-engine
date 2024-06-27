@@ -22,6 +22,14 @@ impl MetaFile {
     pub const EXTENSION: &'static str = "meta";
 }
 
+impl MetaData {
+    pub fn ty(&self) -> AssetType {
+        match self {
+            MetaData::Model => AssetType::Model,
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a Path> for AssetType {
     type Error = anyhow::Error;
 

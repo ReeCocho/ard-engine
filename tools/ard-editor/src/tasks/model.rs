@@ -4,6 +4,7 @@ use ard_engine::{
     ecs::prelude::*,
     log::*,
 };
+use camino::Utf8Path;
 use path_macro::path;
 use std::path::PathBuf;
 
@@ -119,7 +120,7 @@ impl EditorTask for ModelImportTask {
             None => return Err(anyhow::Error::msg("Invalid file name.")),
         };
 
-        std::fs::copy(in_path, path!("./assets" / out_path))?;
+        std::fs::copy(in_path, path!(ASSETS_FOLDER / out_path))?;
 
         // Create the meta file for the asset
         let meta = MetaFile {
@@ -127,7 +128,7 @@ impl EditorTask for ModelImportTask {
             data: MetaData::Model,
         };
 
-        let meta_file_path = path!("./assets" / meta_path);
+        let meta_file_path = path!(ASSETS_FOLDER / meta_path);
         let file = std::fs::File::create(&meta_file_path)?;
         let writer = std::io::BufWriter::new(file);
         ron::ser::to_writer(writer, &meta)?;
@@ -150,11 +151,9 @@ impl EditorTask for ModelImportTask {
             assets.scan_for(&new_asset);
         });
 
-        editor_assets.add_meta_file(
-            self.meta_file_path
-                .strip_prefix(path!(ASSETS_FOLDER / "main"))
-                .unwrap(),
-        );
+        editor_assets
+            .scan_for(Utf8Path::from_path(&self.meta_file_path).unwrap())
+            .unwrap();
 
         println!("Task complete...");
 

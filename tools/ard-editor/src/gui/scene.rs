@@ -181,13 +181,16 @@ impl SceneView {
         };
 
         let assets = res.get::<Assets>().unwrap();
-        let valid = match &asset.data {
+        let valid = match &asset.meta_file().data {
             MetaData::Model => true,
         };
 
         if valid {
             let task_queue = res.get_mut::<TaskQueue>().unwrap();
-            task_queue.add(InstantiateTask::new(asset.clone(), assets.clone()));
+            task_queue.add(InstantiateTask::new(
+                asset.meta_file().clone(),
+                assets.clone(),
+            ));
         }
     }
 }

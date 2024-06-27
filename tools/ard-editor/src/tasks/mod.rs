@@ -2,7 +2,7 @@ pub mod asset;
 pub mod instantiate;
 pub mod model;
 
-use std::{collections::VecDeque, thread::JoinHandle};
+use std::thread::JoinHandle;
 
 use anyhow::Result;
 use ard_engine::{core::prelude::*, ecs::prelude::*, log::*, render::view::GuiView};
@@ -14,6 +14,15 @@ pub trait EditorTask: Send {
     }
 
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation>;
+
+    fn pre_run(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        _res: &Res<Everything>,
+    ) -> Result<()> {
+        Ok(())
+    }
 
     fn run(&mut self) -> Result<()>;
 
@@ -42,7 +51,7 @@ pub struct TaskConfirmationGui {
     task_recv: Receiver<Box<dyn EditorTask>>,
     err_recv: Receiver<anyhow::Error>,
     /// Sends tasks to the runner after confirmation.
-    send: Sender<JoinHandle<Result<Box<dyn EditorTask>>>>,
+    send: Sender<Box<dyn EditorTask>>,
     pending: Option<PendingTask>,
     errors: Vec<anyhow::Error>,
 }
@@ -50,9 +59,9 @@ pub struct TaskConfirmationGui {
 #[derive(SystemState)]
 pub struct TaskRunner {
     /// Receives tasks from the confirmation GUI.
-    recv: Receiver<JoinHandle<Result<Box<dyn EditorTask>>>>,
+    recv: Receiver<Box<dyn EditorTask>>,
     err_send: Sender<anyhow::Error>,
-    running: VecDeque<JoinHandle<Result<Box<dyn EditorTask>>>>,
+    running: Option<JoinHandle<Result<Box<dyn EditorTask>>>>,
 }
 
 struct PendingTask {
@@ -92,9 +101,7 @@ impl GuiView for TaskConfirmationGui {
                     self.pending = None;
                 }
                 TaskConfirmation::Ready => {
-                    if let Err(err) = self.send.send(std::thread::spawn(move || {
-                        TaskRunner::run_task(pending.task)
-                    })) {
+                    if let Err(err) = self.send.send(pending.task) {
                         warn!("error spawning task: {:?}", err);
                     }
                 }
@@ -166,7 +173,7 @@ impl TaskRunner {
         let runner = TaskRunner {
             recv: runner_recv,
             err_send,
-            running: VecDeque::default(),
+            running: None,
         };
 
         (runner, gui, queue)
@@ -179,20 +186,11 @@ impl TaskRunner {
         queries: Queries<Everything>,
         res: Res<Everything>,
     ) {
-        // Retrieve new tasks
-        while let Ok(task) = self.recv.try_recv() {
-            self.running.push_back(task);
-        }
-
-        // Check if any tasks have finished
-        let mut needs_check = self.running.len();
-        while needs_check != 0 {
-            let handle = self.running.pop_front().unwrap();
-            needs_check -= 1;
-
+        // Check the current task
+        if let Some(handle) = self.running.take() {
             if !handle.is_finished() {
-                self.running.push_back(handle);
-                continue;
+                self.running = Some(handle);
+                return;
             }
 
             let thread_result = handle.join();
@@ -207,7 +205,7 @@ impl TaskRunner {
                         }),
                     );
                     let _ = self.err_send.send(err);
-                    continue;
+                    return;
                 }
             };
 
@@ -215,13 +213,20 @@ impl TaskRunner {
                 Ok(task) => task,
                 Err(err) => {
                     let _ = self.err_send.send(err);
-                    continue;
+                    return;
                 }
             };
 
             if let Err(err) = task.complete(&commands, &queries, &res) {
                 let _ = self.err_send.send(err);
             }
+        } else if let Ok(mut task) = self.recv.try_recv() {
+            if let Err(err) = task.pre_run(&commands, &queries, &res) {
+                let _ = self.err_send.send(err);
+                return;
+            }
+
+            self.running = Some(std::thread::spawn(move || TaskRunner::run_task(task)));
         }
     }
 
