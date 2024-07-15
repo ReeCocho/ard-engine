@@ -1,5 +1,6 @@
-use std::{collections::HashMap, ops::DerefMut, path::PathBuf};
+use std::{collections::HashMap, ops::DerefMut};
 
+use ard_assets::asset::AssetNameBuf;
 use ard_math::*;
 use ard_pal::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -13,7 +14,7 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MeshHeader {
-    pub data_path: PathBuf,
+    pub data_path: AssetNameBuf,
     pub index_count: u32,
     pub vertex_count: u32,
     pub meshlet_count: u32,
@@ -286,14 +287,14 @@ impl MeshDataBuilder {
 }
 
 impl MeshHeader {
-    pub fn mesh_data_path(root: impl Into<PathBuf>) -> PathBuf {
-        let mut path: PathBuf = root.into();
+    pub fn mesh_data_path(root: impl Into<AssetNameBuf>) -> AssetNameBuf {
+        let mut path: AssetNameBuf = root.into();
         path.push("data");
         path
     }
 
-    pub fn mesh_header_path(root: impl Into<PathBuf>) -> PathBuf {
-        let mut path: PathBuf = root.into();
+    pub fn mesh_header_path(root: impl Into<AssetNameBuf>) -> AssetNameBuf {
+        let mut path: AssetNameBuf = root.into();
         path.push("header.ard_msh");
         path
     }

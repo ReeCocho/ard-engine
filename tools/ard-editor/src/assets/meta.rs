@@ -14,6 +14,7 @@ pub enum MetaData {
     Model,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum AssetType {
     Model,
 }

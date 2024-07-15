@@ -1,16 +1,16 @@
 use anyhow::Result;
 use ard_engine::{assets::prelude::*, ecs::prelude::*};
-use camino::Utf8PathBuf;
+use camino::Utf8Path;
 use path_macro::path;
 
 use crate::tasks::{EditorTask, TaskConfirmation};
 
 use super::{meta::AssetType, EditorAssets};
 
-pub trait AssetOps: Send + Sync {
-    fn meta_path(&self) -> &Utf8PathBuf;
+pub trait AssetOp: Send + Sync {
+    fn meta_path(&self) -> &Utf8Path;
 
-    fn raw_path(&self) -> &Utf8PathBuf;
+    fn raw_path(&self) -> &Utf8Path;
 
     fn asset_ty(&self) -> AssetType;
 
@@ -20,16 +20,22 @@ pub trait AssetOps: Send + Sync {
 
     fn run(&mut self, is_shadowing: bool, is_leaf: bool) -> Result<()>;
 
-    fn complete(&mut self, assets: &Assets, editor_assets: &EditorAssets) -> Result<()>;
+    fn complete(
+        &mut self,
+        is_shadowing: bool,
+        is_leaf: bool,
+        assets: &Assets,
+        editor_assets: &mut EditorAssets,
+    ) -> Result<()>;
 }
 
-pub struct AssetOp<A> {
+pub struct AssetOpInstance<A> {
     op: A,
     is_shadowing: bool,
     is_leaf: bool,
 }
 
-impl<A: AssetOps> AssetOp<A> {
+impl<A: AssetOp> AssetOpInstance<A> {
     pub fn new(op: A) -> Self {
         Self {
             op,
@@ -39,7 +45,7 @@ impl<A: AssetOps> AssetOp<A> {
     }
 }
 
-impl<A: AssetOps> EditorTask for AssetOp<A> {
+impl<A: AssetOp> EditorTask for AssetOpInstance<A> {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
         self.op.confirm_ui(ui)
     }
@@ -68,8 +74,8 @@ impl<A: AssetOps> EditorTask for AssetOp<A> {
             .find_asset(self.op.meta_path())
             .ok_or(anyhow::Error::msg("could not find asset"))?;
 
-        self.is_shadowing = asset.is_shadowing;
-        self.is_leaf = asset.package == editor_assets.active_package_id();
+        self.is_shadowing = asset.is_shadowing();
+        self.is_leaf = asset.package() == editor_assets.active_package_id();
 
         self.op.pre_run(&assets, &editor_assets)
     }
@@ -85,9 +91,10 @@ impl<A: AssetOps> EditorTask for AssetOp<A> {
         res: &Res<Everything>,
     ) -> Result<()> {
         let assets = res.get::<Assets>().unwrap();
-        let editor_assets = res.get::<EditorAssets>().unwrap();
-        self.op.complete(&assets, &editor_assets)?;
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+        self.op
+            .complete(self.is_shadowing, self.is_leaf, &assets, &mut editor_assets)?;
 
-        todo!()
+        Ok(())
     }
 }

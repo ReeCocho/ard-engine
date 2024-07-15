@@ -6,6 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use camino::Utf8PathBuf;
 use crossbeam_utils::sync::{ShardedLock, ShardedLockReadGuard, ShardedLockWriteGuard};
 use path_slash::PathBufExt;
 use rustc_hash::FxHashMap;
@@ -102,9 +103,14 @@ impl PackageInterface for LofPackage {
         self.0.lof_manifest.assets.contains_key(name)
     }
 
-    async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError> {
+    async fn read(&self, file: Utf8PathBuf) -> Result<Vec<u8>, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
-        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+        let file: Utf8PathBuf = file
+            .into_std_path_buf()
+            .to_slash()
+            .unwrap()
+            .to_string()
+            .into();
         let (offset, size) = match self.0.lof_manifest.assets.get(&file) {
             Some(props) => props,
             None => return Err(PackageReadError::DoesNotExist(file.to_owned())),
@@ -121,12 +127,17 @@ impl PackageInterface for LofPackage {
         Ok(contents)
     }
 
-    async fn read_str(&self, file: PathBuf) -> Result<String, PackageReadError> {
+    async fn read_str(&self, file: Utf8PathBuf) -> Result<String, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
-        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+        let file: Utf8PathBuf = file
+            .into_std_path_buf()
+            .to_slash()
+            .unwrap()
+            .to_string()
+            .into();
         let (offset, size) = match self.0.lof_manifest.assets.get(&file) {
             Some(props) => props,
-            None => return Err(PackageReadError::DoesNotExist(file.to_owned())),
+            None => return Err(PackageReadError::DoesNotExist(file)),
         };
 
         let mut contents = Vec::with_capacity(*size as usize);
@@ -183,7 +194,10 @@ pub fn create_lof_from_folder(out: impl Into<PathBuf>, src: impl Into<PathBuf>) 
         let asset_name = entry.file_name();
         let base = writer.stream_position().unwrap();
         let size = compressed.len() as u64;
-        manifest.assets.insert(asset_name.into(), (base, size));
+        manifest.assets.insert(
+            Utf8PathBuf::from_path_buf(asset_name.into()).unwrap(),
+            (base, size),
+        );
 
         writer.write_all(&compressed).unwrap();
     }

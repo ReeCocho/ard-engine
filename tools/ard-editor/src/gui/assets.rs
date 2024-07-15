@@ -1,15 +1,14 @@
-use std::{ffi::OsStr, path::PathBuf};
+use std::path::PathBuf;
 
 use ard_engine::{
     assets::package::PackageId,
     ecs::{resource::res::Res, system::data::Everything},
 };
 use camino::Utf8PathBuf;
-use path_macro::path;
 
 use crate::{
-    assets::{EditorAsset, EditorAssets, Folder},
-    tasks::TaskQueue,
+    assets::{op::AssetOpInstance, EditorAsset, EditorAssets, Folder},
+    tasks::{asset::RenameAssetOp, TaskQueue},
 };
 
 use super::{drag_drop::DragDropPayload, util, EditorViewContext};
@@ -21,7 +20,7 @@ pub struct AssetsView {
 
 impl AssetsView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
-        let mut assets = ctx.res.get_mut::<EditorAssets>().unwrap();
+        let assets = ctx.res.get_mut::<EditorAssets>().unwrap();
         let active_package = assets.active_package_id();
 
         let folder = match assets.find_folder(&self.cur_path) {
@@ -90,12 +89,10 @@ impl AssetsView {
                         );
                         response.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
-                                /*
                                 ctx.res
                                     .get_mut::<TaskQueue>()
                                     .unwrap()
-                                    .add(RenameAssetTask::new(asset.clone()));
-                                */
+                                    .add(AssetOpInstance::new(RenameAssetOp::new(&assets, asset)));
                             }
 
                             if self.cur_path != PathBuf::default()
@@ -121,8 +118,8 @@ impl AssetsView {
 
     fn folder_ui(
         ui: &mut egui::Ui,
-        res: &Res<Everything>,
-        folder: &Folder,
+        _res: &Res<Everything>,
+        _folder: &Folder,
         name: &str,
     ) -> egui::Response {
         let icon = egui::RichText::new(egui_phosphor::fill::FOLDER).size(64.0);
@@ -150,7 +147,7 @@ impl AssetsView {
 
         if let Some(dropped) = result.1 {
             match dropped.as_ref() {
-                DragDropPayload::Asset(asset) => {
+                DragDropPayload::Asset(_asset) => {
                     /*
                     let task_queue = res.get_mut::<TaskQueue>().unwrap();
                     task_queue.add(MoveTask::new(&asset.raw_path, folder.abs_path()));
@@ -176,7 +173,7 @@ impl AssetsView {
 
         let label = match (asset.is_shadowing(), active_package == asset.package()) {
             (true, true) => format!("{} {file_name}", egui_phosphor::fill::LOCK_SIMPLE_OPEN),
-            (true, false) => format!("{} {file_name}", egui_phosphor::fill::LOCK_SIMPLE),
+            (_, false) => format!("{} {file_name}", egui_phosphor::fill::LOCK_SIMPLE),
             _ => file_name.to_owned(),
         };
 

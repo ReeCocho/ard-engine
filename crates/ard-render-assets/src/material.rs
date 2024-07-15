@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use ard_assets::prelude::*;
 use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
 use ard_render::factory::Factory;
@@ -45,7 +43,7 @@ impl AssetLoader for MaterialLoader {
     ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
         // Read in the material header
         let header = package.read(asset.to_owned()).await?;
-        let header = match bincode::deserialize::<MaterialHeader<PathBuf>>(&header) {
+        let header = match bincode::deserialize::<MaterialHeader<AssetNameBuf>>(&header) {
             Ok(header) => header,
             Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };

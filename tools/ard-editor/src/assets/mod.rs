@@ -3,6 +3,7 @@ pub mod meta;
 pub mod op;
 
 use std::{
+    collections::BTreeSet,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -42,9 +43,7 @@ pub struct EditorAsset {
     meta_file: MetaFile,
     meta_path: Utf8PathBuf,
     #[serde(skip)]
-    is_shadowing: bool,
-    #[serde(skip)]
-    package: PackageId,
+    packages: BTreeSet<PackageId>,
 }
 
 impl EditorAssets {
@@ -69,7 +68,8 @@ impl EditorAssets {
 
             // Load manifest from LOF files
             if package.path().extension() == Some(OsStr::new("lof")) {
-                let mut manifest_name = AssetNameBuf::from(package.path().file_stem().unwrap());
+                let mut manifest_name =
+                    AssetNameBuf::from(package.path().file_stem().unwrap().to_str().unwrap());
                 manifest_name.set_extension("manifest");
 
                 let handle = assets.load::<EditorAssetsManifest>(&manifest_name).unwrap();
@@ -140,11 +140,7 @@ impl EditorAssets {
     pub fn find_asset(&self, path: impl AsRef<Utf8Path>) -> Option<&EditorAsset> {
         let path: &Utf8Path = path.as_ref();
         let mut root = &self.root;
-        let mut iter = path
-            .strip_prefix(&self.active_assets_root)
-            .ok()?
-            .iter()
-            .peekable();
+        let mut iter = path.iter().peekable();
 
         while let Some(component) = iter.next() {
             if iter.peek().is_none() {
@@ -157,15 +153,29 @@ impl EditorAssets {
         None
     }
 
+    pub fn find_asset_mut(&mut self, path: impl AsRef<Utf8Path>) -> Option<&mut EditorAsset> {
+        let path: &Utf8Path = path.as_ref();
+        let mut root = &mut self.root;
+        let mut iter = path.iter().peekable();
+
+        while let Some(component) = iter.next() {
+            if iter.peek().is_none() {
+                return root.assets.get_mut(component);
+            } else {
+                root = root.sub_folders.get_mut(component)?;
+            }
+        }
+
+        None
+    }
+
     pub fn scan_for(&mut self, path: impl AsRef<Utf8Path>) -> Result<()> {
         let path: &Utf8Path = path.as_ref();
+        let rel_path = path.strip_prefix(&self.active_assets_root)?;
 
         // TODO: Too much nesting
         let mut folder = &mut self.root;
-        let mut iter = path
-            .strip_prefix(&self.active_assets_root)?
-            .iter()
-            .peekable();
+        let mut iter = rel_path.iter().peekable();
         while let Some(component) = iter.next() {
             if iter.peek().is_none() {
                 if path.is_dir() {
@@ -184,15 +194,12 @@ impl EditorAssets {
                     match folder.assets.get_mut(component) {
                         Some(asset) => {
                             // Check if asset already exists in the current package
-                            if asset.package == self.active_package {
+                            if asset.package() == self.active_package {
                                 return Ok(());
                             }
 
                             // Only update if we would shadow the asset
-                            asset.is_shadowing = true;
-                            if asset.package < self.active_package {
-                                asset.package = self.active_package;
-                            }
+                            asset.packages.insert(self.active_package);
                         }
                         None => {
                             let f = std::fs::File::open(path)?;
@@ -203,9 +210,8 @@ impl EditorAssets {
                                 component.to_owned(),
                                 EditorAsset {
                                     meta_file,
-                                    meta_path: path.to_owned(),
-                                    is_shadowing: false,
-                                    package: self.active_package,
+                                    meta_path: rel_path.to_owned(),
+                                    packages: BTreeSet::from([self.active_package]),
                                 },
                             );
                         }
@@ -222,6 +228,32 @@ impl EditorAssets {
         }
 
         Ok(())
+    }
+
+    pub fn remove_from_active_package(&mut self, path: impl AsRef<Utf8Path>) {
+        let path: &Utf8Path = path.as_ref();
+        let mut root = &mut self.root;
+        let mut iter = path.iter().peekable();
+
+        while let Some(component) = iter.next() {
+            if iter.peek().is_none() {
+                let asset_name = path.file_name().unwrap_or("");
+                let asset = match root.assets.get_mut(asset_name) {
+                    Some(asset) => asset,
+                    None => return,
+                };
+
+                asset.packages.remove(&self.active_package);
+                if asset.packages.is_empty() {
+                    root.assets.remove(asset_name);
+                }
+            } else {
+                root = match root.sub_folders.get_mut(component) {
+                    Some(root) => root,
+                    None => return,
+                };
+            }
+        }
     }
 }
 
@@ -267,8 +299,7 @@ impl Folder {
                         meta_path.push(&name);
                         meta_path
                     },
-                    is_shadowing: false,
-                    package,
+                    packages: BTreeSet::from([package]),
                 };
 
                 folder.assets.insert(name.as_str().to_owned(), asset);
@@ -296,16 +327,16 @@ impl Folder {
     /// Takes the `src` folder and merges into `self`.
     pub fn merge_from(&mut self, src: &Folder) {
         src.assets.iter().for_each(|(meta_file, asset)| {
-            let is_shadowing = self.assets.contains_key(meta_file);
-            self.assets.insert(
-                meta_file.clone(),
-                EditorAsset {
+            let entry = self
+                .assets
+                .entry(meta_file.clone())
+                .or_insert_with(|| EditorAsset {
                     meta_file: asset.meta_file.clone(),
                     meta_path: asset.meta_path.clone(),
-                    is_shadowing,
-                    package: asset.package,
-                },
-            );
+                    packages: BTreeSet::default(),
+                });
+
+            entry.packages.insert(asset.package());
         });
 
         src.sub_folders.iter().for_each(|(folder_name, folder)| {
@@ -320,9 +351,9 @@ impl Folder {
         });
     }
 
-    pub fn set_package(&mut self, package: PackageId) {
+    fn set_package(&mut self, package: PackageId) {
         self.assets.values_mut().for_each(|asset| {
-            asset.package = package;
+            asset.packages = BTreeSet::from([package]);
         });
 
         self.sub_folders.values_mut().for_each(|sub_folder| {
@@ -349,12 +380,12 @@ impl EditorAsset {
 
     #[inline(always)]
     pub fn is_shadowing(&self) -> bool {
-        self.is_shadowing
+        self.packages.len() > 1
     }
 
     #[inline(always)]
     pub fn package(&self) -> PackageId {
-        self.package
+        *self.packages.last().unwrap()
     }
 }
 

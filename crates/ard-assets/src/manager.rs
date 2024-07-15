@@ -553,14 +553,12 @@ impl Assets {
         })
     }
 
-    /// Scans for a new asset by name. Returns `true` if the asset was found.
+    /// Scans for an asset by name. Returns `true` if the asset was found.
+    ///
+    /// If the asset was found to be shadowed in a new package, a reload request should
+    /// be sent.
     #[inline]
     pub fn scan_for(&self, name: &AssetName) -> bool {
-        // No-op if it already exists
-        if self.0.name_to_id.contains_key(name) {
-            return true;
-        }
-
         let mut package_id = None;
         let mut has_shadow = false;
         for (i, package) in self.0.packages.iter().enumerate().rev() {
@@ -573,8 +571,17 @@ impl Assets {
             }
         }
 
-        match package_id {
-            Some(package) => {
+        let package = match package_id {
+            Some(package) => package,
+            None => return false,
+        };
+
+        match self.0.name_to_id.get(name) {
+            Some(id) => {
+                let mut asset = self.0.assets.get_mut(&id).unwrap();
+                asset.package = package;
+            }
+            None => {
                 let id = self.0.id_counter.fetch_add(1, Ordering::Relaxed);
                 self.0.name_to_id.insert(AssetNameBuf::from(name), id);
 
@@ -589,10 +596,10 @@ impl Assets {
                         outstanding_handles: AtomicU32::new(0),
                     },
                 );
-                true
             }
-            None => false,
         }
+
+        true
     }
 
     /// Checks if a particular asset exists.
@@ -605,11 +612,6 @@ impl Assets {
     #[inline]
     pub fn ty_id(&self, name: &AssetName) -> Option<TypeId> {
         let ext = match name.extension() {
-            Some(ext) => ext,
-            None => return None,
-        };
-
-        let ext = match ext.to_str() {
             Some(ext) => ext,
             None => return None,
         };
@@ -644,12 +646,7 @@ impl Assets {
         let type_id = *self
             .0
             .extensions
-            .get(
-                name.extension()
-                    .expect("asset has no extension")
-                    .to_str()
-                    .unwrap(),
-            )
+            .get(name.extension().expect("asset has no extension"))
             .expect("no loader for the asset");
         assert_eq!(type_id, TypeId::of::<A>());
 

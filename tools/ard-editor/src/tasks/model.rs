@@ -79,7 +79,8 @@ impl EditorTask for ModelImportTask {
         let mut model_file = None;
         for entry in temp_folder.path().read_dir()? {
             let entry = entry?;
-            self.new_assets.push(entry.file_name().into());
+            self.new_assets
+                .push(AssetNameBuf::from(entry.file_name().into_string().unwrap()));
             let path = entry.path();
             let ext = match path.extension() {
                 Some(ext) => ext,
@@ -124,7 +125,7 @@ impl EditorTask for ModelImportTask {
 
         // Create the meta file for the asset
         let meta = MetaFile {
-            baked: model_file.into(),
+            baked: model_file.to_str().unwrap().to_owned().into(),
             data: MetaData::Model,
         };
 

@@ -1,12 +1,13 @@
-use std::{error::Error, path::PathBuf};
+use std::error::Error;
 
+use ard_assets::asset::AssetNameBuf;
 use ard_pal::prelude::{Filter, Format, SamplerAddressMode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TextureHeader {
-    pub mips: Vec<PathBuf>,
+    pub mips: Vec<AssetNameBuf>,
     pub width: u32,
     pub height: u32,
     pub format: Format,
@@ -52,14 +53,14 @@ pub struct TextureData {
 }
 
 impl TextureHeader {
-    pub fn mip_path(root: impl Into<PathBuf>, mip: u32) -> PathBuf {
-        let mut path: PathBuf = root.into();
+    pub fn mip_path(root: impl Into<AssetNameBuf>, mip: u32) -> AssetNameBuf {
+        let mut path: AssetNameBuf = root.into();
         path.push(mip.to_string());
         path
     }
 
-    pub fn header_path(root: impl Into<PathBuf>) -> PathBuf {
-        let mut path: PathBuf = root.into();
+    pub fn header_path(root: impl Into<AssetNameBuf>) -> AssetNameBuf {
+        let mut path: AssetNameBuf = root.into();
         path.push("header.ard_tex");
         path
     }

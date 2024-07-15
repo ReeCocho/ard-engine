@@ -2,9 +2,10 @@ pub mod folder;
 pub mod lof;
 pub mod manifest;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
+use camino::Utf8PathBuf;
 use crossbeam_utils::sync::{ShardedLockReadGuard, ShardedLockWriteGuard};
 use enum_dispatch::enum_dispatch;
 use lof::LofPackage;
@@ -38,7 +39,7 @@ pub enum PackageOpenError {
 #[derive(Debug, Error)]
 pub enum PackageReadError {
     #[error("the asset ({0}) at the given path within the package does not exist")]
-    DoesNotExist(PathBuf),
+    DoesNotExist(Utf8PathBuf),
     #[error("an unknown error occured")]
     Unknown,
 }
@@ -61,10 +62,10 @@ pub trait PackageInterface: Clone + Send {
     fn manifest_mut(&self) -> ShardedLockWriteGuard<Manifest>;
 
     /// Reads the contents of a file within the package and returns the bytes.
-    async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError>;
+    async fn read(&self, file: Utf8PathBuf) -> Result<Vec<u8>, PackageReadError>;
 
     /// Reads the contents of a file within the package and returns the bytes as a string.
-    async fn read_str(&self, file: PathBuf) -> Result<String, PackageReadError>;
+    async fn read_str(&self, file: Utf8PathBuf) -> Result<String, PackageReadError>;
 }
 
 impl From<std::io::Error> for PackageReadError {

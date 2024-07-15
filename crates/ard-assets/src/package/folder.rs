@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use camino::Utf8PathBuf;
 use crossbeam_utils::sync::{ShardedLock, ShardedLockReadGuard, ShardedLockWriteGuard};
 use path_slash::PathBufExt;
 use std::{
@@ -44,6 +45,9 @@ impl PackageInterface for FolderPackage {
         path.push(name);
         path = path.to_slash().unwrap().to_string().into();
 
+        let mut manifest = self.0.manifest.write().unwrap();
+        manifest.assets.remove(name);
+
         if path.exists() {
             let meta = match path.metadata() {
                 Ok(meta) => FileMetaData {
@@ -53,7 +57,6 @@ impl PackageInterface for FolderPackage {
                 Err(_) => return false,
             };
 
-            let mut manifest = self.0.manifest.write().unwrap();
             manifest.assets.insert(AssetNameBuf::from(name), meta);
 
             true
@@ -62,15 +65,20 @@ impl PackageInterface for FolderPackage {
         }
     }
 
-    async fn read(&self, file: PathBuf) -> Result<Vec<u8>, PackageReadError> {
+    async fn read(&self, file: Utf8PathBuf) -> Result<Vec<u8>, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
-        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+        let file: Utf8PathBuf = file
+            .into_std_path_buf()
+            .to_slash()
+            .unwrap()
+            .to_string()
+            .into();
 
         let (mut contents, path) = {
             let manifest = self.0.manifest.read().unwrap();
             let meta = match manifest.assets.get(&file) {
                 Some(meta) => meta,
-                None => return Err(PackageReadError::DoesNotExist(file.to_owned())),
+                None => return Err(PackageReadError::DoesNotExist(file)),
             };
 
             let mut path = self.0.path.clone();
@@ -86,9 +94,14 @@ impl PackageInterface for FolderPackage {
         Ok(contents)
     }
 
-    async fn read_str(&self, file: PathBuf) -> Result<String, PackageReadError> {
+    async fn read_str(&self, file: Utf8PathBuf) -> Result<String, PackageReadError> {
         // I would prefer not to have to heap allocate. Look into replacing
-        let file: PathBuf = file.to_slash().unwrap().to_string().into();
+        let file: Utf8PathBuf = file
+            .into_std_path_buf()
+            .to_slash()
+            .unwrap()
+            .to_string()
+            .into();
 
         let (mut contents, path) = {
             let manifest = self.0.manifest.read().unwrap();

@@ -1,15 +1,13 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::Path};
 
+use camino::Utf8PathBuf;
 use path_slash::PathExt;
 use rustc_hash::FxHashMap;
 
 /// A list of all the files within a package.
 #[derive(Default)]
 pub struct Manifest {
-    pub assets: FxHashMap<PathBuf, FileMetaData>,
+    pub assets: FxHashMap<Utf8PathBuf, FileMetaData>,
 }
 
 /// Meta-data describing an asset within a package.
@@ -56,7 +54,7 @@ impl Manifest {
             } else if metadata.is_dir() {
                 Manifest::from_folder_recurse(root, &entry.path(), manifest);
             } else if metadata.is_file() {
-                let file_name: PathBuf = entry
+                let file_name: Utf8PathBuf = entry
                     .path()
                     .strip_prefix(root)
                     .unwrap()

@@ -1,9 +1,10 @@
+use camino::{Utf8Path, Utf8PathBuf};
+
 use crate::prelude::AssetLoader;
-use std::path::{Path, PathBuf};
 
-pub type AssetName = Path;
+pub type AssetName = Utf8Path;
 
-pub type AssetNameBuf = PathBuf;
+pub type AssetNameBuf = Utf8PathBuf;
 
 /// Marks a type as being an asset.
 pub trait Asset: Send {

@@ -59,9 +59,11 @@ impl MenuBar {
                     bincode::serialize_into(f, &manifest).unwrap();
 
                     ard_engine::assets::package::lof::create_lof_from_folder(
-                        "./test.lof",
+                        "./main.lof",
                         "./packages/main/",
                     );
+
+                    std::fs::remove_file("./packages/main/main.manifest").unwrap();
                 }
 
                 if ui.button("Quit").clicked() {

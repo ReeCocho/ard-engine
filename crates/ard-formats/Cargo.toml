@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 ard-pal = { default-features = false, path = "../ard-pal" }
 ard-math = { path = "../ard-math" }
+ard-assets = { path = "../ard-assets" }
 serde.workspace = true
 bitflags.workspace = true
 bytemuck.workspace = true

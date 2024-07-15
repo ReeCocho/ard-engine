@@ -1,9 +1,10 @@
 use std::fs;
 use std::io::BufWriter;
 use std::ops::Div;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use ard_assets::asset::{AssetName, AssetNameBuf};
 use ard_formats::material::{BlendType, MaterialHeader, MaterialType};
 use ard_formats::mesh::{MeshDataBuilder, MeshHeader};
 use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, NodeData};
@@ -54,6 +55,7 @@ fn main() {
             out_path
         }
     };
+    let out_path = AssetNameBuf::from_path_buf(out_path).unwrap();
 
     std::fs::create_dir_all(&out_path).unwrap();
 
@@ -124,10 +126,10 @@ fn main() {
 
 fn create_header(
     args: &Args,
-    out_path: &Path,
+    out_path: &AssetName,
     gltf: &ard_gltf::GltfModel,
     texture_is_unorm: &[AtomicBool],
-    texture_paths: &[PathBuf],
+    texture_paths: &[AssetNameBuf],
 ) -> ModelHeader {
     let mut header = ModelHeader::default();
     header.lights = Vec::with_capacity(gltf.lights.len());
@@ -210,7 +212,7 @@ fn create_header(
         };
 
         let mat_path = if args.uuid_names {
-            let mut mat_path = PathBuf::from(out_path);
+            let mut mat_path = AssetNameBuf::from(out_path);
             mat_path.push(format!("{}.ard_mat", uuid::Uuid::new_v4().to_string()));
             mat_path
         } else {
@@ -220,7 +222,7 @@ fn create_header(
         bincode::serialize_into(&mut f, &mat_header).unwrap();
 
         header.materials.push(if args.uuid_names {
-            PathBuf::from(mat_path.file_name().unwrap())
+            AssetNameBuf::from(mat_path.file_name().unwrap())
         } else {
             mat_path
         });
@@ -274,14 +276,14 @@ fn create_header(
     header
 }
 
-fn save_meshes(args: &Args, out: &Path, meshes: Vec<GltfMesh>) -> Vec<PathBuf> {
+fn save_meshes(args: &Args, out: &AssetName, meshes: Vec<GltfMesh>) -> Vec<AssetNameBuf> {
     use rayon::prelude::*;
     meshes
         .into_par_iter()
         .enumerate()
         .map(|(i, mesh)| {
             let mesh_path = if args.uuid_names {
-                PathBuf::from(out)
+                AssetNameBuf::from(out)
             } else {
                 let mesh_path = ModelHeader::mesh_path(out, i);
                 fs::create_dir_all(&mesh_path).unwrap();
@@ -292,12 +294,12 @@ fn save_meshes(args: &Args, out: &Path, meshes: Vec<GltfMesh>) -> Vec<PathBuf> {
         .collect()
 }
 
-fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
+fn save_mesh(args: &Args, out: &AssetName, mut mesh: GltfMesh) -> AssetNameBuf {
     let (mesh_data_path, mesh_header_path) = if args.uuid_names {
-        let mut mesh_data_path = PathBuf::from(out);
+        let mut mesh_data_path = AssetNameBuf::from(out);
         mesh_data_path.push(uuid::Uuid::new_v4().to_string());
 
-        let mut mesh_header_path = PathBuf::from(out);
+        let mut mesh_header_path = AssetNameBuf::from(out);
         mesh_header_path.push(format!("{}.ard_msh", uuid::Uuid::new_v4().to_string()));
 
         (mesh_data_path, mesh_header_path)
@@ -373,7 +375,7 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
 
     // Save the header
     let header = MeshHeader {
-        data_path: PathBuf::from(mesh_data_path.file_name().unwrap()),
+        data_path: AssetNameBuf::from(mesh_data_path.file_name().unwrap()),
         index_count: data.index_count() as u32,
         vertex_count: data.vertex_count() as u32,
         meshlet_count: data.meshlet_count() as u32,
@@ -382,15 +384,15 @@ fn save_mesh(args: &Args, out: &Path, mut mesh: GltfMesh) -> PathBuf {
     let mut f = BufWriter::new(fs::File::create(&mesh_header_path).unwrap());
     bincode::serialize_into(&mut f, &header).unwrap();
 
-    PathBuf::from(mesh_header_path.file_name().unwrap())
+    AssetNameBuf::from(mesh_header_path.file_name().unwrap())
 }
 
 fn save_textures(
     args: &Args,
-    out: &Path,
+    out: &AssetName,
     textures: Vec<GltfTexture>,
     texture_is_unorm: &[AtomicBool],
-    texture_paths: &[PathBuf],
+    texture_paths: &[AssetNameBuf],
 ) {
     use rayon::prelude::*;
     textures
@@ -486,7 +488,7 @@ fn save_textures(
                 let mip_out_path = if args.uuid_names {
                     let mut data_path = PathBuf::from(out);
                     data_path.push(tex_header.mips[mip].clone());
-                    data_path
+                    AssetNameBuf::from_path_buf(data_path).unwrap()
                 } else {
                     tex_header.mips[mip].clone()
                 };

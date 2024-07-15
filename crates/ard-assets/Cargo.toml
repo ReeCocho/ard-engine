@@ -22,4 +22,5 @@ zstd.workspace = true
 bytemuck.workspace = true
 bincode.workspace = true
 thread-priority.workspace = true
+camino.workspace = true
 path-slash = "0.2"
