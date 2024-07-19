@@ -57,15 +57,17 @@ impl TransformUpdate {
                         children.0.retain(|e| *e != entity);
                     }
 
-                    if let Some(new) = new.new_parent {
-                        parent.0 = new;
+                    match new.new_parent {
+                        Some(new) => {
+                            parent.0 = new;
+                        }
+                        None => commands.entities.remove_component::<Parent>(entity),
                     }
                 }
-                None => {
-                    if let Some(new) = new.new_parent {
-                        commands.entities.add_component(entity, Parent(new));
-                    }
-                }
+                None => match new.new_parent {
+                    Some(new) => commands.entities.add_component(entity, Parent(new)),
+                    None => commands.entities.remove_component::<Parent>(entity),
+                },
             }
 
             // Put self into new parents child list

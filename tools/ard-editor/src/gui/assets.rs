@@ -1,32 +1,33 @@
-use std::path::PathBuf;
-
 use ard_engine::{
     assets::package::PackageId,
     ecs::{resource::res::Res, system::data::Everything},
 };
-use camino::Utf8PathBuf;
+use camino::Utf8Path;
 
 use crate::{
-    assets::{op::AssetOpInstance, EditorAsset, EditorAssets, Folder},
-    tasks::{asset::RenameAssetOp, TaskQueue},
+    assets::{op::AssetOpInstance, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
+    tasks::{
+        asset::{DeleteAssetOp, DeleteFolderTask, NewFolderTask, RenameAssetOp, RenameFolderTask},
+        TaskQueue,
+    },
 };
 
 use super::{drag_drop::DragDropPayload, util, EditorViewContext};
 
 #[derive(Default)]
-pub struct AssetsView {
-    cur_path: Utf8PathBuf,
-}
+pub struct AssetsView;
 
 impl AssetsView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
         let assets = ctx.res.get_mut::<EditorAssets>().unwrap();
+        let mut cur_path = ctx.res.get_mut::<CurrentAssetPath>().unwrap();
+
         let active_package = assets.active_package_id();
 
-        let folder = match assets.find_folder(&self.cur_path) {
+        let folder = match assets.find_folder(cur_path.path()) {
             Some(folder) => folder,
             None => {
-                self.cur_path.pop();
+                cur_path.path_mut().pop();
                 return egui_tiles::UiResponse::None;
             }
         };
@@ -40,16 +41,14 @@ impl AssetsView {
             )
             .context_menu(|ui| {
                 if ui.button("Back").clicked() {
-                    self.cur_path.pop();
+                    cur_path.path_mut().pop();
                 }
 
                 if ui.button("New Folder").clicked() {
-                    /*
                     ctx.res
                         .get_mut::<TaskQueue>()
                         .unwrap()
-                        .add(NewFolderTask::new(&self.cur_path, &package_root));
-                    */
+                        .add(NewFolderTask::new(cur_path.path()));
                 }
             });
 
@@ -61,17 +60,22 @@ impl AssetsView {
                     for (folder_name, folder) in folder.sub_folders() {
                         let response = Self::folder_ui(ui, ctx.res, folder, folder_name);
                         if response.double_clicked() {
-                            self.cur_path.push(folder_name);
+                            cur_path.path_mut().push(folder_name);
                         }
 
                         response.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
-                                /*
                                 ctx.res
                                     .get_mut::<TaskQueue>()
                                     .unwrap()
-                                    .add(RenameFolderTask::new(folder.abs_path()));
-                                */
+                                    .add(RenameFolderTask::new(folder.path()));
+                            }
+
+                            if ui.button("Delete").clicked() {
+                                ctx.res
+                                    .get_mut::<TaskQueue>()
+                                    .unwrap()
+                                    .add(DeleteFolderTask::new(folder.path()));
                             }
                         });
                     }
@@ -95,7 +99,14 @@ impl AssetsView {
                                     .add(AssetOpInstance::new(RenameAssetOp::new(&assets, asset)));
                             }
 
-                            if self.cur_path != PathBuf::default()
+                            if ui.button("Delete").clicked() {
+                                ctx.res
+                                    .get_mut::<TaskQueue>()
+                                    .unwrap()
+                                    .add(AssetOpInstance::new(DeleteAssetOp::new(&assets, asset)));
+                            }
+
+                            if cur_path.path() != Utf8Path::new("")
                                 && ui.button("Move up a folder").clicked()
                             {
                                 /*

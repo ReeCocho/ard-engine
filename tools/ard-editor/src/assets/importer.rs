@@ -29,6 +29,7 @@ impl AssetImporter {
         let task_queue = res.get::<TaskQueue>().unwrap();
         task_queue.add(match ty {
             AssetType::Model => ModelImportTask::new(evt.file),
+            _ => return,
         });
     }
 }

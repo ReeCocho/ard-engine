@@ -573,7 +573,10 @@ impl Assets {
 
         let package = match package_id {
             Some(package) => package,
-            None => return false,
+            None => {
+                self.0.name_to_id.remove(name);
+                return false;
+            }
         };
 
         match self.0.name_to_id.get(name) {

@@ -3,6 +3,7 @@ pub mod camera;
 pub mod command;
 pub mod gui;
 pub mod inspect;
+pub mod refresher;
 pub mod scene_graph;
 pub mod selected;
 pub mod ser;
@@ -16,10 +17,11 @@ use ard_engine::render::prelude::PresentMode;
 use ard_engine::render::{CanvasSize, Gui, RenderAssetsPlugin, RenderPlugin, RendererSettings};
 use ard_engine::window::prelude::*;
 use assets::importer::AssetImporter;
-use assets::{AssetManifestLoader, EditorAssets, EditorAssetsManifest};
+use assets::{AssetManifestLoader, CurrentAssetPath, EditorAssets, EditorAssetsManifest};
 use camera::SceneViewCamera;
 use command::{EditorCommandSystem, EditorCommands};
 use gui::EditorView;
+use refresher::RefresherSystem;
 use scene_graph::{DiscoverSceneGraphRoots, SceneGraph};
 use selected::{SelectEntitySystem, Selected};
 use shlooper::Shlooper;
@@ -57,10 +59,12 @@ fn main() {
         .add_system(DiscoverSceneGraphRoots)
         .add_system(EditorCommandSystem::default())
         .add_system(Shlooper::default())
+        .add_system(RefresherSystem::default())
         .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())
         .add_resource(EditorCommands::default())
+        .add_resource(CurrentAssetPath::default())
         .run();
 }
 

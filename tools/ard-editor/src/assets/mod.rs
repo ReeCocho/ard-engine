@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 
 pub const ASSETS_FOLDER: &'static str = "./assets/";
 
+#[derive(Resource, Default)]
+pub struct CurrentAssetPath(Utf8PathBuf);
+
 #[derive(Resource)]
 pub struct EditorAssets {
     active_package: PackageId,
@@ -44,6 +47,18 @@ pub struct EditorAsset {
     meta_path: Utf8PathBuf,
     #[serde(skip)]
     packages: BTreeSet<PackageId>,
+}
+
+impl CurrentAssetPath {
+    #[inline(always)]
+    pub fn path(&self) -> &Utf8Path {
+        &self.0
+    }
+
+    #[inline(always)]
+    pub fn path_mut(&mut self) -> &mut Utf8PathBuf {
+        &mut self.0
+    }
 }
 
 impl EditorAssets {
@@ -237,15 +252,29 @@ impl EditorAssets {
 
         while let Some(component) = iter.next() {
             if iter.peek().is_none() {
-                let asset_name = path.file_name().unwrap_or("");
-                let asset = match root.assets.get_mut(asset_name) {
-                    Some(asset) => asset,
-                    None => return,
-                };
+                let name = path.file_name().unwrap_or("");
 
-                asset.packages.remove(&self.active_package);
-                if asset.packages.is_empty() {
-                    root.assets.remove(asset_name);
+                if path.extension().is_none() {
+                    let folder = match root.sub_folders.get(name) {
+                        Some(folder) => folder,
+                        None => return,
+                    };
+
+                    if !folder.contained_only_within(self.active_package) {
+                        return;
+                    }
+
+                    root.sub_folders.remove(name);
+                } else {
+                    let asset = match root.assets.get_mut(name) {
+                        Some(asset) => asset,
+                        None => return,
+                    };
+
+                    asset.packages.remove(&self.active_package);
+                    if asset.packages.is_empty() {
+                        root.assets.remove(name);
+                    }
                 }
             } else {
                 root = match root.sub_folders.get_mut(component) {
@@ -349,6 +378,22 @@ impl Folder {
                 })
                 .merge_from(folder);
         });
+    }
+
+    pub fn contained_only_within(&self, package: PackageId) -> bool {
+        for asset in self.assets.values() {
+            if asset.packages.len() > 1 || !asset.packages.contains(&package) {
+                return false;
+            }
+        }
+
+        for sub_folder in self.sub_folders.values() {
+            if !sub_folder.contained_only_within(package) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     fn set_package(&mut self, package: PackageId) {

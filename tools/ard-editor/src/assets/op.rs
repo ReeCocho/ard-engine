@@ -5,14 +5,12 @@ use path_macro::path;
 
 use crate::tasks::{EditorTask, TaskConfirmation};
 
-use super::{meta::AssetType, EditorAssets};
+use super::EditorAssets;
 
 pub trait AssetOp: Send + Sync {
     fn meta_path(&self) -> &Utf8Path;
 
     fn raw_path(&self) -> &Utf8Path;
-
-    fn asset_ty(&self) -> AssetType;
 
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation>;
 
@@ -24,6 +22,7 @@ pub trait AssetOp: Send + Sync {
         &mut self,
         is_shadowing: bool,
         is_leaf: bool,
+        commands: &Commands,
         assets: &Assets,
         editor_assets: &mut EditorAssets,
     ) -> Result<()>;
@@ -86,14 +85,19 @@ impl<A: AssetOp> EditorTask for AssetOpInstance<A> {
 
     fn complete(
         &mut self,
-        _commands: &Commands,
+        commands: &Commands,
         _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> Result<()> {
         let assets = res.get::<Assets>().unwrap();
         let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
-        self.op
-            .complete(self.is_shadowing, self.is_leaf, &assets, &mut editor_assets)?;
+        self.op.complete(
+            self.is_shadowing,
+            self.is_leaf,
+            commands,
+            &assets,
+            &mut editor_assets,
+        )?;
 
         Ok(())
     }

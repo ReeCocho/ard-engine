@@ -90,7 +90,7 @@ impl AppBuilder {
         self
     }
 
-    /// A startup function is called once before the first dispatch when running hte app.
+    /// A startup function is called once before the first dispatch when running the app.
     pub fn add_startup_function(&mut self, startup: fn(&mut App)) -> &mut Self {
         self.app.startup_functions.push(startup);
         self

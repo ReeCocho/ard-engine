@@ -17,6 +17,9 @@ pub enum MetaData {
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum AssetType {
     Model,
+    Mesh,
+    Texture,
+    Material,
 }
 
 impl MetaFile {
@@ -46,7 +49,10 @@ impl<'a> TryFrom<&'a Path> for AssetType {
         };
 
         match ext {
-            "glb" => Ok(AssetType::Model),
+            "glb" | "ard_mdl" => Ok(AssetType::Model),
+            "ard_msh" => Ok(AssetType::Mesh),
+            "ard_tex" => Ok(AssetType::Texture),
+            "ard_mat" => Ok(AssetType::Material),
             _ => Err(anyhow::Error::msg("Unknown extension.")),
         }
     }

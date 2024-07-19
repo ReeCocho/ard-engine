@@ -11,22 +11,28 @@ use std::path::PathBuf;
 use crate::{
     assets::{
         meta::{MetaData, MetaFile},
-        EditorAssets, ASSETS_FOLDER,
+        CurrentAssetPath, EditorAssets,
     },
     tasks::{EditorTask, TaskConfirmation},
 };
 
 pub struct ModelImportTask {
-    path: PathBuf,
-    meta_file_path: PathBuf,
+    src_path: PathBuf,
+    active_package: PathBuf,
+    raw_dst_path: PathBuf,
+    meta_rel_path: PathBuf,
+    meta_dst_path: PathBuf,
     new_assets: Vec<AssetNameBuf>,
 }
 
 impl ModelImportTask {
     pub fn new(path: PathBuf) -> Self {
         Self {
-            path,
-            meta_file_path: PathBuf::default(),
+            src_path: path,
+            active_package: PathBuf::default(),
+            raw_dst_path: PathBuf::default(),
+            meta_rel_path: PathBuf::default(),
+            meta_dst_path: PathBuf::default(),
             new_assets: Vec::default(),
         }
     }
@@ -36,7 +42,10 @@ impl EditorTask for ModelImportTask {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
         let mut res = TaskConfirmation::Wait;
 
-        ui.label(format!("Do you want to import `{}`?", self.path.display()));
+        ui.label(format!(
+            "Do you want to import `{}`?",
+            self.src_path.display()
+        ));
 
         if ui.button("Yes").clicked() {
             res = TaskConfirmation::Ready;
@@ -49,14 +58,47 @@ impl EditorTask for ModelImportTask {
         Ok(res)
     }
 
+    fn pre_run(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let editor_assets = res.get::<EditorAssets>().unwrap();
+        let cur_path = res.get::<CurrentAssetPath>().unwrap();
+
+        self.active_package = editor_assets.active_package_root().into();
+        match self.src_path.file_name() {
+            Some(file_name) => {
+                self.raw_dst_path =
+                    path!(editor_assets.active_assets_root() / cur_path.path() / file_name);
+                self.meta_rel_path = path!(cur_path.path() / file_name);
+                self.meta_rel_path.set_extension("glb.meta");
+                self.meta_dst_path = path!(editor_assets.active_assets_root() / self.meta_rel_path);
+            }
+            None => return Err(anyhow::Error::msg("Invalid file name.")),
+        }
+
+        if editor_assets
+            .find_asset(Utf8Path::from_path(&self.meta_rel_path).unwrap_or(Utf8Path::new("")))
+            .is_some()
+        {
+            return Err(anyhow::Error::msg(
+                "TODO: Can't currently import over existing asset.",
+            ));
+        }
+
+        Ok(())
+    }
+
     fn run(&mut self) -> Result<()> {
-        info!("Importing `{}`...", self.path.display());
+        info!("Importing `{}`...", self.src_path.display());
 
         // Create a temporary folder for artifacts
         let temp_folder = tempfile::TempDir::new()?;
 
         // Run the command
-        let in_path = format!("{}", self.path.display());
+        let in_path = format!("{}", self.src_path.display());
         let out_path = format!("{}", temp_folder.path().display());
 
         let output = std::process::Command::new("./tools/gltf-oven")
@@ -101,7 +143,7 @@ impl EditorTask for ModelImportTask {
         let folder = temp_folder.into_path();
         fs_extra::dir::move_dir(
             folder,
-            "./packages/main",
+            &self.active_package,
             &fs_extra::dir::CopyOptions {
                 overwrite: true,
                 content_only: true,
@@ -110,18 +152,7 @@ impl EditorTask for ModelImportTask {
         )?;
 
         // Copy raw asset into the assets folder
-        let (out_path, meta_path) = match self.path.file_name() {
-            Some(file_name) => {
-                let out_path = path!("./main" / file_name);
-                let mut meta_path = out_path.clone();
-                meta_path.set_extension("glb.meta");
-
-                (out_path, meta_path)
-            }
-            None => return Err(anyhow::Error::msg("Invalid file name.")),
-        };
-
-        std::fs::copy(in_path, path!(ASSETS_FOLDER / out_path))?;
+        std::fs::copy(in_path, &self.raw_dst_path)?;
 
         // Create the meta file for the asset
         let meta = MetaFile {
@@ -129,12 +160,9 @@ impl EditorTask for ModelImportTask {
             data: MetaData::Model,
         };
 
-        let meta_file_path = path!(ASSETS_FOLDER / meta_path);
-        let file = std::fs::File::create(&meta_file_path)?;
+        let file = std::fs::File::create(&self.meta_dst_path)?;
         let writer = std::io::BufWriter::new(file);
         ron::ser::to_writer(writer, &meta)?;
-
-        self.meta_file_path = meta_file_path;
 
         Ok(())
     }
@@ -153,7 +181,7 @@ impl EditorTask for ModelImportTask {
         });
 
         editor_assets
-            .scan_for(Utf8Path::from_path(&self.meta_file_path).unwrap())
+            .scan_for(Utf8Path::from_path(&self.meta_dst_path).unwrap())
             .unwrap();
 
         println!("Task complete...");

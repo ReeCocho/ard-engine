@@ -110,7 +110,7 @@ void manual_payload(const ObjectId id) {
     payload.meshlet_base = 1 + id.meshlet_base;
     payload.meshlet_info_base = mesh_info[object_data[id.data_idx].mesh].meshlet_offset;
     payload.model = transpose(object_data[id.data_idx].model);
-    payload.normal = mat3(transpose(object_data[id.data_idx].model_inv));
+    payload.normal = mat3(object_data[id.data_idx].model_inv);
     payload.object_id = id.data_idx;
 #if defined(ENTITY_PASS)
     payload.entity = object_data[id.data_idx].entity;
@@ -175,7 +175,7 @@ void main() {
         // Read in mesh information
         const ObjectId id = input_ids[object_idx];
         const mat4x3 model_mat = transpose(object_data[id.data_idx].model);
-        const mat3 normal_mat = mat3(transpose(object_data[id.data_idx].model_inv));
+        const mat3 normal_mat = mat3(object_data[id.data_idx].model_inv);
         const uint textures_slot = object_data[id.data_idx].textures;
         const uint mesh_id = object_data[id.data_idx].mesh;
         const uint meshlet_offset = mesh_info[mesh_id].meshlet_offset;
