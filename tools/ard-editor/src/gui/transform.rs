@@ -3,9 +3,9 @@ use std::ops::DerefMut;
 use ard_engine::{
     core::stat::Static,
     ecs::prelude::*,
-    game::components::transform::{Parent, Position, Rotation, Scale},
     math::*,
-    render::{Camera, Model},
+    render::Camera,
+    transform::{Model, Parent, Position, Rotation, Scale},
 };
 use transform_gizmo_egui::{math::Transform, prelude::*};
 

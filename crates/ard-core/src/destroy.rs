@@ -1,7 +1,15 @@
-use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 
-use crate::components::{destroy::Destroy, transform::Children};
+use crate::prelude::Tick;
+
+/// Marks an entity for destruction. Destruction is deferred, which allows you to run code on
+/// entities that are about to be destroyed. To do this, your system must have a `Tick` handler
+/// that runs before the `Destroyer` system.
+///
+/// You should use the `Destroy::entity` function to recursively destroy objects in the transform
+/// hierarchy.
+#[derive(Debug, Component, Copy, Clone)]
+pub struct Destroy;
 
 #[derive(Debug, Default, SystemState)]
 pub struct Destroyer {
@@ -9,14 +17,12 @@ pub struct Destroyer {
     to_destroy: Vec<Entity>,
 }
 
-type DestroySysQueries = (Read<Destroy>, Read<Children>);
-
 impl Destroyer {
     fn on_tick(
         &mut self,
         _: Tick,
         commands: Commands,
-        queries: Queries<DestroySysQueries>,
+        queries: Queries<Read<Destroy>>,
         _: Res<()>,
     ) {
         let query = queries.make::<(Entity, Read<Destroy>)>();
@@ -25,25 +31,11 @@ impl Destroyer {
         self.to_destroy.reserve(query.len());
 
         for (entity, _) in query {
-            Self::destroy_recurse(entity, &queries, &mut self.to_destroy);
+            self.to_destroy.push(entity);
         }
 
         if !self.to_destroy.is_empty() {
             commands.entities.destroy(&self.to_destroy);
-        }
-    }
-
-    fn destroy_recurse(
-        entity: Entity,
-        queries: &Queries<DestroySysQueries>,
-        to_destroy: &mut Vec<Entity>,
-    ) {
-        to_destroy.push(entity);
-        let children = queries.get::<Read<Children>>(entity);
-        if let Some(children) = children {
-            children.0.iter().for_each(|e| {
-                Self::destroy_recurse(*e, queries, to_destroy);
-            });
         }
     }
 }

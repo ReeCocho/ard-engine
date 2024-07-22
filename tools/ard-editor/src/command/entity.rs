@@ -6,13 +6,9 @@ use ard_engine::{
         stat::{DirtyStatic, Static, StaticGroup},
     },
     ecs::{component::pack::EmptyComponentPack, tag::pack::EmptyTagPack},
-    game::components::{
-        destroy::Destroy,
-        transform::{Children, Parent, Position, Rotation, Scale, SetParent},
-    },
     math::Vec3,
-    render::Model,
     save_load::{format::Bincode, save_data::SaveData},
+    transform::{Children, Model, Parent, Position, Rotation, Scale, SetParent},
 };
 use rustc_hash::FxHashSet;
 
@@ -126,10 +122,10 @@ impl EditorCommand for CreateEmptyEntity {
     fn clear(
         &mut self,
         commands: &Commands,
-        _queries: &Queries<Everything>,
+        queries: &Queries<Everything>,
         _res: &Res<Everything>,
     ) {
-        commands.entities.add_component(self.entity, Destroy);
+        ard_engine::transform::destroy_entity(self.entity, &commands.entities, queries);
     }
 }
 

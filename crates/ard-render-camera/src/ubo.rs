@@ -6,11 +6,11 @@ use ard_pal::prelude::{
     DescriptorSetUpdate, DescriptorValue, MemoryUsage, QueueTypes, SharingMode,
 };
 use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
-use ard_render_objects::Model;
 use ard_render_si::{
     bindings::*,
     types::{GpuCamera, GpuFroxels},
 };
+use ard_transform::Model;
 
 use crate::Camera;
 

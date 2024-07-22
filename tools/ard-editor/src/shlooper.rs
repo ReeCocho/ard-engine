@@ -1,10 +1,10 @@
 pub use ard_engine::ecs::prelude::*;
 use ard_engine::{
     core::core::Tick,
-    game::components::transform::Position,
     input::{InputState, Key},
     math::{Vec4, Vec4Swizzles},
-    render::{Camera, Mesh, Model},
+    render::{Camera, Mesh},
+    transform::{Model, Position},
 };
 
 use crate::{camera::SceneViewCamera, selected::Selected};

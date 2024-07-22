@@ -1,16 +1,17 @@
 use ard_engine::{
-    core::{core::Name, stat::Static},
-    game::components::{
-        destroy::Destroy,
-        stat::MarkStatic,
-        transform::{Children, Parent, Position, Rotation, Scale, SetParent},
+    core::{core::Name, destroy::Destroy, stat::Static},
+    game::components::stat::MarkStatic,
+    physics::{
+        collider::{Collider, ColliderHandle},
+        rigid_body::{RigidBody, RigidBodyHandle},
     },
     render::{
         loader::{MaterialHandle, MeshHandle},
         prelude::RenderingMode,
-        MaterialInstance, Mesh, Model, RenderFlags,
+        MaterialInstance, Mesh, RenderFlags,
     },
     save_load::{format::SaveFormat, load_data::Loader, save_data::Saver},
+    transform::{Children, Model, Parent, Position, Rotation, Scale, SetParent},
 };
 
 use crate::inspect::transform::EulerRotation;
@@ -29,6 +30,10 @@ pub fn saver<F: SaveFormat + 'static>() -> Saver<F> {
         .include_component::<MaterialHandle>()
         .include_component::<Name>()
         .include_component::<MarkStatic>()
+        .include_component::<Collider>()
+        .include_component::<RigidBody>()
+        .ignore::<ColliderHandle>()
+        .ignore::<RigidBodyHandle>()
         .ignore::<Static>()
         .ignore::<Mesh>()
         .ignore::<MaterialInstance>()
@@ -51,4 +56,6 @@ pub fn loader<F: SaveFormat + 'static>() -> Loader<F> {
         .load_component::<MaterialHandle>()
         .load_component::<Name>()
         .load_component::<MarkStatic>()
+        .load_component::<Collider>()
+        .load_component::<RigidBody>()
 }

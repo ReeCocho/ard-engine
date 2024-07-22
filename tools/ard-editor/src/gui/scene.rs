@@ -3,10 +3,10 @@ use std::sync::Arc;
 use ard_engine::{
     assets::manager::Assets,
     ecs::prelude::*,
-    game::components::transform::{Position, Rotation},
     input::{InputState, Key},
     math::*,
     render::{CanvasSize, Gui, SelectEntity},
+    transform::{Position, Rotation},
 };
 
 use crate::{

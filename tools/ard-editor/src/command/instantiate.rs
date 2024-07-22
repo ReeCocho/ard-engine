@@ -3,13 +3,13 @@ use ard_engine::{
     assets::manager::Assets,
     core::core::Name,
     ecs::prelude::*,
-    game::components::transform::{Children, Parent, Position, Rotation, Scale},
     math::Mat4,
     render::{
         loader::{MaterialHandle, MeshHandle},
         model::{ModelAsset, Node, NodeData},
-        Model, RenderFlags,
+        RenderFlags,
     },
+    transform::{Children, Model, Parent, Position, Rotation, Scale},
 };
 
 use super::{entity::TransientEntities, EditorCommand};

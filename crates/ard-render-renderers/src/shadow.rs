@@ -12,10 +12,10 @@ use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::{
     objects::RenderObjects,
     set::{RenderableSet, RenderableSetUpdate},
-    Model,
 };
 use ard_render_si::bindings::Layouts;
 use ard_render_textures::{factory::TextureFactory, texture::TextureResource};
+use ard_transform::Model;
 use ordered_float::NotNan;
 
 use crate::{

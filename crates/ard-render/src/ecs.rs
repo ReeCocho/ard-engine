@@ -17,7 +17,7 @@ use ard_render_image_effects::{
 use ard_render_lighting::{lights::LightClusters, proc_skybox::ProceduralSkyBox};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
-use ard_render_objects::{Model, RenderFlags};
+use ard_render_objects::RenderFlags;
 use ard_render_renderers::{
     debug::DebugRenderer,
     entities::{EntityIdRenderArgs, EntityIdRenderer, EntitySelected, SelectEntity},
@@ -30,6 +30,7 @@ use ard_render_renderers::{
 };
 use ard_render_si::{bindings::Layouts, consts::*};
 use ard_render_textures::factory::TextureFactory;
+use ard_transform::Model;
 use raw_window_handle::HasDisplayHandle;
 
 use crate::{canvas::Canvas, factory::Factory, frame::FrameData, RenderPlugin};

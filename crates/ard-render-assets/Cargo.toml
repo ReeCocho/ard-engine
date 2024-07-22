@@ -7,6 +7,7 @@ edition.workspace = true
 ard-core = { path = "../ard-core" }
 ard-formats = { path = "../ard-formats" }
 ard-assets = { path = "../ard-assets" }
+ard-transform = { path = "../ard-transform" }
 ard-save-load = { path = "../ard-save-load" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-objects = { path = "../ard-render-objects" }

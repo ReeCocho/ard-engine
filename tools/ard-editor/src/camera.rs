@@ -1,9 +1,9 @@
 use ard_engine::{
     core::prelude::*,
     ecs::prelude::*,
-    game::components::transform::{Position, Rotation, Scale},
     math::Vec4,
-    render::{Camera, CameraClearColor, Model, RenderFlags},
+    render::{Camera, CameraClearColor, RenderFlags},
+    transform::{Model, Position, Rotation, Scale},
 };
 
 #[derive(Resource)]

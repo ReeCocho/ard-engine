@@ -4,7 +4,8 @@ use ard_math::Mat4;
 use ard_render_base::RenderingMode;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
-use ard_render_objects::{Model, RenderFlags};
+use ard_render_objects::RenderFlags;
+use ard_transform::Model;
 use async_trait::async_trait;
 
 use crate::{material::MaterialAsset, mesh::MeshAsset, texture::TextureAsset};

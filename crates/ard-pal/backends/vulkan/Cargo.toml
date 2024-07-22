@@ -22,4 +22,4 @@ smallvec.workspace = true
 puffin.workspace = true
 ash = "0.38"
 ash-window = "0.13"
-gpu-allocator = { git = "https://github.com/Traverse-Research/gpu-allocator.git", branch = "ash-0.38", features = [ "vulkan" ], default-features = false }
+gpu-allocator = { version = "0.27", features = [ "vulkan" ], default-features = false }

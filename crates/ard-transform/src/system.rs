@@ -1,38 +1,31 @@
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use ard_math::*;
-use ard_render_objects::Model;
+use ard_math::{Mat4, Quat, Vec3A};
 
-use crate::components::{
-    destroy::Destroy,
-    transform::{Children, Parent, Position, Rotation, Scale, SetParent},
-};
-
-use super::destroy::Destroyer;
+use crate::{Children, Model, Parent, Position, Rotation, Scale, SetParent};
 
 #[derive(SystemState, Default)]
-pub struct TransformUpdate {
+pub struct TransformHierarchyUpdate;
+
+#[derive(SystemState, Default)]
+pub struct ModelUpdateSystem {
     /// Entities with transforms, sorted based on depth in the hierarchy.
     hierarchy: Vec<Entity>,
 }
 
-type TransformUpdateQuery = (
-    Read<Destroy>,
-    Read<SetParent>,
-    Read<Position>,
-    Read<Rotation>,
-    Read<Scale>,
-    Write<Model>,
-    Write<Parent>,
-    Write<Children>,
-);
-
-impl TransformUpdate {
+impl TransformHierarchyUpdate {
     pub fn on_tick(
         &mut self,
         _: Tick,
         commands: Commands,
-        queries: Queries<TransformUpdateQuery>,
+        queries: Queries<(
+            Read<SetParent>,
+            Read<Position>,
+            Read<Rotation>,
+            Read<Scale>,
+            Write<Parent>,
+            Write<Children>,
+        )>,
         _: Res<()>,
     ) {
         // Need to remove destroyed entities from child lists
@@ -80,11 +73,28 @@ impl TransformUpdate {
 
             commands.entities.remove_component::<SetParent>(entity);
         }
+    }
+}
 
+impl ModelUpdateSystem {
+    fn on_tick(
+        &mut self,
+        _: Tick,
+        _: Commands,
+        queries: Queries<(
+            Read<SetParent>,
+            Read<Children>,
+            Read<Position>,
+            Read<Rotation>,
+            Read<Scale>,
+            Write<Model>,
+        )>,
+        _: Res<()>,
+    ) {
         // Find the roots of the transform hierarchy and initialize their model matrices
         self.hierarchy.clear();
 
-        // This first query is every component without a parent and without a 'SetComponent'
+        // This first query is every component without a parent and without a 'SetParent'
         // marker. Obviously, these are roots.
         let guaranteed_roots = queries
             .filter()
@@ -110,7 +120,7 @@ impl TransformUpdate {
             model.0 = Mat4::from_scale_rotation_translation(scl.into(), rot, pos.into());
         }
 
-        // This second query is every component with a `SetComponent` marker and a parent. They
+        // This second query is every component with a `SetParent` marker and a parent. They
         // "may" be setting the component to `None` and are thus a root.
         let possible_roots = queries
             .filter()
@@ -189,11 +199,21 @@ impl TransformUpdate {
     }
 }
 
-impl From<TransformUpdate> for System {
-    fn from(sys: TransformUpdate) -> Self {
+impl From<TransformHierarchyUpdate> for System {
+    fn from(sys: TransformHierarchyUpdate) -> Self {
         SystemBuilder::new(sys)
-            .with_handler(TransformUpdate::on_tick)
+            .with_handler(TransformHierarchyUpdate::on_tick)
             .run_before::<Tick, Destroyer>()
+            .build()
+    }
+}
+
+impl From<ModelUpdateSystem> for System {
+    fn from(value: ModelUpdateSystem) -> Self {
+        SystemBuilder::new(value)
+            .with_handler(ModelUpdateSystem::on_tick)
+            .run_before::<Tick, Destroyer>()
+            .run_after::<Tick, TransformHierarchyUpdate>()
             .build()
     }
 }

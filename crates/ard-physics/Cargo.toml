@@ -1,0 +1,13 @@
+[package]
+name = "ard-physics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-core = { path = "../ard-core" }
+ard-ecs = { path = "../ard-ecs" }
+ard-math = { path = "../ard-math" }
+ard-transform = { path = "../ard-transform" }
+rapier3d = { version = "0.22", features = [ "simd-stable", "serde-serialize"] }
+nalgebra = { version = "0.33", features = [ "convert-mint", "convert-glam028" ] }
+serde.workspace = true

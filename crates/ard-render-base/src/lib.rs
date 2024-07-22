@@ -1,4 +1,4 @@
-use ard_ecs::component::Component;
+use ard_ecs::{component::Component, event::Event};
 use serde::{Deserialize, Serialize};
 
 pub mod ecs;
@@ -15,5 +15,9 @@ pub enum RenderingMode {
     /// The entity is transparent,
     Transparent = 2,
 }
+
+/// Event indicating rendering is about to occur.
+#[derive(Debug, Event, Copy, Clone)]
+pub struct PreRender;
 
 pub const FRAMES_IN_FLIGHT: usize = 2;

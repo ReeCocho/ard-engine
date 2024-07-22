@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-ard-core = { path = "../ard-core" }
 ard-ecs = { path = "../ard-ecs" }
 ard-assets = { path = "../ard-assets" }
 serde.workspace = true

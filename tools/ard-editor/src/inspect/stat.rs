@@ -1,7 +1,8 @@
 use ard_engine::{
     core::stat::{DirtyStatic, Static},
     ecs::prelude::*,
-    game::components::{stat::MarkStatic, transform::Parent},
+    game::components::stat::MarkStatic,
+    transform::Parent,
 };
 
 use crate::scene_graph::SceneGraph;

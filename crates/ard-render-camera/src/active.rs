@@ -1,7 +1,7 @@
 use std::collections::hash_map;
 
 use ard_ecs::prelude::Entity;
-use ard_render_objects::Model;
+use ard_transform::Model;
 use rustc_hash::FxHashMap;
 
 use crate::Camera;

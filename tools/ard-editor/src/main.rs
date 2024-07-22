@@ -13,8 +13,10 @@ pub mod tasks;
 use ard_engine::assets::prelude::*;
 use ard_engine::core::prelude::*;
 use ard_engine::game::GamePlugin;
+use ard_engine::physics::PhysicsPlugin;
 use ard_engine::render::prelude::PresentMode;
 use ard_engine::render::{CanvasSize, Gui, RenderAssetsPlugin, RenderPlugin, RendererSettings};
+use ard_engine::transform::TransformPlugin;
 use ard_engine::window::prelude::*;
 use assets::importer::AssetImporter;
 use assets::{AssetManifestLoader, CurrentAssetPath, EditorAssets, EditorAssetsManifest};
@@ -40,6 +42,8 @@ fn main() {
             }),
             exit_on_close: true,
         })
+        .add_plugin(TransformPlugin)
+        .add_plugin(PhysicsPlugin)
         .add_plugin(AssetsPlugin)
         .add_plugin(RenderPlugin {
             window: WindowId::primary(),

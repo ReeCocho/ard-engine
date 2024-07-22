@@ -1,7 +1,8 @@
 use ard_ecs::prelude::Component;
 use ard_math::{Mat4, Vec2, Vec3, Vec3A, Vec4, Vec4Swizzles};
-use ard_render_objects::{Model, RenderFlags};
+use ard_render_objects::RenderFlags;
 use ard_render_si::{consts::CAMERA_FROXELS_DEPTH, types::GpuCamera};
+use ard_transform::Model;
 
 pub mod active;
 pub mod froxels;

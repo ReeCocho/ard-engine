@@ -14,6 +14,8 @@ ard-assets = { path = "../ard-assets" }
 ard-input = { path = "../ard-input" }
 ard-gltf = { path = "../ard-gltf" }
 ard-formats = { path = "../ard-formats" }
+ard-physics = { path = "../ard-physics" }
+ard-transform = { path = "../ard-transform" }
 ard-render-si = { path = "../ard-render-si" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-gui = { path = "../ard-render-gui" }

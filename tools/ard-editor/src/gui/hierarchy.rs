@@ -6,7 +6,7 @@ use crate::{
     scene_graph::SceneGraph,
     selected::Selected,
 };
-use ard_engine::{core::core::Name, ecs::prelude::*, game::components::transform::Children};
+use ard_engine::{core::core::Name, ecs::prelude::*, transform::Children};
 
 use super::{drag_drop::DragDropPayload, util, EditorViewContext};
 

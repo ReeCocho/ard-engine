@@ -3,11 +3,11 @@ use ard_ecs::{entity::Entity, resource::Resource};
 use ard_pal::prelude::*;
 use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
-use ard_render_objects::Model;
 use ard_render_si::{
     bindings::Layouts,
     types::{GpuGlobalLighting, GpuLight, GpuLightTable},
 };
+use ard_transform::Model;
 
 use crate::{
     clustering::{LightClusteringPipeline, LightClusteringSet},

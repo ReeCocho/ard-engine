@@ -1,14 +1,13 @@
 use ard_assets::manager::Assets;
 use ard_core::{
     core::Tick,
+    destroy::{Destroy, Destroyer},
     stat::{DirtyStatic, Static},
 };
 use ard_ecs::prelude::*;
 use ard_render_assets::loader::{MaterialHandle, MeshHandle};
 
-use crate::components::{destroy::Destroy, stat::MarkStatic};
-
-use super::destroy::Destroyer;
+use crate::components::stat::MarkStatic;
 
 #[derive(SystemState, Default)]
 pub struct MarkStaticSystem;

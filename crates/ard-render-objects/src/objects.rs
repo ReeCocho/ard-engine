@@ -17,9 +17,10 @@ use ard_render_base::{
 };
 use ard_render_material::{material::MaterialResource, material_instance::MaterialInstance};
 use ard_render_meshes::mesh::{Mesh, MeshResource};
+use ard_transform::Model;
 use rustc_hash::FxHashMap;
 
-use crate::{keys::DrawKey, Model, RenderFlags};
+use crate::{keys::DrawKey, RenderFlags};
 use ard_render_si::types::GpuObjectData;
 
 const BASE_BLOCK_COUNT: usize = 64;

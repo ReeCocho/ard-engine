@@ -3,8 +3,8 @@ use std::ops::DerefMut;
 use ard_engine::{
     core::stat::Static,
     ecs::prelude::*,
-    game::components::transform::{Position, Rotation, Scale},
     math::{EulerRot, Quat, Vec3A},
+    transform::{Position, Rotation, Scale},
 };
 
 use super::{Inspector, InspectorContext};

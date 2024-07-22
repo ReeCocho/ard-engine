@@ -3,8 +3,8 @@ use std::ops::DerefMut;
 use ard_math::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
 use ard_render_camera::Camera;
-use ard_render_objects::Model;
 use ard_render_si::{consts::*, types::*};
+use ard_transform::Model;
 
 pub struct SunShadowsUbo {
     ubo: Buffer,

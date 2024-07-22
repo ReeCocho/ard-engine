@@ -1,10 +1,7 @@
 use ard_engine::{
     core::core::Tick,
     ecs::prelude::*,
-    game::{
-        components::transform::{Children, Parent, SetParent},
-        systems::transform::TransformUpdate,
-    },
+    transform::{system::TransformHierarchyUpdate, Children, Parent, SetParent},
 };
 
 #[derive(Resource, Default)]
@@ -124,7 +121,7 @@ impl From<DiscoverSceneGraphRoots> for System {
     fn from(value: DiscoverSceneGraphRoots) -> Self {
         SystemBuilder::new(value)
             .with_handler(DiscoverSceneGraphRoots::tick)
-            .run_after::<Tick, TransformUpdate>()
+            .run_after::<Tick, TransformHierarchyUpdate>()
             .build()
     }
 }

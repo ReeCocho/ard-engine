@@ -1,0 +1,12 @@
+[package]
+name = "ard-transform"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-ecs = { path = "../ard-ecs" }
+ard-core = { path = "../ard-core" }
+ard-math = { path = "../ard-math" }
+ard-save-load = { path = "../ard-save-load" }
+serde.workspace = true
+smallvec.workspace = true

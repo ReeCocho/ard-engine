@@ -7,7 +7,7 @@ use ard_ecs::{prelude::*, resource::res::Res, system::commands::Commands};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    prelude::{App, AppBuilder, Plugin},
+    prelude::{App, AppBuilder, Destroyer, Plugin},
     stat::DirtyStatic,
 };
 
@@ -162,6 +162,7 @@ impl Plugin for ArdCorePlugin {
             .unwrap();
 
         app.add_system(ArdCore::default());
+        app.add_system(Destroyer::default());
         app.add_resource(ArdCoreState { stopping: false });
         app.add_resource(DirtyStatic::default());
         app.add_event(Start);
