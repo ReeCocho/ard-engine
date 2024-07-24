@@ -1,6 +1,6 @@
 use ard_math::{Vec3A, Vec4, Vec4Swizzles};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceAllocator, Frame, FRAMES_IN_FLIGHT};
 use ard_render_meshes::mesh::MeshResource;
 use ard_render_objects::{
     objects::RenderObjects,

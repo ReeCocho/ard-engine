@@ -1,7 +1,7 @@
 use ard_log::warn;
 use ard_math::{UVec2, Vec2};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_gui::GuiRunOutput;
 use ard_render_si::{bindings::*, types::*};
 use ordered_float::NotNan;

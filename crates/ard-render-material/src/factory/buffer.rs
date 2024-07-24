@@ -1,7 +1,7 @@
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, MemoryUsage, QueueTypes, SharingMode,
 };
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceAllocator, Frame, FRAMES_IN_FLIGHT};
 
 use crate::material_instance::{MaterialInstance, MaterialInstanceResource};
 

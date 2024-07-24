@@ -1,5 +1,5 @@
 use ard_core::{app::AppBuilder, plugin::Plugin};
-use engine::{DynamicsApplySystem, PhysicsEngine, PhysicsSystem};
+use engine::{DynamicsApplySystem, KinematicsApplySystem, PhysicsEngine, PhysicsSystem};
 
 pub mod collider;
 pub mod engine;
@@ -12,5 +12,6 @@ impl Plugin for PhysicsPlugin {
         app.add_resource(PhysicsEngine::new());
         app.add_system(PhysicsSystem::new());
         app.add_system(DynamicsApplySystem);
+        app.add_system(KinematicsApplySystem);
     }
 }

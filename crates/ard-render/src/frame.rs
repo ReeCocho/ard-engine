@@ -3,7 +3,7 @@ use std::time::Duration;
 use ard_core::stat::DirtyStaticListener;
 use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::Frame;
 use ard_render_camera::active::ActiveCameras;
 use ard_render_debug::buffer::DebugVertexBuffer;
 use ard_render_gui::GuiRunOutput;

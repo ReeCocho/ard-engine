@@ -5,7 +5,7 @@ use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, DescriptorSet, DescriptorSetCreateInfo,
     DescriptorSetUpdate, DescriptorValue, MemoryUsage, QueueTypes, SharingMode,
 };
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_si::{
     bindings::*,
     types::{GpuCamera, GpuFroxels},

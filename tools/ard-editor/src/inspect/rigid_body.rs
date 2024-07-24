@@ -21,13 +21,13 @@ impl Inspector for RigidBodyInspector {
 
     fn show(&mut self, ctx: InspectorContext) {
         let phys_engine = ctx.res.get_mut::<PhysicsEngine>().unwrap();
-        let rigid_body = ctx.queries.get::<Write<RigidBody>>(ctx.entity).unwrap();
+        let _rigid_body = ctx.queries.get::<Write<RigidBody>>(ctx.entity).unwrap();
 
         egui::Grid::new("rigid_body_grid")
             .num_columns(2)
             .spacing([30.0, 20.0])
             .striped(true)
-            .show(ctx.ui, |ui| {});
+            .show(ctx.ui, |_ui| {});
 
         if let Some(handle) = ctx.queries.get::<Read<RigidBodyHandle>>(ctx.entity) {
             phys_engine.rigid_bodies(|rigid_bodies| {

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ard_ecs::resource::Resource;
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;

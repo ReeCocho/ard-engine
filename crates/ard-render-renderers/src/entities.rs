@@ -1,7 +1,7 @@
 use ard_ecs::prelude::*;
 use ard_math::{Vec2, Vec3A};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{resource::ResourceAllocator, Frame};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{
     factory::MaterialFactory, material::MaterialResource,

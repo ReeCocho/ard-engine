@@ -1,5 +1,5 @@
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_image_effects::ao::AO_SAMPLER;
 use ard_render_lighting::{
     lights::{LightClusters, Lights},

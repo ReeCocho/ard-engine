@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use ard_physics::engine::PhysicsSystem;
-use ard_render_base::{ecs::Frame, PreRender, RenderingMode, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, PreRender, RenderingMode, FRAMES_IN_FLIGHT};
 use ard_render_camera::{
     active::{ActiveCamera, ActiveCameras},
     Camera,

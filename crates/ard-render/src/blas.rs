@@ -6,9 +6,8 @@ use ard_pal::prelude::{
     QueueTypes, SharingMode,
 };
 use ard_render_base::{
-    ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
-    FRAMES_IN_FLIGHT,
+    Frame, FRAMES_IN_FLIGHT,
 };
 use ard_render_meshes::mesh::MeshResource;
 

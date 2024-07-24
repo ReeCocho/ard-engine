@@ -2,7 +2,7 @@ use ard_pal::prelude::{
     Context, DescriptorSet, DescriptorSetCreateInfo, DescriptorSetLayout, DescriptorSetUpdate,
     DescriptorValue,
 };
-use ard_render_base::ecs::Frame;
+use ard_render_base::Frame;
 
 use super::buffer::MaterialBuffer;
 

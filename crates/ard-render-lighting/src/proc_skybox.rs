@@ -2,7 +2,7 @@ use std::ops::{DerefMut, Div};
 
 use ard_math::{Mat4, Vec2, Vec3, Vec4};
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::Frame;
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_si::{bindings::*, consts::*, types::*};
 use ordered_float::NotNan;

@@ -2,7 +2,7 @@ use ard_pal::prelude::{
     CommandBuffer, ComputePassDispatch, ComputePipeline, ComputePipelineCreateInfo, Context,
     Shader, ShaderCreateInfo,
 };
-use ard_render_base::ecs::Frame;
+use ard_render_base::Frame;
 use ard_render_si::{
     bindings::Layouts,
     consts::{CAMERA_FROXELS_HEIGHT, CAMERA_FROXELS_WIDTH},

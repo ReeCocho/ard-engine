@@ -4,9 +4,8 @@ use ard_formats::vertex::VertexLayout;
 use ard_math::*;
 use ard_pal::prelude::*;
 use ard_render_base::{
-    ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
-    FRAMES_IN_FLIGHT,
+    Frame, FRAMES_IN_FLIGHT,
 };
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{

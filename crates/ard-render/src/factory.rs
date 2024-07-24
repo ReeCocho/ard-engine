@@ -10,7 +10,7 @@ use crate::{
 use ard_ecs::prelude::*;
 use ard_formats::{mesh::MeshData, meshlet::Meshlet, texture::TextureSource};
 use ard_pal::prelude::{Buffer, Context, QueueType};
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator};
+use ard_render_base::{resource::ResourceAllocator, Frame};
 use ard_render_material::{
     factory::{MaterialFactory, MaterialFactoryConfig},
     material::{Material, MaterialCreateError, MaterialCreateInfo, MaterialResource},

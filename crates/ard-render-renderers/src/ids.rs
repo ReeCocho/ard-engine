@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_objects::set::RenderableSet;
 use ard_render_si::types::*;
 

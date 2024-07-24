@@ -5,7 +5,7 @@ use ard_formats::{
     mesh::MeshData,
     vertex::{VertexAttribute, VertexLayout},
 };
-use ard_render_base::{ecs::Frame, resource::ResourceId, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceId, Frame, FRAMES_IN_FLIGHT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

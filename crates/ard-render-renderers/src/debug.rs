@@ -1,7 +1,7 @@
 use std::mem::offset_of;
 
 use ard_pal::prelude::*;
-use ard_render_base::ecs::Frame;
+use ard_render_base::Frame;
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_debug::{buffer::DebugVertexBuffer, shape::DebugShapeVertex};
 use ard_render_si::bindings::Layouts;

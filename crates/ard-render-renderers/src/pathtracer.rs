@@ -1,6 +1,6 @@
 use ard_ecs::resource::Resource;
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceAllocator, Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::ubo::CameraUbo;
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::factory::MeshFactory;

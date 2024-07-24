@@ -9,6 +9,7 @@ use crate::engine::PhysicsEngine;
 #[derive(Component, Clone, Copy, Serialize, Deserialize)]
 pub struct Collider {
     pub shape: Shape,
+    pub offset: Vec3,
     pub friction: f32,
     pub friction_combine_rule: CoefficientCombineRule,
     pub restitution: f32,
@@ -52,6 +53,55 @@ impl Drop for ColliderHandle {
             &mut engine.rigid_bodies,
             false,
         );
+    }
+}
+
+impl Shape {
+    #[inline(always)]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Shape::Ball { .. } => "Ball",
+            Shape::Capsule { .. } => "Capsule",
+            Shape::Box { .. } => "Box",
+            Shape::Cylinder { .. } => "Cylinder",
+            Shape::Cone { .. } => "Cone",
+        }
+    }
+
+    #[inline(always)]
+    pub const fn default_ball() -> Shape {
+        Shape::Ball { radius: 0.5 }
+    }
+
+    #[inline(always)]
+    pub const fn default_capsule() -> Shape {
+        Self::Capsule {
+            radius: 0.5,
+            height: 1.0,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn default_box() -> Shape {
+        Shape::Box {
+            half_extents: Vec3::new(0.5, 0.5, 0.5),
+        }
+    }
+
+    #[inline(always)]
+    pub const fn default_cylinder() -> Shape {
+        Shape::Cylinder {
+            height: 1.0,
+            radius: 0.5,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn default_cone() -> Shape {
+        Shape::Cone {
+            height: 1.0,
+            radius: 0.5,
+        }
     }
 }
 

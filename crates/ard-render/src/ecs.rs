@@ -1,7 +1,7 @@
 use ard_log::info;
 use ard_math::{Mat4, Vec2, Vec4};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceAllocator, Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::{
     active::ActiveCamera, froxels::FroxelGenPipeline, target::RenderTarget, ubo::CameraUbo, Camera,
     CameraClearColor,

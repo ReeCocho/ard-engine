@@ -25,6 +25,8 @@ use crate::{
     rigid_body::{RigidBody, RigidBodyHandle},
 };
 
+pub const SIMULATION_RATE: f32 = 1.0 / 30.0;
+
 #[derive(Event, Clone, Copy)]
 pub struct PhysicsStep(pub Duration);
 
@@ -151,11 +153,14 @@ impl PhysicsSystem {
 
         // Check for a physics step
         self.elapsed += event.0;
-        if self.elapsed >= Duration::from_secs_f32(1.0 / 30.0) {
-            commands
-                .events
-                .submit(PhysicsStep(Duration::from_secs_f32(1.0 / 30.0)));
-            self.elapsed = Duration::ZERO;
+        let elapsed_steps = (self.elapsed.as_secs_f32() / SIMULATION_RATE)
+            .floor()
+            .max(0.0) as u32;
+
+        if elapsed_steps > 0 {
+            let del = Duration::from_secs_f32(elapsed_steps as f32 * SIMULATION_RATE);
+            commands.events.submit(PhysicsStep(del));
+            self.elapsed -= del;
         }
     }
 
@@ -273,14 +278,14 @@ impl PhysicsSystem {
                 (Read<Collider>, Option<Read<RigidBody>>, Option<Read<Model>>),
             )>()
         {
-            let (position, rotation) = match model {
-                Some(model) => (model.position(), model.rotation()),
-                None => (Vec3A::ZERO, Quat::IDENTITY),
-            };
+            let model = model.cloned().unwrap_or(Model(Mat4::IDENTITY));
 
             let rigid_body_handle = rigid_body.map(|rb| {
                 let rb = RigidBodyBuilder::new(rb.body_type)
-                    .position(Isometry::from_parts(position.into(), rotation.into()))
+                    .position(Isometry::from_parts(
+                        model.position().into(),
+                        model.rotation().into(),
+                    ))
                     .gravity_scale(rb.gravity_scale)
                     .linear_damping(rb.linear_damping)
                     .angular_damping(rb.angular_damping)
@@ -291,12 +296,15 @@ impl PhysicsSystem {
                 rigid_bodies.insert(rb)
             });
 
+            let (col_pos, col_rot) = if rigid_body_handle.is_some() {
+                (collider.offset, Quat::IDENTITY)
+            } else {
+                let col_model = Model(model.0 * Mat4::from_translation(collider.offset));
+                (col_model.position().into(), col_model.rotation())
+            };
+
             let col = ColliderBuilder::new(collider.shape.into())
-                .position(if rigid_body_handle.is_some() {
-                    Isometry::default()
-                } else {
-                    Isometry::from_parts(position.into(), rotation.into())
-                })
+                .position(Isometry::from_parts(col_pos.into(), col_rot.into()))
                 .friction(collider.friction)
                 .friction_combine_rule(collider.friction_combine_rule)
                 .restitution(collider.restitution)
@@ -347,13 +355,13 @@ impl DynamicsApplySystem {
                 None => continue,
             };
 
-            let global_scale: Vec3A = model.scale();
-            let global_pos: Vec3A = model.position().lerp(rb.translation().xyz().into(), lerp);
-            let global_rot: Quat = model.rotation().slerp((*rb.rotation()).into(), lerp);
-
             if rb.is_kinematic() {
                 continue;
             }
+
+            let global_scale: Vec3A = model.scale();
+            let global_pos: Vec3A = model.position().lerp(rb.translation().xyz().into(), lerp);
+            let global_rot: Quat = model.rotation().slerp((*rb.rotation()).into(), lerp);
 
             model.0 = Mat4::from_scale_rotation_translation(
                 global_scale.into(),
@@ -403,23 +411,30 @@ impl KinematicsApplySystem {
     ) {
         let engine = res.get::<PhysicsEngine>().unwrap();
         let mut engine = engine.0.lock().unwrap();
-        if !engine.simulate {
-            return;
-        }
+        if engine.simulate {
+            for (model, rb_handle) in queries.make::<(Read<Model>, Read<RigidBodyHandle>)>() {
+                let rb = match engine.rigid_bodies.get_mut(rb_handle.handle()) {
+                    Some(rb) => rb,
+                    None => continue,
+                };
 
-        // First, construct the new model matrices of every object with a rigid body
-        for (model, rb_handle) in queries.make::<(Read<Model>, Read<RigidBodyHandle>)>() {
-            let rb = match engine.rigid_bodies.get_mut(rb_handle.handle()) {
-                Some(rb) => rb,
-                None => continue,
-            };
+                if !rb.is_kinematic() {
+                    continue;
+                }
 
-            if !rb.is_kinematic() {
-                continue;
+                rb.set_next_kinematic_rotation(model.rotation().into());
+                rb.set_next_kinematic_translation(model.position().into());
             }
+        } else {
+            for (model, rb_handle) in queries.make::<(Read<Model>, Read<RigidBodyHandle>)>() {
+                let rb = match engine.rigid_bodies.get_mut(rb_handle.handle()) {
+                    Some(rb) => rb,
+                    None => continue,
+                };
 
-            rb.set_next_kinematic_rotation(model.rotation().into());
-            rb.set_next_kinematic_translation(model.position().into());
+                rb.set_rotation(model.rotation().into(), true);
+                rb.set_translation(model.position().into(), true);
+            }
         }
     }
 }
@@ -430,6 +445,7 @@ impl From<PhysicsSystem> for System {
             .with_handler(PhysicsSystem::tick)
             .with_handler(PhysicsSystem::phys_step)
             .run_before::<Tick, Destroyer>()
+            .run_after::<Tick, ModelUpdateSystem>()
             .build()
     }
 }

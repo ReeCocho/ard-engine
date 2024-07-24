@@ -1,5 +1,5 @@
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, FRAMES_IN_FLIGHT};
+use ard_render_base::{Frame, FRAMES_IN_FLIGHT};
 use ard_render_lighting::{
     lights::Lights,
     proc_skybox::{ProceduralSkyBox, DI_MAP_SAMPLER},

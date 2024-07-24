@@ -7,8 +7,8 @@ use ard_pal::prelude::{
     Context, DescriptorSet, DescriptorSetCreateInfo, DescriptorSetLayout, DescriptorSetUpdate,
     DescriptorValue,
 };
-use ard_render_base::ecs::Frame;
 use ard_render_base::resource::ResourceAllocator;
+use ard_render_base::Frame;
 use ard_render_base::FRAMES_IN_FLIGHT;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};

@@ -9,9 +9,8 @@ use ard_pal::prelude::{
     SharingMode, Texture, TextureCreateInfo, TextureType, TextureUsage,
 };
 use ard_render_base::{
-    ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
-    FRAMES_IN_FLIGHT,
+    Frame, FRAMES_IN_FLIGHT,
 };
 use ard_render_si::{bindings::*, consts::*};
 use ordered_float::NotNan;

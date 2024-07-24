@@ -251,7 +251,6 @@ impl<'a, B: Backend> RenderPass<'a, B> {
     ///
     /// # Panics
     /// - If `vertex_count = 0`.
-    /// - If `vertex_count` is not a multiple of 3.
     /// - If `instance_count = 0`.
     #[inline]
     pub fn draw(
@@ -263,7 +262,6 @@ impl<'a, B: Backend> RenderPass<'a, B> {
     ) {
         assert_ne!(vertex_count, 0, "vertex count cannot be 0");
         assert_ne!(instance_count, 0, "instance count cannot be 0");
-        assert_eq!(vertex_count % 3, 0, "vertex count must be a multiple of 3");
         self.commands.push(Command::Draw {
             vertex_count,
             instance_count,

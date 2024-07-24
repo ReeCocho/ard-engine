@@ -1,7 +1,6 @@
 use ard_ecs::{component::Component, event::Event};
 use serde::{Deserialize, Serialize};
 
-pub mod ecs;
 pub mod resource;
 pub mod shader_variant;
 
@@ -16,6 +15,21 @@ pub enum RenderingMode {
     Transparent = 2,
 }
 
+/// Frame index.
+#[derive(Debug, Copy, Clone)]
+pub struct Frame(usize);
+
+impl From<usize> for Frame {
+    fn from(value: usize) -> Self {
+        Frame(value)
+    }
+}
+
+impl From<Frame> for usize {
+    fn from(value: Frame) -> Self {
+        value.0
+    }
+}
 /// Event indicating rendering is about to occur.
 #[derive(Debug, Event, Copy, Clone)]
 pub struct PreRender;

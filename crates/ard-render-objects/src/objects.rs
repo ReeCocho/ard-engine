@@ -11,9 +11,8 @@ use ard_pal::prelude::{
     SharingMode,
 };
 use ard_render_base::{
-    ecs::Frame,
     resource::{ResourceAllocator, ResourceId},
-    RenderingMode,
+    Frame, RenderingMode,
 };
 use ard_render_material::{material::MaterialResource, material_instance::MaterialInstance};
 use ard_render_meshes::mesh::{Mesh, MeshResource};

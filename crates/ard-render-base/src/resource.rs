@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::{ecs::Frame, FRAMES_IN_FLIGHT};
+use crate::{Frame, FRAMES_IN_FLIGHT};
 
 pub struct ResourceAllocator<R> {
     max: usize,

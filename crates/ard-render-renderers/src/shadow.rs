@@ -1,7 +1,7 @@
 use ard_ecs::resource::Resource;
 use ard_math::{Vec2, Vec3, Vec3A};
 use ard_pal::prelude::*;
-use ard_render_base::{ecs::Frame, resource::ResourceAllocator, FRAMES_IN_FLIGHT};
+use ard_render_base::{resource::ResourceAllocator, Frame, FRAMES_IN_FLIGHT};
 use ard_render_camera::{ubo::CameraUbo, Camera};
 use ard_render_lighting::shadows::{ShadowCascadeSettings, SunShadowsUbo};
 use ard_render_material::{
