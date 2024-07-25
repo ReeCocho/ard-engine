@@ -1,6 +1,9 @@
 pub mod asset;
 pub mod instantiate;
+pub mod load;
 pub mod model;
+pub mod play;
+pub mod save;
 
 use std::thread::JoinHandle;
 

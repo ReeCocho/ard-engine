@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use ard_engine::assets::asset::AssetNameBuf;
+use ard_engine::{
+    assets::asset::{Asset, AssetNameBuf},
+    game::save_data::SceneAsset,
+    render::{material::MaterialAsset, mesh::MeshAsset, model::ModelAsset, texture::TextureAsset},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -12,6 +16,7 @@ pub struct MetaFile {
 #[derive(Serialize, Deserialize, Clone)]
 pub enum MetaData {
     Model,
+    Scene,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -20,6 +25,7 @@ pub enum AssetType {
     Mesh,
     Texture,
     Material,
+    Scene,
 }
 
 impl MetaFile {
@@ -30,6 +36,7 @@ impl MetaData {
     pub fn ty(&self) -> AssetType {
         match self {
             MetaData::Model => AssetType::Model,
+            MetaData::Scene => AssetType::Scene,
         }
     }
 }
@@ -49,10 +56,11 @@ impl<'a> TryFrom<&'a Path> for AssetType {
         };
 
         match ext {
-            "glb" | "ard_mdl" => Ok(AssetType::Model),
-            "ard_msh" => Ok(AssetType::Mesh),
-            "ard_tex" => Ok(AssetType::Texture),
-            "ard_mat" => Ok(AssetType::Material),
+            "glb" | ModelAsset::EXTENSION => Ok(AssetType::Model),
+            MeshAsset::EXTENSION => Ok(AssetType::Mesh),
+            TextureAsset::EXTENSION => Ok(AssetType::Texture),
+            MaterialAsset::EXTENSION => Ok(AssetType::Material),
+            SceneAsset::EXTENSION => Ok(AssetType::Scene),
             _ => Err(anyhow::Error::msg("Unknown extension.")),
         }
     }

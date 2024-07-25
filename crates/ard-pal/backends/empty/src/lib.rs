@@ -4,6 +4,7 @@ use api::{
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
+#[allow(dead_code)]
 pub struct EmptyBackend(GraphicsProperties);
 
 impl Backend for EmptyBackend {

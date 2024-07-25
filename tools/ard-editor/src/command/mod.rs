@@ -12,13 +12,12 @@ use ard_engine::{
 #[derive(Resource, Default)]
 pub struct EditorCommands {
     pending: VecDeque<Box<dyn EditorCommand>>,
-}
-
-#[derive(SystemState)]
-pub struct EditorCommandSystem {
     stack: Vec<Box<dyn EditorCommand>>,
     undone_stack: Vec<Box<dyn EditorCommand>>,
 }
+
+#[derive(SystemState)]
+pub struct EditorCommandSystem;
 
 pub trait EditorCommand: Send + Sync + 'static {
     fn apply(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>);
@@ -43,14 +42,29 @@ impl EditorCommands {
     pub fn submit(&mut self, command: impl EditorCommand) {
         self.pending.push_back(Box::new(command));
     }
+
+    pub fn reset_all(
+        &mut self,
+        commands: &Commands,
+        queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) {
+        // Clear the pending channel
+        self.pending.clear();
+
+        // Clear the undone stack
+        self.undone_stack
+            .drain(..)
+            .for_each(|mut cmd| cmd.clear(commands, queries, res));
+
+        // Clear the applied stack
+        self.stack.clear();
+    }
 }
 
 impl Default for EditorCommandSystem {
     fn default() -> Self {
-        Self {
-            stack: Vec::default(),
-            undone_stack: Vec::default(),
-        }
+        Self
     }
 }
 
@@ -63,16 +77,21 @@ impl EditorCommandSystem {
         res: Res<Everything>,
     ) {
         let mut editor_commands = res.get_mut::<EditorCommands>().unwrap();
+        let editor_commands = &mut *editor_commands;
 
         // If there are new commands, clear the undone stack
         if !editor_commands.pending.is_empty() {
-            self.undone_stack.drain(..).for_each(|mut command| {
-                command.clear(&commands, &queries, &res);
-            })
+            editor_commands
+                .undone_stack
+                .drain(..)
+                .for_each(|mut command| {
+                    command.clear(&commands, &queries, &res);
+                })
         }
 
         // Apply new commands
-        self.stack
+        editor_commands
+            .stack
             .extend(editor_commands.pending.drain(..).map(|mut command| {
                 command.apply(&commands, &queries, &res);
                 command
@@ -83,16 +102,16 @@ impl EditorCommandSystem {
         let redo = input.key(Key::LCtrl) && input.key_down_repeat(Key::R);
 
         if undo {
-            if let Some(mut command) = self.stack.pop() {
+            if let Some(mut command) = editor_commands.stack.pop() {
                 command.undo(&commands, &queries, &res);
-                self.undone_stack.push(command);
+                editor_commands.undone_stack.push(command);
             }
         }
 
         if redo {
-            if let Some(mut command) = self.undone_stack.pop() {
+            if let Some(mut command) = editor_commands.undone_stack.pop() {
                 command.redo(&commands, &queries, &res);
-                self.stack.push(command);
+                editor_commands.stack.push(command);
             }
         }
     }

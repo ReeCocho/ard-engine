@@ -3,10 +3,13 @@ use ard_engine::{
     ecs::prelude::*,
     transform::{system::TransformHierarchyUpdate, Children, Parent, SetParent},
 };
+use camino::Utf8PathBuf;
 
 #[derive(Resource, Default)]
 pub struct SceneGraph {
     roots: Vec<Entity>,
+    /// Path to the meta file for the active scene (not the baked asset).
+    active_scene: Option<Utf8PathBuf>,
 }
 
 #[derive(SystemState)]
@@ -70,6 +73,16 @@ impl SceneGraph {
     #[inline]
     pub fn roots(&self) -> &[Entity] {
         &self.roots
+    }
+
+    #[inline(always)]
+    pub fn active_scene(&self) -> Option<&Utf8PathBuf> {
+        self.active_scene.as_ref()
+    }
+
+    #[inline(always)]
+    pub fn set_active_scene(&mut self, scene: impl Into<Utf8PathBuf>) {
+        self.active_scene = Some(scene.into());
     }
 
     pub fn find_in_roots(&self, target: Entity) -> Option<usize> {

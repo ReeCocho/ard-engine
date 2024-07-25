@@ -70,7 +70,7 @@ impl PhysicsEngine {
 
         Self(Arc::new(Mutex::new(PhysicsEngineInner {
             simulate: false,
-            interpolation_rate: 20.0,
+            interpolation_rate: 25.0,
             physics_pipeline,
             query_pipeline,
             island_manager,

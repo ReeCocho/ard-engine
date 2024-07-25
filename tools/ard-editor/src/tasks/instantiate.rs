@@ -52,6 +52,7 @@ impl EditorTask for InstantiateTask {
                 self.assets.wait_for_load(&handle);
                 self.handle = Some(InstantiateAssetHandle::Model(handle));
             }
+            _ => {}
         }
 
         Ok(())

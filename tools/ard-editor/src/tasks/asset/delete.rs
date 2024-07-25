@@ -8,6 +8,7 @@ use ard_engine::{
         model::ModelHeader,
         texture::TextureHeader,
     },
+    game::save_data::SceneAssetHeader,
 };
 use path_macro::path;
 use rustc_hash::FxHashSet;
@@ -58,6 +59,10 @@ impl DeleteAssetVisitor {
             AssetType::Material => {
                 let header = bincode::deserialize_from::<_, MaterialHeader<AssetNameBuf>>(in_file)?;
                 self.visit_material(header)?;
+            }
+            AssetType::Scene => {
+                let header = bincode::deserialize_from::<_, SceneAssetHeader>(in_file)?;
+                self.visit_scene(header)?;
             }
         }
 
@@ -119,6 +124,14 @@ impl DeleteAssetVisitor {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn visit_scene(&mut self, header: SceneAssetHeader) -> anyhow::Result<()> {
+        let src = path!(self.package_root / header.data_path);
+        std::fs::remove_file(src)?;
+        self.visited.insert(header.data_path.clone());
 
         Ok(())
     }

@@ -11,12 +11,19 @@ ard-ecs = { path = "../ard-ecs" }
 ard-core = { path = "../ard-core" }
 ard-assets = { path = "../ard-assets" }
 ard-render = { path = "../ard-render" }
+ard-transform = { path = "../ard-transform" }
+ard-physics = { path = "../ard-physics" }
 ard-save-load = { path = "../ard-save-load" }
+ard-render-base = { path = "../ard-render-base" }
 ard-render-objects = { path = "../ard-render-objects" }
 ard-render-assets = { path = "../ard-render-assets" }
+ard-render-meshes = { path = "../ard-render-meshes" }
+ard-render-material = { path = "../ard-render-material" }
 crossbeam-channel.workspace = true
 smallvec.workspace = true
 serde.workspace = true
 enum_dispatch.workspace = true
 paste.workspace = true
 serde_with.workspace = true
+async-trait.workspace = true
+bincode.workspace = true

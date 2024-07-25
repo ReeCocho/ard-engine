@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ard_engine::{
     assets::manager::Assets,
     ecs::prelude::*,
+    game::GameRunning,
     input::{InputState, Key},
     math::*,
     render::{CanvasSize, Gui, SelectEntity},
@@ -10,10 +11,17 @@ use ard_engine::{
 };
 
 use crate::{
-    assets::meta::MetaData,
+    assets::{meta::MetaData, CurrentAssetPath, EditorAssets},
     camera::SceneViewCamera,
+    scene_graph::SceneGraph,
     selected::Selected,
-    tasks::{instantiate::InstantiateTask, TaskQueue},
+    tasks::{
+        instantiate::InstantiateTask,
+        load::LoadSceneTask,
+        play::{StartPlayTask, StopPlayTask},
+        save::SaveSceneTask,
+        TaskQueue,
+    },
 };
 
 use super::{drag_drop::DragDropPayload, transform::TransformGizmo, EditorViewContext};
@@ -26,6 +34,30 @@ pub struct SceneView {
 
 impl SceneView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
+        ctx.ui.vertical_centered(|ui| {
+            let running = ctx.res.get::<GameRunning>().unwrap();
+            let label = if running.0 { "Stop" } else { "Start" };
+
+            if ui.button(label).clicked() {
+                let queue = ctx.res.get_mut::<TaskQueue>().unwrap();
+                if running.0 {
+                    queue.add(StopPlayTask::new());
+                } else {
+                    let scene_graph = ctx.res.get::<SceneGraph>().unwrap();
+                    let editor_assets = ctx.res.get::<EditorAssets>().unwrap();
+                    let current_path = ctx.res.get::<CurrentAssetPath>().unwrap();
+                    let save_task = match scene_graph
+                        .active_scene()
+                        .and_then(|name| editor_assets.find_asset(name))
+                    {
+                        Some(asset) => SaveSceneTask::new_overwrite(asset),
+                        None => SaveSceneTask::new(current_path.path()),
+                    };
+                    queue.add(StartPlayTask::new(save_task));
+                }
+            }
+        });
+
         // Update the canvas size to match the viewport
         let canvas_size = ctx.ui.available_size_before_wrap();
         let origin = ctx.ui.cursor().left_top();
@@ -181,16 +213,18 @@ impl SceneView {
         };
 
         let assets = res.get::<Assets>().unwrap();
-        let valid = match &asset.meta_file().data {
-            MetaData::Model => true,
+        match &asset.meta_file().data {
+            MetaData::Model => {
+                let task_queue = res.get_mut::<TaskQueue>().unwrap();
+                task_queue.add(InstantiateTask::new(
+                    asset.meta_file().clone(),
+                    assets.clone(),
+                ));
+            }
+            MetaData::Scene => {
+                let task_queue = res.get_mut::<TaskQueue>().unwrap();
+                task_queue.add(LoadSceneTask::new(asset));
+            }
         };
-
-        if valid {
-            let task_queue = res.get_mut::<TaskQueue>().unwrap();
-            task_queue.add(InstantiateTask::new(
-                asset.meta_file().clone(),
-                assets.clone(),
-            ));
-        }
     }
 }

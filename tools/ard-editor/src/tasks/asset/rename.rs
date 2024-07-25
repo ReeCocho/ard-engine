@@ -12,6 +12,7 @@ use ard_engine::{
         model::ModelHeader,
         texture::TextureHeader,
     },
+    game::save_data::SceneAssetHeader,
 };
 use path_macro::path;
 use rustc_hash::FxHashMap;
@@ -73,6 +74,11 @@ impl RenameAssetVisitor {
                 let mut header =
                     bincode::deserialize_from::<_, MaterialHeader<AssetNameBuf>>(in_file)?;
                 self.visit_material(assets, &mut header)?;
+                bincode::serialize_into(&mut out_file, &header).unwrap();
+            }
+            AssetType::Scene => {
+                let mut header = bincode::deserialize_from::<_, SceneAssetHeader>(in_file)?;
+                self.visit_scene(assets, &mut header)?;
                 bincode::serialize_into(&mut out_file, &header).unwrap();
             }
         }
@@ -163,6 +169,23 @@ impl RenameAssetVisitor {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn visit_scene(
+        &mut self,
+        assets: &Assets,
+        header: &mut SceneAssetHeader,
+    ) -> anyhow::Result<()> {
+        let new_data_name = Self::create_unique_name(assets, &header.data_path);
+        let src = path!(self.package_root / header.data_path);
+        let dst = path!(self.package_root / new_data_name);
+        std::fs::rename(src, dst)?;
+
+        self.old_to_new
+            .insert(header.data_path.clone(), new_data_name.clone());
+        header.data_path = new_data_name;
 
         Ok(())
     }

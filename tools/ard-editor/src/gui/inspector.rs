@@ -3,7 +3,6 @@ use ard_engine::{
     math::{Mat4, Vec3, Vec3A, Vec4, Vec4Swizzles},
     physics::{
         collider::{CoefficientCombineRule, Collider},
-        engine::PhysicsEngine,
         rigid_body::RigidBody,
     },
     render::{shape::Shape, DebugDraw, DebugDrawing, Mesh},
@@ -94,13 +93,6 @@ impl InspectorView {
     pub fn show(&mut self, ctx: EditorViewContext) -> egui_tiles::UiResponse {
         let mut selected = ctx.res.get_mut::<Selected>().unwrap();
 
-        let mut phys_engine = ctx.res.get_mut::<PhysicsEngine>().unwrap();
-        let mut sim_enabled = phys_engine.simulate();
-
-        ctx.ui.toggle_value(&mut sim_enabled, "Enable Physics");
-        phys_engine.set_simulation_enabled(sim_enabled);
-        std::mem::drop(phys_engine);
-
         match *selected {
             Selected::None => {}
             Selected::Entity(e) => {
@@ -125,7 +117,8 @@ impl InspectorView {
             let (model, mesh) = *query;
             let bounds = mesh.bounds();
             ctx.res.get_mut::<DebugDrawing>().unwrap().draw(DebugDraw {
-                color: Vec4::new(1.0, 1.0, 0.0, 1.0),
+                //                          \m/
+                color: Vec4::new(1.0, 0.666, 0.0, 1.0),
                 shape: Shape::Box {
                     min_pt: bounds.min_pt.xyz(),
                     max_pt: bounds.max_pt.xyz(),

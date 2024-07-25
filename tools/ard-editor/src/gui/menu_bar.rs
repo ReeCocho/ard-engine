@@ -1,11 +1,10 @@
-use ard_engine::{
-    assets::manager::Assets,
-    core::core::Stop,
-    ecs::prelude::*,
-    save_load::{format::Ron, save_data::SaveData},
-};
+use ard_engine::{core::core::Stop, ecs::prelude::*};
 
-use crate::{assets::EditorAssets, scene_graph::SceneGraph};
+use crate::{
+    assets::{CurrentAssetPath, EditorAssets},
+    scene_graph::SceneGraph,
+    tasks::{save::SaveSceneTask, TaskQueue},
+};
 
 pub struct MenuBar;
 
@@ -14,37 +13,27 @@ impl MenuBar {
         &mut self,
         ui: &mut egui::Ui,
         commands: &Commands,
-        queries: &Queries<Everything>,
+        _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) {
         egui::menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
-                let assets = res.get::<Assets>().unwrap();
-                if ui.button("Saved").clicked() {
-                    let entities = res.get::<SceneGraph>().unwrap().all_entities(queries);
-                    let res = crate::ser::saver::<Ron>().save(assets.clone(), queries, &entities);
+                // let assets = res.get::<Assets>().unwrap();
+                let editor_assets = res.get::<EditorAssets>().unwrap();
+                let current_path = res.get::<CurrentAssetPath>().unwrap();
+                let task_queue = res.get_mut::<TaskQueue>().unwrap();
 
-                    match res {
-                        Ok((save_data, _)) => {
-                            let save_data = bincode::serialize(&save_data).unwrap();
-                            std::fs::write("./save.dat", &save_data).unwrap();
-                        }
-                        Err(err) => {
-                            println!("{err:?}");
-                        }
-                    }
-                }
-
-                if ui.button("Load").clicked() {
-                    let save_data = std::fs::read("./save.dat").unwrap();
-                    let save_data = bincode::deserialize::<SaveData>(&save_data).unwrap();
-                    if let Err(err) = crate::ser::loader::<Ron>().load(
-                        save_data,
-                        assets.clone(),
-                        &commands.entities,
-                    ) {
-                        println!("{err:?}");
-                    }
+                if ui.button("Save").clicked() {
+                    let scene_graph = res.get::<SceneGraph>().unwrap();
+                    task_queue.add(
+                        match scene_graph
+                            .active_scene()
+                            .and_then(|name| editor_assets.find_asset(name))
+                        {
+                            Some(asset) => SaveSceneTask::new_overwrite(asset),
+                            None => SaveSceneTask::new(current_path.path()),
+                        },
+                    );
                 }
 
                 if ui.button("Make Lof").clicked() {
