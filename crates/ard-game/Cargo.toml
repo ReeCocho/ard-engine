@@ -10,6 +10,8 @@ ard-math = { path = "../ard-math" }
 ard-ecs = { path = "../ard-ecs" }
 ard-core = { path = "../ard-core" }
 ard-assets = { path = "../ard-assets" }
+ard-input = { path = "../ard-input" }
+ard-window = { path = "../ard-window" }
 ard-render = { path = "../ard-render" }
 ard-transform = { path = "../ard-transform" }
 ard-physics = { path = "../ard-physics" }

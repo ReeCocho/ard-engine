@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -33,7 +33,7 @@ pub struct PhysicsStep(pub Duration);
 #[derive(Clone, Resource)]
 pub struct PhysicsEngine(pub(crate) Arc<Mutex<PhysicsEngineInner>>);
 
-pub(crate) struct PhysicsEngineInner {
+pub struct PhysicsEngineInner {
     pub simulate: bool,
     pub interpolation_rate: f32,
     pub physics_pipeline: PhysicsPipeline,
@@ -99,6 +99,11 @@ impl PhysicsEngine {
     pub fn rigid_bodies<R>(&self, func: impl FnOnce(&mut RigidBodySet) -> R) -> R {
         let mut inner = self.0.lock().unwrap();
         func(&mut inner.rigid_bodies)
+    }
+
+    #[inline(always)]
+    pub fn inner(&self) -> MutexGuard<PhysicsEngineInner> {
+        self.0.lock().unwrap()
     }
 
     #[inline(always)]
@@ -268,6 +273,7 @@ impl PhysicsSystem {
         colliders: &mut ColliderSet,
         rigid_bodies: &mut RigidBodySet,
     ) {
+        // Colliders that maybe have a rigid body
         for (entity, (collider, rigid_body, model)) in queries
             .filter()
             .without::<Destroy>()
@@ -321,6 +327,35 @@ impl PhysicsSystem {
             };
 
             commands.add_component(entity, ColliderHandle::new(collider_handle, engine.clone()));
+        }
+
+        // Collider-less rigid bodies
+        for (entity, (rigid_body, model)) in queries
+            .filter()
+            .without::<Destroy>()
+            .without::<RigidBodyHandle>()
+            .without::<ColliderHandle>()
+            .without::<Collider>()
+            .make::<(Entity, (Read<RigidBody>, Option<Read<Model>>))>()
+        {
+            let model = model.cloned().unwrap_or(Model(Mat4::IDENTITY));
+            let rb = RigidBodyBuilder::new(rigid_body.body_type)
+                .position(Isometry::from_parts(
+                    model.position().into(),
+                    model.rotation().into(),
+                ))
+                .gravity_scale(rigid_body.gravity_scale)
+                .linear_damping(rigid_body.linear_damping)
+                .angular_damping(rigid_body.angular_damping)
+                .can_sleep(rigid_body.can_sleep)
+                .ccd_enabled(rigid_body.ccd_enabled)
+                .soft_ccd_prediction(rigid_body.soft_ccd_prediction)
+                .build();
+
+            commands.add_component(
+                entity,
+                RigidBodyHandle::new(rigid_bodies.insert(rb), engine.clone()),
+            );
         }
     }
 }

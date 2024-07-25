@@ -6,7 +6,10 @@ use ard_assets::prelude::Assets;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
 use save_data::{SceneAsset, SceneLoader};
-use systems::{running::GameRunningSystem, stat::MarkStaticSystem};
+use systems::{
+    actor::ActorMoveSystem, player::PlayerInputSystem, running::GameRunningSystem,
+    stat::MarkStaticSystem,
+};
 
 /// Plugin to allow for asset management.
 #[derive(Default)]
@@ -25,6 +28,8 @@ impl Plugin for GamePlugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.add_system(MarkStaticSystem::default());
         app.add_system(GameRunningSystem);
+        app.add_system(ActorMoveSystem);
+        app.add_system(PlayerInputSystem::default());
         app.add_resource(GameRunning(false));
         app.add_startup_function(startup);
     }

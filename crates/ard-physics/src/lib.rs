@@ -1,6 +1,11 @@
 use ard_core::{app::AppBuilder, plugin::Plugin};
 use engine::{DynamicsApplySystem, KinematicsApplySystem, PhysicsEngine, PhysicsSystem};
 
+pub use rapier3d::{
+    control::KinematicCharacterController,
+    prelude::{Isometry, QueryFilter, QueryFilterFlags, SharedShape},
+};
+
 pub mod collider;
 pub mod engine;
 pub mod rigid_body;

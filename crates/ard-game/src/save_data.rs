@@ -18,7 +18,7 @@ use ard_transform::{Children, Model, Parent, Position, Rotation, Scale, SetParen
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::components::stat::MarkStatic;
+use crate::components::{actor::Actor, stat::MarkStatic};
 
 #[derive(Serialize, Deserialize)]
 pub struct SceneAssetHeader {
@@ -49,6 +49,7 @@ impl SceneAsset {
             .include_component::<MarkStatic>()
             .include_component::<Collider>()
             .include_component::<RigidBody>()
+            .include_component::<Actor>()
             .ignore::<ColliderHandle>()
             .ignore::<RigidBodyHandle>()
             .ignore::<Static>()
@@ -74,6 +75,7 @@ impl SceneAsset {
             .load_component::<MarkStatic>()
             .load_component::<Collider>()
             .load_component::<RigidBody>()
+            .load_component::<Actor>()
     }
 
     #[inline(always)]
