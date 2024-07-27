@@ -1,5 +1,6 @@
 use ard_engine::{
     ecs::prelude::*,
+    game::components::player::PlayerSpawn,
     math::{Mat4, Vec3, Vec3A, Vec4, Vec4Swizzles},
     physics::{
         collider::{CoefficientCombineRule, Collider},
@@ -12,8 +13,8 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     inspect::{
-        collider::ColliderInspector, rigid_body::RigidBodyInspector, transform::TransformInspector,
-        Inspectors,
+        collider::ColliderInspector, player::PlayerSpawnInspector, rigid_body::RigidBodyInspector,
+        transform::TransformInspector, Inspectors,
     },
     selected::Selected,
 };
@@ -33,6 +34,7 @@ impl Default for InspectorView {
         inspectors.with(TransformInspector);
         inspectors.with(ColliderInspector);
         inspectors.with(RigidBodyInspector);
+        inspectors.with(PlayerSpawnInspector);
 
         let mut add_component = FxHashMap::default();
         add_component.insert(
@@ -80,6 +82,11 @@ impl Default for InspectorView {
         add_component.insert(
             RigidBody::NAME.into(),
             add_component_fn(|_, _, _| RigidBody::default()),
+        );
+
+        add_component.insert(
+            PlayerSpawn::NAME.into(),
+            add_component_fn(|_, _, _| PlayerSpawn),
         );
 
         Self {

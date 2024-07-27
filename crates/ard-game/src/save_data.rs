@@ -18,11 +18,18 @@ use ard_transform::{Children, Model, Parent, Position, Rotation, Scale, SetParen
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::components::{actor::Actor, stat::MarkStatic};
+use crate::components::{actor::Actor, player::PlayerSpawn, stat::MarkStatic};
+
+pub const INITIAL_SCENE_ASSET_NAME: &'static str = "initial_scene.ard_isav";
 
 #[derive(Serialize, Deserialize)]
 pub struct SceneAssetHeader {
     pub data_path: AssetNameBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct InitialSceneAsset {
+    pub asset_name: AssetNameBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -31,6 +38,7 @@ pub struct SceneAsset {
 }
 
 pub struct SceneLoader;
+pub struct InitialSceneLoader;
 
 impl SceneAsset {
     pub fn saver<F: SaveFormat + 'static>() -> Saver<F> {
@@ -50,6 +58,7 @@ impl SceneAsset {
             .include_component::<Collider>()
             .include_component::<RigidBody>()
             .include_component::<Actor>()
+            .include_component::<PlayerSpawn>()
             .ignore::<ColliderHandle>()
             .ignore::<RigidBodyHandle>()
             .ignore::<Static>()
@@ -76,6 +85,7 @@ impl SceneAsset {
             .load_component::<Collider>()
             .load_component::<RigidBody>()
             .load_component::<Actor>()
+            .load_component::<PlayerSpawn>()
     }
 
     #[inline(always)]
@@ -87,6 +97,11 @@ impl SceneAsset {
 impl Asset for SceneAsset {
     const EXTENSION: &'static str = "ard_sav";
     type Loader = SceneLoader;
+}
+
+impl Asset for InitialSceneAsset {
+    const EXTENSION: &'static str = "ard_isav";
+    type Loader = InitialSceneLoader;
 }
 
 #[async_trait]
@@ -107,6 +122,38 @@ impl AssetLoader for SceneLoader {
 
         let data = package.read(header.data_path.clone()).await?;
         let asset = match bincode::deserialize(&data) {
+            Ok(asset) => asset,
+            Err(err) => return Err(AssetLoadError::Other(err.to_string())),
+        };
+
+        Ok(AssetLoadResult::Loaded {
+            asset,
+            persistent: true,
+        })
+    }
+
+    async fn post_load(
+        &self,
+        _assets: Assets,
+        _package: Package,
+        _handle: Handle<Self::Asset>,
+    ) -> Result<AssetPostLoadResult, AssetLoadError> {
+        Ok(AssetPostLoadResult::Loaded)
+    }
+}
+
+#[async_trait]
+impl AssetLoader for InitialSceneLoader {
+    type Asset = InitialSceneAsset;
+
+    async fn load(
+        &self,
+        _assets: Assets,
+        package: Package,
+        asset: &AssetName,
+    ) -> Result<AssetLoadResult<Self::Asset>, AssetLoadError> {
+        let asset = package.read(asset.to_owned()).await?;
+        let asset = match bincode::deserialize::<InitialSceneAsset>(&asset) {
             Ok(asset) => asset,
             Err(err) => return Err(AssetLoadError::Other(err.to_string())),
         };

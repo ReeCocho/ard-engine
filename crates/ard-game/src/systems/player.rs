@@ -10,9 +10,9 @@ use ard_window::{window::WindowId, windows::Windows};
 use crate::{
     components::{
         actor::Actor,
-        player::{Player, PlayerCamera},
+        player::{Player, PlayerCamera, PlayerSpawn},
     },
-    GameRunning,
+    GameRunning, GameStart,
 };
 
 use super::actor::ActorMoveSystem;
@@ -21,6 +21,9 @@ use super::actor::ActorMoveSystem;
 pub struct PlayerInputSystem {
     cursor_locked: bool,
 }
+
+#[derive(SystemState)]
+pub struct PlayerSpawnSystem;
 
 impl Default for PlayerInputSystem {
     fn default() -> Self {
@@ -71,8 +74,8 @@ impl PlayerInputSystem {
             {
                 let (mut ry, mut rx, rz) = rotation.0.to_euler(EulerRot::YXZ);
 
-                rx += ydel as f32 * 0.007;
-                ry += xdel as f32 * 0.007;
+                rx += ydel as f32 * 0.003;
+                ry += xdel as f32 * 0.003;
                 rx = rx.clamp(
                     -std::f32::consts::FRAC_PI_2 + 0.05,
                     std::f32::consts::FRAC_PI_2 - 0.05,
@@ -130,7 +133,7 @@ impl PlayerInputSystem {
 
             if input.key_down(Key::Space) && !player.ground_timer.is_zero() {
                 player.jump_timer = Duration::from_secs_f32(0.5);
-                player.velocity.y = 10.0;
+                player.velocity.y = 7.0;
             }
 
             player.jump_timer = player.jump_timer.saturating_sub(tick.0);
@@ -140,11 +143,48 @@ impl PlayerInputSystem {
     }
 }
 
+impl PlayerSpawnSystem {
+    fn game_start(
+        &mut self,
+        _: GameStart,
+        commands: Commands,
+        queries: Queries<(Read<Player>, Read<Model>)>,
+        _: Res<()>,
+    ) {
+        // No need to spawn if we already have a player
+        if queries.make::<Read<Player>>().into_iter().len() > 0 {
+            return;
+        }
+
+        // Find the first player spawn
+        if let Some(model) = queries
+            .filter()
+            .with::<PlayerSpawn>()
+            .make::<Read<Model>>()
+            .next()
+        {
+            Player::spawn(
+                &commands.entities,
+                model.position().into(),
+                model.rotation(),
+            );
+        }
+    }
+}
+
 impl From<PlayerInputSystem> for System {
     fn from(value: PlayerInputSystem) -> Self {
         SystemBuilder::new(value)
             .with_handler(PlayerInputSystem::on_tick)
             .run_before::<Tick, ActorMoveSystem>()
+            .build()
+    }
+}
+
+impl From<PlayerSpawnSystem> for System {
+    fn from(value: PlayerSpawnSystem) -> Self {
+        SystemBuilder::new(value)
+            .with_handler(PlayerSpawnSystem::game_start)
             .build()
     }
 }

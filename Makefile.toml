@@ -33,13 +33,14 @@ command = "cargo"
 args = [
     "build", "--profile=${CARGO_MAKE_PROFILE}",
     "--package", "gltf-oven",
-    "--package", "ard-editor"
+    "--package", "ard-editor",
+    "--package", "ard-game-exec"
 ]
 
 [tasks.copy-execs]
 script_runner = "@duckscript"
 script = '''
-bins = array "gltf-oven" "ard-editor"
+bins = array "gltf-oven" "ard-editor" "ard-game-exec"
 dst = concat "./build/" ${CARGO_MAKE_PROFILE} "/"
 
 # Windows ".exe" extensions
@@ -59,9 +60,12 @@ target_dir = concat ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} "/" ${profile_dir} "/"
 for bin in ${bins}
     bin_src = concat ${target_dir} ${bin} ${ext}
 
-    # If this *isn't* the editor, then it's a tool and should go in the tools folder
+    # If this is the game, it goes in the build folder
     bin_dst = set ${dst}
-    if not eq ${bin} "ard-editor"
+    if eq ${bin} "ard-game-exec"
+        bin_dst = concat ${bin_dst} "build/"
+    # If this *isn't* the editor, then it's a tool and should go in the tools folder
+    elif not eq ${bin} "ard-editor"
         bin_dst = concat ${bin_dst} "tools/"
     end
     bin_dst = concat ${bin_dst} ${bin} ${ext}

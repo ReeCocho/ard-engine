@@ -12,10 +12,11 @@ ard-core = { path = "../ard-core" }
 ard-assets = { path = "../ard-assets" }
 ard-input = { path = "../ard-input" }
 ard-window = { path = "../ard-window" }
-ard-render = { path = "../ard-render" }
 ard-transform = { path = "../ard-transform" }
 ard-physics = { path = "../ard-physics" }
 ard-save-load = { path = "../ard-save-load" }
+ard-render = { path = "../ard-render" }
+ard-render-camera = { path = "../ard-render-camera" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-objects = { path = "../ard-render-objects" }
 ard-render-assets = { path = "../ard-render-assets" }

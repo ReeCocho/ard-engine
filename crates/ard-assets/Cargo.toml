@@ -16,6 +16,7 @@ tokio.workspace = true
 serde.workspace = true
 ron.workspace = true
 crossbeam-utils.workspace = true
+crossbeam-channel.workspace = true
 dashmap.workspace = true
 rustc-hash.workspace = true
 zstd.workspace = true
@@ -24,3 +25,5 @@ bincode.workspace = true
 thread-priority.workspace = true
 camino.workspace = true
 path-slash = "0.2"
+async-compression = { version = "0.4", features = [ "zstd", "futures-io" ] }
+tokio-util = { version = "0.7", features = [ "compat" ] }

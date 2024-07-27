@@ -3,7 +3,7 @@ use ard_engine::{core::core::Stop, ecs::prelude::*};
 use crate::{
     assets::{CurrentAssetPath, EditorAssets},
     scene_graph::SceneGraph,
-    tasks::{save::SaveSceneTask, TaskQueue},
+    tasks::{build::BuildGameTask, save::SaveSceneTask, TaskQueue},
 };
 
 pub struct MenuBar;
@@ -18,7 +18,6 @@ impl MenuBar {
     ) {
         egui::menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
-                // let assets = res.get::<Assets>().unwrap();
                 let editor_assets = res.get::<EditorAssets>().unwrap();
                 let current_path = res.get::<CurrentAssetPath>().unwrap();
                 let task_queue = res.get_mut::<TaskQueue>().unwrap();
@@ -36,23 +35,8 @@ impl MenuBar {
                     );
                 }
 
-                if ui.button("Make Lof").clicked() {
-                    let editor_assets = res.get::<EditorAssets>().unwrap();
-                    let manifest = editor_assets.build_manifest();
-                    let f = std::fs::File::options()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open("./packages/main/main.manifest")
-                        .unwrap();
-                    bincode::serialize_into(f, &manifest).unwrap();
-
-                    ard_engine::assets::package::lof::create_lof_from_folder(
-                        "./main.lof",
-                        "./packages/main/",
-                    );
-
-                    std::fs::remove_file("./packages/main/main.manifest").unwrap();
+                if ui.button("Build").clicked() {
+                    task_queue.add(BuildGameTask::default());
                 }
 
                 if ui.button("Quit").clicked() {

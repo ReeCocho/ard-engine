@@ -5,9 +5,11 @@ pub mod systems;
 use ard_assets::prelude::Assets;
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
-use save_data::{SceneAsset, SceneLoader};
+use save_data::{InitialSceneAsset, InitialSceneLoader, SceneAsset, SceneLoader};
 use systems::{
-    actor::ActorMoveSystem, player::PlayerInputSystem, running::GameRunningSystem,
+    actor::ActorMoveSystem,
+    player::{PlayerInputSystem, PlayerSpawnSystem},
+    running::GameRunningSystem,
     stat::MarkStaticSystem,
 };
 
@@ -29,6 +31,7 @@ impl Plugin for GamePlugin {
         app.add_system(MarkStaticSystem::default());
         app.add_system(GameRunningSystem);
         app.add_system(ActorMoveSystem);
+        app.add_system(PlayerSpawnSystem);
         app.add_system(PlayerInputSystem::default());
         app.add_resource(GameRunning(false));
         app.add_startup_function(startup);
@@ -38,4 +41,5 @@ impl Plugin for GamePlugin {
 fn startup(app: &mut App) {
     let assets = app.resources.get::<Assets>().unwrap();
     assets.register::<SceneAsset>(SceneLoader);
+    assets.register::<InitialSceneAsset>(InitialSceneLoader);
 }

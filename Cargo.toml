@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [ "crates/*", "tools/ard-editor", "tools/gltf-oven", "tools/ibl-oven" ]
+members = [ "crates/*", "tools/ard-editor", "tools/ard-game-exec", "tools/gltf-oven", "tools/ibl-oven" ]
 
 [workspace.package]
 version = "0.1.0"

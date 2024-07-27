@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod build;
 pub mod instantiate;
 pub mod load;
 pub mod model;

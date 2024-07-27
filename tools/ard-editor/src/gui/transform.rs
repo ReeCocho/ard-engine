@@ -9,7 +9,7 @@ use ard_engine::{
 };
 use transform_gizmo_egui::{math::Transform, prelude::*};
 
-use crate::{camera::SceneViewCamera, inspect::transform::EulerRotation, selected::Selected};
+use crate::{inspect::transform::EulerRotation, selected::Selected};
 
 use super::EditorViewContext;
 
@@ -50,15 +50,19 @@ impl TransformGizmo {
             return;
         }
 
-        let scene_camera = ctx.res.get::<SceneViewCamera>().unwrap();
-        let camera = ctx
-            .queries
-            .get::<Read<Camera>>(scene_camera.camera())
-            .unwrap();
-        let model = **ctx
-            .queries
-            .get::<Read<Model>>(scene_camera.camera())
-            .unwrap();
+        let mut model = Model(Mat4::IDENTITY);
+        let mut camera = Camera {
+            order: i32::MIN,
+            ..Default::default()
+        };
+
+        for (camera_model, new_camera) in ctx.queries.make::<(Read<Model>, Read<Camera>)>() {
+            if new_camera.order > camera.order {
+                model = *camera_model;
+                camera = new_camera.clone();
+            }
+        }
+
         let gpu_struct = camera.into_gpu_struct(canvas_size.x, canvas_size.y, model);
         let proj = Mat4::perspective_lh(
             camera.fov,

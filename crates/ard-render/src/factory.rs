@@ -508,8 +508,8 @@ impl FactoryInner {
         texture: Option<&Texture>,
     ) {
         let textures = self.textures.lock().unwrap();
-        let mut material_instances = self.material_instances.lock().unwrap();
         let mut material_factory = self.material_factory.lock().unwrap();
+        let mut material_instances = self.material_instances.lock().unwrap();
 
         // Set the texture
         let inner = material_instances.get_mut(material_instance.id()).unwrap();
