@@ -234,18 +234,22 @@ impl Entities {
                     }
                 }
                 EntityCommand::SetComponents {
-                    entities,
+                    mut entities,
                     components,
                 } => {
+                    // Remove invalid entities
+                    entities.retain(|e| {
+                        let info = match self.entities.get(e.id() as usize) {
+                            Some(info) => info,
+                            None => return false,
+                        };
+                        e.ver() as u8 == info.ver.get()
+                    });
+
                     // "Delete" all the entities so they have no components
                     for entity in &entities {
                         let ind = entity.id() as usize;
-
-                        // Verify that the entity handles are valid
-                        debug_assert!(ind < self.entities.len());
-
                         let info = &mut self.entities[ind];
-                        debug_assert!(info.ver.get() == entity.ver() as u8);
 
                         // Remove components and swap the moved entity if needed
                         if let Some(moved_entity) =

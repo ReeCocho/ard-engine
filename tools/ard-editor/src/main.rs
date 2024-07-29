@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod camera;
+pub mod clipboard;
 pub mod command;
 pub mod gui;
 pub mod inspect;
@@ -21,6 +22,7 @@ use ard_engine::window::prelude::*;
 use assets::importer::AssetImporter;
 use assets::{AssetManifestLoader, CurrentAssetPath, EditorAssets, EditorAssetsManifest};
 use camera::SceneViewCamera;
+use clipboard::Clipboard;
 use command::{EditorCommandSystem, EditorCommands};
 use gui::EditorView;
 use refresher::RefresherSystem;
@@ -64,11 +66,12 @@ fn main() {
         .add_system(EditorCommandSystem::default())
         .add_system(Shlooper::default())
         .add_system(RefresherSystem::default())
-        .add_startup_function(setup)
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())
         .add_resource(EditorCommands::default())
         .add_resource(CurrentAssetPath::default())
+        .add_resource(Clipboard::None)
+        .add_startup_function(setup)
         .run();
 }
 

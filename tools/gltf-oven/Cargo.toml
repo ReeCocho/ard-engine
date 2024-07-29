@@ -11,6 +11,7 @@ ard-pal = { path = "../../crates/ard-pal" }
 ard-formats = { path = "../../crates/ard-formats" }
 ard-math = { path = "../../crates/ard-math" }
 ard-assets = { path = "../../crates/ard-assets" }
+ard-transform = { path = "../../crates/ard-transform" }
 rayon.workspace = true
 image.workspace = true
 bytemuck.workspace = true

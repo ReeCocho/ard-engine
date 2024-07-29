@@ -1,14 +1,26 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, ops::Deref};
 
 use ard_engine::{
+    assets::prelude::Assets,
+    core::core::Tick,
     ecs::prelude::*,
+    input::{InputState, Key},
     math::{Mat4, Vec4},
     physics::{
         collider::{self, Collider, ColliderHandle},
         engine::PhysicsEngine,
     },
     render::{DebugDraw, DebugDrawing, EntitySelected, PreRender},
-    transform::Model,
+    transform::{Model, Parent},
+};
+
+use crate::{
+    clipboard::Clipboard,
+    command::{
+        entity::{PasteEntity, TransientEntities},
+        EditorCommands,
+    },
+    scene_graph::SceneGraph,
 };
 
 #[derive(Resource, Default)]
@@ -33,6 +45,49 @@ impl SelectEntitySystem {
     ) {
         let mut selected = res.get_mut::<Selected>().unwrap();
         *selected = Selected::Entity(evt.0);
+    }
+
+    fn tick(
+        &mut self,
+        _: Tick,
+        _: Commands,
+        queries: Queries<Everything>,
+        res: Res<(
+            Read<InputState>,
+            Write<EditorCommands>,
+            Read<Selected>,
+            Write<Clipboard>,
+            Read<Assets>,
+        )>,
+    ) {
+        let input = res.get::<InputState>().unwrap();
+        let mut clipboard = res.get_mut::<Clipboard>().unwrap();
+
+        if let Clipboard::Entity { data, parent } = clipboard.deref() {
+            if input.key(Key::LCtrl) && input.key_down(Key::V) {
+                res.get_mut::<EditorCommands>()
+                    .unwrap()
+                    .submit(PasteEntity::new(data.clone(), *parent));
+            }
+        }
+
+        if !(input.key(Key::LCtrl) && input.key_down(Key::C)) {
+            return;
+        }
+        std::mem::drop(input);
+
+        let root = match *res.get::<Selected>().unwrap() {
+            Selected::Entity(root) => root,
+            _ => return,
+        };
+
+        let entities = SceneGraph::collect_children(&queries, vec![root]);
+        let assets = res.get::<Assets>().unwrap().clone();
+        let copied = TransientEntities::new(&entities, &queries, assets);
+        *clipboard = Clipboard::Entity {
+            data: copied,
+            parent: queries.get::<Read<Parent>>(root).map(|p| p.0),
+        }
     }
 
     fn pre_render(
@@ -128,6 +183,7 @@ impl From<SelectEntitySystem> for System {
     fn from(value: SelectEntitySystem) -> Self {
         SystemBuilder::new(value)
             .with_handler(SelectEntitySystem::selected_entity)
+            .with_handler(SelectEntitySystem::tick)
             .with_handler(SelectEntitySystem::pre_render)
             .build()
     }

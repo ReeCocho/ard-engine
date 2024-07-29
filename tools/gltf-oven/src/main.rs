@@ -11,8 +11,9 @@ use ard_formats::model::{Light, MeshGroup, MeshInstance, ModelHeader, Node, Node
 use ard_formats::texture::{Sampler, TextureData, TextureHeader};
 use ard_formats::vertex::VertexLayout;
 use ard_gltf::{GltfLight, GltfMesh, GltfTexture};
-use ard_math::{Mat4, Vec2, Vec4};
+use ard_math::{Mat4, Vec2, Vec3, Vec4};
 use ard_pal::prelude::Format;
+use ard_transform::Model;
 use clap::Parser;
 use image::GenericImageView;
 
@@ -241,9 +242,20 @@ fn create_header(
     }
 
     fn parse_node(node: &ard_gltf::GltfNode) -> Node {
+        let model = Model(node.model);
+        let mut new_rot = model.rotation();
+        let mut new_pos = model.position();
+        let scale = model.scale();
+
+        new_rot.y = -new_rot.y;
+        new_rot.z = -new_rot.z;
+        new_pos.x = -new_pos.x;
+
+        let model = Mat4::from_scale_rotation_translation(scale.into(), new_rot, new_pos.into());
+
         let mut out_node = Node {
             name: node.name.clone(),
-            model: node.model,
+            model,
             data: match &node.data {
                 ard_gltf::GltfNodeData::Empty => NodeData::Empty,
                 ard_gltf::GltfNodeData::MeshGroup(id) => NodeData::MeshGroup(*id as u32),
@@ -259,19 +271,26 @@ fn create_header(
         out_node
     }
 
-    // GLTF files and right handed, so we add in a root to flip the coordinate system
-    let mut root = Node {
-        name: "__root".into(),
-        model: Mat4::from_cols(-Vec4::X, Vec4::Y, Vec4::Z, Vec4::W),
-        data: NodeData::Empty,
-        children: Vec::with_capacity(gltf.roots.len()),
-    };
-
-    for child in &gltf.roots {
-        root.children.push(parse_node(child));
+    // If we have one root, we can make that the output root
+    if gltf.roots.len() == 1 {
+        header.roots.push(parse_node(gltf.roots.last().unwrap()));
     }
+    // Otherwise, we create an extra empty node to act as a root and put all of the GLTF roots
+    // into it
+    else if gltf.roots.len() > 1 {
+        let mut root = Node {
+            name: "__root".into(),
+            model: Mat4::IDENTITY,
+            data: NodeData::Empty,
+            children: Vec::with_capacity(gltf.roots.len()),
+        };
 
-    header.roots.push(root);
+        for child in &gltf.roots {
+            root.children.push(parse_node(child));
+        }
+
+        header.roots.push(root);
+    }
 
     header
 }
@@ -311,6 +330,18 @@ fn save_mesh(args: &Args, out: &AssetName, mut mesh: GltfMesh) -> AssetNameBuf {
     };
 
     let mut vertex_layout = VertexLayout::POSITION | VertexLayout::NORMAL;
+
+    // GLTF is left handed, so we need to convert everything to right handed
+    let inv_handed = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+    mesh.positions.iter_mut().for_each(|p| *p = inv_handed * *p);
+    mesh.normals = mesh.normals.map(|mut n| {
+        n.iter_mut().for_each(|p| *p = inv_handed * *p);
+        n
+    });
+    mesh.tangents = mesh.tangents.map(|mut t| {
+        t.iter_mut().for_each(|p| *p = inv_handed * *p);
+        t
+    });
 
     if mesh.tangents.is_some() || (args.compute_tangents && mesh.uv0.is_some()) {
         vertex_layout |= VertexLayout::TANGENT;

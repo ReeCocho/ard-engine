@@ -37,7 +37,13 @@ pub struct SetParentCommand {
     old_index: usize,
 }
 
-#[derive(Default)]
+pub struct PasteEntity {
+    transient: TransientEntities,
+    parent: Option<Entity>,
+    pasted: Vec<Entity>,
+}
+
+#[derive(Default, Clone)]
 pub struct TransientEntities {
     external_entities: Vec<Entity>,
     internal_entities: Vec<Entity>,
@@ -57,12 +63,15 @@ impl DestroyEntity {
 impl EditorCommand for DestroyEntity {
     fn apply(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>) {
         let entities = SceneGraph::collect_children(queries, vec![self.entity]);
-        self.transient = TransientEntities::new(&entities, queries, res);
+        let assets = res.get::<Assets>().unwrap().clone();
+        self.transient = TransientEntities::new(&entities, queries, assets);
         self.transient.store(commands, res);
     }
 
     fn undo(&mut self, commands: &Commands, _queries: &Queries<Everything>, res: &Res<Everything>) {
-        std::mem::take(&mut self.transient).reload(commands, res);
+        let assets = res.get::<Assets>().unwrap().clone();
+        let dirty_static = res.get::<DirtyStatic>().unwrap();
+        std::mem::take(&mut self.transient).load_internal(commands, &dirty_static, assets);
     }
 }
 
@@ -204,11 +213,63 @@ impl SetParentCommand {
     }
 }
 
+impl PasteEntity {
+    pub fn new(transient: TransientEntities, parent: Option<Entity>) -> Self {
+        Self {
+            transient,
+            pasted: Vec::default(),
+            parent,
+        }
+    }
+}
+
+impl EditorCommand for PasteEntity {
+    fn apply(&mut self, commands: &Commands, _: &Queries<Everything>, res: &Res<Everything>) {
+        let assets = res.get::<Assets>().unwrap().clone();
+        let dirty_static = res.get::<DirtyStatic>().unwrap();
+
+        self.pasted = self
+            .transient
+            .clone()
+            .load_new(commands, &dirty_static, assets);
+
+        commands.entities.add_component(
+            self.pasted[0],
+            SetParent {
+                new_parent: self.parent,
+                index: usize::MAX,
+            },
+        );
+
+        *res.get_mut::<Selected>().unwrap() = Selected::Entity(self.pasted[0]);
+    }
+
+    fn undo(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>) {
+        let assets = res.get::<Assets>().unwrap().clone();
+        self.transient = TransientEntities::new(&self.pasted, queries, assets);
+        commands.entities.set_components(
+            &self.pasted,
+            EmptyComponentPack {
+                count: self.pasted.len(),
+            },
+        );
+        self.pasted.clear();
+    }
+
+    fn clear(
+        &mut self,
+        commands: &Commands,
+        _queries: &Queries<Everything>,
+        _res: &Res<Everything>,
+    ) {
+        commands.entities.destroy(&self.pasted);
+    }
+}
+
 impl TransientEntities {
-    pub fn new(entities: &[Entity], queries: &Queries<Everything>, res: &Res<Everything>) -> Self {
+    pub fn new(entities: &[Entity], queries: &Queries<Everything>, assets: Assets) -> Self {
         let internal_entities = Vec::from_iter(entities.iter().cloned());
 
-        let assets = res.get::<Assets>().unwrap().clone();
         let (saved, entity_map) = crate::ser::saver::<Bincode>()
             .save(assets, queries, &internal_entities)
             .unwrap();
@@ -256,13 +317,58 @@ impl TransientEntities {
         );
     }
 
-    pub fn reload(self, commands: &Commands, res: &Res<Everything>) {
-        let dirty_static = res.get::<DirtyStatic>().unwrap();
+    pub fn load_new(
+        self,
+        commands: &Commands,
+        dirty_static: &DirtyStatic,
+        assets: Assets,
+    ) -> Vec<Entity> {
         self.static_groups.iter().for_each(|group| {
             dirty_static.signal(*group);
         });
 
-        let assets = res.get::<Assets>().unwrap().clone();
+        let mut entities = vec![Entity::null(); self.internal_entities.len()];
+        commands.entities.create_empty(&mut entities);
+
+        crate::ser::loader::<Bincode>()
+            .load_with_external(
+                self.saved,
+                assets,
+                &commands.entities,
+                Some(&entities),
+                &self.external_entities,
+            )
+            .unwrap();
+
+        entities
+    }
+
+    pub fn load_into(
+        self,
+        commands: &Commands,
+        dirty_static: &DirtyStatic,
+        assets: Assets,
+        entities: &[Entity],
+    ) {
+        self.static_groups.iter().for_each(|group| {
+            dirty_static.signal(*group);
+        });
+
+        crate::ser::loader::<Bincode>()
+            .load_with_external(
+                self.saved,
+                assets,
+                &commands.entities,
+                Some(&entities),
+                &self.external_entities,
+            )
+            .unwrap();
+    }
+
+    pub fn load_internal(self, commands: &Commands, dirty_static: &DirtyStatic, assets: Assets) {
+        self.static_groups.iter().for_each(|group| {
+            dirty_static.signal(*group);
+        });
 
         crate::ser::loader::<Bincode>()
             .load_with_external(

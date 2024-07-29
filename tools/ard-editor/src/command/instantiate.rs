@@ -1,7 +1,7 @@
 use crate::{scene_graph::SceneGraph, tasks::instantiate::InstantiateAssetHandle};
 use ard_engine::{
     assets::manager::Assets,
-    core::core::Name,
+    core::{core::Name, stat::DirtyStatic},
     ecs::prelude::*,
     math::Mat4,
     render::{
@@ -48,12 +48,15 @@ impl EditorCommand for InstantiateCommand {
 
     fn undo(&mut self, commands: &Commands, queries: &Queries<Everything>, res: &Res<Everything>) {
         let entities = SceneGraph::collect_children(queries, self.roots.clone());
-        self.transient = TransientEntities::new(&entities, queries, res);
+        let assets = res.get::<Assets>().unwrap().clone();
+        self.transient = TransientEntities::new(&entities, queries, assets);
         self.transient.store(commands, res);
     }
 
     fn redo(&mut self, commands: &Commands, _queries: &Queries<Everything>, res: &Res<Everything>) {
-        std::mem::take(&mut self.transient).reload(commands, res);
+        let assets = res.get::<Assets>().unwrap().clone();
+        let dirty_static = res.get::<DirtyStatic>().unwrap();
+        std::mem::take(&mut self.transient).load_internal(commands, &dirty_static, assets);
     }
 
     fn clear(
