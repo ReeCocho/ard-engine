@@ -4,12 +4,14 @@ pub mod hierarchy;
 pub mod inspector;
 pub mod menu_bar;
 pub mod scene;
+pub mod task_queue;
 pub mod transform;
 pub mod util;
 
 use ard_engine::{core::prelude::*, ecs::prelude::*, render::view::GuiView};
 use hierarchy::HierarchyView;
 use inspector::InspectorView;
+use task_queue::TaskQueueView;
 
 use self::{assets::AssetsView, menu_bar::MenuBar, scene::SceneView};
 
@@ -19,6 +21,7 @@ pub enum Pane {
     Assets,
     Hierarchy,
     Inspector,
+    TaskQueue,
 }
 
 pub struct EditorView {
@@ -28,6 +31,7 @@ pub struct EditorView {
     assets: AssetsView,
     hierarchy: HierarchyView,
     inspector: InspectorView,
+    task_queue: TaskQueueView,
 }
 
 pub struct EditorViewContext<'a> {
@@ -47,15 +51,19 @@ struct EditorViewBehavior<'a> {
     assets: &'a mut AssetsView,
     hierarchy: &'a mut HierarchyView,
     inspector: &'a mut InspectorView,
+    task_queue: &'a mut TaskQueueView,
 }
 
 impl Default for EditorView {
     fn default() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
+        let assets = tiles.insert_pane(Pane::Assets);
+        let task_queue = tiles.insert_pane(Pane::TaskQueue);
+
         let vertical = vec![
             tiles.insert_pane(Pane::Scene),
-            tiles.insert_pane(Pane::Assets),
+            tiles.insert_container(egui_tiles::Tabs::new(vec![assets, task_queue])),
         ];
 
         let horizontal = vec![
@@ -73,6 +81,7 @@ impl Default for EditorView {
             assets: AssetsView::default(),
             hierarchy: HierarchyView::default(),
             inspector: InspectorView::default(),
+            task_queue: TaskQueueView::default(),
         }
     }
 }
@@ -105,6 +114,7 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
                     Pane::Assets => self.assets.show(ctx),
                     Pane::Hierarchy => self.hierarchy.show(ctx),
                     Pane::Inspector => self.inspector.show(ctx),
+                    Pane::TaskQueue => self.task_queue.show(ctx),
                 }
             })
             .inner
@@ -157,6 +167,7 @@ impl GuiView for EditorView {
                 assets: &mut self.assets,
                 hierarchy: &mut self.hierarchy,
                 inspector: &mut self.inspector,
+                task_queue: &mut self.task_queue,
             };
             self.tree.ui(&mut behavior, ui);
         });

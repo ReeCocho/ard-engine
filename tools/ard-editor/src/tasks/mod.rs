@@ -6,7 +6,13 @@ pub mod model;
 pub mod play;
 pub mod save;
 
-use std::thread::JoinHandle;
+use std::{
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+};
 
 use anyhow::Result;
 use ard_engine::{core::prelude::*, ecs::prelude::*, log::*, render::view::GuiView};
@@ -18,6 +24,10 @@ pub trait EditorTask: Send {
     }
 
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation>;
+
+    fn state(&mut self) -> Option<TaskState> {
+        None
+    }
 
     fn pre_run(
         &mut self,
@@ -48,6 +58,8 @@ pub enum TaskConfirmation {
 pub struct TaskQueue {
     /// Sends new tasks to the confirmation GUI.
     send: Sender<Box<dyn EditorTask>>,
+    /// Receives task states after they've been confirmed.
+    recv_state: Receiver<TaskState>,
 }
 
 pub struct TaskConfirmationGui {
@@ -56,6 +68,8 @@ pub struct TaskConfirmationGui {
     err_recv: Receiver<anyhow::Error>,
     /// Sends tasks to the runner after confirmation.
     send: Sender<Box<dyn EditorTask>>,
+    /// Sends task state to the queue after confirmation.
+    send_state: Sender<TaskState>,
     pending: Option<PendingTask>,
     errors: Vec<anyhow::Error>,
 }
@@ -68,6 +82,12 @@ pub struct TaskRunner {
     running: Option<JoinHandle<Result<Box<dyn EditorTask>>>>,
 }
 
+#[derive(Clone)]
+pub struct TaskState {
+    state: Arc<AtomicU32>,
+    name: String,
+}
+
 struct PendingTask {
     task: Box<dyn EditorTask>,
 }
@@ -78,6 +98,11 @@ impl TaskQueue {
         if let Err(err) = self.send.send(Box::new(task)) {
             warn!("error adding task: {:?}", err);
         }
+    }
+
+    #[inline(always)]
+    pub fn recv_state(&self) -> Option<TaskState> {
+        self.recv_state.try_recv().ok()
     }
 }
 
@@ -105,6 +130,12 @@ impl GuiView for TaskConfirmationGui {
                     self.pending = None;
                 }
                 TaskConfirmation::Ready => {
+                    if let Some(state) = pending.task.state() {
+                        if let Err(err) = self.send_state.send(state) {
+                            warn!("error sending task state: {:?}", err);
+                        }
+                    }
+
                     if let Err(err) = self.send.send(pending.task) {
                         warn!("error spawning task: {:?}", err);
                     }
@@ -122,6 +153,7 @@ impl GuiView for TaskConfirmationGui {
             let err_idx = self.errors.len();
             egui::Window::new(format!("Error ({err_idx})"))
                 .collapsible(false)
+                .default_pos(ctx.screen_rect().center())
                 .show(ctx, |ui| {
                     ui.label(err.to_string());
                     if ui.button("Close").clicked() {
@@ -144,15 +176,18 @@ impl PendingTask {
 
         let mut out = TaskConfirmation::Wait;
 
-        egui::Window::new("Confirmation").show(ctx, |ui| {
-            match self.task.confirm_ui(ui) {
-                Ok(res) => out = res,
-                Err(_) => {
-                    // TODO: Deal with error messages
-                    out = TaskConfirmation::Cancel;
+        egui::Window::new("Confirmation")
+            .collapsible(false)
+            .default_pos(ctx.screen_rect().center())
+            .show(ctx, |ui| {
+                match self.task.confirm_ui(ui) {
+                    Ok(res) => out = res,
+                    Err(_) => {
+                        // TODO: Deal with error messages
+                        out = TaskConfirmation::Cancel;
+                    }
                 }
-            }
-        });
+            });
 
         out
     }
@@ -161,15 +196,20 @@ impl PendingTask {
 impl TaskRunner {
     pub fn new() -> (Self, TaskConfirmationGui, TaskQueue) {
         let (queue_send, gui_recv) = crossbeam_channel::unbounded();
+        let (send_state, recv_state) = crossbeam_channel::unbounded();
         let (gui_send, runner_recv) = crossbeam_channel::unbounded();
         let (err_send, err_recv) = crossbeam_channel::unbounded();
 
-        let queue = TaskQueue { send: queue_send };
+        let queue = TaskQueue {
+            send: queue_send,
+            recv_state,
+        };
 
         let gui = TaskConfirmationGui {
             task_recv: gui_recv,
             err_recv,
             send: gui_send,
+            send_state,
             pending: None,
             errors: Vec::default(),
         };
@@ -226,6 +266,9 @@ impl TaskRunner {
             }
         } else if let Ok(mut task) = self.recv.try_recv() {
             if let Err(err) = task.pre_run(&commands, &queries, &res) {
+                if let Some(state) = task.state() {
+                    state.fail();
+                }
                 let _ = self.err_send.send(err);
                 return;
             }
@@ -236,9 +279,65 @@ impl TaskRunner {
 
     fn run_task(mut task: Box<dyn EditorTask>) -> Result<Box<dyn EditorTask>> {
         match task.run() {
-            Ok(_) => Ok(task),
-            Err(err) => Err(err),
+            Ok(_) => {
+                if let Some(state) = task.state() {
+                    state.success();
+                }
+                Ok(task)
+            }
+            Err(err) => {
+                if let Some(state) = task.state() {
+                    state.fail();
+                }
+                Err(err)
+            }
         }
+    }
+}
+
+impl TaskState {
+    const NORMALIZED_RANGE: u32 = 1024;
+
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            state: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    #[inline(always)]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_completion(&self, completion: f32) {
+        let completion = completion.clamp(0.0, 1.0);
+        let normalized = (completion * Self::NORMALIZED_RANGE as f32) as u32;
+        self.state.store(normalized, Ordering::Relaxed);
+    }
+
+    pub fn completion(&self) -> f32 {
+        let mut v = self.state.load(Ordering::Relaxed);
+        v &= (1 << 31) - 1;
+        (v as f32 / Self::NORMALIZED_RANGE as f32).clamp(0.0, 1.0)
+    }
+
+    pub fn fail(&self) {
+        let mut val = 1 << 31;
+        val |= Self::NORMALIZED_RANGE;
+        self.state.store(val, Ordering::Relaxed);
+    }
+
+    pub fn success(&self) {
+        self.state.store(Self::NORMALIZED_RANGE, Ordering::Relaxed);
+    }
+
+    pub fn succeeded(&self) -> Option<bool> {
+        let v = self.state.load(Ordering::Relaxed);
+        if v & ((1 << 31) - 1) != Self::NORMALIZED_RANGE {
+            return None;
+        }
+        Some(v & (1 << 31) == 0)
     }
 }
 

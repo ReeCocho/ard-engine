@@ -21,7 +21,7 @@ use crate::{
     scene_graph::SceneGraph,
 };
 
-use super::{EditorTask, TaskConfirmation};
+use super::{EditorTask, TaskConfirmation, TaskState};
 
 pub struct SaveSceneTask {
     assets: Option<Assets>,
@@ -32,6 +32,7 @@ pub struct SaveSceneTask {
     assets_root: Utf8PathBuf,
     package_root: PathBuf,
     containing_folder: Utf8PathBuf,
+    state: Option<TaskState>,
 }
 
 impl SaveSceneTask {
@@ -45,6 +46,7 @@ impl SaveSceneTask {
             assets_root: Utf8PathBuf::default(),
             package_root: PathBuf::default(),
             containing_folder: containing_folder.into(),
+            state: None,
         }
     }
 
@@ -62,6 +64,7 @@ impl SaveSceneTask {
                 .parent()
                 .map(|p| p.into())
                 .unwrap_or_default(),
+            state: None,
         }
     }
 
@@ -134,6 +137,17 @@ impl EditorTask for SaveSceneTask {
         Ok(TaskConfirmation::Wait)
     }
 
+    fn state(&mut self) -> Option<super::TaskState> {
+        match &self.state {
+            Some(state) => Some(state.clone()),
+            None => {
+                let state = TaskState::new(format!("Saving `{}`", &self.name));
+                self.state = Some(state.clone());
+                Some(state)
+            }
+        }
+    }
+
     fn pre_run(
         &mut self,
         _commands: &Commands,
@@ -154,6 +168,7 @@ impl EditorTask for SaveSceneTask {
         let scene_graph = res.get::<SceneGraph>().unwrap();
         let entities = scene_graph.all_entities(queries);
         let (save_data, _) = crate::ser::saver::<Ron>().save(assets.clone(), queries, &entities)?;
+        self.state().unwrap().set_completion(0.5);
 
         self.save_data = Some(save_data);
         self.assets = Some(assets);
@@ -216,6 +231,7 @@ impl EditorTask for SaveSceneTask {
 
         std::fs::write(self.new_raw_path(), &[])?;
 
+        self.state.as_mut().unwrap().set_completion(1.0);
         self.meta_file = Some(meta_file);
 
         Ok(())

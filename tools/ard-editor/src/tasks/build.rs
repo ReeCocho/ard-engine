@@ -1,9 +1,13 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{atomic::Ordering, Arc},
+};
 
 use ard_engine::{
-    assets::asset::AssetNameBuf,
+    assets::{asset::AssetNameBuf, prelude::lof::LofBuildState},
     ecs::prelude::*,
     game::save_data::{InitialSceneAsset, INITIAL_SCENE_ASSET_NAME},
+    log::info,
 };
 use path_macro::path;
 
@@ -12,16 +16,25 @@ use crate::{
     gui::{drag_drop::DragDropPayload, util},
 };
 
-use super::{EditorTask, TaskConfirmation};
+use super::{EditorTask, TaskConfirmation, TaskState};
 
-#[derive(Default)]
 pub struct BuildGameTask {
     initial_scene: AssetNameBuf,
     active_package: PathBuf,
     active_package_manifest: Option<EditorAssetsManifest>,
+    state: TaskState,
 }
 
-impl BuildGameTask {}
+impl Default for BuildGameTask {
+    fn default() -> Self {
+        Self {
+            initial_scene: AssetNameBuf::default(),
+            active_package: PathBuf::default(),
+            active_package_manifest: None,
+            state: TaskState::new("Build Game"),
+        }
+    }
+}
 
 impl EditorTask for BuildGameTask {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> anyhow::Result<TaskConfirmation> {
@@ -55,6 +68,10 @@ impl EditorTask for BuildGameTask {
         Ok(TaskConfirmation::Wait)
     }
 
+    fn state(&mut self) -> Option<TaskState> {
+        Some(self.state.clone())
+    }
+
     fn pre_run(
         &mut self,
         _commands: &Commands,
@@ -69,6 +86,8 @@ impl EditorTask for BuildGameTask {
 
     fn run(&mut self) -> anyhow::Result<()> {
         let start = std::time::Instant::now();
+        info!("Build started.");
+
         let manifest = self.active_package_manifest.take().unwrap();
 
         let mut manifest_name = PathBuf::from(self.active_package.file_name().unwrap());
@@ -100,11 +119,27 @@ impl EditorTask for BuildGameTask {
         bincode::serialize_into(f, &initial_scene).unwrap();
 
         std::fs::create_dir_all("./build/packages/")?;
-        ard_engine::assets::package::lof::create_lof_from_folder_mt(
-            path!("./build/packages" / lof_name),
-            &self.active_package,
-            8,
-        );
+        let build_state = Arc::new(LofBuildState::default());
+
+        let build_state_clone = build_state.clone();
+        let out = path!("./build/packages" / lof_name);
+        let src = self.active_package.clone();
+        let build_thread = std::thread::spawn(move || {
+            ard_engine::assets::package::lof::create_lof_from_folder_mt(
+                out,
+                src,
+                8,
+                build_state_clone,
+            );
+        });
+
+        while !build_thread.is_finished() {
+            let file_count = build_state.file_count.load(Ordering::Relaxed).max(1);
+            let files_saved = build_state.files_saved.load(Ordering::Relaxed);
+            self.state
+                .set_completion(files_saved as f32 / file_count as f32);
+        }
+        let _ = build_thread.join();
 
         std::fs::remove_file(manifest_path)?;
         std::fs::remove_file(initial_scene_path)?;
@@ -117,7 +152,7 @@ impl EditorTask for BuildGameTask {
         )?;
 
         let end = std::time::Instant::now();
-        println!("Build complete in {}s", end.duration_since(start).as_secs());
+        info!("Build complete in {}s", end.duration_since(start).as_secs());
 
         Ok(())
     }

@@ -24,6 +24,14 @@ impl Inspector for TransformInspector {
         true
     }
 
+    fn can_remove(&self) -> bool {
+        false
+    }
+
+    fn remove(&mut self, _: InspectorContext) {
+        unreachable!("Cannot remove transform");
+    }
+
     fn show(&mut self, ctx: InspectorContext) {
         let position = ctx.queries.get::<Write<Position>>(ctx.entity);
         let rotation = ctx

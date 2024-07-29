@@ -103,6 +103,15 @@ impl Inspector for ColliderInspector {
             });
         }
     }
+
+    fn remove(&mut self, ctx: InspectorContext) {
+        ctx.commands
+            .entities
+            .remove_component::<Collider>(ctx.entity);
+        ctx.commands
+            .entities
+            .remove_component::<ColliderHandle>(ctx.entity);
+    }
 }
 
 fn collider_shape_ui(ui: &mut egui::Ui, shape: &mut Shape) {

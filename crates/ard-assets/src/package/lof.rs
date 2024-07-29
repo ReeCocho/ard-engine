@@ -4,7 +4,7 @@ use std::{
     ops::DerefMut,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -30,6 +30,12 @@ pub const COMPRESSION_LEVEL: i32 = 9;
 
 #[derive(Clone)]
 pub struct LofPackage(Arc<LofPackageInner>);
+
+#[derive(Default)]
+pub struct LofBuildState {
+    pub file_count: AtomicU32,
+    pub files_saved: AtomicU32,
+}
 
 struct LofPackageInner {
     path: PathBuf,
@@ -207,6 +213,7 @@ pub fn create_lof_from_folder_mt(
     out: impl Into<PathBuf>,
     src: impl Into<PathBuf>,
     thread_count: usize,
+    build_state: Arc<LofBuildState>,
 ) {
     let out: PathBuf = out.into();
     let src: PathBuf = src.into();
@@ -253,6 +260,9 @@ pub fn create_lof_from_folder_mt(
 
     // Spin up thread to write files to disk and create the manifest
     let file_count = src_file_send.len();
+    build_state
+        .file_count
+        .store(file_count as u32, Ordering::Relaxed);
     let manifest_builder = std::thread::spawn(move || {
         let mut count = 0;
         while count < file_count {
@@ -260,6 +270,7 @@ pub fn create_lof_from_folder_mt(
             manifest.assets.insert(file.name, (file.base, file.size));
             writer.seek(SeekFrom::Start(file.base)).unwrap();
             writer.write_all(&file.data).unwrap();
+            build_state.files_saved.fetch_add(1, Ordering::Relaxed);
             count += 1;
         }
 

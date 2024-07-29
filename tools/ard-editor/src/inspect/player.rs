@@ -14,4 +14,10 @@ impl Inspector for PlayerSpawnInspector {
     }
 
     fn show(&mut self, _ctx: InspectorContext) {}
+
+    fn remove(&mut self, ctx: InspectorContext) {
+        ctx.commands
+            .entities
+            .remove_component::<PlayerSpawn>(ctx.entity);
+    }
 }

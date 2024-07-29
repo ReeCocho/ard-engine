@@ -24,9 +24,15 @@ pub struct InspectorContext<'a> {
 pub trait Inspector {
     fn should_inspect(&self, ctx: InspectorContext) -> bool;
 
+    fn can_remove(&self) -> bool {
+        true
+    }
+
     fn title(&self) -> &'static str;
 
     fn show(&mut self, ctx: InspectorContext);
+
+    fn remove(&mut self, ctx: InspectorContext);
 }
 
 impl Inspectors {
@@ -61,7 +67,7 @@ impl Inspectors {
                 return;
             }
 
-            ui.collapsing(inspector.title(), |ui| {
+            let response = ui.collapsing(inspector.title(), |ui| {
                 inspector.show(InspectorContext {
                     ui,
                     entity,
@@ -70,6 +76,20 @@ impl Inspectors {
                     res,
                 });
             });
+
+            if inspector.can_remove() {
+                response.header_response.context_menu(|ui| {
+                    if ui.button("Remove").clicked() {
+                        inspector.remove(InspectorContext {
+                            ui,
+                            entity,
+                            commands,
+                            queries,
+                            res,
+                        });
+                    }
+                });
+            }
         });
     }
 }

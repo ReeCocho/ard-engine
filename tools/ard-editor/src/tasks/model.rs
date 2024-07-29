@@ -16,6 +16,8 @@ use crate::{
     tasks::{EditorTask, TaskConfirmation},
 };
 
+use super::TaskState;
+
 pub struct ModelImportTask {
     src_path: PathBuf,
     active_package: PathBuf,
@@ -23,11 +25,13 @@ pub struct ModelImportTask {
     meta_rel_path: PathBuf,
     meta_dst_path: PathBuf,
     new_assets: Vec<AssetNameBuf>,
+    state: TaskState,
 }
 
 impl ModelImportTask {
     pub fn new(path: PathBuf) -> Self {
         Self {
+            state: TaskState::new(format!("Import {:?}", path)),
             src_path: path,
             active_package: PathBuf::default(),
             raw_dst_path: PathBuf::default(),
@@ -56,6 +60,10 @@ impl EditorTask for ModelImportTask {
         }
 
         Ok(res)
+    }
+
+    fn state(&mut self) -> Option<TaskState> {
+        Some(self.state.clone())
     }
 
     fn pre_run(
@@ -117,6 +125,8 @@ impl EditorTask for ModelImportTask {
             return Err(anyhow::Error::msg(err_msg));
         }
 
+        self.state.set_completion(0.33);
+
         // Find the primary model asset
         let mut model_file = None;
         for entry in temp_folder.path().read_dir()? {
@@ -150,6 +160,7 @@ impl EditorTask for ModelImportTask {
                 ..Default::default()
             },
         )?;
+        self.state.set_completion(0.66);
 
         // Copy raw asset into the assets folder
         std::fs::copy(in_path, &self.raw_dst_path)?;
@@ -163,6 +174,8 @@ impl EditorTask for ModelImportTask {
         let file = std::fs::File::create(&self.meta_dst_path)?;
         let writer = std::io::BufWriter::new(file);
         ron::ser::to_writer(writer, &meta)?;
+
+        self.state.set_completion(1.0);
 
         Ok(())
     }

@@ -38,4 +38,13 @@ impl Inspector for RigidBodyInspector {
             });
         }
     }
+
+    fn remove(&mut self, ctx: InspectorContext) {
+        ctx.commands
+            .entities
+            .remove_component::<RigidBody>(ctx.entity);
+        ctx.commands
+            .entities
+            .remove_component::<RigidBodyHandle>(ctx.entity);
+    }
 }

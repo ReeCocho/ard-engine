@@ -2,7 +2,7 @@ use crate::{
     assets::EditorAsset, command::EditorCommands, gui::util, scene_graph::SceneGraph, ser,
 };
 
-use super::{EditorTask, TaskConfirmation};
+use super::{EditorTask, TaskConfirmation, TaskState};
 use ard_engine::{
     assets::prelude::*, core::prelude::*, ecs::prelude::*, game::save_data::SceneAsset,
     save_load::format::Ron,
@@ -16,6 +16,7 @@ pub struct LoadSceneTask {
     assets: Option<Assets>,
     handle: Option<Handle<SceneAsset>>,
     confirm: bool,
+    state: TaskState,
 }
 
 impl LoadSceneTask {
@@ -27,6 +28,7 @@ impl LoadSceneTask {
             assets: None,
             handle: None,
             confirm: true,
+            state: TaskState::new(format!("Loading {:?}", asset.raw_path())),
         }
     }
 
@@ -38,6 +40,7 @@ impl LoadSceneTask {
             assets: None,
             handle: None,
             confirm: false,
+            state: TaskState::new(format!("Loading {:?}", asset.raw_path())),
         }
     }
 }
@@ -62,6 +65,10 @@ impl EditorTask for LoadSceneTask {
         }
 
         Ok(TaskConfirmation::Wait)
+    }
+
+    fn state(&mut self) -> Option<TaskState> {
+        Some(self.state.clone())
     }
 
     fn pre_run(

@@ -2,7 +2,7 @@ use ard_engine::{
     assets::package::PackageId,
     ecs::{resource::res::Res, system::data::Everything},
 };
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::{
     assets::{op::AssetOpInstance, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
@@ -51,6 +51,32 @@ impl AssetsView {
                         .add(NewFolderTask::new(cur_path.path()));
                 }
             });
+
+        ctx.ui.horizontal(|ui| {
+            let mut new_path = None;
+
+            if ui
+                .link(assets.active_assets_root().file_name().unwrap())
+                .clicked()
+            {
+                new_path = Some(Utf8PathBuf::default());
+            }
+
+            let mut cur = Utf8PathBuf::default();
+            for component in cur_path.path().components() {
+                cur.push(component);
+                ui.label("/");
+                if ui.link(component.as_str()).clicked() {
+                    new_path = Some(cur.clone());
+                }
+            }
+
+            if let Some(path) = new_path {
+                *cur_path.path_mut() = path;
+            }
+        });
+
+        ctx.ui.separator();
 
         egui::ScrollArea::vertical()
             .auto_shrink(false)
