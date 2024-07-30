@@ -2,13 +2,14 @@ use ard_engine::{
     assets::package::PackageId,
     ecs::{resource::res::Res, system::data::Everything},
 };
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 
 use crate::{
     assets::{meta::AssetType, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
     tasks::{
         asset::{
-            DeleteAssetTask, DeleteFolderTask, NewFolderTask, RenameAssetTask, RenameFolderTask,
+            DeleteAssetTask, DeleteFolderTask, MoveAssetTask, NewFolderTask, RenameAssetTask,
+            RenameFolderTask,
         },
         TaskQueue,
     },
@@ -57,19 +58,39 @@ impl AssetsView {
         ctx.ui.horizontal(|ui| {
             let mut new_path = None;
 
-            if ui
-                .link(assets.active_assets_root().file_name().unwrap())
-                .clicked()
-            {
-                new_path = Some(Utf8PathBuf::default());
-            }
+            let (_, payload) = ui.dnd_drop_zone::<DragDropPayload, _>(egui::Frame::none(), |ui| {
+                if ui
+                    .link(assets.active_assets_root().file_name().unwrap())
+                    .clicked()
+                {
+                    new_path = Some(Utf8PathBuf::default());
+                }
+            });
+
+            let mut payload = payload.map(|p| (p, Utf8PathBuf::default()));
 
             let mut cur = Utf8PathBuf::default();
             for component in cur_path.path().components() {
                 cur.push(component);
                 ui.label("/");
-                if ui.link(component.as_str()).clicked() {
-                    new_path = Some(cur.clone());
+                let (_, new_payload) =
+                    ui.dnd_drop_zone::<DragDropPayload, _>(egui::Frame::none(), |ui| {
+                        if ui.link(component.as_str()).clicked() {
+                            new_path = Some(cur.clone());
+                        }
+                    });
+
+                if new_payload.is_some() {
+                    payload = new_payload.map(|p| (p, cur.clone()));
+                }
+            }
+
+            if let Some((payload, dst)) = payload {
+                if let DragDropPayload::Asset(asset) = payload.as_ref() {
+                    ctx.res
+                        .get_mut::<TaskQueue>()
+                        .unwrap()
+                        .add(MoveAssetTask::new(asset, dst));
                 }
             }
 
@@ -133,20 +154,6 @@ impl AssetsView {
                                     .unwrap()
                                     .add(DeleteAssetTask::new(asset));
                             }
-
-                            if cur_path.path() != Utf8Path::new("")
-                                && ui.button("Move up a folder").clicked()
-                            {
-                                /*
-                                let task_queue = ctx.res.get_mut::<TaskQueue>().unwrap();
-                                let mut dst = self.cur_path.clone();
-                                dst.pop();
-                                let dst = path!(folder.package_root() / dst);
-
-                                task_queue.add(MoveTask::new(&asset.raw_path, &dst));
-                                task_queue.add(MoveTask::new(&asset.meta_path, &dst));
-                                */
-                            }
                         });
                     }
                 });
@@ -157,8 +164,8 @@ impl AssetsView {
 
     fn folder_ui(
         ui: &mut egui::Ui,
-        _res: &Res<Everything>,
-        _folder: &Folder,
+        res: &Res<Everything>,
+        folder: &Folder,
         name: &str,
     ) -> egui::Response {
         let icon = egui::RichText::new(egui_phosphor::fill::FOLDER).size(64.0);
@@ -186,12 +193,10 @@ impl AssetsView {
 
         if let Some(dropped) = result.1 {
             match dropped.as_ref() {
-                DragDropPayload::Asset(_asset) => {
-                    /*
-                    let task_queue = res.get_mut::<TaskQueue>().unwrap();
-                    task_queue.add(MoveTask::new(&asset.raw_path, folder.abs_path()));
-                    task_queue.add(MoveTask::new(&asset.meta_path, folder.abs_path()));
-                    */
+                DragDropPayload::Asset(asset) => {
+                    res.get_mut::<TaskQueue>()
+                        .unwrap()
+                        .add(MoveAssetTask::new(asset, folder.path()));
                 }
                 _ => {}
             }

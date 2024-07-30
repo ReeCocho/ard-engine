@@ -1,6 +1,3 @@
-pub mod delete;
-pub mod rename;
-
 use std::{
     io::{BufReader, BufWriter},
     path::PathBuf,
@@ -38,6 +35,20 @@ pub struct RenameAssetTask {
     // Name of the baked asset relative to the package root
     baked_path: AssetNameBuf,
     new_name: String,
+    is_shadowing: bool,
+    ctx: Option<RenameContext>,
+}
+
+pub struct MoveAssetTask {
+    // Root of the assets folder relative to the executable
+    assets_root: Utf8PathBuf,
+    // Path to the meta file relative to the assets folder
+    meta_path: Utf8PathBuf,
+    // Path to the raw asset relative to the assets folder
+    raw_path: Utf8PathBuf,
+    // Name of the baked asset relative to the package root
+    baked_path: AssetNameBuf,
+    new_folder: Utf8PathBuf,
     is_shadowing: bool,
     ctx: Option<RenameContext>,
 }
@@ -106,6 +117,41 @@ impl RenameAssetTask {
         let mut dst_meta = self.meta_path.clone();
         dst_meta.set_file_name(&self.new_name);
         dst_meta.set_extension(format!("{ext}.meta"));
+        dst_meta
+    }
+}
+
+impl MoveAssetTask {
+    pub fn new(asset: &EditorAsset, new_folder: impl Into<Utf8PathBuf>) -> Self {
+        Self {
+            assets_root: Utf8PathBuf::default(),
+            meta_path: asset.meta_path().into(),
+            baked_path: asset.meta_file().baked.clone(),
+            raw_path: asset.raw_path(),
+            new_folder: new_folder.into(),
+            is_shadowing: false,
+            ctx: None,
+        }
+    }
+
+    fn new_raw_path(&self) -> PathBuf {
+        let name = self.raw_path.file_name().unwrap_or("");
+        let mut dst_raw = self.new_folder.clone();
+        dst_raw.push(name);
+        path!(self.assets_root / dst_raw)
+    }
+
+    fn new_meta_path(&self) -> PathBuf {
+        let name = self.meta_path.file_name().unwrap_or("");
+        let mut dst_meta = self.new_folder.clone();
+        dst_meta.push(name);
+        path!(self.assets_root / dst_meta)
+    }
+
+    fn new_meta_rel_path(&self) -> Utf8PathBuf {
+        let name = self.meta_path.file_name().unwrap_or("");
+        let mut dst_meta = self.new_folder.clone();
+        dst_meta.push(name);
         dst_meta
     }
 }
@@ -500,6 +546,104 @@ impl EditorTask for DeleteFolderTask {
     ) -> Result<()> {
         let mut assets = res.get_mut::<EditorAssets>().unwrap();
         assets.remove_from_active_package(&self.folder);
+
+        Ok(())
+    }
+}
+
+impl EditorTask for MoveAssetTask {
+    fn has_confirm_ui(&self) -> bool {
+        false
+    }
+
+    fn confirm_ui(&mut self, _ui: &mut egui::Ui) -> Result<TaskConfirmation> {
+        Ok(TaskConfirmation::Wait)
+    }
+
+    fn pre_run(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let assets = res.get::<Assets>().unwrap();
+        let editor_assets = res.get::<EditorAssets>().unwrap();
+
+        let asset = editor_assets
+            .find_asset(&self.meta_path)
+            .ok_or(anyhow::Error::msg("Asset no longer exists"))?;
+        self.is_shadowing = asset.is_shadowing();
+        self.baked_path = asset.meta_file().baked.clone();
+
+        self.assets_root = editor_assets.active_assets_root().into();
+        self.ctx = Some(RenameContext {
+            assets: assets.clone(),
+            package_root: editor_assets.active_package_root().into(),
+            old_to_new: FxHashMap::default(),
+        });
+
+        // Check for duplicate
+        if editor_assets
+            .find_asset(&self.new_meta_rel_path())
+            .is_some()
+        {
+            Err(anyhow::Error::msg("Asset already exists."))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn run(&mut self) -> Result<()> {
+        let src_raw = path!(self.assets_root / self.raw_path);
+        let src_meta = path!(self.assets_root / self.meta_path);
+
+        let dst_raw = self.new_raw_path();
+        let dst_meta = self.new_meta_path();
+
+        // If it's shadowed, we need to generate unique names for all assets
+        if self.is_shadowing {
+            let ctx = self.ctx.as_mut().unwrap();
+            let baked_path = path!(ctx.package_root / self.baked_path);
+            let mut header = AssetHeader::load(baked_path)?;
+
+            let f = BufReader::new(std::fs::File::open(&src_meta)?);
+            let mut meta_file = ron::de::from_reader::<_, MetaFile>(f)?;
+            meta_file.baked = header.rename(&self.baked_path, ctx)?;
+
+            let mut f = BufWriter::new(std::fs::File::create(&src_meta)?);
+            ron::ser::to_writer(&mut f, &meta_file)?;
+        }
+
+        // Perform the rename on the raw and meta files
+        std::fs::rename(src_raw, dst_raw)?;
+        std::fs::rename(src_meta, dst_meta)?;
+
+        Ok(())
+    }
+
+    fn complete(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let assets = res.get::<Assets>().unwrap();
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+
+        if self.is_shadowing {
+            self.ctx
+                .as_mut()
+                .unwrap()
+                .old_to_new
+                .iter()
+                .for_each(|(old, new)| {
+                    assets.scan_for(old);
+                    assets.scan_for(new);
+                });
+        }
+
+        editor_assets.remove_from_active_package(&self.meta_path);
+        editor_assets.scan_for(Utf8PathBuf::from_path_buf(self.new_meta_path()).unwrap())?;
 
         Ok(())
     }
