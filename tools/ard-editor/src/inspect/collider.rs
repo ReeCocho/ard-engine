@@ -30,15 +30,15 @@ impl Inspector for ColliderInspector {
             .striped(true)
             .show(ctx.ui, |ui| {
                 ui.label("Mass");
-                ui.add(egui::DragValue::new(&mut collider.mass).clamp_range(0.01..=f64::MAX));
+                ui.add(egui::DragValue::new(&mut collider.mass).range(0.01..=f64::MAX));
                 ui.end_row();
 
                 ui.label("Restitution");
-                ui.add(egui::DragValue::new(&mut collider.restitution).clamp_range(0.01..=1.0));
+                ui.add(egui::DragValue::new(&mut collider.restitution).range(0.01..=1.0));
                 ui.end_row();
 
                 ui.label("Friction");
-                ui.add(egui::DragValue::new(&mut collider.friction).clamp_range(0.0..=1.0));
+                ui.add(egui::DragValue::new(&mut collider.friction).range(0.0..=1.0));
                 ui.end_row();
 
                 ui.label("Offset");

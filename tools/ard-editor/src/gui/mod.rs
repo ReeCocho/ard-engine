@@ -136,7 +136,7 @@ impl<'a> egui_tiles::Behavior<Pane> for EditorViewBehavior<'a> {
         _visuals: &egui::Visuals,
         _tiles: &egui_tiles::Tiles<Pane>,
         _tile_id: egui_tiles::TileId,
-        _active: bool,
+        _active: &egui_tiles::TabState,
     ) -> egui::Stroke {
         egui::Stroke::NONE
     }

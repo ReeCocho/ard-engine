@@ -5,9 +5,11 @@ use ard_engine::{
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::{
-    assets::{op::AssetOpInstance, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
+    assets::{meta::AssetType, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
     tasks::{
-        asset::{DeleteAssetOp, DeleteFolderTask, NewFolderTask, RenameAssetOp, RenameFolderTask},
+        asset::{
+            DeleteAssetTask, DeleteFolderTask, NewFolderTask, RenameAssetTask, RenameFolderTask,
+        },
         TaskQueue,
     },
 };
@@ -122,14 +124,14 @@ impl AssetsView {
                                 ctx.res
                                     .get_mut::<TaskQueue>()
                                     .unwrap()
-                                    .add(AssetOpInstance::new(RenameAssetOp::new(&assets, asset)));
+                                    .add(RenameAssetTask::new(asset));
                             }
 
                             if ui.button("Delete").clicked() {
                                 ctx.res
                                     .get_mut::<TaskQueue>()
                                     .unwrap()
-                                    .add(AssetOpInstance::new(DeleteAssetOp::new(&assets, asset)));
+                                    .add(DeleteAssetTask::new(asset));
                             }
 
                             if cur_path.path() != Utf8Path::new("")
@@ -172,7 +174,7 @@ impl AssetsView {
                                 .selectable(false)
                                 .sense(egui::Sense::click()),
                         );
-                        ui.add(egui::Label::new(name).selectable(false).truncate(true));
+                        ui.add(egui::Label::new(name).selectable(false).truncate());
                         r
                     })
                     .inner
@@ -204,7 +206,15 @@ impl AssetsView {
         asset: &EditorAsset,
         active_package: PackageId,
     ) -> egui::Response {
-        let icon = egui::RichText::new(egui_phosphor::fill::FILE).size(64.0);
+        let icon = match asset.meta_file().data.ty() {
+            AssetType::Model => egui_phosphor::fill::CUBE,
+            AssetType::Texture => egui_phosphor::fill::FILE_IMAGE,
+            AssetType::Scene => egui_phosphor::fill::GLOBE,
+            AssetType::Material => egui_phosphor::fill::SPHERE,
+            AssetType::Mesh => egui_phosphor::regular::CUBE_TRANSPARENT,
+        };
+
+        let icon = egui::RichText::new(icon).size(64.0);
         let size = [100.0, 160.0];
         let layout = egui::Layout::centered_and_justified(ui.layout().main_dir());
 
@@ -234,7 +244,7 @@ impl AssetsView {
                         egui::Label::new(label)
                             .selectable(false)
                             .sense(egui::Sense::click())
-                            .truncate(true),
+                            .truncate(),
                     );
                     r
                 })

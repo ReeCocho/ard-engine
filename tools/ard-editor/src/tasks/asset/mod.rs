@@ -11,13 +11,16 @@ use ard_engine::{
     assets::{asset::AssetNameBuf, manager::Assets},
     ecs::prelude::*,
 };
-use camino::{Utf8Path, Utf8PathBuf};
-use delete::DeleteAssetVisitor;
+use camino::Utf8PathBuf;
 use path_macro::path;
-use rename::RenameAssetVisitor;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    assets::{meta::MetaFile, op::AssetOp, EditorAsset, EditorAssets},
+    assets::{
+        meta::MetaFile,
+        op::{AssetHeader, AssetOps, DeleteContext, RenameContext},
+        EditorAsset, EditorAssets,
+    },
     gui::util,
     refresher::RefreshAsset,
     tasks::TaskConfirmation,
@@ -25,22 +28,31 @@ use crate::{
 
 use super::EditorTask;
 
-pub struct RenameAssetOp {
+pub struct RenameAssetTask {
+    // Root of the assets folder relative to the executable
     assets_root: Utf8PathBuf,
+    // Path to the meta file relative to the assets folder
     meta_path: Utf8PathBuf,
+    // Path to the raw asset relative to the assets folder
     raw_path: Utf8PathBuf,
+    // Name of the baked asset relative to the package root
     baked_path: AssetNameBuf,
     new_name: String,
-    visitor: RenameAssetVisitor,
-    assets: Option<Assets>,
+    is_shadowing: bool,
+    ctx: Option<RenameContext>,
 }
 
-pub struct DeleteAssetOp {
+pub struct DeleteAssetTask {
+    // Root of the assets folder relative to the executable
     assets_root: Utf8PathBuf,
+    // Path to the meta file relative to the assets folder
     meta_path: Utf8PathBuf,
+    // Path to the raw asset relative to the assets folder
     raw_path: Utf8PathBuf,
+    // Name of the baked asset relative to the package root
     baked_path: AssetNameBuf,
-    visitor: DeleteAssetVisitor,
+    is_leaf: bool,
+    ctx: Option<DeleteContext>,
 }
 
 pub struct NewFolderTask {
@@ -60,16 +72,16 @@ pub struct RenameFolderTask {
     new_name: String,
 }
 
-impl RenameAssetOp {
-    pub fn new(assets: &EditorAssets, asset: &EditorAsset) -> Self {
+impl RenameAssetTask {
+    pub fn new(asset: &EditorAsset) -> Self {
         Self {
-            assets_root: assets.active_assets_root().into(),
-            visitor: RenameAssetVisitor::new(assets.active_package_root()),
+            assets_root: Utf8PathBuf::default(),
             meta_path: asset.meta_path().into(),
             baked_path: asset.meta_file().baked.clone(),
             raw_path: asset.raw_path(),
             new_name: String::default(),
-            assets: None,
+            is_shadowing: false,
+            ctx: None,
         }
     }
 
@@ -98,14 +110,15 @@ impl RenameAssetOp {
     }
 }
 
-impl DeleteAssetOp {
-    pub fn new(assets: &EditorAssets, asset: &EditorAsset) -> Self {
+impl DeleteAssetTask {
+    pub fn new(asset: &EditorAsset) -> Self {
         Self {
-            assets_root: assets.active_assets_root().into(),
+            assets_root: Utf8PathBuf::default(),
             meta_path: asset.meta_path().into(),
             baked_path: asset.meta_file().baked.clone(),
             raw_path: asset.raw_path(),
-            visitor: DeleteAssetVisitor::new(assets.active_package_root()),
+            is_leaf: false,
+            ctx: None,
         }
     }
 }
@@ -176,15 +189,7 @@ impl RenameFolderTask {
     }
 }
 
-impl AssetOp for RenameAssetOp {
-    fn meta_path(&self) -> &Utf8Path {
-        &self.meta_path
-    }
-
-    fn raw_path(&self) -> &Utf8Path {
-        &self.raw_path
-    }
-
+impl EditorTask for RenameAssetTask {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
         ui.text_edit_singleline(&mut self.new_name);
 
@@ -210,10 +215,27 @@ impl AssetOp for RenameAssetOp {
         Ok(TaskConfirmation::Wait)
     }
 
-    fn pre_run(&mut self, assets: &Assets, editor_assets: &EditorAssets) -> Result<()> {
+    fn pre_run(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let assets = res.get::<Assets>().unwrap();
+        let editor_assets = res.get::<EditorAssets>().unwrap();
+
+        let asset = editor_assets
+            .find_asset(&self.meta_path)
+            .ok_or(anyhow::Error::msg("Asset no longer exists"))?;
+        self.is_shadowing = asset.is_shadowing();
+        self.baked_path = asset.meta_file().baked.clone();
+
         self.assets_root = editor_assets.active_assets_root().into();
-        self.visitor = RenameAssetVisitor::new(editor_assets.active_package_root());
-        self.assets = Some(assets.clone());
+        self.ctx = Some(RenameContext {
+            assets: assets.clone(),
+            package_root: editor_assets.active_package_root().into(),
+            old_to_new: FxHashMap::default(),
+        });
 
         // Check for duplicate
         if editor_assets
@@ -226,9 +248,7 @@ impl AssetOp for RenameAssetOp {
         }
     }
 
-    fn run(&mut self, is_shadowing: bool, _is_leaf: bool) -> Result<()> {
-        let assets = self.assets.as_ref().unwrap();
-
+    fn run(&mut self) -> Result<()> {
         let src_raw = path!(self.assets_root / self.raw_path);
         let src_meta = path!(self.assets_root / self.meta_path);
 
@@ -236,10 +256,14 @@ impl AssetOp for RenameAssetOp {
         let dst_meta = self.new_meta_path();
 
         // If it's shadowed, we need to generate unique names for all assets
-        if is_shadowing {
+        if self.is_shadowing {
+            let ctx = self.ctx.as_mut().unwrap();
+            let baked_path = path!(ctx.package_root / self.baked_path);
+            let mut header = AssetHeader::load(baked_path)?;
+
             let f = BufReader::new(std::fs::File::open(&src_meta)?);
             let mut meta_file = ron::de::from_reader::<_, MetaFile>(f)?;
-            meta_file.baked = self.visitor.visit(assets, &self.baked_path)?;
+            meta_file.baked = header.rename(&self.baked_path, ctx)?;
 
             let mut f = BufWriter::new(std::fs::File::create(&src_meta)?);
             ron::ser::to_writer(&mut f, &meta_file)?;
@@ -254,14 +278,23 @@ impl AssetOp for RenameAssetOp {
 
     fn complete(
         &mut self,
-        is_shadowing: bool,
-        _is_leaf: bool,
         _commands: &Commands,
-        assets: &Assets,
-        editor_assets: &mut EditorAssets,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
     ) -> Result<()> {
-        if is_shadowing {
-            self.visitor.scan(assets);
+        let assets = res.get::<Assets>().unwrap();
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+
+        if self.is_shadowing {
+            self.ctx
+                .as_mut()
+                .unwrap()
+                .old_to_new
+                .iter()
+                .for_each(|(old, new)| {
+                    assets.scan_for(old);
+                    assets.scan_for(new);
+                });
         }
 
         editor_assets.remove_from_active_package(&self.meta_path);
@@ -271,15 +304,7 @@ impl AssetOp for RenameAssetOp {
     }
 }
 
-impl AssetOp for DeleteAssetOp {
-    fn meta_path(&self) -> &Utf8Path {
-        &self.meta_path
-    }
-
-    fn raw_path(&self) -> &Utf8Path {
-        &self.raw_path
-    }
-
+impl EditorTask for DeleteAssetTask {
     fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
         ui.label(format!(
             "Are you sure you want to delete `{}`? This operation cannot be undone.",
@@ -297,19 +322,31 @@ impl AssetOp for DeleteAssetOp {
         Ok(TaskConfirmation::Wait)
     }
 
-    fn pre_run(&mut self, _assets: &Assets, editor_assets: &EditorAssets) -> Result<()> {
+    fn pre_run(
+        &mut self,
+        _commands: &Commands,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
+    ) -> Result<()> {
+        let editor_assets = res.get::<EditorAssets>().unwrap();
         self.assets_root = editor_assets.active_assets_root().into();
-        self.visitor = DeleteAssetVisitor::new(editor_assets.active_package_root());
 
         // Check for asset
-        if editor_assets.find_asset(&self.meta_path).is_none() {
-            Err(anyhow::Error::msg("Asset does not exists."))
-        } else {
-            Ok(())
+        match editor_assets.find_asset(&self.meta_path) {
+            Some(asset) => {
+                self.is_leaf = asset.package() == editor_assets.active_package_id();
+                self.baked_path = asset.meta_file().baked.clone();
+                self.ctx = Some(DeleteContext {
+                    package_root: editor_assets.active_package_root().into(),
+                    visited: FxHashSet::default(),
+                });
+                Ok(())
+            }
+            None => Err(anyhow::Error::msg("Asset does not exists.")),
         }
     }
 
-    fn run(&mut self, _is_shadowing: bool, _is_leaf: bool) -> Result<()> {
+    fn run(&mut self) -> Result<()> {
         let src_raw = path!(self.assets_root / self.raw_path);
         let src_meta = path!(self.assets_root / self.meta_path);
 
@@ -317,7 +354,9 @@ impl AssetOp for DeleteAssetOp {
             return Err(anyhow::Error::msg("Asset no longer exists."));
         }
 
-        self.visitor.visit(&self.baked_path)?;
+        let ctx = self.ctx.as_mut().unwrap();
+        let mut header = AssetHeader::load(path!(ctx.package_root / self.baked_path))?;
+        header.delete(&self.baked_path, ctx)?;
 
         std::fs::remove_file(src_raw)?;
         std::fs::remove_file(src_meta)?;
@@ -327,14 +366,16 @@ impl AssetOp for DeleteAssetOp {
 
     fn complete(
         &mut self,
-        _is_shadowing: bool,
-        is_leaf: bool,
         commands: &Commands,
-        assets: &Assets,
-        editor_assets: &mut EditorAssets,
+        _queries: &Queries<Everything>,
+        res: &Res<Everything>,
     ) -> Result<()> {
-        if is_leaf {
-            self.visitor.visited().iter().for_each(|asset| {
+        let assets = res.get::<Assets>().unwrap();
+        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
+
+        if self.is_leaf {
+            let ctx = self.ctx.as_ref().unwrap();
+            ctx.visited.iter().for_each(|asset| {
                 assets.scan_for(&asset);
                 commands.events.submit(RefreshAsset(asset.clone()));
             });

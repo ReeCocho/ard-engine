@@ -91,9 +91,7 @@ impl EditorTask for ModelImportTask {
             .find_asset(Utf8Path::from_path(&self.meta_rel_path).unwrap_or(Utf8Path::new("")))
             .is_some()
         {
-            return Err(anyhow::Error::msg(
-                "TODO: Can't currently import over existing asset.",
-            ));
+            return Err(anyhow::Error::msg("Models cannot be shadowed or merged."));
         }
 
         Ok(())

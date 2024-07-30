@@ -1,104 +1,257 @@
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+};
+
 use anyhow::Result;
-use ard_engine::{assets::prelude::*, ecs::prelude::*};
-use camino::Utf8Path;
+use ard_engine::{
+    assets::prelude::*,
+    formats::{
+        material::{MaterialHeader, MaterialType},
+        mesh::MeshHeader,
+        model::ModelHeader,
+        texture::TextureHeader,
+    },
+    game::save_data::SceneAssetHeader,
+};
+use enum_dispatch::enum_dispatch;
 use path_macro::path;
+use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::tasks::{EditorTask, TaskConfirmation};
+use super::meta::AssetType;
 
-use super::EditorAssets;
-
-pub trait AssetOp: Send + Sync {
-    fn meta_path(&self) -> &Utf8Path;
-
-    fn raw_path(&self) -> &Utf8Path;
-
-    fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation>;
-
-    fn pre_run(&mut self, assets: &Assets, editor_assets: &EditorAssets) -> Result<()>;
-
-    fn run(&mut self, is_shadowing: bool, is_leaf: bool) -> Result<()>;
-
-    fn complete(
-        &mut self,
-        is_shadowing: bool,
-        is_leaf: bool,
-        commands: &Commands,
-        assets: &Assets,
-        editor_assets: &mut EditorAssets,
-    ) -> Result<()>;
+#[enum_dispatch]
+pub enum AssetHeader {
+    ModelHeader,
+    MeshHeader,
+    TextureHeader,
+    MaterialHeader(MaterialHeader<AssetNameBuf>),
+    SceneAssetHeader,
 }
 
-pub struct AssetOpInstance<A> {
-    op: A,
-    is_shadowing: bool,
-    is_leaf: bool,
+#[enum_dispatch(AssetHeader)]
+pub trait AssetOps {
+    fn rename(&mut self, asset_name: &AssetName, ctx: &mut RenameContext) -> Result<AssetNameBuf> {
+        self.visit_data(|data_path| {
+            let new_name = ctx.new_unique_name(data_path);
+            let src = path!(ctx.package_root / data_path);
+            let dst = path!(ctx.package_root / new_name);
+            std::fs::rename(src, dst)?;
+            ctx.old_to_new.insert(data_path.clone(), new_name.clone());
+            *data_path = new_name;
+            Ok(())
+        })?;
+
+        self.visit_sub_assets(|asset_path| {
+            // Check if we've already seen this asset before
+            if let Some(name) = ctx.old_to_new.get(asset_path) {
+                *asset_path = name.clone();
+                return Ok(());
+            }
+
+            let header_path = path!(ctx.package_root / asset_path);
+            let mut header = AssetHeader::load(&header_path)?;
+            let new_name = header.rename(asset_path, ctx)?;
+            *asset_path = new_name;
+            header.save(path!(ctx.package_root / asset_path))?;
+
+            Ok(())
+        })?;
+
+        let new_name = ctx.new_unique_name(asset_name);
+        let src_path = path!(ctx.package_root / asset_name);
+        let dst_path = path!(ctx.package_root / new_name);
+        ctx.old_to_new
+            .insert(asset_name.to_owned(), new_name.clone());
+        std::fs::rename(src_path, dst_path)?;
+
+        Ok(new_name)
+    }
+
+    fn delete(&mut self, asset_name: &AssetName, ctx: &mut DeleteContext) -> Result<()> {
+        self.visit_data(|data_path| {
+            let abs_path = path!(ctx.package_root / data_path);
+            std::fs::remove_file(abs_path)?;
+            ctx.visited.insert(data_path.clone());
+            Ok(())
+        })?;
+
+        self.visit_sub_assets(|asset_path| {
+            // Check if we've already seen this asset before
+            if ctx.visited.contains(asset_path) {
+                return Ok(());
+            }
+
+            let header_path = path!(ctx.package_root / asset_path);
+            let mut header = AssetHeader::load(&header_path)?;
+            header.delete(asset_path, ctx)?;
+
+            Ok(())
+        })?;
+
+        ctx.visited.insert(asset_name.to_owned());
+        std::fs::remove_file(path!(ctx.package_root / asset_name))?;
+
+        Ok(())
+    }
+
+    fn visit_data(&mut self, func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()>;
+
+    fn visit_sub_assets(&mut self, func: impl FnMut(&mut AssetNameBuf) -> Result<()>)
+        -> Result<()>;
 }
 
-impl<A: AssetOp> AssetOpInstance<A> {
-    pub fn new(op: A) -> Self {
-        Self {
-            op,
-            is_shadowing: false,
-            is_leaf: false,
+pub struct RenameContext {
+    pub assets: Assets,
+    pub package_root: PathBuf,
+    pub old_to_new: FxHashMap<AssetNameBuf, AssetNameBuf>,
+}
+
+pub struct DeleteContext {
+    pub package_root: PathBuf,
+    pub visited: FxHashSet<AssetNameBuf>,
+}
+
+impl AssetHeader {
+    pub fn load(path: impl Into<PathBuf>) -> Result<Self> {
+        let path: PathBuf = path.into();
+        let ty = AssetType::try_from(path.as_path())?;
+        let reader = BufReader::new(File::open(path)?);
+        match ty {
+            AssetType::Model => Ok(bincode::deserialize_from::<_, ModelHeader>(reader)?.into()),
+            AssetType::Mesh => Ok(bincode::deserialize_from::<_, MeshHeader>(reader)?.into()),
+            AssetType::Texture => Ok(bincode::deserialize_from::<_, TextureHeader>(reader)?.into()),
+            AssetType::Material => {
+                Ok(bincode::deserialize_from::<_, MaterialHeader<AssetNameBuf>>(reader)?.into())
+            }
+            AssetType::Scene => {
+                Ok(bincode::deserialize_from::<_, SceneAssetHeader>(reader)?.into())
+            }
+        }
+    }
+
+    fn save(self, path: impl Into<PathBuf>) -> Result<()> {
+        let path: PathBuf = path.into();
+        let writer = BufWriter::new(File::create(path)?);
+        Ok(match self {
+            AssetHeader::ModelHeader(header) => bincode::serialize_into(writer, &header)?,
+            AssetHeader::MeshHeader(header) => bincode::serialize_into(writer, &header)?,
+            AssetHeader::TextureHeader(header) => bincode::serialize_into(writer, &header)?,
+            AssetHeader::MaterialHeader(header) => bincode::serialize_into(writer, &header)?,
+            AssetHeader::SceneAssetHeader(header) => bincode::serialize_into(writer, &header)?,
+        })
+    }
+}
+
+impl RenameContext {
+    fn new_unique_name(&self, src: &AssetName) -> AssetNameBuf {
+        let ext = src.extension().unwrap_or("");
+        loop {
+            let mut new_name = AssetNameBuf::from(uuid::Uuid::new_v4().to_string());
+            new_name.set_extension(ext);
+            if self.assets.exists(&new_name) {
+                continue;
+            }
+            break new_name;
         }
     }
 }
 
-impl<A: AssetOp> EditorTask for AssetOpInstance<A> {
-    fn confirm_ui(&mut self, ui: &mut egui::Ui) -> Result<TaskConfirmation> {
-        self.op.confirm_ui(ui)
+impl AssetOps for ModelHeader {
+    fn visit_data(&mut self, _func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
+        Ok(())
     }
 
-    fn pre_run(
+    fn visit_sub_assets(
         &mut self,
-        _commands: &Commands,
-        _queries: &Queries<Everything>,
-        res: &Res<Everything>,
+        mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>,
     ) -> Result<()> {
-        let assets = res.get::<Assets>().unwrap();
-        let editor_assets = res.get::<EditorAssets>().unwrap();
-
-        // Asset must be contained within the assets folder (i.e., in the active package)
-        let path = path!(editor_assets.active_assets_root() / self.op.meta_path());
-        if !path.exists() {
-            return Err(anyhow::Error::msg("meta file does not exist"));
+        for mat in &mut self.materials {
+            func(mat)?;
         }
 
-        let path = path!(editor_assets.active_assets_root() / self.op.raw_path());
-        if !path.exists() {
-            return Err(anyhow::Error::msg("raw asset file does not exist"));
+        for mesh in &mut self.meshes {
+            func(mesh)?;
         }
 
-        let asset = editor_assets
-            .find_asset(self.op.meta_path())
-            .ok_or(anyhow::Error::msg("could not find asset"))?;
+        for tex in &mut self.textures {
+            func(tex)?;
+        }
 
-        self.is_shadowing = asset.is_shadowing();
-        self.is_leaf = asset.package() == editor_assets.active_package_id();
+        Ok(())
+    }
+}
 
-        self.op.pre_run(&assets, &editor_assets)
+impl AssetOps for MeshHeader {
+    fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
+        func(&mut self.data_path)
     }
 
-    fn run(&mut self) -> Result<()> {
-        self.op.run(self.is_shadowing, self.is_leaf)
-    }
-
-    fn complete(
+    fn visit_sub_assets(
         &mut self,
-        commands: &Commands,
-        _queries: &Queries<Everything>,
-        res: &Res<Everything>,
+        _func: impl FnMut(&mut AssetNameBuf) -> Result<()>,
     ) -> Result<()> {
-        let assets = res.get::<Assets>().unwrap();
-        let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
-        self.op.complete(
-            self.is_shadowing,
-            self.is_leaf,
-            commands,
-            &assets,
-            &mut editor_assets,
-        )?;
+        Ok(())
+    }
+}
 
+impl AssetOps for MaterialHeader<AssetNameBuf> {
+    fn visit_data(&mut self, _func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
+        Ok(())
+    }
+
+    fn visit_sub_assets(
+        &mut self,
+        mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>,
+    ) -> Result<()> {
+        match &mut self.ty {
+            MaterialType::Pbr {
+                diffuse_map,
+                normal_map,
+                metallic_roughness_map,
+                ..
+            } => {
+                if let Some(tex) = diffuse_map {
+                    func(tex)?;
+                }
+                if let Some(tex) = normal_map {
+                    func(tex)?;
+                }
+                if let Some(tex) = metallic_roughness_map {
+                    func(tex)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl AssetOps for TextureHeader {
+    fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
+        for mip in &mut self.mips {
+            func(mip)?;
+        }
+        Ok(())
+    }
+
+    fn visit_sub_assets(
+        &mut self,
+        _func: impl FnMut(&mut AssetNameBuf) -> Result<()>,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl AssetOps for SceneAssetHeader {
+    fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
+        func(&mut self.data_path)
+    }
+
+    fn visit_sub_assets(
+        &mut self,
+        _func: impl FnMut(&mut AssetNameBuf) -> Result<()>,
+    ) -> Result<()> {
         Ok(())
     }
 }
