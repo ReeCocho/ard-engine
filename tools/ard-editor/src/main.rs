@@ -13,7 +13,7 @@ pub mod tasks;
 
 use ard_engine::assets::prelude::*;
 use ard_engine::core::prelude::*;
-use ard_engine::game::GamePlugin;
+use ard_engine::game::{GamePlugin, IsEditor};
 use ard_engine::physics::PhysicsPlugin;
 use ard_engine::render::prelude::PresentMode;
 use ard_engine::render::{CanvasSize, Gui, RenderAssetsPlugin, RenderPlugin, RendererSettings};
@@ -60,6 +60,7 @@ fn main() {
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)
+        .add_resource(IsEditor)
         .add_system(AssetImporter::default())
         .add_system(SelectEntitySystem)
         .add_system(DiscoverSceneGraphRoots)

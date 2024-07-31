@@ -15,13 +15,16 @@ ard-window = { path = "../ard-window" }
 ard-transform = { path = "../ard-transform" }
 ard-physics = { path = "../ard-physics" }
 ard-save-load = { path = "../ard-save-load" }
+ard-pal = { path = "../ard-pal" }
 ard-render = { path = "../ard-render" }
+ard-render-gui = { path = "../ard-render-gui" }
 ard-render-camera = { path = "../ard-render-camera" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-objects = { path = "../ard-render-objects" }
 ard-render-assets = { path = "../ard-render-assets" }
 ard-render-meshes = { path = "../ard-render-meshes" }
 ard-render-material = { path = "../ard-render-material" }
+ard-render-image-effects = { path = "../ard-render-image-effects" }
 crossbeam-channel.workspace = true
 smallvec.workspace = true
 serde.workspace = true
@@ -30,3 +33,5 @@ paste.workspace = true
 serde_with.workspace = true
 async-trait.workspace = true
 bincode.workspace = true
+egui.workspace = true
+ron.workspace = true

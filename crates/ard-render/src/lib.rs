@@ -45,6 +45,8 @@ pub struct CanvasSize(pub Option<(u32, u32)>);
 #[derive(Resource, Default, Clone, Copy)]
 pub struct PresentationSettings {
     pub present_mode: PresentMode,
+    /// Time between frame draws. `None` indicates no render limiting.
+    pub render_time: Option<Duration>,
 }
 
 #[derive(Resource, Default, Clone, Copy)]
@@ -97,6 +99,7 @@ fn late_render_init(app: &mut App) {
 
     app.resources.add(PresentationSettings {
         present_mode: plugin.settings.present_mode,
+        render_time: None,
     });
     app.resources.add(plugin.settings.canvas_size);
 

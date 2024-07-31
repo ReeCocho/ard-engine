@@ -5,7 +5,6 @@ use ard_ecs::prelude::*;
 use ard_input::{InputState, Key};
 use ard_math::{EulerRot, Quat, Vec3};
 use ard_transform::{Children, Model, Rotation};
-use ard_window::{window::WindowId, windows::Windows};
 
 use crate::{
     components::{
@@ -18,18 +17,14 @@ use crate::{
 use super::actor::ActorMoveSystem;
 
 #[derive(SystemState)]
-pub struct PlayerInputSystem {
-    cursor_locked: bool,
-}
+pub struct PlayerInputSystem {}
 
 #[derive(SystemState)]
 pub struct PlayerSpawnSystem;
 
 impl Default for PlayerInputSystem {
     fn default() -> Self {
-        Self {
-            cursor_locked: true,
-        }
+        Self {}
     }
 }
 
@@ -45,7 +40,7 @@ impl PlayerInputSystem {
             Read<Children>,
             Read<Model>,
         )>,
-        res: Res<(Read<InputState>, Write<Windows>, Read<GameRunning>)>,
+        res: Res<(Read<InputState>, Read<GameRunning>)>,
     ) {
         if !res.get::<GameRunning>().unwrap().0 {
             return;
@@ -53,36 +48,25 @@ impl PlayerInputSystem {
 
         let dt = tick.0.as_secs_f32();
         let input = res.get::<InputState>().unwrap();
-        let mut windows = res.get_mut::<Windows>().unwrap();
-
-        if input.key_up(Key::M) {
-            self.cursor_locked = !self.cursor_locked;
-        }
-
-        let window = windows.get_mut(WindowId::primary()).unwrap();
-        window.set_cursor_lock_mode(self.cursor_locked);
-        window.set_cursor_visibility(!self.cursor_locked);
 
         let (xdel, ydel) = input.mouse_delta();
 
         // Move the player cameras
-        if self.cursor_locked {
-            for rotation in queries
-                .filter()
-                .with::<PlayerCamera>()
-                .make::<Write<Rotation>>()
-            {
-                let (mut ry, mut rx, rz) = rotation.0.to_euler(EulerRot::YXZ);
+        for rotation in queries
+            .filter()
+            .with::<PlayerCamera>()
+            .make::<Write<Rotation>>()
+        {
+            let (mut ry, mut rx, rz) = rotation.0.to_euler(EulerRot::YXZ);
 
-                rx += ydel as f32 * 0.003;
-                ry += xdel as f32 * 0.003;
-                rx = rx.clamp(
-                    -std::f32::consts::FRAC_PI_2 + 0.05,
-                    std::f32::consts::FRAC_PI_2 - 0.05,
-                );
+            rx += ydel as f32 * 0.003;
+            ry += xdel as f32 * 0.003;
+            rx = rx.clamp(
+                -std::f32::consts::FRAC_PI_2 + 0.05,
+                std::f32::consts::FRAC_PI_2 - 0.05,
+            );
 
-                rotation.0 = Quat::from_euler(EulerRot::YXZ, ry, rx, rz);
-            }
+            rotation.0 = Quat::from_euler(EulerRot::YXZ, ry, rx, rz);
         }
 
         // Apply movement to the players

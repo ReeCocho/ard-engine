@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use ard_ecs::{component::Component, event::Event};
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +34,6 @@ impl From<Frame> for usize {
 }
 /// Event indicating rendering is about to occur.
 #[derive(Debug, Event, Copy, Clone)]
-pub struct PreRender;
+pub struct PreRender(pub Duration);
 
 pub const FRAMES_IN_FLIGHT: usize = 2;

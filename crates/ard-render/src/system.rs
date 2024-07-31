@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ard_core::prelude::*;
 use ard_ecs::prelude::*;
@@ -41,10 +41,8 @@ pub struct RenderSystem {
     complete_frames: Receiver<FrameData>,
     /// Window ID for the surface.
     surface_window: WindowId,
-    // Instant the last frame was sent.
-    last_frame_time: Instant,
-    // Frame rate cap.
-    render_time: Option<Duration>,
+    // The amount of time that has passed since the last frame was sent.
+    last_frame_time: Duration,
     // Pending request to select an entity.
     select_entity: Option<SelectEntity>,
 }
@@ -86,7 +84,10 @@ impl RenderSystem {
                     object_data: RenderObjects::new(render_ecs.ctx().clone()),
                     lights: Lights::new(render_ecs.ctx()),
                     debug_vertices: DebugVertexBuffer::new(render_ecs.ctx()),
-                    present_settings: PresentationSettings { present_mode },
+                    present_settings: PresentationSettings {
+                        present_mode,
+                        render_time,
+                    },
                     debug_settings: DebugSettings::default(),
                     tonemapping_settings: TonemappingSettings::default(),
                     ao_settings: AoSettings::default(),
@@ -115,8 +116,7 @@ impl RenderSystem {
                 messages: messages_send,
                 complete_frames: complete_frames_recv,
                 surface_window: window_id,
-                last_frame_time: Instant::now(),
-                render_time,
+                last_frame_time: Duration::ZERO,
                 select_entity: None,
             },
             factory,
@@ -130,10 +130,18 @@ impl RenderSystem {
     /// The render systems `tick` handler is responsible for signaling to the render ECS when
     /// a new frame should be rendered, and additionally preparing all the data that needs to be
     /// sent from the main ECS to the render ECS.
-    fn tick(&mut self, _: Tick, commands: Commands, _: Queries<()>, res: Res<(Read<Windows>,)>) {
+    fn tick(
+        &mut self,
+        tick: Tick,
+        commands: Commands,
+        _: Queries<()>,
+        res: Res<(Read<Windows>, Read<PresentationSettings>)>,
+    ) {
+        self.last_frame_time += tick.0;
+
         // Do not render if enough time has not passed
-        if let Some(rate) = self.render_time {
-            if Instant::now().duration_since(self.last_frame_time) < rate {
+        if let Some(rate) = res.get::<PresentationSettings>().unwrap().render_time {
+            if self.last_frame_time < rate {
                 return;
             }
         }
@@ -159,13 +167,14 @@ impl RenderSystem {
         }
 
         // Send a message to all other systems that rendering just finished
-        commands.events.submit(PreRender);
+        commands.events.submit(PreRender(self.last_frame_time));
+        self.last_frame_time = Duration::ZERO;
     }
 
     /// This pre render command prepares all the data for rendering and submits the request.
     fn pre_render(
         &mut self,
-        _: PreRender,
+        evt: PreRender,
         commands: Commands,
         queries: Queries<Everything>,
         res: Res<Everything>,
@@ -266,10 +275,8 @@ impl RenderSystem {
         std::mem::drop(global_lighting);
 
         // Render GUI
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_frame_time);
         let mut gui = res.get_mut::<Gui>().unwrap();
-        frame.gui_output = gui.run(Tick(dt), &commands, &queries, &res);
+        frame.gui_output = gui.run(Tick(evt.0), &commands, &queries, &res);
 
         // Capture debugging draws.
         let mut debug_draws = res.get_mut::<DebugDrawing>().unwrap();
@@ -328,7 +335,7 @@ impl RenderSystem {
             .unwrap()
             .0
             .unwrap_or((physical_width, physical_height));
-        frame.dt = dt;
+        frame.dt = evt.0;
         frame.tonemapping_settings = *res.get::<TonemappingSettings>().unwrap();
         frame.ao_settings = *res.get::<AoSettings>().unwrap();
         frame.sun_shafts_settings = *res.get::<SunShaftsSettings>().unwrap();
@@ -337,8 +344,6 @@ impl RenderSystem {
         frame.debug_settings = *res.get::<DebugSettings>().unwrap();
         frame.path_tracer_settings = *res.get::<PathTracerSettings>().unwrap();
         frame.select_entity = self.select_entity.take();
-
-        self.last_frame_time = now;
 
         // Send a message to the render thread to begin rendering the frame
         let _ = self.messages.send(RenderSystemMessage::RenderFrame(frame));

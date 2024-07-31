@@ -153,6 +153,7 @@ impl GuiView for TaskConfirmationGui {
             let err_idx = self.errors.len();
             egui::Window::new(format!("Error ({err_idx})"))
                 .collapsible(false)
+                .pivot(egui::Align2::CENTER_CENTER)
                 .default_pos(ctx.screen_rect().center())
                 .show(ctx, |ui| {
                     ui.label(err.to_string());
@@ -178,6 +179,7 @@ impl PendingTask {
 
         egui::Window::new("Confirmation")
             .collapsible(false)
+            .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.screen_rect().center())
             .show(ctx, |ui| {
                 match self.task.confirm_ui(ui) {

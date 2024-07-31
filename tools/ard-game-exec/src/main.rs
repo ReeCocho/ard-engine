@@ -1,6 +1,7 @@
 use ard_engine::assets::prelude::*;
 use ard_engine::core::prelude::*;
 use ard_engine::game::save_data::{InitialSceneAsset, SceneAsset, INITIAL_SCENE_ASSET_NAME};
+use ard_engine::game::settings::GameSettings;
 use ard_engine::game::{GamePlugin, GameStart};
 use ard_engine::physics::PhysicsPlugin;
 use ard_engine::render::prelude::PresentMode;
@@ -38,6 +39,7 @@ fn main() {
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)
+        .add_resource(GameSettings::load().unwrap_or_default())
         .add_startup_function(load_initial_scene)
         .run();
 }
