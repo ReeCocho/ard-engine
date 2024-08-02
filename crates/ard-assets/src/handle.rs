@@ -119,8 +119,8 @@ impl Drop for HandleEscaper {
     #[inline]
     fn drop(&mut self) {
         let asset_data = self.assets.0.assets.get(&self.id).unwrap();
-        let mut asset = asset_data.asset.write().unwrap();
         if asset_data.decrement_handle_counter() {
+            let mut asset = asset_data.asset.write().unwrap();
             *asset = None;
         }
     }

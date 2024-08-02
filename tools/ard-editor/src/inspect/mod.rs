@@ -1,4 +1,5 @@
 pub mod collider;
+pub mod material;
 pub mod player;
 pub mod rigid_body;
 pub mod stat;

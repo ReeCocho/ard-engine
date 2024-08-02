@@ -92,12 +92,9 @@ impl MaterialLoaderSystem {
         queries
             .filter()
             .without::<MaterialInstance>()
-            .make::<(
-                Entity,
-                (Write<MaterialHandle>, Option<Write<RenderingMode>>),
-            )>()
+            .make::<(Entity, (Write<MaterialHandle>,))>()
             .into_iter()
-            .for_each(|(e, (handle, render_mode))| {
+            .for_each(|(e, (handle,))| {
                 let handle = match &handle.0 {
                     Some(handle) => handle,
                     None => return,
@@ -109,14 +106,7 @@ impl MaterialLoaderSystem {
                 };
 
                 commands.entities.add_component(e, asset.instance.clone());
-                match render_mode {
-                    Some(render_mode) => {
-                        *render_mode = asset.render_mode;
-                    }
-                    None => {
-                        commands.entities.add_component(e, asset.render_mode);
-                    }
-                }
+                commands.entities.add_component(e, asset.render_mode());
             });
     }
 }

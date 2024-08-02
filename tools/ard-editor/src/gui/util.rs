@@ -2,6 +2,10 @@ use std::{any::Any, sync::Arc};
 
 use egui::{Color32, WidgetText};
 
+use crate::assets::EditorAsset;
+
+use super::drag_drop::DragDropPayload;
+
 pub const DESTRUCTIVE_COLOR: Color32 = Color32::from_rgb(255, 0, 125);
 pub const CONSTRUCTIVE_COLOR: Color32 = Color32::from_rgb(0, 255, 125);
 pub const TRANSFORMATIVE_COLOR: Color32 = Color32::from_rgb(0, 125, 255);
@@ -48,4 +52,49 @@ where
     let payload = response.dnd_release_payload::<Payload>();
 
     (egui::InnerResponse { inner, response }, payload)
+}
+
+pub fn drag_drop_asset_target(
+    ui: &mut egui::Ui,
+    label: impl AsRef<str>,
+    is_valid: impl FnOnce(&EditorAsset) -> bool,
+    mut apply: impl FnMut(Option<&EditorAsset>) -> bool,
+) -> bool {
+    let mut changed = false;
+
+    let payload = ui
+        .horizontal(|ui| {
+            let (_, payload) =
+                ui.dnd_drop_zone::<DragDropPayload, _>(egui::Frame::default(), |ui| {
+                    let mut label = label.as_ref().to_owned();
+                    ui.add_enabled(false, egui::TextEdit::singleline(&mut label));
+                });
+
+            if ui.button("Clear").clicked() {
+                changed = apply(None);
+            }
+
+            payload
+        })
+        .inner;
+
+    if changed {
+        return true;
+    }
+
+    let payload = match payload {
+        Some(payload) => payload,
+        None => return false,
+    };
+
+    let asset = match payload.as_ref() {
+        DragDropPayload::Asset(asset) => asset,
+        _ => return false,
+    };
+
+    if !is_valid(asset) {
+        return false;
+    }
+
+    apply(Some(asset))
 }

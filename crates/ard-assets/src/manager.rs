@@ -9,6 +9,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 
 use crate::prelude::{
@@ -233,8 +234,17 @@ impl Assets {
     /// Blocks until an asset has been loaded.
     #[inline]
     pub fn wait_for_load<T: Asset + 'static>(&self, handle: &Handle<T>) {
+        self.wait_for_load_timeout(handle, Duration::MAX);
+    }
+
+    /// Blocks until an asset has been loaded with a timeout.
+    #[inline]
+    pub fn wait_for_load_timeout<T: Asset + 'static>(&self, handle: &Handle<T>, timeout: Duration) {
         let asset_data = self.0.assets.get(&handle.id()).unwrap();
-        while asset_data.loading.load(Ordering::Relaxed) {
+        let start = Instant::now();
+        while Instant::now().duration_since(start) < timeout
+            && asset_data.loading.load(Ordering::Relaxed)
+        {
             std::hint::spin_loop();
         }
     }
@@ -528,7 +538,10 @@ impl Assets {
             Some(id) => *id,
             None => return false,
         };
-        let asset_data = self.0.assets.get(&id).unwrap();
+        let asset_data = match self.0.assets.get(&id) {
+            Some(asset) => asset,
+            None => return false,
+        };
         let loaded = asset_data.asset.read().unwrap().is_some();
         loaded
     }
@@ -575,7 +588,9 @@ impl Assets {
             Some(package) => package,
             None => {
                 if let Some((_, id)) = self.0.name_to_id.remove(name) {
-                    self.0.assets.get_mut(&id).unwrap().asset = ShardedLock::default();
+                    if let Some(mut asset) = self.0.assets.get_mut(&id) {
+                        asset.asset = ShardedLock::default();
+                    }
                 }
                 return false;
             }

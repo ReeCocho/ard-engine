@@ -21,7 +21,8 @@ use ard_engine::{
         prelude::{Filter, SamplerAddressMode},
         shape::Shape,
         texture::TextureAsset,
-        DebugDraw, DebugDrawing, Mesh, PbrMaterialData,
+        DebugDraw, DebugDrawing, Mesh, PbrMaterialData, TextureSlot, PBR_MATERIAL_DIFFUSE_SLOT,
+        PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT, PBR_MATERIAL_NORMAL_SLOT,
     },
     transform::Model,
 };
@@ -36,8 +37,8 @@ use crate::{
     },
     gui::util,
     inspect::{
-        collider::ColliderInspector, player::PlayerSpawnInspector, rigid_body::RigidBodyInspector,
-        transform::TransformInspector, Inspectors,
+        collider::ColliderInspector, material::MaterialInspector, player::PlayerSpawnInspector,
+        rigid_body::RigidBodyInspector, transform::TransformInspector, Inspectors,
     },
     selected::Selected,
     tasks::{material::SaveMaterialTask, texture::TextureImportTask, TaskQueue},
@@ -79,6 +80,7 @@ impl Default for InspectorView {
     fn default() -> Self {
         let mut inspectors = Inspectors::default();
         inspectors.with(TransformInspector);
+        inspectors.with(MaterialInspector);
         inspectors.with(ColliderInspector);
         inspectors.with(RigidBodyInspector);
         inspectors.with(PlayerSpawnInspector);
@@ -358,16 +360,53 @@ impl InspectorView {
 
     fn inspect_material(&self, ctx: EditorViewContext, material: &mut MaterialAsset) -> bool {
         let factory = ctx.res.get::<Factory>().unwrap();
+        let assets = ctx.res.get::<Assets>().unwrap();
+
+        fn texture_input(
+            ui: &mut egui::Ui,
+            assets: &Assets,
+            factory: &Factory,
+            asset: &mut MaterialAsset,
+            slot: TextureSlot,
+            map: &mut Option<Utf8PathBuf>,
+        ) -> bool {
+            util::drag_drop_asset_target(
+                ui,
+                map.clone().map(|n| n.to_string()).unwrap_or_default(),
+                |asset| match AssetType::try_from(asset.meta_file().baked.as_std_path()) {
+                    Ok(AssetType::Texture) => true,
+                    _ => false,
+                },
+                |tex_asset| match tex_asset {
+                    Some(tex_asset) => {
+                        let handle = match assets.load::<TextureAsset>(&tex_asset.meta_file().baked)
+                        {
+                            Some(handle) => handle,
+                            None => return false,
+                        };
+
+                        asset.set_texture(factory, slot, Some(handle));
+                        *map = Some(tex_asset.meta_file().baked.clone());
+                        true
+                    }
+                    None => {
+                        *map = None;
+                        asset.set_texture(factory, slot, None);
+                        true
+                    }
+                },
+            )
+        }
 
         ctx.ui.heading("Material");
         ctx.ui.separator();
 
         let mut changed = false;
         let mut render_mode_changed = false;
+
         egui::Grid::new("material_grid")
             .num_columns(2)
             .spacing([30.0, 20.0])
-            .min_col_width(ctx.ui.available_width() * 0.5)
             .striped(true)
             .show(ctx.ui, |ui| {
                 ui.label("Rendering Mode");
@@ -394,13 +433,16 @@ impl InspectorView {
                     .changed();
                 ui.end_row();
 
-                match &mut material.header.ty {
+                let mut header = material.header.ty.clone();
+                match &mut header {
                     MaterialType::Pbr {
                         base_color,
                         metallic,
                         roughness,
                         alpha_cutoff,
-                        ..
+                        diffuse_map,
+                        normal_map,
+                        metallic_roughness_map,
                     } => {
                         ui.label("Base Color");
                         let mut color = base_color.to_array();
@@ -422,6 +464,39 @@ impl InspectorView {
                         changed |= ui.add(egui::Slider::new(alpha_cutoff, 0.0..=1.0)).changed();
                         ui.end_row();
 
+                        ui.label("Diffuse Map");
+                        changed |= texture_input(
+                            ui,
+                            &assets,
+                            &factory,
+                            material,
+                            TextureSlot::from(PBR_MATERIAL_DIFFUSE_SLOT),
+                            diffuse_map,
+                        );
+                        ui.end_row();
+
+                        ui.label("Normal Map");
+                        changed |= texture_input(
+                            ui,
+                            &assets,
+                            &factory,
+                            material,
+                            TextureSlot::from(PBR_MATERIAL_NORMAL_SLOT),
+                            normal_map,
+                        );
+                        ui.end_row();
+
+                        ui.label("Metallic/Roughness Map");
+                        changed |= texture_input(
+                            ui,
+                            &assets,
+                            &factory,
+                            material,
+                            TextureSlot::from(PBR_MATERIAL_METALLIC_ROUGHNESS_SLOT),
+                            metallic_roughness_map,
+                        );
+                        ui.end_row();
+
                         if changed {
                             factory.set_material_data(
                                 &material.instance,
@@ -435,9 +510,11 @@ impl InspectorView {
                         }
                     }
                 }
-            });
 
-        if render_mode_changed {}
+                if changed {
+                    material.header.ty = header;
+                }
+            });
 
         changed || render_mode_changed
     }

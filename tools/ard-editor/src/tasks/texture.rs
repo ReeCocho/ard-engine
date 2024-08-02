@@ -9,6 +9,7 @@ use ard_engine::{
     assets::prelude::*,
     ecs::prelude::*,
     formats::texture::{TextureData, TextureHeader},
+    log::warn,
     render::{prelude::Format, texture::TextureAsset},
 };
 use camino::Utf8PathBuf;
@@ -22,6 +23,7 @@ use crate::{
         CurrentAssetPath, EditorAssets,
     },
     gui::util,
+    refresher::RefreshAsset,
 };
 
 use super::{EditorTask, TaskConfirmation, TaskState};
@@ -36,6 +38,7 @@ pub struct TextureImportTask {
     import_settings: TextureImportSettings,
     assets: Option<Assets>,
     baked_asset: Utf8PathBuf,
+    is_leaf: bool,
     state: TaskState,
 }
 
@@ -51,6 +54,7 @@ impl TextureImportTask {
             new_assets: Vec::default(),
             assets: None,
             baked_asset: Utf8PathBuf::default(),
+            is_leaf: false,
             import_settings: TextureImportSettings::default(),
         }
     }
@@ -70,6 +74,7 @@ impl TextureImportTask {
             new_assets: Vec::default(),
             old_mips: Vec::default(),
             assets: None,
+            is_leaf: false,
             import_settings,
         }
     }
@@ -162,6 +167,8 @@ impl EditorTask for TextureImportTask {
                 return Err(anyhow::Error::msg(
                     "TODO: Texture shadowing is unimplemented.",
                 ));
+            } else {
+                self.is_leaf = true;
             }
         }
 
@@ -201,7 +208,17 @@ impl EditorTask for TextureImportTask {
         let image = image::load(reader, file_format)?;
 
         // Perform compression if required
-        let compress = self.import_settings.compress && texture_needs_compression(&image);
+        let mut compress = self.import_settings.compress && texture_needs_compression(&image);
+
+        if !image.width().is_power_of_two() || !image.height().is_power_of_two() {
+            compress = false;
+            warn!(
+                "Textures with non-power-of-two sized dimensions cannot be compressed. \
+                This will severely impact memory usage and performance. \
+                Consider padding or resizing the image to be a power of two."
+            );
+        }
+
         let mip_count = match self.import_settings.mip {
             TextureMipSetting::None => 1,
             TextureMipSetting::GenerateAll => texture_mip_count(&image, compress),
@@ -279,8 +296,8 @@ impl EditorTask for TextureImportTask {
             width = (width >> mip).max(1);
             height = (height >> mip).max(1);
 
-            let downsampled = image.resize(width, height, FilterType::Lanczos3);
-            let bytes = downsampled.to_rgba8().to_vec();
+            let downsampled = image.resize_exact(width, height, FilterType::Lanczos3);
+            let mut bytes = downsampled.to_rgba8().to_vec();
 
             // Compress if requested
             if compress {
@@ -290,7 +307,7 @@ impl EditorTask for TextureImportTask {
                     stride: width * 4,
                     data: &bytes,
                 };
-                intel_tex_2::bc7::compress_blocks(
+                bytes = intel_tex_2::bc7::compress_blocks(
                     &intel_tex_2::bc7::alpha_ultra_fast_settings(),
                     &surface,
                 );
@@ -341,16 +358,28 @@ impl EditorTask for TextureImportTask {
 
     fn complete(
         &mut self,
-        _commands: &Commands,
+        commands: &Commands,
         _queries: &Queries<Everything>,
         res: &Res<Everything>,
     ) -> anyhow::Result<()> {
         let mut editor_assets = res.get_mut::<EditorAssets>().unwrap();
         let assets = res.get::<Assets>().unwrap();
 
+        if self.is_leaf {
+            commands
+                .events
+                .submit(RefreshAsset(self.baked_asset.clone()));
+        }
+
         self.new_assets.drain(..).for_each(|new_asset| {
             assets.scan_for(&new_asset);
         });
+
+        if assets.loaded(&self.baked_asset) {
+            if let Some(handle) = assets.load::<TextureAsset>(&self.baked_asset) {
+                assets.reload(&handle);
+            }
+        }
 
         self.old_mips
             .drain(..)

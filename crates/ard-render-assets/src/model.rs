@@ -219,7 +219,7 @@ impl ModelAsset {
                         meshes.materials.push(material_asset.instance.clone());
                         meshes.models.push(Model(parent_model * node.model.0));
                         meshes.flags.push(RenderFlags::SHADOW_CASTER);
-                        meshes.rendering_mode.push(material_asset.render_mode);
+                        meshes.rendering_mode.push(material_asset.render_mode());
                     }
                 }
             }

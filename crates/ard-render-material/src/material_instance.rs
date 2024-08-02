@@ -128,3 +128,17 @@ impl TextureSlot {
         Self(ard_render_si::consts::EMPTY_TEXTURE_ID as u16)
     }
 }
+
+impl From<TextureSlot> for usize {
+    #[inline(always)]
+    fn from(value: TextureSlot) -> Self {
+        value.0 as usize
+    }
+}
+
+impl From<u16> for TextureSlot {
+    #[inline(always)]
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
