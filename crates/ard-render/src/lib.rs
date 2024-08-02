@@ -99,7 +99,7 @@ fn late_render_init(app: &mut App) {
 
     app.resources.add(PresentationSettings {
         present_mode: plugin.settings.present_mode,
-        render_time: None,
+        render_time: plugin.settings.render_time,
     });
     app.resources.add(plugin.settings.canvas_size);
 

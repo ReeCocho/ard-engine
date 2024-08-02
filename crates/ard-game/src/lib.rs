@@ -55,15 +55,16 @@ fn startup(app: &mut App) {
     assets.register::<SceneAsset>(SceneLoader);
     assets.register::<InitialSceneAsset>(InitialSceneLoader);
 
-    let settings = app.resources.get::<GameSettings>().unwrap();
-    app.resources.get_mut::<SmaaSettings>().unwrap().enabled = settings.smaa;
-    app.resources.get_mut::<MsaaSettings>().unwrap().samples = settings.msaa;
-    app.resources
-        .get_mut::<PresentationSettings>()
-        .unwrap()
-        .render_time = settings
-        .target_frame_rate
-        .map(|v| Duration::from_secs_f32(1.0 / v.max(30) as f32));
+    if let Some(settings) = app.resources.get::<GameSettings>() {
+        app.resources.get_mut::<SmaaSettings>().unwrap().enabled = settings.smaa;
+        app.resources.get_mut::<MsaaSettings>().unwrap().samples = settings.msaa;
+        app.resources
+            .get_mut::<PresentationSettings>()
+            .unwrap()
+            .render_time = settings
+            .target_frame_rate
+            .map(|v| Duration::from_secs_f32(1.0 / v.max(30) as f32));
+    }
 
     if app.resources.get::<IsEditor>().is_none() {
         app.resources

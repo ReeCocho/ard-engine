@@ -6,11 +6,13 @@ use camino::Utf8PathBuf;
 
 use crate::{
     assets::{meta::AssetType, CurrentAssetPath, EditorAsset, EditorAssets, Folder},
+    selected::Selected,
     tasks::{
         asset::{
             DeleteAssetTask, DeleteFolderTask, MoveAssetTask, NewFolderTask, RenameAssetTask,
             RenameFolderTask,
         },
+        material::CreateMaterialTask,
         TaskQueue,
     },
 };
@@ -53,6 +55,15 @@ impl AssetsView {
                         .unwrap()
                         .add(NewFolderTask::new(cur_path.path()));
                 }
+
+                ui.menu_button("Create...", |ui| {
+                    if ui.button("Material").clicked() {
+                        ctx.res
+                            .get_mut::<TaskQueue>()
+                            .unwrap()
+                            .add(CreateMaterialTask::default());
+                    }
+                });
             });
 
         ctx.ui.horizontal(|ui| {
@@ -130,7 +141,7 @@ impl AssetsView {
                     }
 
                     for (_, asset) in folder.assets() {
-                        let response = Self::asset_ui(
+                        let (icon_r, text_r) = Self::asset_ui(
                             ui,
                             asset
                                 .meta_path()
@@ -140,7 +151,13 @@ impl AssetsView {
                             &asset,
                             active_package,
                         );
-                        response.context_menu(|ui| {
+
+                        if text_r.clicked() {
+                            *ctx.res.get_mut::<Selected>().unwrap() =
+                                Selected::Asset(asset.meta_path().into());
+                        }
+
+                        icon_r.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
                                 ctx.res
                                     .get_mut::<TaskQueue>()
@@ -210,7 +227,7 @@ impl AssetsView {
         file_name: &str,
         asset: &EditorAsset,
         active_package: PackageId,
-    ) -> egui::Response {
+    ) -> (egui::Response, egui::Response) {
         let icon = match asset.meta_file().data.ty() {
             AssetType::Model => egui_phosphor::fill::CUBE,
             AssetType::Texture => egui_phosphor::fill::FILE_IMAGE,
@@ -232,7 +249,7 @@ impl AssetsView {
         ui.allocate_ui_with_layout(size.into(), layout, |ui| {
             ui.group(|ui| {
                 ui.vertical_centered_justified(|ui| {
-                    let r = ui
+                    let icon_r = ui
                         .dnd_drag_source(
                             egui::Id::new(&asset.meta_file().baked),
                             DragDropPayload::Asset(asset.clone()),
@@ -245,13 +262,13 @@ impl AssetsView {
                             },
                         )
                         .response;
-                    ui.add(
+                    let text_r = ui.add(
                         egui::Label::new(label)
                             .selectable(false)
                             .sense(egui::Sense::click())
                             .truncate(),
                     );
-                    r
+                    (icon_r, text_r)
                 })
                 .inner
             })

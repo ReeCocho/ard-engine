@@ -225,6 +225,7 @@ impl SceneView {
                 let task_queue = res.get_mut::<TaskQueue>().unwrap();
                 task_queue.add(LoadSceneTask::new(asset));
             }
+            _ => {}
         };
     }
 }

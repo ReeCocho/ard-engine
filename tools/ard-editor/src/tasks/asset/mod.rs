@@ -15,7 +15,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     assets::{
         meta::MetaFile,
-        op::{AssetHeader, AssetOps, DeleteContext, RenameContext},
+        op::{AssetHeader, AssetNameGenerator, AssetOps, DeleteContext, RenameContext},
         EditorAsset, EditorAssets,
     },
     gui::util,
@@ -278,9 +278,9 @@ impl EditorTask for RenameAssetTask {
 
         self.assets_root = editor_assets.active_assets_root().into();
         self.ctx = Some(RenameContext {
-            assets: assets.clone(),
             package_root: editor_assets.active_package_root().into(),
             old_to_new: FxHashMap::default(),
+            gen: AssetNameGenerator::new(assets.clone()),
         });
 
         // Check for duplicate
@@ -577,9 +577,9 @@ impl EditorTask for MoveAssetTask {
 
         self.assets_root = editor_assets.active_assets_root().into();
         self.ctx = Some(RenameContext {
-            assets: assets.clone(),
             package_root: editor_assets.active_package_root().into(),
             old_to_new: FxHashMap::default(),
+            gen: AssetNameGenerator::new(assets.clone()),
         });
 
         // Check for duplicate

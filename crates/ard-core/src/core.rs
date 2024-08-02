@@ -11,8 +11,6 @@ use crate::{
     stat::DirtyStatic,
 };
 
-const DEFAULT_FIXED_TICK_RATE: Duration = Duration::from_millis(33);
-
 /// Propogated once at first dispatch when using `ArdCore`.
 #[derive(Debug, Default, Event, Copy, Clone)]
 pub struct Start;
@@ -35,20 +33,6 @@ pub struct Stopping;
 #[derive(Debug, Default, Event, Copy, Clone)]
 pub struct Tick(pub Duration);
 
-/// Occurs every iteration after `Tick`.
-#[derive(Debug, Default, Event, Copy, Clone)]
-pub struct PostTick(pub Duration);
-
-/// Propogated at a fixed rate set during `ArdCore` creation. The default value is
-/// `DEFAULT_FIXED_TICK_RATE`. The duration is the fixed time between propogations.
-///
-/// # Dispatch Slower than Fixed Rate
-/// If the dispatcher runs slower than the fixed time, additionally propogations will not be sent.
-/// For example, if your dispatcher is iterating half as fast as the fixed rate, only one event
-/// will be sent per iteration; NOT two.
-#[derive(Debug, Default, Event, Copy, Clone)]
-pub struct FixedTick(pub Duration);
-
 /// Current state of the core.
 #[derive(Debug, Resource)]
 pub struct ArdCoreState {
@@ -68,25 +52,16 @@ pub struct Name(pub String);
 
 /// The base engine plugin.
 ///
-/// A default runner is used which, every iteration of dispatch, generates new `Tick` and
-/// `PostTick` events until the `Stop` event is received. Additionally, a fixed rate
-/// `FixedTick` event is propogated. The order of propogation is as follows:
-///
-/// `Tick` → `PostTick` → `FixedTick`
+/// A default runner is used which, every iteration of dispatch, generates new `Tick` events until
+/// the `Stop` event is received.
 pub struct ArdCorePlugin;
 
 #[derive(SystemState)]
-pub struct ArdCore {
-    fixed_rate: Duration,
-    fixed_timer: Duration,
-}
+pub struct ArdCore;
 
 impl Default for ArdCore {
     fn default() -> Self {
-        ArdCore {
-            fixed_rate: DEFAULT_FIXED_TICK_RATE,
-            fixed_timer: Duration::ZERO,
-        }
+        ArdCore
     }
 }
 
@@ -98,37 +73,6 @@ impl ArdCoreState {
 }
 
 impl ArdCore {
-    pub fn new(fixed_rate: Duration) -> Self {
-        ArdCore {
-            fixed_rate,
-            fixed_timer: Duration::ZERO,
-        }
-    }
-
-    pub fn tick(
-        &mut self,
-        tick: Tick,
-        commands: Commands,
-        _: Queries<()>,
-        res: Res<(Write<ArdCoreState>,)>,
-    ) {
-        let core_state = res.get_mut::<ArdCoreState>().unwrap();
-
-        let duration = tick.0;
-
-        if !core_state.stopping {
-            // Post tick
-            commands.events.submit(PostTick(duration));
-
-            // Check for fixed tick
-            self.fixed_timer += duration;
-            if self.fixed_timer >= self.fixed_rate {
-                self.fixed_timer = Duration::ZERO;
-                commands.events.submit(FixedTick(self.fixed_rate));
-            }
-        }
-    }
-
     pub fn stop(
         &mut self,
         _: Stop,
@@ -146,10 +90,7 @@ impl ArdCore {
 #[allow(clippy::from_over_into)]
 impl Into<System> for ArdCore {
     fn into(self) -> System {
-        SystemBuilder::new(self)
-            .with_handler(ArdCore::tick)
-            .with_handler(ArdCore::stop)
-            .build()
+        SystemBuilder::new(self).with_handler(ArdCore::stop).build()
     }
 }
 

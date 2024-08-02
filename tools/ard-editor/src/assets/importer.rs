@@ -2,7 +2,7 @@ use ard_engine::{ecs::prelude::*, log::*, window::prelude::WindowFileDropped};
 
 use crate::{
     assets::meta::AssetType,
-    tasks::{model::ModelImportTask, TaskQueue},
+    tasks::{model::ModelImportTask, texture::TextureImportTask, TaskQueue},
 };
 
 #[derive(SystemState, Default)]
@@ -27,10 +27,11 @@ impl AssetImporter {
 
         // Submit import task to queue
         let task_queue = res.get::<TaskQueue>().unwrap();
-        task_queue.add(match ty {
-            AssetType::Model => ModelImportTask::new(evt.file),
+        match ty {
+            AssetType::Model => task_queue.add(ModelImportTask::new(evt.file)),
+            AssetType::Texture => task_queue.add(TextureImportTask::new(evt.file)),
             _ => return,
-        });
+        }
     }
 }
 

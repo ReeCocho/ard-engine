@@ -9,7 +9,6 @@ fn game_loop() {
     struct Ticker {
         start_count: usize,
         tick_count: usize,
-        post_tick_count: usize,
     }
 
     impl Ticker {
@@ -18,13 +17,9 @@ fn game_loop() {
             self.start_count += 1;
         }
 
-        fn tick(&mut self, _: Tick, _: Commands, _: Queries<()>, _: Res<()>) {
+        fn tick(&mut self, _: Tick, commands: Commands, _: Queries<()>, _: Res<()>) {
             self.tick_count += 1;
-        }
-
-        fn post_tick(&mut self, _: PostTick, commands: Commands, _: Queries<()>, _: Res<()>) {
-            self.post_tick_count += 1;
-            if self.post_tick_count == TICK_COUNT {
+            if self.tick_count == TICK_COUNT {
                 assert_eq!(self.tick_count, TICK_COUNT);
                 assert_eq!(self.start_count, 1);
                 commands.events.submit(Stop);
@@ -37,7 +32,6 @@ fn game_loop() {
             SystemBuilder::new(Ticker::default())
                 .with_handler(Ticker::start)
                 .with_handler(Ticker::tick)
-                .with_handler(Ticker::post_tick)
                 .build()
         }
     }

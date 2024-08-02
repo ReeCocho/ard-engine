@@ -7,7 +7,9 @@ pub mod resource;
 pub mod shader_variant;
 
 /// Describes what type of rendering is required for a particular entity.
-#[derive(Component, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Component, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub enum RenderingMode {
     /// The entity is fully opaque.
     Opaque = 0,

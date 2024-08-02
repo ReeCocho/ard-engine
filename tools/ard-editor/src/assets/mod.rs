@@ -415,6 +415,11 @@ impl EditorAsset {
     }
 
     #[inline(always)]
+    pub fn meta_file_mut(&mut self) -> &mut MetaFile {
+        &mut self.meta_file
+    }
+
+    #[inline(always)]
     pub fn meta_path(&self) -> &Utf8Path {
         &self.meta_path
     }
@@ -432,6 +437,11 @@ impl EditorAsset {
     #[inline(always)]
     pub fn package(&self) -> PackageId {
         *self.packages.last().unwrap()
+    }
+
+    #[inline(always)]
+    pub fn in_package(&self, id: PackageId) -> bool {
+        self.packages.contains(&id)
     }
 }
 

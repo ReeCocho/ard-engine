@@ -26,12 +26,12 @@ impl TransformGizmo {
         let selected = ctx.res.get::<Selected>().unwrap();
 
         let selected_entity = match *selected {
-            Selected::None => {
+            Selected::Entity(e) => e,
+            _ => {
                 self.in_use = false;
                 self.selected = None;
                 return;
             }
-            Selected::Entity(e) => e,
         };
 
         if !ctx.queries.is_alive(selected_entity) {

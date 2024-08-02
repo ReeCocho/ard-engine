@@ -14,6 +14,7 @@ use ard_engine::{
         texture::TextureHeader,
     },
     game::save_data::SceneAssetHeader,
+    log::info,
 };
 use enum_dispatch::enum_dispatch;
 use path_macro::path;
@@ -34,7 +35,7 @@ pub enum AssetHeader {
 pub trait AssetOps {
     fn rename(&mut self, asset_name: &AssetName, ctx: &mut RenameContext) -> Result<AssetNameBuf> {
         self.visit_data(|data_path| {
-            let new_name = ctx.new_unique_name(data_path);
+            let new_name = ctx.gen.generate(data_path.extension().unwrap_or(""));
             let src = path!(ctx.package_root / data_path);
             let dst = path!(ctx.package_root / new_name);
             std::fs::rename(src, dst)?;
@@ -59,7 +60,7 @@ pub trait AssetOps {
             Ok(())
         })?;
 
-        let new_name = ctx.new_unique_name(asset_name);
+        let new_name = ctx.gen.generate(asset_name.extension().unwrap_or(""));
         let src_path = path!(ctx.package_root / asset_name);
         let dst_path = path!(ctx.package_root / new_name);
         ctx.old_to_new
@@ -96,6 +97,8 @@ pub trait AssetOps {
         Ok(())
     }
 
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()>;
+
     fn visit_data(&mut self, func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()>;
 
     fn visit_sub_assets(&mut self, func: impl FnMut(&mut AssetNameBuf) -> Result<()>)
@@ -103,14 +106,23 @@ pub trait AssetOps {
 }
 
 pub struct RenameContext {
-    pub assets: Assets,
     pub package_root: PathBuf,
     pub old_to_new: FxHashMap<AssetNameBuf, AssetNameBuf>,
+    pub gen: AssetNameGenerator,
+}
+
+pub struct AssetNameGenerator {
+    assets: Assets,
+    new_names: FxHashSet<AssetNameBuf>,
 }
 
 pub struct DeleteContext {
     pub package_root: PathBuf,
     pub visited: FxHashSet<AssetNameBuf>,
+}
+
+pub struct SaveContext {
+    pub package_root: PathBuf,
 }
 
 impl AssetHeader {
@@ -144,21 +156,51 @@ impl AssetHeader {
     }
 }
 
-impl RenameContext {
-    fn new_unique_name(&self, src: &AssetName) -> AssetNameBuf {
-        let ext = src.extension().unwrap_or("");
+impl AssetNameGenerator {
+    pub fn new(assets: Assets) -> Self {
+        Self {
+            assets,
+            new_names: FxHashSet::default(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn assets(&self) -> &Assets {
+        &self.assets
+    }
+
+    #[inline(always)]
+    pub fn new_names(&self) -> &FxHashSet<AssetNameBuf> {
+        &self.new_names
+    }
+
+    pub fn generate(&mut self, ext: impl AsRef<AssetName>) -> AssetNameBuf {
         loop {
             let mut new_name = AssetNameBuf::from(uuid::Uuid::new_v4().to_string());
-            new_name.set_extension(ext);
-            if self.assets.exists(&new_name) {
+            new_name.set_extension(ext.as_ref());
+            if self.assets.exists(&new_name) || self.new_names.contains(&new_name) {
+                info!(
+                    "Congrats! You encountered a UUID name collision! \
+                    Don't worry, this isn't an error. It's just astronomically \
+                    rare. You should be proud."
+                );
                 continue;
             }
+            self.new_names.insert(new_name.clone());
             break new_name;
         }
     }
 }
 
 impl AssetOps for ModelHeader {
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()> {
+        let out_path = path!(ctx.package_root / asset_name);
+        let file = File::create(out_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
     fn visit_data(&mut self, _func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
         Ok(())
     }
@@ -184,6 +226,14 @@ impl AssetOps for ModelHeader {
 }
 
 impl AssetOps for MeshHeader {
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()> {
+        let out_path = path!(ctx.package_root / asset_name);
+        let file = File::create(out_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
     fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
         func(&mut self.data_path)
     }
@@ -197,6 +247,14 @@ impl AssetOps for MeshHeader {
 }
 
 impl AssetOps for MaterialHeader<AssetNameBuf> {
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()> {
+        let out_path = path!(ctx.package_root / asset_name);
+        let file = File::create(out_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
     fn visit_data(&mut self, _func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
         Ok(())
     }
@@ -228,6 +286,14 @@ impl AssetOps for MaterialHeader<AssetNameBuf> {
 }
 
 impl AssetOps for TextureHeader {
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()> {
+        let out_path = path!(ctx.package_root / asset_name);
+        let file = File::create(out_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
     fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
         for mip in &mut self.mips {
             func(mip)?;
@@ -244,6 +310,14 @@ impl AssetOps for TextureHeader {
 }
 
 impl AssetOps for SceneAssetHeader {
+    fn save(&mut self, asset_name: &AssetName, ctx: &mut SaveContext) -> Result<()> {
+        let out_path = path!(ctx.package_root / asset_name);
+        let file = File::create(out_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
     fn visit_data(&mut self, mut func: impl FnMut(&mut AssetNameBuf) -> Result<()>) -> Result<()> {
         func(&mut self.data_path)
     }

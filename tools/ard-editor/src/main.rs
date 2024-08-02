@@ -24,6 +24,7 @@ use assets::{AssetManifestLoader, CurrentAssetPath, EditorAssets, EditorAssetsMa
 use camera::SceneViewCamera;
 use clipboard::Clipboard;
 use command::{EditorCommandSystem, EditorCommands};
+use gui::inspector::{Inspected, InspectorChangeDetectSystem};
 use gui::EditorView;
 use refresher::RefresherSystem;
 use scene_graph::{DiscoverSceneGraphRoots, SceneGraph};
@@ -67,6 +68,8 @@ fn main() {
         .add_system(EditorCommandSystem::default())
         .add_system(Shlooper::default())
         .add_system(RefresherSystem::default())
+        .add_system(InspectorChangeDetectSystem)
+        .add_resource(Inspected::default())
         .add_resource(SceneGraph::default())
         .add_resource(Selected::default())
         .add_resource(EditorCommands::default())

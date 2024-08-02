@@ -13,6 +13,7 @@ use ard_engine::{
     render::{DebugDraw, DebugDrawing, EntitySelected, PreRender},
     transform::{Model, Parent},
 };
+use camino::Utf8PathBuf;
 
 use crate::{
     clipboard::Clipboard,
@@ -28,6 +29,7 @@ pub enum Selected {
     #[default]
     None,
     Entity(Entity),
+    Asset(Utf8PathBuf),
 }
 
 #[derive(SystemState)]

@@ -2,9 +2,11 @@ pub mod asset;
 pub mod build;
 pub mod instantiate;
 pub mod load;
+pub mod material;
 pub mod model;
 pub mod play;
 pub mod save;
+pub mod texture;
 
 use std::{
     sync::{

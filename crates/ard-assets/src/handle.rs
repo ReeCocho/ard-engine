@@ -41,6 +41,11 @@ impl<T: Asset> Handle<T> {
         }
     }
 
+    #[inline(always)]
+    pub fn assets(&self) -> &Assets {
+        &self.escaper.assets
+    }
+
     /// Transmutes the handle type from one to another. This is used internally for places where
     /// the type system can't determine where two asset types are the same.
     ///

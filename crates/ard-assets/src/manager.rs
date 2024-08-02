@@ -574,7 +574,9 @@ impl Assets {
         let package = match package_id {
             Some(package) => package,
             None => {
-                self.0.name_to_id.remove(name);
+                if let Some((_, id)) = self.0.name_to_id.remove(name) {
+                    self.0.assets.get_mut(&id).unwrap().asset = ShardedLock::default();
+                }
                 return false;
             }
         };

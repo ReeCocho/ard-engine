@@ -17,6 +17,7 @@ pub struct MaterialLoader {
 
 pub struct MaterialAsset {
     pub instance: MaterialInstance,
+    pub header: MaterialHeader<AssetNameBuf>,
     pub render_mode: RenderingMode,
 }
 
@@ -55,9 +56,9 @@ impl AssetLoader for MaterialLoader {
                 metallic,
                 roughness,
                 alpha_cutoff,
-                diffuse_map,
-                normal_map,
-                metallic_roughness_map,
+                ref diffuse_map,
+                ref normal_map,
+                ref metallic_roughness_map,
             } => {
                 let instance = match self.factory.create_pbr_material_instance() {
                     Ok(instance) => instance,
@@ -151,6 +152,7 @@ impl AssetLoader for MaterialLoader {
                     BlendType::Mask => RenderingMode::AlphaCutout,
                     BlendType::Blend => RenderingMode::Transparent,
                 },
+                header,
             },
             persistent: false,
         })
