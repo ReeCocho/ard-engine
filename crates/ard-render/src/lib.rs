@@ -10,7 +10,6 @@ use ard_render_image_effects::{
     tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::global::GlobalLighting;
-use ard_render_renderers::pathtracer::PathTracerSettings;
 use ard_window::prelude::*;
 use system::RenderSystem;
 
@@ -21,6 +20,7 @@ pub mod factory;
 pub mod frame;
 pub mod staging;
 pub mod system;
+pub use ard_render_renderers::pathtracer::PathTracerSettings;
 
 #[derive(Clone, Copy)]
 pub struct RendererSettings {

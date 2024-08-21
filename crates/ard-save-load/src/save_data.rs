@@ -14,12 +14,14 @@ use crate::{
 
 pub struct Saver<F: SaveFormat> {
     meta_data: FxHashMap<TypeId, SavingMetaData<F>>,
+    null_external_entities: bool,
 }
 
 impl<F: SaveFormat> Default for Saver<F> {
     fn default() -> Self {
         Self {
             meta_data: FxHashMap::default(),
+            null_external_entities: false,
         }
     }
 }
@@ -53,6 +55,13 @@ impl<F: SaveFormat + 'static> Saver<F> {
         self
     }
 
+    /// Entities not contained within the `entities` parameter in `save` will be set to `null`.
+    #[inline(always)]
+    pub fn null_external_entities(mut self) -> Self {
+        self.null_external_entities = true;
+        self
+    }
+
     pub fn save(
         mut self,
         assets: Assets,
@@ -66,6 +75,10 @@ impl<F: SaveFormat + 'static> Saver<F> {
             assets,
             entity_map: EntityMap::new_from_entities(entities),
         };
+
+        if self.null_external_entities {
+            ctx.entity_map.insert_when_missing(false);
+        }
 
         let entity_count = ctx.entity_map.len();
 
@@ -206,11 +219,7 @@ impl<F: SaveFormat> SavingData<F> {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(SavedSet {
-            entities: self
-                .entities
-                .into_iter()
-                .map(|e| map.to_map_or_insert(e))
-                .collect(),
+            entities: self.entities.into_iter().map(|e| map.to_map(e)).collect(),
             buffers,
         })
     }

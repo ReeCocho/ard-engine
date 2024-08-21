@@ -155,11 +155,11 @@ impl SaveLoad for Parent {
     type Intermediate = SavedParent;
 
     fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
-        SavedParent(ctx.entity_map.to_map_or_insert(self.0))
+        SavedParent(ctx.entity_map.to_map(self.0))
     }
 
     fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
-        Self(ctx.entity_map.from_map_or_null(intermediate.0))
+        Self(ctx.entity_map.from_map(intermediate.0))
     }
 }
 
@@ -167,12 +167,7 @@ impl SaveLoad for Children {
     type Intermediate = SavedChildren;
 
     fn save(&self, ctx: &mut SaveContext) -> Self::Intermediate {
-        SavedChildren(
-            self.0
-                .iter()
-                .map(|e| ctx.entity_map.to_map_or_insert(*e))
-                .collect(),
-        )
+        SavedChildren(self.0.iter().map(|e| ctx.entity_map.to_map(*e)).collect())
     }
 
     fn load(ctx: &mut LoadContext, intermediate: Self::Intermediate) -> Self {
@@ -180,7 +175,7 @@ impl SaveLoad for Children {
             intermediate
                 .0
                 .into_iter()
-                .map(|e| ctx.entity_map.from_map_or_null(e))
+                .map(|e| ctx.entity_map.from_map(e))
                 .collect(),
         )
     }

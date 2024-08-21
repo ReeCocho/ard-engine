@@ -90,7 +90,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
 
         let mut entity_map = EntityMap::new_from_entities(&entities);
         external.iter().for_each(|e| {
-            entity_map.to_map_or_insert(*e);
+            entity_map.to_map(*e);
         });
 
         let mut ctx = LoadContext { entity_map, assets };
@@ -99,7 +99,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
             let remapped_entities: Vec<_> = archetype
                 .entities
                 .into_iter()
-                .map(|e| ctx.entity_map.from_map_or_null(e))
+                .map(|e| ctx.entity_map.from_map(e))
                 .collect();
 
             let loaders = archetype
@@ -139,7 +139,7 @@ impl<F: SaveFormat + 'static> Loader<F> {
             let remapped_entities: Vec<_> = collection
                 .entities
                 .into_iter()
-                .map(|e| ctx.entity_map.from_map_or_null(e))
+                .map(|e| ctx.entity_map.from_map(e))
                 .collect();
 
             let loaders = collection

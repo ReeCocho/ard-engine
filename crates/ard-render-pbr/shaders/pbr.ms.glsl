@@ -114,17 +114,17 @@ void main() {
 
         /*
         // Colors
-        const vec3 COLORS[7] = {
-            vec3(1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-            vec3(1.0, 1.0, 0.0),
-            vec3(1.0, 0.0, 1.0),
-            vec3(0.0, 1.0, 1.0),
-            vec3(1.0, 1.0, 1.0)
+        const vec4 COLORS[7] = {
+            vec4(1.0, 0.0, 0.0, 1.0),
+            vec4(0.0, 1.0, 0.0, 1.0),
+            vec4(0.0, 0.0, 1.0, 1.0),
+            vec4(1.0, 1.0, 0.0, 1.0),
+            vec4(1.0, 0.0, 1.0, 1.0),
+            vec4(0.0, 1.0, 1.0, 1.0),
+            vec4(1.0, 1.0, 1.0, 1.0)
         };
 
-        vs_Color[vert_idx] = COLORS[index_offset % 7];
+        vs_out[vert_idx].color = COLORS[index_offset % 7];
         */
 
         // Read attributes

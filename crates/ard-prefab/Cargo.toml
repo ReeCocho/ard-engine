@@ -1,0 +1,14 @@
+[package]
+name = "ard-prefab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ard-ecs = { path = "../ard-ecs" }
+ard-assets = { path = "../ard-assets" }
+ard-save-load = { path = "../ard-save-load" }
+ard-transform = { path = "../ard-transform" }
+serde.workspace = true
+bincode.workspace = true
+rustc-hash.workspace = true
+async-trait.workspace = true

@@ -1,4 +1,4 @@
-use ard_engine::{core::core::Stop, ecs::prelude::*};
+use ard_engine::{core::core::Stop, ecs::prelude::*, render::PathTracerSettings};
 
 use crate::{
     assets::{CurrentAssetPath, EditorAssets},
@@ -41,6 +41,14 @@ impl MenuBar {
 
                 if ui.button("Quit").clicked() {
                     commands.events.submit(Stop);
+                }
+            });
+
+            ui.menu_button("Tools", |ui| {
+                let mut pt = res.get_mut::<PathTracerSettings>().unwrap();
+
+                if ui.button("Toggle Path Tracer").clicked() {
+                    pt.enabled = !pt.enabled;
                 }
             });
         });

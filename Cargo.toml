@@ -39,6 +39,7 @@ ard-render-debug = { path = "./crates/ard-render-debug" }
 ard-pal = { path = "./crates/ard-pal" }
 ard-physics = { path = "./crates/ard-physics" }
 ard-transform = { path = "./crates/ard-transform" }
+ard-prefab = { path = "./crates/ard-prefab" }
 
 [workspace.dependencies]
 allocator-api2 = { version = "0.2" }
