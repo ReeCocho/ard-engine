@@ -16,6 +16,7 @@ void main() {
     vec3 color = texture(env_map, ray_dir).rgb;
 
     hit_value.hit = 0;
-    hit_value.color = vec4(color, 1.0);
+    hit_value.in_brdf_pdf = vec4(color, 1.0);
+    hit_value.out_brdf_pdf = vec4(0.0);
     hit_value.location = vec4(0.0);
 }

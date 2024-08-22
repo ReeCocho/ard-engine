@@ -259,18 +259,18 @@
         name: "PathTracerPayload",
         no_mangle: false,
         fields: [
-            // 16-bit color encoded in a UVec2.
-            (name: "color", ty: Vec4),
+            // When `traceRayEXT` is executed, this value represents the direction to the sun.
+            // The value should be updated by the hit shader to contain the new direction to
+            // fire a ray from.
+            (name: "sun_dir", ty: Vec4),
+            // BRDF component from the hit shader using the input direction.
+            (name: "in_brdf_pdf", ty: Vec4),
+            // BRDF component from the hit shader using the output direction.
+            (name: "out_brdf_pdf", ty: Vec4),
             // World space hit location
             (name: "location", ty: Vec4),
-            // Hit normal.
-            (name: "normal", ty: Vec4),
-            (name: "tangent", ty: Vec4),
-            (name: "bitangent", ty: Vec4),
-            // Material roughness.
-            (name: "roughness", ty: F32),
-            // Material metallic.
-            (name: "metallic", ty: F32),
+            // Random state value.
+            (name: "rng_state", ty: U32),
             // Flag indicating the ray hit.
             (name: "hit", ty: Bool),
         ]

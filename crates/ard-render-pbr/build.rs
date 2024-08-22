@@ -179,6 +179,24 @@ fn main() {
             stage: ShaderStage::RayClosestHit,
             rendering_mode: RenderingMode::Transparent,
         },
+        ShaderVariant {
+            pass: usize::from(PATH_TRACER_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        ShaderVariant {
+            pass: usize::from(PATH_TRACER_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        ShaderVariant {
+            pass: usize::from(PATH_TRACER_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Transparent,
+        },
     ];
 
     let mut out = HashMap::default();

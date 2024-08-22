@@ -29,73 +29,6 @@ float rng_float(inout uint rngState) {
     return min(float(word) / 4294967295.0, 0.999999);
 }
 
-float luminance(vec3 color) {
-    return clamp(dot(color, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
-}
-
-bool is_lambertian(
-    float ndotv, 
-    float metallic, 
-    float roughness,
-    vec3 color,
-    vec3 F0,
-    inout uint rng_state
-) {
-    const float dielectric_pr = 1.0 - roughness; // specular_f_roughness(ndotv, F0, roughness).r;
-    float diff_pr = (1.0 - dielectric_pr);
-
-    const float inv_total_pr = 1.0 / (diff_pr + dielectric_pr);
-    diff_pr *= inv_total_pr;
-
-    return rng_float(rng_state) <= 0.5;
-}
-
-vec4 compute_brdf_pdf(
-    vec3 L,
-    vec3 N,
-    vec3 V,
-    vec3 color,
-    vec3 F0,
-    float roughness,
-    float metallic
-) {
-    const float ndotl = max(dot(N, L), 0.0);
-
-    // End early if the outputs would be too small
-    if (ndotl < 0.0001) {
-        return vec4(vec3(0.0), 1.0);
-    }
-
-    // Evaluate both lambertian and GGX brdfs
-    const vec3 diffuse = color * INV_PI;
-    const float diffuse_pdf = ndotl;
-
-    const vec3 H = normalize(L + V);
-    const float ndotv = max(dot(N, V), 0.0);
-    const float vdoth = max(dot(V, H), 0.0);
-    const float ndoth = max(dot(N, H), 0.0);
-
-    const float d = specular_d(N, H, roughness);
-    const vec3 f = specular_f(V, H, F0);
-    const float g = specular_g(ndotv, ndotl, roughness);
-    const vec3 num = d * g * f;
-    const float denom = (4.0 * ndotl * ndotv) + 0.00001;
-    vec3 spec = num / denom;
-    const float spec_pdf = get_ggx_pdf(N, H, V, roughness);
-
-    // Final PDF is the average
-    const float pdf = (diffuse_pdf + spec_pdf) * 0.5;
-
-    // Energy conserving blend of both PDFs
-    const vec3 kS = f;
-    const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
-
-    return vec4(
-        ndotl * ((kD * diffuse) + spec),
-        pdf
-    );
-}
-
 void main() {
     // Compute a random seed based on pixel location and sample index
     uint rng_state = (consts.sample_batch * gl_LaunchSizeEXT.x * gl_LaunchSizeEXT.y) 
@@ -120,9 +53,16 @@ void main() {
     vec3 beta = vec3(1.0);
 
     vec4 dec_color = vec4(0.0);
+    const vec3 sun_color = global_lighting.sun_color_intensity.rgb
+        * global_lighting.sun_color_intensity.a;
+    const vec3 n_sun_dir = -normalize(global_lighting.sun_direction.xyz);
 
     uint i = 0;
     for (; i < 4; i++) {
+        // Store sun direction so we can evaluate the BRDF in the hit shader
+        hit_value.sun_dir = vec4(n_sun_dir, 0.0);
+        hit_value.rng_state = rng_state;
+
         // Trace a ray to see if we hit a surface
         traceRayEXT(
             tlas, 
@@ -135,46 +75,23 @@ void main() {
             0
         );
 
-        // Decode the color and combine with final output color
-        const vec3 color = hit_value.color.rgb;
+        // Extract hit surface properties
+        const vec4 in_brdf_pdf = hit_value.in_brdf_pdf;
+        const vec4 out_brdf_pdf = hit_value.out_brdf_pdf;
+        const vec3 location = hit_value.location.xyz;
+        dir = hit_value.sun_dir;
+        center = location;
 
         // If we hit nothing, it's the sky, so stop.
         if (hit_value.hit == 0) {
-            L += beta * color;
+            L += beta * in_brdf_pdf.rgb;
             break;
         }
 
-        // Extract material properties
-        const vec3 V = -dir.xyz;
-        const vec3 N = hit_value.normal.xyz;
-        const vec3 location = hit_value.location.xyz + (N * 0.02);
-        const mat3 TBN = mat3(
-            hit_value.tangent.xyz,
-            hit_value.bitangent.xyz,
-            hit_value.normal.xyz
-        );
-        const float metallic = hit_value.metallic;
-        const float roughness = hit_value.roughness;
+        // If we hit something, update our RNG state
+        rng_state = hit_value.rng_state;
 
-        const float ndotv = max(dot(N, V), 0.0);
-
-        vec3 F0 = vec3(0.04);
-
-        // Decide if we're lambertian (alternative is specular/metallic)
-        const bool lambertian = is_lambertian(
-            ndotv,
-            metallic,
-            roughness,
-            color,
-            vec3(0.04),
-            rng_state
-        );
-
-        // Upate F0 based on metallicness
-        F0 = mix(F0, color.rgb, metallic);
-
-        // Evaluate the BRDF for lights (currently, just the sun)
-        const vec3 n_sun_dir = -normalize(global_lighting.sun_direction.xyz);
+        // Trace shadow ray for the sun 
         traceRayEXT(
             tlas, 
             gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, 
@@ -186,85 +103,32 @@ void main() {
             0
         );
 
+        // If we hit the sky, apply lighting to sum
         if (hit_value.hit == 0) {
-            const vec3 sun_color = global_lighting.sun_color_intensity.rgb
-                * global_lighting.sun_color_intensity.a;
-
-            // Compute the BRDF and PDF.
-            vec4 brdf_pdf = compute_brdf_pdf(n_sun_dir, N, V, color, F0, roughness, metallic);
-
-            // Apply to final lighting
-            L += (beta * brdf_pdf.rgb * sun_color);
+            L += (beta * in_brdf_pdf.rgb * sun_color);
         }
-
-        // Generate a new ray direction and position and apply BRDF
-        center = location;
-        vec3 L = vec3(0.0);
-        vec3 H = vec3(0.0);
-        float pdf = 0.0;
-        const vec2 rand_vec = vec2(rng_float(rng_state), rng_float(rng_state));
-
-        // Compute L and H based on our BRDF
-        if (lambertian) {
-            L = normalize(TBN * get_cosine_hemisphere(rand_vec));
-            H = normalize(L + V);
-        } else {
-            H = normalize(TBN * get_ggx_microfacet(rand_vec, roughness));
-            L = normalize(reflect(-V, H));
-        }
-
-        // New direction for next bounce
-        dir.xyz = L;
 
         // Evalute BRDF
-        vec4 brdf = compute_brdf_pdf(L, N, V, color, F0, roughness, metallic);
-        if (brdf.w < 0.0001) {
+        if (out_brdf_pdf.w < 0.0001) {
             break;
         }
 
-        beta *= brdf.rgb / brdf.w;
+        beta *= out_brdf_pdf.rgb / out_brdf_pdf.w;
 
+        // If our current color is almost black, we can early out
         if (dot(beta, vec3(1.0)) < 0.001) {
             break;
         }
-
-        /*
-        if (lambertian) {
-            L = get_cosine_hemisphere(rand_vec);
-            pdf = L.z;
-            L = normalize(TBN * L);
-
-            const float ndotl = max(dot(N, L), 0.0);
-            dir.xyz = L;
-            beta *= color.rgb * ndotl / (pdf + 0.0001);
-        } else {
-            const vec3 H = normalize(TBN * get_ggx_microfacet(rand_vec, roughness));
-            L = normalize(reflect(-V, H));
-            pdf = get_ggx_pdf(N, H, V, roughness);
-            dir.xyz = L;
-            
-            // Early out if we're perfectly perpendicular
-            const float ndotl = max(dot(N, L), 0.0);
-            if (ndotl <= 0.0001) {
-                continue;
-            }
-
-            // Evaluate the BRDF
-            const float vdoth = max(dot(V, H), 0.0);
-            const float ndoth = max(dot(N, H), 0.0);
-
-            const vec3 f = specular_f(V, H, F0);
-            const float g = specular_g(ndotv, ndotl, roughness);
-
-            beta *= (color.rgb * f * g * vdoth) / (ndoth * ndotv + 0.0001);
-        }
-        */
     }
     
     if (consts.sample_batch != 0) {
         const float batch = float(consts.sample_batch);
         const vec3 old_color = imageLoad(out_tex, ivec2(gl_LaunchIDEXT.xy)).rgb;
         L = (batch * old_color + L) / (batch + 1.0);
+    }
+
+    if (any(isnan(L)) || any(isinf(L))) {
+        return;
     }
 
     imageStore(out_tex, ivec2(gl_LaunchIDEXT.xy), vec4(L, 1.0));
