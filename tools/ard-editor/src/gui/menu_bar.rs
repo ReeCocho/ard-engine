@@ -1,4 +1,8 @@
-use ard_engine::{core::core::Stop, ecs::prelude::*, render::PathTracerSettings};
+use ard_engine::{
+    core::core::Stop,
+    ecs::prelude::*,
+    render::{LxaaSettings, PathTracerSettings, SmaaSettings},
+};
 
 use crate::{
     assets::{CurrentAssetPath, EditorAssets},
@@ -46,9 +50,25 @@ impl MenuBar {
 
             ui.menu_button("Tools", |ui| {
                 let mut pt = res.get_mut::<PathTracerSettings>().unwrap();
+                let mut smaa = res.get_mut::<SmaaSettings>().unwrap();
+                let mut lxaa = res.get_mut::<LxaaSettings>().unwrap();
 
                 if ui.button("Toggle Path Tracer").clicked() {
                     pt.enabled = !pt.enabled;
+                }
+
+                if ui.button("Toggle SMAA").clicked() {
+                    smaa.enabled = !smaa.enabled;
+                    println!("SMAA {}", smaa.enabled);
+                }
+
+                if ui.button("Toggle LXAA").clicked() {
+                    lxaa.enabled = !lxaa.enabled;
+                    println!("LXAA {}", lxaa.enabled);
+                }
+
+                if ui.button("SMAA Edge Visualization").clicked() {
+                    smaa.edge_visualization = !smaa.edge_visualization;
                 }
             });
         });

@@ -35,7 +35,7 @@ fn main() {
                 render_scale: 1.0,
                 canvas_size: CanvasSize(None),
             },
-            debug: false,
+            debug: true,
         })
         .add_plugin(RenderAssetsPlugin)
         .add_plugin(GamePlugin)

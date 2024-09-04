@@ -1,0 +1,143 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_REFLECTION_TILE_CLASSIFIER 0
+#include "ard_bindings.glsl"
+#include "utils.glsl"
+
+layout(push_constant) uniform constants {
+    ReflectionTileClassifierPushConstants consts;
+};
+
+#include "reflections/common.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+shared uint valid_texels;
+
+float rand_float(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return float(x) / float(0xffffffffU);
+}
+
+void classify_ssr(const uint tile_idx) {
+    // Reset written flags
+    if (gl_LocalInvocationIndex == 0) {
+        tiles[tile_idx].written[0] = 0;
+        tiles[tile_idx].written[1] = 0;
+    }
+
+    // Read in the kS component for this pixel and determine if it's valid
+    const vec2 kS_uv = vec2(gl_GlobalInvocationID.xy) * consts.inv_target_dims;
+    const vec3 kS = texture(thin_g_tex, kS_uv).rgb;
+    atomicAdd(valid_texels, dot(kS, vec3(1.0)) > 0.01 ? 1 : 0);
+    barrier();
+
+    if (gl_LocalInvocationIndex != 0) {
+        return;
+    }
+
+    // If every texel is invalid, mark the tile as ignored
+    if (valid_texels == 0) {
+        tiles[tile_idx].ty = TILE_TYPE_IGNORE;
+        return;
+    }
+
+    // If the previous usage was ignored, make the tile SSR
+    // if (tiles[tile_idx].ty == TILE_TYPE_IGNORE) {
+        tiles[tile_idx].ty = TILE_TYPE_RT;
+    // }
+}
+
+void classify_rt(const uint tile_idx) {
+    const uint tile_ty = tiles[tile_idx].ty;
+
+    // Skip if this is an SSR or ignored tile
+    if (tile_ty == TILE_TYPE_SSR || tile_ty == TILE_TYPE_IGNORE) {
+        return;
+    }
+
+    // If every texel in this tile was already written, then we should reclassify it as SSR
+    if (tiles[tile_idx].written[0] == 0xFFFFFFFF 
+        && tiles[tile_idx].written[1] == 0xFFFFFFFF
+    ) {
+        tiles[tile_idx].ty = TILE_TYPE_SSR;
+        return;
+    }
+
+    // Tile must be hybrid or RT, so add it to the active tiles list
+    active_tiles[atomicAdd(tile_count, 1)] = tile_idx;
+    atomicAdd(indirect_buffer.z, 1);
+}
+
+void classify_demote(const uvec2 tile_dims, const uint tile_idx) {
+    const uint tile_ty = tiles[tile_idx].ty;
+
+    // Skip if this tile is an SSR or ignored tile
+    if (tile_ty == TILE_TYPE_SSR || tile_ty == TILE_TYPE_IGNORE) {
+        return;
+    }
+
+    // Randomly decide to demote the tile
+    const uint rand_seed = (tile_dims.x * tile_dims.y * consts.frame_count) + tile_idx;
+    const float r = rand_float(rand_seed);
+
+    if (r < 0.10) {
+        tiles[tile_idx].ty = tile_ty - 1;
+    }
+}
+
+void main() {
+    switch (consts.classify_ty) {
+        // NOTE: SSR pass is the only pass to dispatch over texels instead of tiles.
+    case CLASSIFY_PASS_SSR:
+    {
+        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.target_dims))) {
+            return;
+        }
+
+        if (gl_LocalInvocationIndex == 0) {
+            valid_texels = 0;
+        }
+        barrier();
+
+        classify_ssr((gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x);
+    }
+    break;
+
+    case CLASSIFY_PASS_RT:
+    {
+        const uvec2 tile_dims = get_tile_dims();
+        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, tile_dims))) {
+            return;
+        }
+        classify_rt((gl_GlobalInvocationID.y * tile_dims.x) + gl_GlobalInvocationID.x);
+    }
+    break;
+
+    case CLASSIFY_PASS_DEMOTE:
+    {
+        const uvec2 tile_dims = get_tile_dims();
+        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, tile_dims))) {
+            return;
+        }
+
+        classify_demote(
+            tile_dims,
+            (gl_GlobalInvocationID.y * tile_dims.x) + gl_GlobalInvocationID.x
+        );
+    }
+    break;
+
+    default:
+    break;
+    }
+}

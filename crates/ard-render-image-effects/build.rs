@@ -145,4 +145,11 @@ fn main() {
         &["./shaders/"],
         &[],
     );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/lxaa.frag",
+        PathBuf::from(&out_dir).join("lxaa.frag.spv"),
+        &["./shaders/"],
+        &[],
+    );
 }

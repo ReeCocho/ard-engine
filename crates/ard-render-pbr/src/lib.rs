@@ -17,7 +17,7 @@ use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
     DEPTH_OPAQUE_PREPASS_PASS_ID, ENTITIES_ALPHA_CUTOFF_PASS_ID, ENTITIES_OPAQUE_PASS_ID,
     ENTITIES_TRANSPARENT_PASS_ID, HIGH_Z_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
-    SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
+    SHADOW_OPAQUE_PASS_ID, TRANSPARENT_COLOR_PASS_ID, TRANSPARENT_PREPASS_ID,
 };
 use ard_render_si::{consts::*, types::GpuPbrMaterial};
 
@@ -58,7 +58,8 @@ pub fn create_pbr_material(
             | SHADOW_ALPHA_CUTOFF_PASS_ID
             | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
             | DEPTH_OPAQUE_PREPASS_PASS_ID
-            | TRANSPARENT_PASS_ID => invocations_per_task(properties),
+            | TRANSPARENT_PREPASS_ID
+            | TRANSPARENT_COLOR_PASS_ID => invocations_per_task(properties),
             _ => 1,
         };
 
@@ -166,16 +167,7 @@ pub fn create_pbr_material(
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState {
-                attachments: vec![ColorBlendAttachment {
-                    blend: false,
-                    write_mask: ColorComponents::R
-                        | ColorComponents::G
-                        | ColorComponents::B
-                        | ColorComponents::A,
-                    ..Default::default()
-                }],
-            },
+            color_blend: ColorBlendState::default(),
             debug_name: "pbr_depth_opaque_prepass_pipeline".into(),
         },
     );
@@ -196,16 +188,7 @@ pub fn create_pbr_material(
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState {
-                attachments: vec![ColorBlendAttachment {
-                    blend: false,
-                    write_mask: ColorComponents::R
-                        | ColorComponents::G
-                        | ColorComponents::B
-                        | ColorComponents::A,
-                    ..Default::default()
-                }],
-            },
+            color_blend: ColorBlendState::default(),
             debug_name: "pbr_depth_alpha_cutoff_prepass_pipeline".into(),
         },
     );
@@ -308,11 +291,28 @@ pub fn create_pbr_material(
                 max_depth: 1.0,
             }),
             color_blend: ColorBlendState {
-                attachments: vec![ColorBlendAttachment {
-                    blend: false,
-                    write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
-                    ..Default::default()
-                }],
+                attachments: vec![
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::all(),
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
+                ],
             },
             debug_name: "pbr_color_opaque_pipeline".into(),
         },
@@ -335,18 +335,79 @@ pub fn create_pbr_material(
                 max_depth: 1.0,
             }),
             color_blend: ColorBlendState {
-                attachments: vec![ColorBlendAttachment {
-                    blend: false,
-                    write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
-                    ..Default::default()
-                }],
+                attachments: vec![
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::all(),
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
+                ],
             },
             debug_name: "pbr_color_alpha_cutoff_pipeline".into(),
         },
     );
 
     pass_templates.insert(
-        TRANSPARENT_PASS_ID,
+        TRANSPARENT_PREPASS_ID,
+        MaterialVariantTemplate {
+            rasterization: RasterizationState {
+                polygon_mode: PolygonMode::Fill,
+                cull_mode: CullMode::Back,
+                front_face: FrontFace::CounterClockwise,
+            },
+            depth_stencil: Some(DepthStencilState {
+                depth_clamp: false,
+                depth_test: true,
+                depth_write: true,
+                depth_compare: CompareOp::GreaterOrEqual,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }),
+            color_blend: ColorBlendState {
+                attachments: vec![
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::empty(),
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::all(),
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
+                ],
+            },
+            debug_name: "pbr_transparent_prepass_pipeline".into(),
+        },
+    );
+
+    pass_templates.insert(
+        TRANSPARENT_COLOR_PASS_ID,
         MaterialVariantTemplate {
             rasterization: RasterizationState {
                 polygon_mode: PolygonMode::Fill,
@@ -376,7 +437,7 @@ pub fn create_pbr_material(
                     dst_alpha_blend_factor: BlendFactor::Zero,
                 }],
             },
-            debug_name: "pbr_transparent_pipeline".into(),
+            debug_name: "pbr_transparent_color_pipeline".into(),
         },
     );
 

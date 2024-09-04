@@ -7,7 +7,7 @@ use ard_engine::{
     render::{
         loader::{MaterialHandle, MeshHandle},
         model::{ModelAsset, Node, NodeData},
-        RenderFlags,
+        PrevFrameModel, RenderFlags,
     },
     transform::{Children, Model, Parent, Position, Rotation, Scale},
 };
@@ -236,6 +236,7 @@ fn instantiate_model(model: &ModelAsset, commands: &Commands, assets: &Assets) -
                     (
                         Some(obj.children),
                         Some(obj.model),
+                        Some(PrevFrameModel(obj.model.0)),
                         obj.parent,
                         obj.name,
                         Some(obj.position),
@@ -253,6 +254,7 @@ fn instantiate_model(model: &ModelAsset, commands: &Commands, assets: &Assets) -
                         Some(obj.flags),
                         Some(obj.children),
                         Some(obj.model),
+                        Some(PrevFrameModel(obj.model.0)),
                         obj.parent,
                         obj.name,
                         Some(obj.position),

@@ -171,7 +171,11 @@ impl PathTracer {
             pass.push_constants(bytemuck::cast_slice(&consts));
 
             RayTracingDispatch {
-                dims: self.image.dims(),
+                src: RayTracingDispatchSource::Inline(
+                    self.image.dims().0,
+                    self.image.dims().1,
+                    self.image.dims().2,
+                ),
                 shader_binding_table: self.pipeline.sbt(),
                 raygen_offset: self.pipeline.raygen_offset(),
                 miss_offset: self.pipeline.miss_offset(),

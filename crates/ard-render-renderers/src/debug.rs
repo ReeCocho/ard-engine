@@ -97,6 +97,10 @@ impl DebugRenderer {
         vertices: &'a DebugVertexBuffer,
         camera: &'a CameraUbo,
     ) {
+        if vertices.vertex_count() == 0 {
+            return;
+        }
+
         pass.bind_pipeline(self.pipeline.clone());
         pass.bind_sets(0, vec![camera.get_set(frame)]);
         pass.bind_vertex_buffers(

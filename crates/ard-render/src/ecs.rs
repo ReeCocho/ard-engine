@@ -10,11 +10,14 @@ use ard_render_image_effects::{
     ao::{AmbientOcclusion, AoSettings},
     bloom::Bloom,
     fxaa::Fxaa,
+    lxaa::Lxaa,
     smaa::Smaa,
     sun_shafts2::SunShafts,
     tonemapping::Tonemapping,
 };
-use ard_render_lighting::{lights::LightClusters, proc_skybox::ProceduralSkyBox};
+use ard_render_lighting::{
+    lights::LightClusters, proc_skybox::ProceduralSkyBox, reflections::Reflections,
+};
 use ard_render_material::{factory::MaterialFactory, material::MaterialResource};
 use ard_render_meshes::{factory::MeshFactory, mesh::MeshResource};
 use ard_render_objects::RenderFlags;
@@ -49,12 +52,14 @@ pub(crate) struct RenderEcs {
     lighting: LightClusters,
     froxels: FroxelGenPipeline,
     _fxaa: Fxaa,
+    lxaa: Lxaa,
     smaa: Smaa,
     bloom: Bloom,
     sun_shafts: SunShafts,
     tonemapping: Tonemapping,
     ao: AmbientOcclusion,
     path_tracer: PathTracer,
+    reflections: Reflections,
     proc_skybox: ProceduralSkyBox,
     factory: Factory,
     ctx: Context,
@@ -95,6 +100,7 @@ impl RenderEcs {
         let factory = Factory::new(ctx.clone(), &layouts);
         let hzb_render = HzbRenderer::new(&ctx, &layouts);
         let fxaa = Fxaa::new(&ctx, &layouts);
+        let lxaa = Lxaa::new(&ctx, &layouts);
         let ao = AmbientOcclusion::new(&ctx, &layouts);
         let lighting = LightClusters::new(&ctx, &layouts);
 
@@ -116,6 +122,13 @@ impl RenderEcs {
         let bloom = Bloom::new(&ctx, &layouts, window_size, 6);
         let sun_shafts = SunShafts::new(&ctx, &layouts, window_size);
         let smaa = Smaa::new(&ctx, &layouts, window_size);
+        let mut reflections = Reflections::new(
+            &ctx,
+            &layouts,
+            window_size,
+            &factory.inner.materials.lock().unwrap(),
+            &factory.inner.material_factory.lock().unwrap(),
+        );
         let mut tonemapping = Tonemapping::new(&ctx, &layouts);
 
         for frame in 0..FRAMES_IN_FLIGHT {
@@ -144,6 +157,8 @@ impl RenderEcs {
                 .sets()
                 .update_sky_box_bindings(frame, &proc_skybox);
 
+            reflections.update_sky_box_bindings(frame, &proc_skybox);
+
             scene_renderer
                 .color_pass_sets_mut()
                 .update_light_clusters_binding(frame, &lighting);
@@ -166,8 +181,10 @@ impl RenderEcs {
                 lighting,
                 hzb_render,
                 path_tracer,
+                reflections,
                 debug_renderer,
                 _fxaa: fxaa,
+                lxaa,
                 smaa,
                 sun_shafts,
                 ao,
@@ -250,6 +267,7 @@ impl RenderEcs {
             self.sun_shafts.resize(&self.ctx, frame.canvas_size);
             self.smaa.resize(&self.ctx, frame.canvas_size);
             self.path_tracer.resize(&self.ctx, frame.canvas_size);
+            self.reflections.resize(&self.ctx, frame.canvas_size);
 
             for frame in 0..FRAMES_IN_FLIGHT {
                 let frame = Frame::from(frame);
@@ -295,6 +313,8 @@ impl RenderEcs {
             self.path_tracer
                 .sets()
                 .update_lights_binding(frame.frame, &frame.lights);
+            self.reflections
+                .update_lights_binding(frame.frame, &frame.lights);
         }
 
         self.sun_shafts.update_binds(
@@ -306,11 +326,18 @@ impl RenderEcs {
                     .shadow_cascade(i)
                     .unwrap_or_else(|| self.sun_shadows_renderer.empty_shadow())
             }),
-            canvas.render_target().depth_resolve(),
+            canvas.render_target().final_depth(),
         );
 
         self.smaa
             .update_bindings(frame.frame, canvas.render_target().linear_color());
+        self.lxaa.update_bindings(
+            frame.frame,
+            (
+                canvas.render_target().linear_color(),
+                if frame.smaa_settings.enabled { 1 } else { 0 },
+            ),
+        );
 
         canvas.acquire_image();
 
@@ -344,6 +371,8 @@ impl RenderEcs {
 
         // Check if any RT pipelines need to be rebuilt
         self.path_tracer
+            .check_for_rebuild(&self.ctx, &materials, &material_factory);
+        self.reflections
             .check_for_rebuild(&self.ctx, &materials, &material_factory);
 
         // Upload object data to renderers
@@ -404,6 +433,14 @@ impl RenderEcs {
         self.path_tracer
             .update_settings(&frame.path_tracer_settings);
 
+        // NOTE: We always update these bindings since we need to update the ping-pong buffer.
+        self.reflections.update_bindings(
+            frame.frame,
+            self.rt_render.tlas(),
+            &frame.object_data,
+            canvas.render_target(),
+        );
+
         self.sun_shadows_renderer.update_cascade_views(
             frame.frame,
             &main_camera.camera,
@@ -419,7 +456,11 @@ impl RenderEcs {
             canvas_size: window.size,
             scene_texture: (
                 canvas.render_target().linear_color(),
-                frame.smaa_settings.enabled as usize,
+                if frame.smaa_settings.enabled == frame.lxaa_settings.enabled {
+                    0
+                } else {
+                    1
+                },
             ),
             gui_output: &mut frame.gui_output,
         });
@@ -583,21 +624,31 @@ impl RenderEcs {
             &frame.ao_settings,
         );
 
+        /*
         // Hand off sun shafts for async compute
         self.sun_shafts
             .transfer_image_ownership(&mut cb, QueueType::Compute);
+        */
 
-        self.ctx.main().submit(Some("Phase 3"), cb);
+        // self.ctx.main().submit(Some("Phase 3"), cb);
 
         // Phase 4:
         //      Main: Opaque and transparent passes.
         //      Comp: Generate sun shafts.
-        let mut main_cb = self.ctx.main().command_buffer();
-        let mut compute_cb = self.ctx.compute().command_buffer();
+        // let mut main_cb = self.ctx.main().command_buffer();
+        // let mut compute_cb = self.ctx.compute().command_buffer();
+
+        // Render sun shafts in async compute. Hand back depth target after rendering.
+        self.sun_shafts.render(
+            frame.frame,
+            &mut cb,
+            &self.camera,
+            &frame.sun_shafts_settings,
+        );
 
         // Render opaque and alpha masked geometry
         Self::render_opaque(
-            &mut main_cb,
+            &mut cb,
             &frame,
             canvas,
             &self.camera,
@@ -612,7 +663,7 @@ impl RenderEcs {
 
         // Render transparent geometry
         Self::render_transparent(
-            &mut main_cb,
+            &mut cb,
             &frame,
             canvas,
             &self.camera,
@@ -624,13 +675,18 @@ impl RenderEcs {
             &texture_factory,
         );
 
-        // Render sun shafts in async compute. Hand back depth target after rendering.
-        self.sun_shafts.render(
+        // Render reflections
+        self.reflections.render(
+            &mut cb,
             frame.frame,
-            &mut compute_cb,
             &self.camera,
-            &frame.sun_shafts_settings,
+            &mesh_factory,
+            &material_factory,
+            &texture_factory,
+            canvas.render_target().samples(),
         );
+
+        /*
         self.sun_shafts
             .transfer_image_ownership(&mut compute_cb, QueueType::Main);
         compute_cb.transfer_texture_ownership(
@@ -641,12 +697,9 @@ impl RenderEcs {
             QueueType::Main,
             None,
         );
-        // self.sun_shadows_renderer
-        //    .transfer_ownership(frame.frame, &mut compute_cb, QueueType::Main);
+        */
 
-        self.ctx()
-            .main()
-            .submit_with_async_compute(Some("Phase 4"), main_cb, compute_cb);
+        self.ctx().main().submit(Some("Phase 3"), cb);
 
         std::mem::drop(mesh_factory);
         std::mem::drop(texture_factory);
@@ -658,26 +711,76 @@ impl RenderEcs {
         // Image effects/tonemapping and final output.
         let mut cb = self.ctx.main().command_buffer();
 
+        let (tonemapping_dst, smaa_dst, lxaa_dst, debug_dst, gui_load_op) = match (
+            frame.present_scene,
+            frame.smaa_settings.enabled,
+            frame.lxaa_settings.enabled,
+        ) {
+            (true, _, true) => (
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: 1,
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                LoadOp::Load,
+            ),
+            (true, true, false) => (
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                LoadOp::Load,
+            ),
+            (true, false, false) => (
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                ColorAttachmentDestination::SurfaceImage(canvas.image()),
+                LoadOp::Load,
+            ),
+            (false, smaa, lxaa) => (
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: 1,
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: if smaa { 0 } else { 1 },
+                    mip_level: 0,
+                },
+                ColorAttachmentDestination::Texture {
+                    texture: canvas.render_target().linear_color(),
+                    array_element: if smaa == lxaa { 0 } else { 1 },
+                    mip_level: 0,
+                },
+                LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+            ),
+        };
+
         // Apply image effects to the final render target
         self.bloom.render(frame.frame, &mut cb);
         self.tonemapping.render(
             frame.frame,
             &mut cb,
             &self.camera,
-            // If SMAA is enabled, we want to draw to the "final color" attachment so it can be
-            // read during the SMAA pass. We also want to do this if we're rendering the scene
-            // offscreen (i.e. not presenting the scene)
-            if frame.smaa_settings.enabled || !frame.present_scene {
-                ColorAttachmentDestination::Texture {
-                    texture: canvas.render_target().linear_color(),
-                    array_element: 0,
-                    mip_level: 0,
-                }
-            }
-            // Otherwise, we'll draw directly to the surface
-            else {
-                ColorAttachmentDestination::SurfaceImage(canvas.image())
-            },
+            tonemapping_dst,
             &frame.tonemapping_settings,
             frame.dt,
         );
@@ -687,62 +790,41 @@ impl RenderEcs {
             self.smaa.render(
                 frame.frame,
                 &mut cb,
-                if frame.present_scene {
-                    ColorAttachmentDestination::SurfaceImage(canvas.image())
-                } else {
-                    ColorAttachmentDestination::Texture {
-                        texture: canvas.render_target().linear_color(),
-                        array_element: 1,
-                        mip_level: 0,
-                    }
-                },
+                smaa_dst,
+                frame.smaa_settings.edge_visualization,
             );
         }
 
-        // Debug rendering
-        if frame.debug_vertices.vertex_count() > 0 {
-            cb.render_pass(
-                RenderPassDescriptor {
-                    color_attachments: vec![ColorAttachment {
-                        dst: if frame.present_scene {
-                            ColorAttachmentDestination::SurfaceImage(canvas.image())
-                        } else {
-                            ColorAttachmentDestination::Texture {
-                                texture: canvas.render_target().linear_color(),
-                                array_element: 1,
-                                mip_level: 0,
-                            }
-                        },
-                        load_op: LoadOp::Load,
-                        store_op: StoreOp::Store,
-                        samples: MultiSamples::Count1,
-                    }],
-                    depth_stencil_attachment: None,
-                    color_resolve_attachments: Vec::default(),
-                    depth_stencil_resolve_attachment: None,
-                },
-                Some("debug_drawing"),
-                |pass| {
-                    self.debug_renderer.render(
-                        frame.frame,
-                        pass,
-                        &frame.debug_vertices,
-                        &self.camera,
-                    );
-                },
-            );
+        if frame.lxaa_settings.enabled {
+            self.lxaa.render(frame.frame, &mut cb, lxaa_dst);
         }
+
+        // Debug rendering
+        cb.render_pass(
+            RenderPassDescriptor {
+                color_attachments: vec![ColorAttachment {
+                    dst: debug_dst,
+                    load_op: LoadOp::Load,
+                    store_op: StoreOp::Store,
+                    samples: MultiSamples::Count1,
+                }],
+                depth_stencil_attachment: None,
+                color_resolve_attachments: Vec::default(),
+                depth_stencil_resolve_attachment: None,
+            },
+            Some("debug_drawing"),
+            |pass| {
+                self.debug_renderer
+                    .render(frame.frame, pass, &frame.debug_vertices, &self.camera);
+            },
+        );
 
         // Render GUI
         cb.render_pass(
             RenderPassDescriptor {
                 color_attachments: vec![ColorAttachment {
                     dst: ColorAttachmentDestination::SurfaceImage(canvas.image()),
-                    load_op: if frame.present_scene {
-                        LoadOp::Load
-                    } else {
-                        LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0))
-                    },
+                    load_op: gui_load_op,
                     store_op: StoreOp::Store,
                     samples: MultiSamples::Count1,
                 }],
@@ -1023,6 +1105,7 @@ impl RenderEcs {
         ao.generate(frame_data.frame, commands, canvas.ao(), camera, settings);
 
         // Hand off depth copy image to compute for sun shafts
+        /*
         commands.transfer_texture_ownership(
             canvas.render_target().depth_resolve(),
             0,
@@ -1031,6 +1114,7 @@ impl RenderEcs {
             QueueType::Compute,
             None,
         );
+        */
     }
 
     #[inline(never)]

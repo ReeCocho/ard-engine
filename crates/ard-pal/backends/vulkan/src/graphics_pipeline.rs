@@ -121,8 +121,6 @@ impl GraphicsPipeline {
             .rasterization_samples(render_pass.samples)
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false);
-        // .sample_shading_enable(true)
-        // .min_sample_shading(0.5)
 
         // NOTE: For the viewport and scissor the width and height doesn't really matter
         // because the dynamic stage can change them.

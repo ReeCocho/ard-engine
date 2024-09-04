@@ -26,8 +26,8 @@ float rand_float(uint x)
 }
 
 void main() {
-    if (gl_GlobalInvocationID.x > consts.output_dims.x || 
-        gl_GlobalInvocationID.y > consts.output_dims.y
+    if (gl_GlobalInvocationID.x >= consts.output_dims.x || 
+        gl_GlobalInvocationID.y >= consts.output_dims.y
     ) {
         return;
     }

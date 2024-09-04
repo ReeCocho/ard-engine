@@ -6,6 +6,7 @@ pub mod clustering;
 pub mod global;
 pub mod lights;
 pub mod proc_skybox;
+pub mod reflections;
 pub mod shadows;
 
 #[derive(Debug, Component, Copy, Clone)]

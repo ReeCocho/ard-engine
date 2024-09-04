@@ -11,6 +11,7 @@ use api::{
     render_pass::{
         ColorAttachmentDestination, DepthStencilAttachmentDestination, RenderPassDescriptor,
     },
+    rt_pass::RayTracingDispatchSource,
     texture::{Blit, Texture},
     tlas::TopLevelAccelerationStructure,
     types::{BufferUsage, CubeFace, LoadOp, QueueType, SharingMode, StoreOp, TextureUsage},
@@ -743,14 +744,6 @@ impl CommandSorting {
                 .use_image(region, &new_usage, &mut old_usages[i..(i + 1)]);
         });
 
-        /*
-        new_usage.layout = match load_op {
-            LoadOp::DontCare => vk::ImageLayout::UNDEFINED,
-            LoadOp::Load => final_layout,
-            LoadOp::Clear(_) => vk::ImageLayout::UNDEFINED,
-        };
-        */
-
         for (old_usage, image_region) in old_usages.iter().zip(src.regions.iter()) {
             self.image_barrier_check(
                 info.queue_families,
@@ -1096,6 +1089,53 @@ impl CommandSorting {
                 true
             }
             Command::EndRayTracingPass(dispatch, _) => {
+                // Check possible indirect dispatch
+                if let RayTracingDispatchSource::Indirect {
+                    buffer,
+                    array_element,
+                    ..
+                } = dispatch.src
+                {
+                    let new_usage = GlobalBufferUsage {
+                        queue: Some(QueueUsage {
+                            queue: info.queue,
+                            timeline_value: info.timeline_value,
+                            command_idx,
+                            is_async: info.is_async,
+                        }),
+                        sub_resource: SubResourceUsage {
+                            access: vk::AccessFlags2::INDIRECT_COMMAND_READ,
+                            stage: vk::PipelineStageFlags2::DRAW_INDIRECT,
+                        },
+                    };
+
+                    let old_usage = info.global.use_buffer(
+                        &BufferRegion {
+                            id: buffer.internal().id,
+                            array_elem: array_element as u32,
+                        },
+                        &new_usage,
+                    );
+
+                    self.buffer_barrier_check(
+                        info.queue_families,
+                        info.queue_families.to_index(info.queue),
+                        &old_usage,
+                        &new_usage,
+                        buffer.internal().buffer,
+                        buffer.internal().sharing_mode,
+                        buffer.internal().aligned_size,
+                        buffer.internal().offset(array_element),
+                    );
+
+                    self.dependency_check(
+                        old_usage.queue.as_ref(),
+                        command_idx,
+                        &mut info.wait_queues,
+                        (info.queue, info.timeline_value),
+                    );
+                }
+
                 // Inspect the SBT
                 let new_usage = GlobalBufferUsage {
                     queue: Some(QueueUsage {

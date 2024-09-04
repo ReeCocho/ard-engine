@@ -110,6 +110,9 @@ void manual_payload(const ObjectId id) {
     payload.meshlet_base = 1 + id.meshlet_base;
     payload.meshlet_info_base = mesh_info[object_data[id.data_idx].mesh].meshlet_offset;
     payload.model = transpose(object_data[id.data_idx].model);
+#if defined(COLOR_PASS)
+    payload.last_model = transpose(object_data[id.data_idx].prev_model);
+#endif
     payload.normal = mat3(object_data[id.data_idx].model_inv);
     payload.object_id = id.data_idx;
 #if defined(ENTITY_PASS)
@@ -128,6 +131,9 @@ void manual_payload(const ObjectId id) {
 #if defined(DEPTH_PREPASS) || defined(SHADOW_PASS) || defined(TRANSPARENT_PASS) || defined(ENTITY_PASS)
     shared bool s_visible;
     shared mat4x3 s_model_mat;
+#if defined(COLOR_PASS)
+    shared mat4x3 s_last_model_mat;
+#endif
     shared mat3 s_normal_mat;
     shared mat4 s_view_model;
     shared ObjectBounds s_obj_bounds;
@@ -175,6 +181,9 @@ void main() {
         // Read in mesh information
         const ObjectId id = input_ids[object_idx];
         const mat4x3 model_mat = transpose(object_data[id.data_idx].model);
+#if defined(COLOR_PASS)
+        const mat4x3 last_model_mat = transpose(object_data[id.data_idx].prev_model);
+#endif
         const mat3 normal_mat = mat3(object_data[id.data_idx].model_inv);
         const uint textures_slot = object_data[id.data_idx].textures;
         const uint mesh_id = object_data[id.data_idx].mesh;
@@ -222,6 +231,9 @@ void main() {
 
         // Write shared variables
         s_model_mat = model_mat;
+#if defined(COLOR_PASS)
+        s_last_model_mat = last_model_mat;
+#endif
         s_normal_mat = normal_mat;
         s_view_model = view_model;
         s_output_base = id.meshlet_base;
@@ -317,6 +329,9 @@ void main() {
         payload.meshlet_base = 1 + output_base;
         payload.meshlet_info_base = meshlet_offset;  
         payload.model = model_mat;
+#if defined(COLOR_PASS)
+        payload.last_model = s_last_model_mat;
+#endif
         payload.normal = s_normal_mat;
         payload.object_id = s_data_idx;
 #if defined(ENTITY_PASS)

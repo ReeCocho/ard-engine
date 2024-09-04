@@ -1401,5 +1401,247 @@
                 )
             ),
         ]
+    ),
+    // LXAA
+    (
+        name: "Lxaa",
+        bindings: [
+            (
+                name: "Src",
+                stage: Fragment,
+                count: "1",
+                data: Texture("src"),
+            )
+        ]
+    ),
+    /// Used to reset indirect dispatch and tile counts for reflections.
+    (
+        name: "ReflectionReset",
+        bindings: [
+            (
+                name: "ActiveTiles",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "tile_count", ty: U32)),
+                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                )
+            ),
+            (
+                name: "Indirect",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "indirect_buffer", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    /// Used to classify tile types.
+    (
+        name: "ReflectionTileClassifier",
+        bindings: [
+            (
+                name: "ThinG",
+                stage: Compute,
+                count: "1",
+                data: Texture("thin_g_tex"),
+            ),
+            (
+                name: "Tiles",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "tiles", ty: Struct("ReflectionTile"))),
+                )
+            ),
+            (
+                name: "ActiveTiles",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "tile_count", ty: U32)),
+                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                )
+            ),
+            (
+                name: "Indirect",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "indirect_buffer", ty: Struct("IndirectDispatch"))),
+                    unbounded_array: None,
+                )
+            )
+        ]
+    ),
+    /// Computes ray traced reflections.
+    (
+        name: "ReflectionsPass",
+        bindings: [
+            (
+                name: "Dst",
+                stage: RayTracing,
+                count: "1",
+                data: StorageImage(
+                    field_name: "dst_image",
+                    restrict: true,
+                    access: WriteOnly,
+                    format: Rgba16F,
+                )
+            ),
+            (
+                name: "GlobalObjectData",
+                stage: RayTracing,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "object_data", ty: Struct("ObjectData"))),
+                )
+            ),
+            (
+                name: "GlobalLightingInfo",
+                stage: RayTracing,
+                count: "1",
+                data: Ubo((
+                    name: "global_lighting",
+                    ty: Struct("GlobalLighting"),
+                ))
+            ),
+            (
+                name: "Tlas",
+                stage: RayTracing,
+                count: "1",
+                data: Tlas("tlas"),
+            ),
+            (
+                name: "Norm",
+                stage: RayTracing,
+                count: "1",
+                data: Texture("norm_tex"),
+            ),
+            (
+                name: "Depth",
+                stage: RayTracing,
+                count: "1",
+                data: Texture("depth_tex"),
+            ),
+            (
+                name: "ActiveTiles",
+                stage: RayTracing,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: Some((name: "tile_count", ty: U32)),
+                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                )
+            ),
+            (
+                name: "Tiles",
+                stage: RayTracing,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "tiles", ty: Struct("ReflectionTile"))),
+                )
+            ),
+            (
+                name: "DiMap",
+                stage: RayTracing,
+                count: "1",
+                data: CubeMap("di_map"),
+            ),
+            (
+                name: "EnvMap",
+                stage: RayTracing,
+                count: "1",
+                data: CubeMap("env_map"),
+            ),
+        ]
+    ),
+    /// Accumulates reflection data.
+    (
+        name: "ReflectionAccum",
+        bindings: [
+            (
+                name: "History",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "history_image",
+                    restrict: true,
+                    access: ReadOnly,
+                    format: Rgba16F,
+                )
+            ),
+            (
+                name: "Dst",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "dst_image",
+                    restrict: true,
+                    access: ReadWrite,
+                    format: Rgba16F,
+                )
+            ),
+            (
+                name: "Vel",
+                stage: Compute,
+                count: "1",
+                data: Texture("vel_tex"),
+            )
+        ]
+    ),
+    /// Applies reflections to the image.
+    (
+        name: "ReflectionApply",
+        bindings: [
+            (
+                name: "Src",
+                stage: Compute,
+                count: "1",
+                data: Texture("src_image"),
+            ),
+            (
+                name: "ThinG",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "thin_g_tex",
+                    restrict: true,
+                    access: ReadOnly,
+                    format: Rgba8UNorm,
+                ),
+            ),
+            (
+                name: "Dst",
+                stage: Compute,
+                count: "1",
+                data: StorageImage(
+                    field_name: "dst_image",
+                    restrict: true,
+                    access: ReadWrite,
+                    format: Rgba16F,
+                )
+            ),
+        ]
     )
 ]

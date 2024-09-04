@@ -4,13 +4,13 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #ifndef SMAA_THRESHOLD
-#define SMAA_THRESHOLD 0.1
+#define SMAA_THRESHOLD 0.15
 #endif
 #ifndef SMAA_MAX_SEARCH_STEPS
-#define SMAA_MAX_SEARCH_STEPS 16
+#define SMAA_MAX_SEARCH_STEPS 32
 #endif
 #ifndef SMAA_MAX_SEARCH_STEPS_DIAG
-#define SMAA_MAX_SEARCH_STEPS_DIAG 8
+#define SMAA_MAX_SEARCH_STEPS_DIAG 16
 #endif
 #ifndef SMAA_CORNER_ROUNDING
 #define SMAA_CORNER_ROUNDING 25

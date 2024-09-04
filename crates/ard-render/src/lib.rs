@@ -5,10 +5,6 @@ use ard_ecs::prelude::*;
 use ard_pal::prelude::*;
 use ard_render_debug::DebugDrawing;
 use ard_render_gui::{Gui, GuiInputCaptureSystem};
-use ard_render_image_effects::{
-    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
-    tonemapping::TonemappingSettings,
-};
 use ard_render_lighting::global::GlobalLighting;
 use ard_window::prelude::*;
 use system::RenderSystem;
@@ -20,6 +16,10 @@ pub mod factory;
 pub mod frame;
 pub mod staging;
 pub mod system;
+pub use ard_render_image_effects::{
+    ao::AoSettings, lxaa::LxaaSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    tonemapping::TonemappingSettings,
+};
 pub use ard_render_renderers::pathtracer::PathTracerSettings;
 
 #[derive(Clone, Copy)]
@@ -74,6 +74,7 @@ impl Plugin for RenderPlugin {
         app.add_resource(AoSettings::default());
         app.add_resource(SunShaftsSettings::default());
         app.add_resource(SmaaSettings::default());
+        app.add_resource(LxaaSettings::default());
         app.add_resource(MsaaSettings::default());
         app.add_resource(DebugSettings::default());
         app.add_resource(PathTracerSettings::default());
@@ -87,7 +88,7 @@ impl Plugin for RenderPlugin {
 impl Default for MsaaSettings {
     fn default() -> Self {
         MsaaSettings {
-            samples: MultiSamples::Count1,
+            samples: MultiSamples::Count4,
         }
     }
 }

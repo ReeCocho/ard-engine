@@ -52,7 +52,7 @@ void main() {
         sum += weight * int_ker_pos;
     }
 
-    const float visibility = sum_weight > 0.0 ? sum / (sum_weight + 0.001) : center;
+    float visibility = sum_weight > 0.0 ? sum / (sum_weight + 0.001) : center;
 
     imageStore(out_ao, tid, vec4(visibility));
 }

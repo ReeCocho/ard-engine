@@ -48,11 +48,13 @@
             (name: "view", ty: Mat4),
             (name: "projection", ty: Mat4),
             (name: "vp", ty: Mat4),
+            (name: "last_vp", ty: Mat4),
             (name: "view_inv", ty: Mat4),
             (name: "projection_inv", ty: Mat4),
             (name: "vp_inv", ty: Mat4),
             (name: "frustum", ty: Struct("Frustum")),
             (name: "position", ty: Vec4),
+            (name: "last_position", ty: Vec4),
             (name: "forward", ty: Vec4),
             (name: "aspect_ratio", ty: F32),
             (name: "near_clip", ty: F32),
@@ -96,11 +98,12 @@
         fields: [
             // NOTE: The beginning of this structure must line up with
             // VkAccelerationStructureInstanceKHR for raytracing.
-            (name: "model", ty: Mat3x4),                    // Object instance model matrix
+            (name: "model", ty: Mat3x4),                    // Object instance model matrix.
             (name: "instance_mask", ty: U32),               // 24-bits for custom idx. 8 for mask.
             (name: "shader_flags", ty: U32),                // 24-bits for shader binding table ofset. 8 for flags.
             (name: "blas", ty: U64),
             // Everything past here is up for us to decide.
+            (name: "prev_model", ty: Mat3x4),               // Object instance model matrix from last from.
             (name: "model_inv", ty: Mat3x4),                // inv(model). Transpose is the normal matrix.
             (name: "material", ty: Pointer("ArdMaterial")), // Material pointer for properties lookup
             (name: "entity", ty: U32),                      // ECS entity
@@ -275,6 +278,17 @@
             (name: "hit", ty: Bool),
         ]
     ),
+    // Reflection tile data.
+    (
+        name: "ReflectionTile",
+        no_mangle: false,
+        fields: [
+            // Bit field indicating which texels in the tile have been written to this frame.
+            (name: "written", ty: Array(len: "2", ty: U32)),
+            // Type of tile (ignore, ssr, hybrid, rt)
+            (name: "ty", ty: U32),
+        ]
+    ),
     // Push constants for mesh shadering rendering.
     (
         name: "DrawPushConstants",
@@ -424,6 +438,7 @@
         fields: [
             (name: "rt_metrics", ty: Vec4),
             (name: "screen_dims", ty: UVec2),
+            (name: "edge_viz", ty: U32),
         ]
     ),
     // Push constants for path tracing.
@@ -441,5 +456,78 @@
         fields: [
             (name: "uv", ty: Vec2)
         ]
-    )
+    ),
+    // Push constants for LXAA.
+    (
+        name: "LxaaPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "screen_dims", ty: UVec2),
+            (name: "inv_screen_dims", ty: Vec2)
+        ]
+    ),
+    // Push constants for screen space reflections.
+    (
+        name: "SsrPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "canvas_dims", ty: UVec2),
+            (name: "inv_canvas_dims", ty: Vec2),
+            (name: "target_dims", ty: UVec2),
+            (name: "inv_target_dims", ty: Vec2),
+            (name: "sample_idx", ty: U32),
+            (name: "sample_count", ty: U32),
+            (name: "max_distance", ty: F32),
+            (name: "frame_count", ty: U32),
+            (name: "search_skips", ty: U32),
+            (name: "search_steps", ty: U32),
+            (name: "refine_steps", ty: U32),
+            (name: "coarse_thickness", ty: F32),
+            (name: "refine_thickness", ty: F32),
+        ]
+    ),
+    // Push constants for reflection tile classification.
+    (
+        name: "ReflectionTileClassifierPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "canvas_dims", ty: UVec2),
+            (name: "target_dims", ty: UVec2),
+            (name: "inv_target_dims", ty: Vec2),
+            (name: "classify_ty", ty: U32),
+            (name: "sample_idx", ty: I32),
+            (name: "sample_count", ty: U32),
+            (name: "frame_count", ty: U32),
+        ]
+    ),
+    // Push constants for ray traced reflections.
+    (
+        name: "RtReflectionsPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "canvas_dims", ty: UVec2),
+            (name: "target_dims", ty: UVec2),
+            (name: "inv_target_dims", ty: Vec2),
+            (name: "sample_idx", ty: I32),
+            (name: "sample_count", ty: U32),
+            (name: "max_distance", ty: F32),
+            (name: "frame_count", ty: U32),
+        ]
+    ),
+    // Payload for RT reflections.
+    (
+        name: "RtReflectionsPayload",
+        no_mangle: false,
+        fields: [
+            (name: "sun_dir", ty: Vec4),
+            (name: "brdf", ty: Vec4),
+            (name: "emissive", ty: Vec4),
+            // World space hit location
+            (name: "location", ty: Vec4),
+            // Random state value.
+            (name: "rng_state", ty: U32),
+            // Flag indicating the ray hit.
+            (name: "hit", ty: Bool),
+        ]
+    ),
 ]

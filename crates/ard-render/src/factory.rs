@@ -108,6 +108,10 @@ impl Factory {
             &mut inner.material_factory.lock().unwrap(),
             layouts,
         );
+        ard_render_lighting::reflections::Reflections::add_pass(
+            &mut inner.material_factory.lock().unwrap(),
+            layouts,
+        );
 
         // PBR setup
         let pbr_material = ard_render_pbr::create_pbr_material(

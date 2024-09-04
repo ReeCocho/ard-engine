@@ -11,13 +11,13 @@ use ard_render_camera::{
 use ard_render_debug::{buffer::DebugVertexBuffer, DebugDrawing};
 use ard_render_gui::{Gui, GuiRunOutput};
 use ard_render_image_effects::{
-    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    ao::AoSettings, lxaa::LxaaSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
     tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::{global::GlobalLighting, lights::Lights, Light};
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
-use ard_render_objects::{objects::RenderObjects, RenderFlags};
+use ard_render_objects::{objects::RenderObjects, PrevFrameModel, RenderFlags};
 use ard_render_renderers::{entities::SelectEntity, pathtracer::PathTracerSettings};
 use ard_transform::{system::ModelUpdateSystem, Model};
 use ard_window::prelude::*;
@@ -93,6 +93,7 @@ impl RenderSystem {
                     ao_settings: AoSettings::default(),
                     sun_shafts_settings: SunShaftsSettings::default(),
                     smaa_settings: SmaaSettings::default(),
+                    lxaa_settings: LxaaSettings::default(),
                     msaa_settings: MsaaSettings::default(),
                     path_tracer_settings: PathTracerSettings::default(),
                     active_cameras: ActiveCameras::default(),
@@ -253,6 +254,7 @@ impl RenderSystem {
                 Read<Mesh>,
                 Read<MaterialInstance>,
                 Read<Model>,
+                Read<PrevFrameModel>,
                 Read<RenderingMode>,
                 Read<RenderFlags>,
             ),
@@ -267,6 +269,15 @@ impl RenderSystem {
             dynamic_objs,
             &frame.dirty_static,
         );
+
+        // Update `PrevFrameModel` to be the current model for next frame.
+        for (prev_mdl, mdl) in queries
+            .filter()
+            .without::<Static>()
+            .make::<(Write<PrevFrameModel>, Read<Model>)>()
+        {
+            prev_mdl.0 = mdl.0;
+        }
 
         // Update lighting
         let global_lighting = res.get::<GlobalLighting>().unwrap();
@@ -340,6 +351,7 @@ impl RenderSystem {
         frame.ao_settings = *res.get::<AoSettings>().unwrap();
         frame.sun_shafts_settings = *res.get::<SunShaftsSettings>().unwrap();
         frame.smaa_settings = *res.get::<SmaaSettings>().unwrap();
+        frame.lxaa_settings = *res.get::<LxaaSettings>().unwrap();
         frame.msaa_settings = *res.get::<MsaaSettings>().unwrap();
         frame.debug_settings = *res.get::<DebugSettings>().unwrap();
         frame.path_tracer_settings = *res.get::<PathTracerSettings>().unwrap();

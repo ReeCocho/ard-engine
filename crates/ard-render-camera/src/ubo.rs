@@ -1,6 +1,7 @@
 use std::ops::DerefMut;
 
 use ard_ecs::prelude::*;
+use ard_math::{Mat4, Vec3Swizzles, Vec4};
 use ard_pal::prelude::{
     Buffer, BufferCreateInfo, BufferUsage, Context, DescriptorSet, DescriptorSetCreateInfo,
     DescriptorSetUpdate, DescriptorValue, MemoryUsage, QueueTypes, SharingMode,
@@ -17,6 +18,7 @@ use crate::Camera;
 #[derive(Resource, Component)]
 pub struct CameraUbo {
     last_camera: Camera,
+    last_model: Model,
     last_dims: (u32, u32),
     /// The actual UBO.
     ubo: Buffer,
@@ -139,6 +141,7 @@ impl CameraUbo {
                 near: f32::NEG_INFINITY,
                 ..Default::default()
             },
+            last_model: Model(Mat4::IDENTITY),
             last_dims: (0, 0),
             ubo,
             froxels,
@@ -184,12 +187,43 @@ impl CameraUbo {
         if self.last_camera.needs_froxel_regen(value) || self.last_dims != (width, height) {
             self.froxel_regen = true;
         }
+
+        let last_vp = self
+            .last_camera
+            .into_gpu_struct(width as f32, height as f32, self.last_model)
+            .vp;
+        let last_position = Vec4::from((self.last_model.position().xyz(), 1.0));
+
         self.last_dims = (width, height);
+        self.last_model = model;
         self.last_camera = value.clone();
 
+        /*
+        let x = value.into_gpu_struct(width as f32, height as f32, model);
+
+        let p = ard_math::Vec4::new(0.0, 0.0, 0.01, 1.0);
+        let mut o = x.vp * p;
+        o /= o.w;
+        println!("================");
+        println!("{}", o.z);
+
+        let p = ard_math::Vec4::new(0.0, 0.0, 0.0, 1.0);
+        let mut o = x.vp * p;
+        o /= o.w;
+        println!("{}", o.z);
+
+        let p = ard_math::Vec4::new(0.0, 0.0, -0.01, 1.0);
+        let mut o = x.vp * p;
+        o /= o.w;
+        println!("{}", o.z);
+        */
+
+        let mut new_gpu_cam = value.into_gpu_struct(width as f32, height as f32, model);
+        new_gpu_cam.last_vp = last_vp;
+        new_gpu_cam.last_position = last_position;
+
         let mut view = self.ubo.write(frame.into()).unwrap();
-        bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[0] =
-            value.into_gpu_struct(width as f32, height as f32, model);
+        bytemuck::cast_slice_mut::<_, GpuCamera>(view.deref_mut())[0] = new_gpu_cam;
     }
 
     pub fn update_raw(&mut self, frame: Frame, value: &GpuCamera, idx: usize) {

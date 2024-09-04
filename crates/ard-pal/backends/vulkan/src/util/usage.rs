@@ -314,14 +314,9 @@ impl GlobalResourceUsage {
                         (None, None) => (old_usage.read_sub_resource, usize::MAX),
                     };
 
-                    // Update write usage (or read, if this is just a layout transition)
-                    if new_usage.sub_resource.is_write() {
-                        old_usage.write_command = new_usage.queue.map(|queue| queue.command_idx);
-                        old_usage.write_sub_resource = new_usage.sub_resource;
-                    } else {
-                        old_usage.read_command = new_usage.queue.map(|queue| queue.command_idx);
-                        old_usage.read_sub_resource = new_usage.sub_resource;
-                    }
+                    // Update write usage
+                    old_usage.write_command = new_usage.queue.map(|queue| queue.command_idx);
+                    old_usage.write_sub_resource = new_usage.sub_resource;
 
                     if new_usage.layout != vk::ImageLayout::UNDEFINED {
                         old_usage.layout = new_usage.layout;

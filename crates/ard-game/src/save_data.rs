@@ -8,7 +8,7 @@ use ard_render_assets::loader::{MaterialHandle, MeshHandle};
 use ard_render_base::RenderingMode;
 use ard_render_material::material_instance::MaterialInstance;
 use ard_render_meshes::mesh::Mesh;
-use ard_render_objects::RenderFlags;
+use ard_render_objects::{PrevFrameModel, RenderFlags};
 use ard_save_load::{
     format::SaveFormat,
     load_data::Loader,
@@ -49,6 +49,7 @@ impl SceneAsset {
             .include_component::<Parent>()
             .include_component::<Children>()
             .include_component::<Model>()
+            .include_component::<PrevFrameModel>()
             .include_component::<RenderingMode>()
             .include_component::<RenderFlags>()
             .include_component::<MeshHandle>()
@@ -76,6 +77,7 @@ impl SceneAsset {
             .load_component::<Parent>()
             .load_component::<Children>()
             .load_component::<Model>()
+            .load_component::<PrevFrameModel>()
             .load_component::<RenderingMode>()
             .load_component::<RenderFlags>()
             .load_component::<MeshHandle>()

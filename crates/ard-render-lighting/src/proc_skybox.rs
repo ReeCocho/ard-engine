@@ -29,6 +29,8 @@ pub const DI_MAP_SAMPLER: Sampler = Sampler {
 pub struct ProceduralSkyBox {
     /// Pipeline for rendering the sky box.
     sky_box_pipeline: GraphicsPipeline,
+    /// Pipeline for rendering the sky box during the color pass.
+    color_pass_skybox_pipeline: GraphicsPipeline,
     /// Pipeline for gathering diffuse irradiance spherical harmonic coefficients.
     di_gather_pipeline: ComputePipeline,
     di_gather_set: DescriptorSet,
@@ -219,11 +221,13 @@ impl ProceduralSkyBox {
                     view,
                     projection: proj,
                     vp,
+                    last_vp: vp,
                     view_inv: view.inverse(),
                     projection_inv: proj.inverse(),
                     vp_inv: vp.inverse(),
                     frustum,
                     position: Vec4::from((Vec3::ZERO, 1.0)),
+                    last_position: Vec4::from((Vec3::ZERO, 1.0)),
                     forward: Vec4::from((forward, 0.0)),
                     aspect_ratio: 1.0,
                     near_clip: 1.0,
@@ -293,6 +297,94 @@ impl ProceduralSkyBox {
                     std::mem::size_of::<GpuSkyBoxRenderPushConstants>() as u32
                 ),
                 debug_name: Some(String::from("sky_box_pipeline")),
+            },
+        )
+        .unwrap();
+
+        let fs = Shader::new(
+            ctx.clone(),
+            ShaderCreateInfo {
+                code: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "./proc_skybox.color_pass.frag.spv"
+                )),
+                debug_name: Some("color_pass_proc_skybox_fragment_shader".into()),
+            },
+        )
+        .unwrap();
+
+        let color_pass_skybox_pipeline = GraphicsPipeline::new(
+            ctx.clone(),
+            GraphicsPipelineCreateInfo {
+                stages: ShaderStages::Traditional {
+                    vertex: Shader::new(
+                        ctx.clone(),
+                        ShaderCreateInfo {
+                            code: include_bytes!(concat!(
+                                env!("OUT_DIR"),
+                                "./proc_skybox.color_pass.vert.spv"
+                            )),
+                            debug_name: Some("color_pass_proc_skybox_vertex_shader".into()),
+                        },
+                    )
+                    .unwrap(),
+                    fragment: Some(fs),
+                },
+                layouts: vec![layouts.camera.clone()],
+                vertex_input: VertexInputState {
+                    attributes: Vec::default(),
+                    bindings: Vec::default(),
+                    topology: PrimitiveTopology::TriangleList,
+                },
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::None,
+                    front_face: FrontFace::Clockwise,
+                },
+                depth_stencil: Some(DepthStencilState {
+                    depth_clamp: false,
+                    depth_test: true,
+                    depth_write: false,
+                    depth_compare: CompareOp::Equal,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }),
+                color_blend: ColorBlendState {
+                    attachments: vec![
+                        // Color
+                        ColorBlendAttachment {
+                            blend: false,
+                            write_mask: ColorComponents::R
+                                | ColorComponents::G
+                                | ColorComponents::B,
+                            ..Default::default()
+                        },
+                        // Thin G
+                        ColorBlendAttachment {
+                            blend: false,
+                            write_mask: ColorComponents::all(),
+                            ..Default::default()
+                        },
+                        // Vel
+                        ColorBlendAttachment {
+                            blend: false,
+                            write_mask: ColorComponents::R | ColorComponents::G,
+                            ..Default::default()
+                        },
+                        // Norm
+                        ColorBlendAttachment {
+                            blend: false,
+                            write_mask: ColorComponents::R
+                                | ColorComponents::G
+                                | ColorComponents::B,
+                            ..Default::default()
+                        },
+                    ],
+                },
+                push_constants_size: Some(
+                    std::mem::size_of::<GpuSkyBoxRenderPushConstants>() as u32
+                ),
+                debug_name: Some(String::from("color_pass_sky_box_pipeline")),
             },
         )
         .unwrap();
@@ -540,6 +632,7 @@ impl ProceduralSkyBox {
 
         Self {
             sky_box_pipeline,
+            color_pass_skybox_pipeline,
             _diffuse_irradiance_samples: diffuse_irradiance_samples,
             di_gather_pipeline,
             di_gather_set,
@@ -794,7 +887,7 @@ impl ProceduralSkyBox {
         camera_set: &'a DescriptorSet,
         sun_direction: Vec3,
     ) {
-        pass.bind_pipeline(self.sky_box_pipeline.clone());
+        pass.bind_pipeline(self.color_pass_skybox_pipeline.clone());
         pass.bind_sets(0, vec![camera_set]);
         let constants = [GpuSkyBoxRenderPushConstants {
             sun_direction: Vec4::from((sun_direction, 0.0)),

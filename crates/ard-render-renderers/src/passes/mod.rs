@@ -36,11 +36,14 @@ pub const COLOR_OPAQUE_PASS_ID: PassId = PassId::new(8);
 /// The alpha-cutoff pass renders only opaque geometry.
 pub const COLOR_ALPHA_CUTOFF_PASS_ID: PassId = PassId::new(9);
 
-/// The transparent pass renders only transparent materials.
-pub const TRANSPARENT_PASS_ID: PassId = PassId::new(10);
+/// Transparent pre-pass that only renders G-buffer values.
+pub const TRANSPARENT_PREPASS_ID: PassId = PassId::new(10);
+
+/// The main transparent pass that renders color.
+pub const TRANSPARENT_COLOR_PASS_ID: PassId = PassId::new(11);
 
 /// Pass used for path tracing.
-pub const PATH_TRACER_PASS_ID: PassId = PassId::new(11);
+pub const PATH_TRACER_PASS_ID: PassId = PassId::new(12);
 
 /// Defines primary passes.
 pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
@@ -107,7 +110,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 1,
+                color_attachment_count: 0,
             },
         )
         .unwrap();
@@ -124,7 +127,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 1,
+                color_attachment_count: 0,
             },
         )
         .unwrap();
@@ -192,7 +195,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 1,
+                color_attachment_count: 4,
             },
         )
         .unwrap();
@@ -209,14 +212,31 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 1,
+                color_attachment_count: 4,
             },
         )
         .unwrap();
 
     factory
         .add_pass(
-            TRANSPARENT_PASS_ID,
+            TRANSPARENT_PREPASS_ID,
+            PassDefinition {
+                layouts: vec![
+                    layouts.color_pass.clone(),
+                    layouts.camera.clone(),
+                    layouts.mesh_data.clone(),
+                    layouts.texture_slots.clone(),
+                    layouts.textures.clone(),
+                ],
+                has_depth_stencil_attachment: true,
+                color_attachment_count: 4,
+            },
+        )
+        .unwrap();
+
+    factory
+        .add_pass(
+            TRANSPARENT_COLOR_PASS_ID,
             PassDefinition {
                 layouts: vec![
                     layouts.transparent_pass.clone(),

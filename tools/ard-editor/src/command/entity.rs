@@ -7,6 +7,7 @@ use ard_engine::{
     },
     ecs::{component::pack::EmptyComponentPack, tag::pack::EmptyTagPack},
     math::Vec3,
+    render::PrevFrameModel,
     save_load::{format::Bincode, save_data::SaveData},
     transform::{Children, Model, Parent, Position, Rotation, Scale, SetParent},
 };
@@ -88,6 +89,7 @@ impl EditorCommand for CreateEmptyEntity {
                 commands.entities.create(
                     (
                         vec![Model::default()],
+                        vec![PrevFrameModel::default()],
                         vec![Position(position.into())],
                         vec![Rotation::default()],
                         vec![Scale::default()],

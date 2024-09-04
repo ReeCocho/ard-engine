@@ -31,8 +31,10 @@ void SMAAMovc(bvec4 cond, inout vec4 variable, vec4 value) {
 }
 
 void main() {
-    // OUT_COLOR = vec4(texture(blend_tex, tex_coord).rgb, 1.0);
-    // return;
+    if (consts.edge_viz != 0) {
+        OUT_COLOR = vec4(texture(blend_tex, tex_coord).rgb, 1.0);
+        return;
+    }
 
     vec4 color;
 

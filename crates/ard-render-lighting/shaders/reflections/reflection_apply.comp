@@ -1,0 +1,29 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_REFLECTION_APPLY 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SsrPushConstants consts;
+};
+
+void main() {
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.canvas_dims))) {
+        return;
+    }
+
+    const ivec2 canvas_texel_center = ivec2(gl_GlobalInvocationID.xy);
+    vec2 target_uv = (vec2(gl_GlobalInvocationID.xy) + vec2(0.5)) * consts.inv_canvas_dims;
+    vec3 base_color = imageLoad(dst_image, canvas_texel_center).rgb;
+    const vec3 kS = imageLoad(thin_g_tex, canvas_texel_center).rgb;
+    vec3 refl_color = kS * texture(src_image, target_uv).rgb;
+
+    imageStore(dst_image, canvas_texel_center, vec4(base_color + refl_color, 1.0));
+}

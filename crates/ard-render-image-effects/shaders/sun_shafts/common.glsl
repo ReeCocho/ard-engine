@@ -89,34 +89,6 @@ vec2 project_uv_to_edge(vec2 start, vec2 pt) {
     const vec2 eq2 = vec2(var, float(top_intersect));
 
     return mix(eq1, eq2, float(top_intersect || bot_intersect));
-    
-    /*
-    // Find the point for the intersecting side where the ray intersects
-    if (top_intersect) {
-        
-        const float t = (1.0 - pt.y) / v_pt.y;
-        const float x = pt.x + (t * v_pt.x);
-        return vec2(x, 1.0);
-    }
-    else if (right_intersect) {
-        
-        const float t = (1.0 - pt.x) / v_pt.x;
-        const float y = pt.y + (t * v_pt.y);
-        return vec2(1.0, y);
-    }
-    else if (bot_intersect) {
-        const float t = (-pt.y) / v_pt.y;
-        const float x = pt.x + (t * v_pt.x);
-        return vec2(x, 0.0);
-    }
-    // Left intersect
-    else {
-
-        const float t = (-pt.x) / v_pt.x;
-        const float y = pt.y + (t * v_pt.y);
-        return vec2(0.0, y);
-    }
-    */
 }
 
 vec2 sample_to_uv(uint line, uint s, vec2 sun_uv) {

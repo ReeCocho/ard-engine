@@ -1,5 +1,6 @@
 use ::serde::{Deserialize, Serialize};
 use ard_ecs::prelude::*;
+use ard_math::Mat4;
 use bitflags::*;
 
 pub mod keys;
@@ -14,3 +15,7 @@ bitflags! {
         const SHADOW_CASTER = 0b0000_0001;
     }
 }
+
+/// Model matrix from last frame. Used to compute velocities.
+#[derive(Component, Deserialize, Serialize, Default, Clone, Copy)]
+pub struct PrevFrameModel(pub Mat4);

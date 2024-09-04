@@ -7,12 +7,12 @@
 /// SET DEF ///
 ///////////////
 
-#if defined(COLOR_PASS)
+#if defined(COLOR_PASS) 
     #define ARD_SET_COLOR_PASS 0
     #define COLOR_PASS
 #endif
 
-#if defined(TRANSPARENT_PASS)
+#if defined(TRANSPARENT_COLOR_PASS)
     #define ARD_SET_TRANSPARENT_PASS 0
     #define COLOR_PASS
 #endif
@@ -37,6 +37,10 @@
     #define ARD_SET_PATH_TRACER_PASS 0
 #endif
 
+#if defined(REFLECTIONS_PASS)
+    #define ARD_SET_REFLECTIONS_PASS 0
+#endif
+
 #define ARD_SET_CAMERA 1
 #define ARD_SET_MESH_DATA 2
 #define ARD_SET_TEXTURE_SLOTS 3
@@ -54,6 +58,9 @@ layout(std430, buffer_reference, buffer_reference_align = 8) readonly buffer Ard
 
 struct MsPayload {
     mat4x3 model;
+#if defined(COLOR_PASS)
+    mat4x3 last_model;
+#endif
     mat3 normal;
     uint object_id;
     uint meshlet_base;
@@ -232,13 +239,12 @@ vec3 light_fragment(
 }
 
 /// Get the cluster ID for the given screen coordinate.
-#if !defined(TASK_SHADER) && !defined(PATH_TRACE_PASS)
+#if !defined(TASK_SHADER) && !defined(PATH_TRACE_PASS) && !defined(REFLECTIONS_PASS)
 uvec3 get_cluster_id(vec2 uv, float depth) {
     return uvec3(
         clamp(uint(uv.x * float(CAMERA_FROXELS_WIDTH)), 0, CAMERA_FROXELS_WIDTH - 1),
         clamp(uint(uv.y * float(CAMERA_FROXELS_HEIGHT)), 0, CAMERA_FROXELS_HEIGHT - 1),
         clamp(
-            // TODO: Multiview
             uint(log(depth) * camera[gl_ViewIndex].cluster_scale_bias.x - camera[gl_ViewIndex].cluster_scale_bias.y), 
             0,
             CAMERA_FROXELS_DEPTH - 1
@@ -247,14 +253,20 @@ uvec3 get_cluster_id(vec2 uv, float depth) {
 }
 #endif
 
+vec4 sample_texture_default_bias(uint id, vec2 uv, float bias, vec4 def) {
+    if (id != EMPTY_TEXTURE_ID) {
+        def = textureLod(textures[min(id, MAX_TEXTURES - 1)], uv, bias);
+    }
+    return def;
+}
+
 /// Samples a texture at a given texture ID. If the texture is unbound, the provided default will
 /// be returned.
 vec4 sample_texture_default(uint id, vec2 uv, vec4 def) {
-    if (id == EMPTY_TEXTURE_ID) {
-        return def;
-    } else {
-        return texture(textures[min(id, MAX_TEXTURES - 1)], uv);
+    if (id != EMPTY_TEXTURE_ID) {
+        def = texture(textures[min(id, MAX_TEXTURES - 1)], uv);
     }
+    return def;
 }
 
 /// Samples a texture at a given slot. Will return `vec4(0)` if the texture is unbound.

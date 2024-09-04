@@ -1,0 +1,276 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_SSR 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+#include "utils.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SsrPushConstants consts;
+};
+
+shared uint s_tile_ty;
+
+#include "reflections/common.glsl"
+
+ivec4 check_hit(vec3 target_pos, float thickness) {
+    // Convert to pixel space and sample depth
+    vec2 uv = (target_pos.xy + vec2(1.0)) * vec2(0.5);
+    uv.y = 1.0 - uv.y;
+
+    const vec2 pixel_loc = uv * vec2(consts.target_dims);
+    const ivec2 pixel_center = ivec2(pixel_loc);
+
+    const float raw_world_depth = texture(depth_tex, uv).r;
+    const float target_depth = camera[0].near_clip / target_pos.z;
+    const float world_depth = camera[0].near_clip / raw_world_depth;
+
+    // If we are behind the depth, and within thickness tolerace, say we've hit our target
+    const float depth_discont = target_depth - world_depth;
+    return ivec4(
+        pixel_center, 
+        int(depth_discont < thickness && depth_discont > 0.0), 
+        floatBitsToInt(world_depth)
+    );
+}
+
+float rand_float(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return float(x) / float(0xffffffffU);
+}
+
+void mark_texel_as_written(const uint tile_id) {
+    const uint arr_idx = gl_LocalInvocationIndex / 32;
+    const uint bit_idx = gl_LocalInvocationIndex - (arr_idx * 32);
+    atomicOr(tiles[tile_id].written[arr_idx], 1 << bit_idx);
+}
+
+void mark_tile_as_hybrid(const uint tile_id) {
+    atomicExchange(tiles[tile_id].ty, TILE_TYPE_HYBRID);
+}
+
+void main() {
+    const uvec2 tile_dims = get_tile_dims();
+    const uvec2 tile_loc = gl_GlobalInvocationID.xy / uvec2(TILE_SIZE);
+    const uint tile_id = (tile_dims.x * tile_loc.y) + tile_loc.x;
+    const ivec2 texel_loc = ivec2(gl_GlobalInvocationID.xy);
+
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.target_dims))) {
+        // OOB is technically "written"
+        mark_texel_as_written(tile_id);
+        return;
+    }
+
+    if (gl_LocalInvocationIndex == 0) {
+        s_tile_ty = tiles[tile_id].ty;
+    }
+
+    barrier();
+
+    const uint tile_ty = s_tile_ty;
+
+    // If the tile is "ignore" we just set everything to black
+    if (tile_ty == TILE_TYPE_IGNORE) {
+        imageStore(dst_image, texel_loc, vec4(0.0));
+        mark_texel_as_written(tile_id);
+    }
+
+    // If this is an ignore or rt tile, we can stop executing now
+    if (tile_ty == TILE_TYPE_IGNORE || tile_ty == TILE_TYPE_RT) {
+        return;
+    }
+
+    vec2 screen_uv = (vec2(texel_loc) + vec2(0.5)) * consts.inv_target_dims;
+    screen_uv = clamp(screen_uv, vec2(0.0), vec2(1.0));
+
+    /*
+    const vec4 thin_g = texelFetch(
+        thin_g_tex, 
+        texel_loc, 
+        0
+    );
+    */
+
+    // Encoded world space normal
+    const vec2 encodedN = texture(vel_norm_tex, screen_uv).ba;
+
+    const float raw_depth = texture(
+        depth_tex, 
+        screen_uv 
+    ).r;
+    const float depth = camera[0].near_clip / raw_depth;
+
+    // Check for bogus rays    
+    if (isinf(depth) || isnan(depth)) {
+        imageStore(dst_image, texel_loc, vec4(0.0));
+        mark_tile_as_hybrid(tile_id);
+        return;
+    }
+
+    // Ray origin in view space
+    vec4 ray_origin_ndc = vec4(
+        (screen_uv.x - 0.5) * 2.0,
+        ((1.0 - screen_uv.y) - 0.5) * 2.0,
+        raw_depth,
+        1.0
+    );
+    vec4 ray_origin = camera[0].projection_inv * ray_origin_ndc;
+    ray_origin /= ray_origin.w;
+
+    // Surface normal in view space
+    const vec3 N = normalize(vec3(
+        encodedN.x,
+        encodedN.y,
+        -sqrt(max(1.0 - dot(encodedN, encodedN), 0.0))
+    ));
+
+    // Offset ray origin to prevent self intersection
+    ray_origin.xyz += N * 0.01;
+
+    // View direction in view space
+    const vec3 V = normalize(ray_origin.xyz);
+
+    // Reflection direction in view space
+    const vec3 R = normalize(reflect(V, N));
+
+    const float coarse_thickness = consts.coarse_thickness;
+
+    // End point in view space
+    vec3 ray_target = ray_origin.xyz + (R * consts.max_distance);
+
+    // Offset ray origin to prevent self collision
+    const uint rand_seed = (consts.target_dims.x * consts.target_dims.y * consts.frame_count)
+        + (texel_loc.y * consts.target_dims.x) 
+        + texel_loc.x;
+    ray_origin.xyz += R * (rand_float(rand_seed) * consts.coarse_thickness);
+    ray_origin_ndc = camera[0].projection * vec4(ray_origin.xyz, 1.0);
+    ray_origin_ndc /= ray_origin_ndc.w;
+
+    // Convert end position into NDC space 
+    vec4 ray_target_ndc = vec4(ray_target, 1.0);
+
+    // Clamp depth to be within the viewport
+    bool clamped = false;
+    if (ray_target_ndc.z < camera[0].near_clip) {
+        clamped = true;
+        const float num = camera[0].near_clip + 0.01 - ray_origin.z;
+        const float den = consts.max_distance * R.z;
+        const float scale_fact = abs(num / den);
+        ray_target = ray_origin.xyz + (R * consts.max_distance * scale_fact);
+        ray_target_ndc = vec4(ray_target, 1.0);
+    }
+
+    // Perspective and coordinate space correction
+    ray_target_ndc = camera[0].projection * vec4(ray_target_ndc.xyz, 1.0);
+    ray_target_ndc /= ray_target_ndc.w;
+
+    // Clamp x and y between -1 and 1
+    vec3 ray_dir = ray_target_ndc.xyz - ray_origin_ndc.xyz;
+
+    const float xside = ray_origin_ndc.x + ray_dir.x;
+    if (abs(xside) > 1.0) {
+        ray_dir *= abs((sign(xside) - ray_origin_ndc.x) / ray_dir.x);
+        clamped = true;
+    }
+    
+    const float yside = ray_origin_ndc.y + ray_dir.y;
+    if(abs(yside) > 1.0) {
+        ray_dir *= abs((sign(yside) - ray_origin_ndc.y) / ray_dir.y);
+        clamped = true;
+    }
+
+    ray_target_ndc = vec4(ray_origin_ndc.xyz + ray_dir, 1.0);
+
+    // Check if the ray is valid 
+    if (any(isnan(ray_target_ndc.xyz)) 
+        || any(isinf(ray_target_ndc.xyz))
+        || ray_target_ndc.z < 0.0
+    ) {
+        imageStore(dst_image, texel_loc, vec4(0.0));
+        mark_tile_as_hybrid(tile_id);
+        return;
+    }
+
+    // Linear trace in screen space
+    ivec4 pixel_loc = ivec4(0);
+    const uint step_range = consts.search_steps;
+    uint search_step = consts.search_skips;
+    vec4 target_pos = ray_origin_ndc;
+
+    for (; search_step < consts.search_steps; ++search_step) {
+        // Compute current ray position
+        const float t_prev = float(search_step) / float(step_range);
+        const float t = float(search_step + 1) / float(step_range);
+
+        const float prev_depth = camera[0].near_clip / target_pos.z;
+        target_pos = mix(ray_origin_ndc, ray_target_ndc, t);
+        const float cur_depth = camera[0].near_clip / target_pos.z;
+        const float thick = abs(cur_depth - prev_depth) + coarse_thickness;
+
+        pixel_loc = check_hit(target_pos.xyz, thick);
+
+        if (bool(pixel_loc.z)) {
+            break;
+        }
+    }
+
+    if (!bool(pixel_loc.z)) {
+        // Check for sky intersection
+        vec4 color = vec4(0.0);
+        if (target_pos.z > 0.0 
+            && !clamped
+            && search_step == consts.search_steps 
+            && isinf(intBitsToFloat(pixel_loc.w))
+        ) {
+            color = vec4(
+                texture(color_tex, vec2(pixel_loc.xy) * consts.inv_target_dims).rgb, 
+                0.0
+            );
+            mark_texel_as_written(tile_id);
+        } else {
+            mark_tile_as_hybrid(tile_id);
+        }
+        imageStore(dst_image, texel_loc, color);
+        return;
+    }
+
+    // If we got a hit, perform a refinement step by searching 
+    // between the last step and where we hit
+    const float before_hit_t = float(search_step) / float(step_range);
+    const float after_hit_t = float(search_step + 1) / float(step_range);
+    const vec4 before_hit = mix(ray_origin_ndc, ray_target_ndc, before_hit_t);
+    const vec4 after_hit = mix(ray_origin_ndc, ray_target_ndc, after_hit_t);
+    target_pos = before_hit;
+    for (uint i = 0; i < consts.refine_steps; ++i) {
+        const float prev_t = float(i) / float(consts.refine_steps);
+        const float t = float(i + 1) / float(consts.refine_steps);
+        const float prev_depth = camera[0].near_clip / target_pos.z;
+        target_pos = mix(before_hit, after_hit, t);
+        const float cur_depth = camera[0].near_clip / target_pos.z;
+        const float thick = abs(cur_depth - prev_depth) + consts.refine_thickness;
+
+        pixel_loc = check_hit(target_pos.xyz, thick);
+
+        if (bool(pixel_loc.z)) {
+            break;
+        }
+    }
+
+    const vec4 out_color = vec4(
+        texture(color_tex, vec2(pixel_loc.xy) * consts.inv_target_dims).rgb,
+        0.0
+    );
+    imageStore(dst_image, texel_loc, out_color);
+    mark_texel_as_written(tile_id);
+}

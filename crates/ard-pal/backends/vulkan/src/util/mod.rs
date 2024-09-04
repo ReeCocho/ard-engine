@@ -388,7 +388,9 @@ pub(crate) fn to_vk_buffer_usage(bu: BufferUsage) -> vk::BufferUsageFlags {
         out |= vk::BufferUsageFlags::TRANSFER_SRC;
     }
     if bu.contains(BufferUsage::INDIRECT_BUFFER) {
-        out |= vk::BufferUsageFlags::INDIRECT_BUFFER;
+        out |= vk::BufferUsageFlags::INDIRECT_BUFFER
+            // RT needs this
+            | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;
     }
     if bu.contains(BufferUsage::DEVICE_ADDRESS) {
         out |= vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS;

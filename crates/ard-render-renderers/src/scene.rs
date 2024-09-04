@@ -23,7 +23,7 @@ use crate::{
         color::ColorPassSets, depth_prepass::DepthPrepassSets, hzb::HzbPassSets,
         transparent::TransparentPassSets, COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID,
         DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID, DEPTH_OPAQUE_PREPASS_PASS_ID, HIGH_Z_PASS_ID,
-        TRANSPARENT_PASS_ID,
+        TRANSPARENT_COLOR_PASS_ID, TRANSPARENT_PREPASS_ID,
     },
 };
 
@@ -304,12 +304,28 @@ impl SceneRenderer {
             meshes: args.meshes,
             materials: args.materials,
         });
+
+        self.bins.render_transparent_bins(RenderArgs {
+            ctx: &self.ctx,
+            pass_id: TRANSPARENT_PREPASS_ID,
+            lock_culling: args.lock_culling,
+            frame,
+            render_area: args.render_area,
+            camera: args.camera,
+            global_set: self.color_sets.get_set(frame),
+            pass: args.pass,
+            mesh_factory: args.mesh_factory,
+            material_factory: args.material_factory,
+            texture_factory: args.texture_factory,
+            meshes: args.meshes,
+            materials: args.materials,
+        });
     }
 
     pub fn render_transparent<'a>(&'a self, frame: Frame, args: SceneRenderArgs<'a, '_>) {
         self.bins.render_transparent_bins(RenderArgs {
             ctx: &self.ctx,
-            pass_id: TRANSPARENT_PASS_ID,
+            pass_id: TRANSPARENT_COLOR_PASS_ID,
             lock_culling: args.lock_culling,
             frame,
             render_area: args.render_area,

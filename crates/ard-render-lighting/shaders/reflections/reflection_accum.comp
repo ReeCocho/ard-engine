@@ -1,0 +1,49 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_REFLECTION_ACCUM 0
+#include "ard_bindings.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+layout(push_constant) uniform constants {
+    SsrPushConstants consts;
+};
+
+void main() {
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.target_dims))) {
+        return;
+    }
+
+    const ivec2 target_texel_center = ivec2(gl_GlobalInvocationID.xy);
+
+    vec3 base_color = imageLoad(dst_image, target_texel_center).rgb;
+    const vec2 vel = texture(
+        vel_tex,
+        (vec2(target_texel_center) + vec2(0.5)) * consts.inv_target_dims
+    ).xy;
+
+    const ivec2 history_offset = ivec2(vel * vec2(consts.target_dims));
+    const ivec2 history_sample = target_texel_center - history_offset;
+    vec4 history = vec4(vec3(0.0), 1.0);
+
+    if (!any(lessThan(history_sample, ivec2(0))) 
+        && !any(greaterThanEqual(history_sample, consts.target_dims))
+    ) {
+        vec3 history_value = imageLoad(history_image, history_sample).rgb;
+        history = vec4(
+            history_value,
+            0.15 + (length(vel) * 4.0)
+        );
+    }
+
+    imageStore(
+        dst_image, 
+        target_texel_center,
+        vec4(mix(history.rgb, base_color, history.a), 0.0)     
+    );
+}

@@ -13,6 +13,9 @@
 #include "utils.glsl"
 
 shared mat4x3 s_model_mat;
+#if defined(COLOR_PASS)
+shared mat4x3 s_last_model_mat;
+#endif
 shared mat3 s_normal_mat;
 shared uint s_object_id;
 shared uint s_vertex_offset;
@@ -43,6 +46,9 @@ void main() {
 
         // Shading properties
         s_model_mat = payload.model;
+#if defined(COLOR_PASS)
+        s_last_model_mat = payload.last_model;
+#endif
         s_normal_mat = payload.normal;
         s_object_id = payload.object_id;
 #if defined(ENTITY_PASS)
@@ -61,6 +67,9 @@ void main() {
 
     // Extract shared values
     const mat4x3 model = s_model_mat;
+#if defined(COLOR_PASS)
+    const mat4x3 last_model = s_last_model_mat;
+#endif
     const mat3 normal_mat = s_normal_mat;
     const uint object_id = s_object_id;
     const uint index_offset = s_index_offset;
@@ -160,12 +169,15 @@ void main() {
         const vec4 ws_frag_pos = vec4(model * ard_position, 1.0);
         const vec4 position = camera[gl_ViewIndex].vp * ws_frag_pos;
 #ifdef COLOR_PASS
+        const vec4 ws_last_frag_pos = vec4(last_model * ard_position, 1.0);
+        const vec4 last_position = camera[gl_ViewIndex].last_vp * ws_last_frag_pos;
         vs_out[vert_idx].view_space_position = camera[gl_ViewIndex].view * ws_frag_pos;
 #endif
 
         gl_MeshVerticesEXT[vert_idx].gl_Position = position;
 #ifdef COLOR_PASS
         vs_out[vert_idx].ndc_position = position;
+        vs_out[vert_idx].ndc_last_position = last_position;
 #endif
         vs_out[vert_idx].world_space_position = ws_frag_pos.xyz;
 

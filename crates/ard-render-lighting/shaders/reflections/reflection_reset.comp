@@ -1,0 +1,25 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_REFLECTION_RESET 0
+#include "ard_bindings.glsl"
+#include "utils.glsl"
+#include "reflections/common.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+void main() {
+    if (gl_GlobalInvocationID != uvec3(0)) {
+        return;
+    }
+
+    // NOTE: x and y are relative texel offset, and z is the tile index.
+    indirect_buffer.x = TILE_SIZE;
+    indirect_buffer.y = TILE_SIZE;
+    indirect_buffer.z = 0;
+    tile_count = 0;
+}

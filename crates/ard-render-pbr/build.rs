@@ -3,12 +3,13 @@ use std::{collections::HashMap, env, ffi::OsStr, io::BufWriter, path::PathBuf};
 use ard_formats::vertex::VertexLayout;
 use ard_pal::prelude::ShaderStage;
 use ard_render_base::{shader_variant::ShaderVariant, RenderingMode};
+use ard_render_lighting::reflections::REFLECTIONS_PASS_ID;
 use ard_render_material::factory::PassId;
 use ard_render_renderers::passes::{
     COLOR_ALPHA_CUTOFF_PASS_ID, COLOR_OPAQUE_PASS_ID, DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID,
     DEPTH_OPAQUE_PREPASS_PASS_ID, ENTITIES_ALPHA_CUTOFF_PASS_ID, ENTITIES_OPAQUE_PASS_ID,
     ENTITIES_TRANSPARENT_PASS_ID, HIGH_Z_PASS_ID, PATH_TRACER_PASS_ID, SHADOW_ALPHA_CUTOFF_PASS_ID,
-    SHADOW_OPAQUE_PASS_ID, TRANSPARENT_PASS_ID,
+    SHADOW_OPAQUE_PASS_ID, TRANSPARENT_COLOR_PASS_ID, TRANSPARENT_PREPASS_ID,
 };
 
 fn main() {
@@ -141,21 +142,39 @@ fn main() {
             stage: ShaderStage::AllGraphics,
             rendering_mode: RenderingMode::AlphaCutout,
         },
-        // Transparent passes
         ShaderVariant {
-            pass: usize::from(TRANSPARENT_PASS_ID),
+            pass: usize::from(TRANSPARENT_PREPASS_ID),
             vertex_layout: VertexLayout::empty(),
             stage: ShaderStage::AllGraphics,
             rendering_mode: RenderingMode::Transparent,
         },
         ShaderVariant {
-            pass: usize::from(TRANSPARENT_PASS_ID),
+            pass: usize::from(TRANSPARENT_PREPASS_ID),
             vertex_layout: VertexLayout::UV0,
             stage: ShaderStage::AllGraphics,
             rendering_mode: RenderingMode::Transparent,
         },
         ShaderVariant {
-            pass: usize::from(TRANSPARENT_PASS_ID),
+            pass: usize::from(TRANSPARENT_PREPASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
+        },
+        // Transparent color passes
+        ShaderVariant {
+            pass: usize::from(TRANSPARENT_COLOR_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
+        },
+        ShaderVariant {
+            pass: usize::from(TRANSPARENT_COLOR_PASS_ID),
+            vertex_layout: VertexLayout::UV0,
+            stage: ShaderStage::AllGraphics,
+            rendering_mode: RenderingMode::Transparent,
+        },
+        ShaderVariant {
+            pass: usize::from(TRANSPARENT_COLOR_PASS_ID),
             vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
             stage: ShaderStage::AllGraphics,
             rendering_mode: RenderingMode::Transparent,
@@ -197,6 +216,43 @@ fn main() {
             stage: ShaderStage::RayClosestHit,
             rendering_mode: RenderingMode::Transparent,
         },
+        // Reflections
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::empty(),
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Transparent,
+        },
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Opaque,
+        },
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::AlphaCutout,
+        },
+        ShaderVariant {
+            pass: usize::from(REFLECTIONS_PASS_ID),
+            vertex_layout: VertexLayout::UV0 | VertexLayout::TANGENT,
+            stage: ShaderStage::RayClosestHit,
+            rendering_mode: RenderingMode::Transparent,
+        },
     ];
 
     let mut out = HashMap::default();
@@ -227,16 +283,23 @@ fn compile_shader_variant(
             HIGH_Z_PASS_ID => "HIGH_Z_PASS",
             SHADOW_OPAQUE_PASS_ID | SHADOW_ALPHA_CUTOFF_PASS_ID => "SHADOW_PASS",
             DEPTH_OPAQUE_PREPASS_PASS_ID | DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID => "DEPTH_PREPASS",
-            COLOR_OPAQUE_PASS_ID | COLOR_ALPHA_CUTOFF_PASS_ID => "COLOR_PASS",
+            COLOR_OPAQUE_PASS_ID | COLOR_ALPHA_CUTOFF_PASS_ID | TRANSPARENT_PREPASS_ID => {
+                "COLOR_PASS"
+            }
             ENTITIES_OPAQUE_PASS_ID
             | ENTITIES_ALPHA_CUTOFF_PASS_ID
             | ENTITIES_TRANSPARENT_PASS_ID => "ENTITY_PASS",
-            TRANSPARENT_PASS_ID => "TRANSPARENT_PASS",
+            TRANSPARENT_COLOR_PASS_ID => "TRANSPARENT_COLOR_PASS",
             PATH_TRACER_PASS_ID => "PATH_TRACE_PASS",
+            REFLECTIONS_PASS_ID => "REFLECTIONS_PASS",
             _ => unreachable!("must implement for all passes"),
         }
         .into(),
     );
+
+    if PassId::new(variant.pass) == TRANSPARENT_PREPASS_ID {
+        defines.push("TRANSPARENT_PREPASS".into());
+    }
 
     match PassId::new(variant.pass) {
         DEPTH_ALPHA_CUTOFF_PREPASS_PASS_ID
@@ -266,6 +329,18 @@ fn compile_shader_variant(
             let out_dir = PathBuf::from(&out_dir).join("pbr.rchit.spv");
             ard_render_codegen::vulkan_spirv::compile_shader(
                 "./shaders/pbr.rchit",
+                &out_dir,
+                &["./shaders/", "../ard-render/shaders/"],
+                &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            );
+
+            let bin = std::fs::read(out_dir).unwrap();
+            out.insert(variant, bin);
+        }
+        REFLECTIONS_PASS_ID => {
+            let out_dir = PathBuf::from(&out_dir).join("pbr.refl.rchit.spv");
+            ard_render_codegen::vulkan_spirv::compile_shader(
+                "./shaders/pbr.refl.rchit",
                 &out_dir,
                 &["./shaders/", "../ard-render/shaders/"],
                 &defines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),

@@ -9,8 +9,17 @@ pub struct RayTracingPass<'a, B: Backend> {
     pub(crate) commands: Vec<Command<'a, B>>,
 }
 
+pub enum RayTracingDispatchSource<'a, B: Backend> {
+    Inline(u32, u32, u32),
+    Indirect {
+        buffer: &'a Buffer<B>,
+        array_element: usize,
+        offset: u64,
+    },
+}
+
 pub struct RayTracingDispatch<'a, B: Backend> {
-    pub dims: (u32, u32, u32),
+    pub src: RayTracingDispatchSource<'a, B>,
     pub shader_binding_table: &'a Buffer<B>,
     pub raygen_offset: u64,
     pub miss_offset: u64,

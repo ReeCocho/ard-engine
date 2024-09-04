@@ -15,6 +15,7 @@ use api::{
     graphics_pipeline::{GraphicsPipelineCreateError, GraphicsPipelineCreateInfo},
     queue::SurfacePresentFailure,
     render_pass::{ColorAttachmentDestination, DepthStencilAttachmentDestination},
+    rt_pass::RayTracingDispatchSource,
     rt_pipeline::{
         RayTracingPipelineCreateError, RayTracingPipelineCreateInfo, ShaderBindingTableData,
     },
@@ -836,7 +837,8 @@ impl VulkanBackend {
             .sample_rate_shading(true)
             .sampler_anisotropy(true)
             .shader_int64(true)
-            .shader_int16(true);
+            .shader_int16(true)
+            .independent_blend(true);
 
         let mut features11 = vk::PhysicalDeviceVulkan11Features::default()
             .multiview(true)
@@ -861,7 +863,8 @@ impl VulkanBackend {
 
         let mut rt_features = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
             .ray_tracing_pipeline(true)
-            .ray_traversal_primitive_culling(true);
+            .ray_traversal_primitive_culling(true)
+            .ray_tracing_pipeline_trace_rays_indirect(true);
 
         let mut as_features = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default()
             .acceleration_structure(true);
@@ -2232,16 +2235,38 @@ impl VulkanBackend {
                         .stride(entry_size)
                         .size(dispatch.hit_range.end - dispatch.hit_range.start);
 
-                    rt_loader.cmd_trace_rays(
-                        cb,
-                        &raygen_region,
-                        &miss_region,
-                        &hit_region,
-                        &vk::StridedDeviceAddressRegionKHR::default(),
-                        dispatch.dims.0,
-                        dispatch.dims.1,
-                        dispatch.dims.2,
-                    );
+                    match dispatch.src {
+                        RayTracingDispatchSource::Inline(x, y, z) => {
+                            rt_loader.cmd_trace_rays(
+                                cb,
+                                &raygen_region,
+                                &miss_region,
+                                &hit_region,
+                                &vk::StridedDeviceAddressRegionKHR::default(),
+                                x,
+                                y,
+                                z,
+                            );
+                        }
+                        RayTracingDispatchSource::Indirect {
+                            buffer,
+                            array_element,
+                            offset,
+                        } => {
+                            rt_loader.cmd_trace_rays_indirect(
+                                cb,
+                                &raygen_region,
+                                &miss_region,
+                                &hit_region,
+                                &vk::StridedDeviceAddressRegionKHR::default(),
+                                buffer
+                                    .internal()
+                                    .device_address(device, array_element)
+                                    .device_address
+                                    + offset,
+                            );
+                        }
+                    }
 
                     if debug_name.is_some() {
                         if let Some(debug) = debug {

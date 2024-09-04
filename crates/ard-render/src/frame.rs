@@ -8,7 +8,7 @@ use ard_render_camera::active::ActiveCameras;
 use ard_render_debug::buffer::DebugVertexBuffer;
 use ard_render_gui::GuiRunOutput;
 use ard_render_image_effects::{
-    ao::AoSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
+    ao::AoSettings, lxaa::LxaaSettings, smaa::SmaaSettings, sun_shafts2::SunShaftsSettings,
     tonemapping::TonemappingSettings,
 };
 use ard_render_lighting::lights::Lights;
@@ -47,6 +47,7 @@ pub struct FrameDataInner {
     pub ao_settings: AoSettings,
     pub sun_shafts_settings: SunShaftsSettings,
     pub smaa_settings: SmaaSettings,
+    pub lxaa_settings: LxaaSettings,
     pub msaa_settings: MsaaSettings,
     pub debug_settings: DebugSettings,
     pub path_tracer_settings: PathTracerSettings,

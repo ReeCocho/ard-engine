@@ -5,11 +5,11 @@
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_buffer_reference : require
 
-#define PATH_TRACE_PASS
+#define REFLECTIONS_PASS
 #include "pbr_common.glsl"
 #include "pbr_common.rt.glsl"
 
-layout(location = 0) rayPayloadInEXT PathTracerPayload hit_value;
+layout(location = 0) rayPayloadInEXT RtReflectionsPayload hit_value;
 hitAttributeEXT vec2 attribs;
 
 void main() {
@@ -38,15 +38,29 @@ void main() {
 
     // Sample textures
     #if ARD_VS_HAS_UV0
-        vec4 color = sample_texture_default(color_tex, verts.uv0, vec4(1.0)) * mat_data.color;
-        vec3 N = sample_texture_default(normal_tex, verts.uv0, vec4(0.5, 0.5, 1.0, 0.0)).xyz;
-        const vec4 mr_map = sample_texture_default(mr_tex, verts.uv0, vec4(1.0));
+        // TODO: Maybe make this configurable?
+        const float tex_lod = gl_HitTEXT * 0.12;
+        vec4 color = sample_texture_default_bias(
+            color_tex, 
+            verts.uv0, 
+            tex_lod,
+            vec4(1.0)
+        ) * mat_data.color;
+        vec3 N = sample_texture_default_bias(
+            normal_tex, 
+            verts.uv0, 
+            tex_lod,
+            vec4(0.5, 0.5, 1.0, 0.0)
+        ).xyz;
+        const vec4 mr_map = sample_texture_default_bias(mr_tex, verts.uv0, tex_lod, vec4(1.0));
     #else
         vec4 color = mat_data.color;
         vec3 N = vec3(0.5, 0.5, 1.0);
         const vec4 mr_map = vec4(1.0);
     #endif
 
+    const vec3 hit_loc = (gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT) 
+        + (N * 0.02);
     const vec3 V = -normalize(gl_WorldRayDirectionEXT);
 
     const mat3 TBN = mat3(
@@ -64,45 +78,21 @@ void main() {
 
     const float ndotv = max(dot(N, V), 0.0);
     vec3 F0 = vec3(0.04);
-
-    // Decide if we're lambertian (alternative is specular/metallic)
-    const bool lambertian = is_lambertian(
-        ndotv,
-        metallic,
-        roughness,
-        color.rgb,
-        vec3(0.04),
-        rng_state
-    );
-
-    // Upate F0 based on metallicness
     F0 = mix(F0, color.rgb, metallic);
 
-    // Compute BRDF/PDF for the sun direction
-    hit_value.in_brdf_pdf = compute_brdf_pdf(sun_dir, N, V, color.rgb, F0, roughness, metallic);
-    
-    // Generate a new ray direction and position and apply BRDF
-    vec3 L = vec3(0.0);
-    vec3 H = vec3(0.0);
-    float pdf = 0.0;
-    const vec2 rand_vec = vec2(rng_float(rng_state), rng_float(rng_state));
+    vec4 brdf = compute_brdf_pdf(sun_dir, N, V, color.rgb, F0, roughness, metallic);
 
-    // Compute L and H based on our BRDF
-    if (lambertian) {
-        L = normalize(TBN * get_cosine_hemisphere(rand_vec));
-        H = normalize(L + V);
-    } else {
-        H = normalize(TBN * get_ggx_microfacet(rand_vec, roughness));
-        L = normalize(reflect(-V, H));
-    }
+    // Ambient lighting
+    const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
+    const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
 
-    // Compute BRDF/PDF for the random direction
-    hit_value.out_brdf_pdf = compute_brdf_pdf(L, N, V, color.rgb, F0, roughness, metallic);
+    const vec3 diffuse = color.rgb
+        * texture(di_map, N).rgb 
+        * global_lighting.ambient_color_intensity.rgb;
+    const vec3 ambient = global_lighting.ambient_color_intensity.a * kD * diffuse;
 
-    hit_value.sun_dir = vec4(L, 0.0);
-    hit_value.rng_state = rng_state;
+    hit_value.emissive = vec4(ambient, 0.0);
+    hit_value.brdf = vec4(brdf.rgb, 1.0);
+    hit_value.location = vec4(hit_loc, 1.0);
     hit_value.hit = 1;
-    hit_value.location = vec4(
-        (gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT) + (N * 0.02), 1.0
-    );
 }

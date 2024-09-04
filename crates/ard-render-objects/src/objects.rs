@@ -19,7 +19,7 @@ use ard_render_meshes::mesh::{Mesh, MeshResource};
 use ard_transform::Model;
 use rustc_hash::FxHashMap;
 
-use crate::{keys::DrawKey, RenderFlags};
+use crate::{keys::DrawKey, PrevFrameModel, RenderFlags};
 use ard_render_si::types::GpuObjectData;
 
 const BASE_BLOCK_COUNT: usize = 64;
@@ -161,6 +161,7 @@ impl RenderObjects {
                     &'a Mesh,
                     &'a MaterialInstance,
                     &'a Model,
+                    &'a PrevFrameModel,
                     &'a RenderingMode,
                     &'a RenderFlags,
                 ),
@@ -230,7 +231,7 @@ impl RenderObjects {
                 Self::write_renderable(
                     frame,
                     e,
-                    (mesh, mat, mdl, mode, flags),
+                    (mesh, mat, mdl, &PrevFrameModel(mdl.0), mode, flags),
                     self.static_objects.get_mut(&group).unwrap(),
                 );
             }
@@ -250,14 +251,14 @@ impl RenderObjects {
 
         // Write in dynamic geometry
         self.dynamic_objects.clear();
-        for (e, (mesh, mat, mdl, mode, flags), disabled) in dynamic_objs {
+        for (e, (mesh, mat, mdl, prev_mdl, mode, flags), disabled) in dynamic_objs {
             if disabled.is_some() {
                 continue;
             }
             Self::write_renderable(
                 frame,
                 e,
-                (mesh, mat, mdl, mode, flags),
+                (mesh, mat, mdl, prev_mdl, mode, flags),
                 &mut self.dynamic_objects,
             );
         }
@@ -293,12 +294,13 @@ impl RenderObjects {
             &Mesh,
             &MaterialInstance,
             &Model,
+            &PrevFrameModel,
             &RenderingMode,
             &RenderFlags,
         ),
         set: &mut ObjectSet,
     ) {
-        let (mesh, mat, mdl, mode, flags) = query;
+        let (mesh, mat, mdl, prev_mdl, mode, flags) = query;
         let mdl_inv = mdl.0.inverse();
 
         // Transform the bounding sphere to be in world space
@@ -325,6 +327,7 @@ impl RenderObjects {
             shader_flags: (sbt as u32 & 0xFFFFFF) | (1 << 24),
             blas,
             // Our stuff
+            prev_model: [prev_mdl.0.row(0), prev_mdl.0.row(1), prev_mdl.0.row(2)],
             model_inv: [mdl_inv.row(0), mdl_inv.row(1), mdl_inv.row(2)],
             mesh: usize::from(mesh.id()) as u16,
             textures: mat

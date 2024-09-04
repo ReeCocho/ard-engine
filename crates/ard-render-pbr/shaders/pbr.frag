@@ -7,8 +7,13 @@
 #include "pbr_common.glsl"
 #include "utils.glsl"
 
-#ifdef COLOR_PASS
+#if defined(COLOR_PASS) || defined(TRANSPARENT_PREPASS)
     layout(location = 0) out vec4 OUT_COLOR;
+#if !defined(TRANSPARENT_COLOR_PASS)
+    layout(location = 1) out vec4 OUT_KS_RGH;
+    layout(location = 2) out vec4 OUT_VEL;
+    layout(location = 3) out vec4 OUT_NORM;
+#endif
 #endif
 
 #ifdef ENTITY_PASS
@@ -16,7 +21,6 @@
 #endif
 
 #if defined(DEPTH_PREPASS)
-    layout(location = 0) out vec4 OUT_NORMAL_SPEC;
 #endif
 
 ////////////////////
@@ -89,23 +93,42 @@ void main() {
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, color.rgb, metallic);
 
-#if defined(DEPTH_PREPASS)
-    // Output thin G buffer. Normals are in XYZ. Specular ratio is in W.
-    // Since the output is snorm, we scale specular to go from -1 to 1, with -1 mapping
-    // to 0 and 1 mapping to 1.
-    const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
-    const float max_spec = max(kS.r, max(kS.g, kS.b));
-    OUT_NORMAL_SPEC = vec4(N, (max_spec * 2.0) - 1.0);
-#else
     // Everything past here is for color passes only
+#if !defined(DEPTH_PREPASS)
+    // For ambient lighting
+    const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
+    const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
 
-    // Reflection vector modified based on roughness
-    vec3 R = reflect(-V, N);
-    const float fa = roughness * roughness;
-    R = mix(N, R, (1.0 - fa) * (sqrt(1.0 - fa) + fa));
+    const vec2 ndc_position = vs_in.ndc_position.xy / vs_in.ndc_position.w;
 
-    // Default color is black
-    vec4 final_color = vec4(0.0, 0.0, 0.0, color.a);
+#if !defined(TRANSPARENT_COLOR_PASS)
+    vec2 last_pos = vs_in.ndc_last_position.xy / vs_in.ndc_last_position.w;
+    last_pos.y = -last_pos.y;
+    last_pos = (last_pos + vec2(1.0)) * vec2(0.5);
+
+    vec2 cur_pos = ndc_position;
+    cur_pos.y = -cur_pos.y;
+    cur_pos = (cur_pos + vec2(1.0)) * vec2(0.5);
+
+    OUT_KS_RGH = vec4(kS, roughness);
+    OUT_VEL = vec4(cur_pos - last_pos, 0.0, 0.0);
+    OUT_NORM = vec4(N.xyz, 0.0);
+#endif
+
+#if !defined(TRANSPARENT_PREPASS)
+    const vec2 screen_uv = ndc_position * vec2(0.5) + vec2(0.5);
+
+    // Default color is ambient
+    const vec3 diffuse = color.rgb
+        * texture(di_map, N).rgb 
+        * global_lighting.ambient_color_intensity.rgb;
+
+    const vec3 ambient = global_lighting.ambient_color_intensity.a * kD * diffuse;
+
+    vec4 final_color = vec4(
+        texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r * vec3(ambient),
+        color.a
+    );
 
     // Lighting from the sun
     const vec3 frag_to_sun = -normalize(global_lighting.sun_direction.xyz);
@@ -122,7 +145,6 @@ void main() {
     ), 0.0);
 
     // Lighting from point lights
-    const vec2 screen_uv = (vs_in.ndc_position.xy / vs_in.ndc_position.w) * vec2(0.5) + vec2(0.5);
     const float screen_depth = (vs_in.ndc_position.w * camera[gl_ViewIndex].near_clip) 
         / vs_in.ndc_position.z;
     const uvec3 cluster = get_cluster_id(screen_uv, screen_depth);
@@ -154,34 +176,26 @@ void main() {
         light_idx = light_table.clusters[cluster.z][cluster.x][cluster.y][light_index];
     }
 
-    // Ambient lighting
-    const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
-    const vec3 kD = (1.0 - metallic) * (vec3(1.0) - kS);
-
-    const vec3 diffuse = color.rgb
-        * texture(di_map, N).rgb 
-        * global_lighting.ambient_color_intensity.rgb;
-
+    /*
+    // Reflection vector modified based on roughness
+    vec3 R = reflect(-V, N);
+    const float fa = roughness * roughness;
+    R = mix(N, R, (1.0 - fa) * (sqrt(1.0 - fa) + fa));
     const float REFLECTION_LODS = float(textureQueryLevels(env_map) - 1);
     const vec3 prefiltered_color = 
         textureLod(env_map, R, roughness * REFLECTION_LODS).rgb 
         * global_lighting.ambient_color_intensity.rgb;
     const vec2 env_brdf = texture(brdf_lut, vec2(max(dot(N, V), 0.0), roughness)).rg;
     const vec3 specular = prefiltered_color * (kS * env_brdf.x + env_brdf.y);
+    */
 
-    const vec3 ambient = global_lighting.ambient_color_intensity.a * (kD * diffuse + specular);
-    final_color += vec4(ambient, 0.0);
+    // NOTE: Old `ambient` that included the specular term 
+    // global_lighting.ambient_color_intensity.a * (kD * diffuse + specular);
+    
+    // Ambient occlusion term used here
 
-    // Ambient occlusion
-    final_color.rgb = texture(ao_image, vec2(screen_uv.x, 1.0 - screen_uv.y)).r * final_color.rgb;
-    // final_color = vec4(vec3(ambient_attenuation), 1.0);
-
-    #if ARD_VS_HAS_TANGENT && ARD_VS_HAS_UV0
-    // OUT_COLOR = vec4((vs_in.tangent * 0.5) + vec3(0.5), 1.0);
     OUT_COLOR = final_color;
-    #else
-    OUT_COLOR = final_color;
-    #endif
+#endif
 #endif
 #endif
 }

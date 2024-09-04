@@ -13,6 +13,10 @@ ard-transform = { path = "../ard-transform" }
 ard-render-camera = { path = "../ard-render-camera" }
 ard-render-base = { path = "../ard-render-base" }
 ard-render-objects = { path = "../ard-render-objects" }
+ard-render-material = { path = "../ard-render-material" }
+ard-render-meshes = { path = "../ard-render-meshes" }
+ard-render-textures = { path = "../ard-render-textures" }
+ard-render-raytracing = { path = "../ard-render-raytracing" }
 ard-render-si = { path = "../ard-render-si" }
 bytemuck.workspace = true
 rustc-hash.workspace = true

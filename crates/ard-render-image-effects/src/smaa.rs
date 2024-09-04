@@ -9,6 +9,7 @@ use ordered_float::NotNan;
 #[derive(Copy, Clone, Resource)]
 pub struct SmaaSettings {
     pub enabled: bool,
+    pub edge_visualization: bool,
 }
 
 pub struct Smaa {
@@ -48,7 +49,10 @@ pub const SMAA_SAMPLER: Sampler = Sampler {
 
 impl Default for SmaaSettings {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: false,
+            edge_visualization: false,
+        }
     }
 }
 
@@ -508,6 +512,7 @@ impl Smaa {
         frame: Frame,
         commands: &mut CommandBuffer<'a>,
         dst: ColorAttachmentDestination<'a>,
+        edges_only: bool,
     ) {
         let frame = usize::from(frame);
 
@@ -521,6 +526,7 @@ impl Smaa {
                 height as f32,
             ),
             screen_dims: UVec2::new(width, height),
+            edge_viz: edges_only as u32,
         }];
 
         // Reset edge counter and indirect dispatch buffer

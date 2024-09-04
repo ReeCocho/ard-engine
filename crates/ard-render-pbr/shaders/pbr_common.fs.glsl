@@ -11,6 +11,7 @@ layout(location = 0) in DataBlock {
     flat uvec4 slots;
 #ifdef COLOR_PASS
     vec4 ndc_position;
+    vec4 ndc_last_position;
     vec4 view_space_position;
 #endif
     vec3 world_space_position;

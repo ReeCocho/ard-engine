@@ -444,6 +444,19 @@ impl Format {
     }
 }
 
+impl MultiSamples {
+    #[inline(always)]
+    pub fn count(&self) -> usize {
+        match self {
+            MultiSamples::Count1 => 1,
+            MultiSamples::Count2 => 2,
+            MultiSamples::Count4 => 4,
+            MultiSamples::Count8 => 8,
+            MultiSamples::Count16 => 16,
+        }
+    }
+}
+
 impl From<QueueType> for QueueTypes {
     fn from(value: QueueType) -> Self {
         match value {
