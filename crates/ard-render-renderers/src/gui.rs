@@ -122,6 +122,7 @@ impl GuiRenderer {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::Clockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: None,
                 color_blend: ColorBlendState {

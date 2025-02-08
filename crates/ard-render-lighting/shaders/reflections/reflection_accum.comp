@@ -14,36 +14,56 @@ layout(push_constant) uniform constants {
     SsrPushConstants consts;
 };
 
+#include "reflections/common.glsl"
+
+bool is_texel_written(const uint tile_id, const uvec2 local_id) {
+    const uint lin_id = (local_id.y * TILE_SIZE) + local_id.x;
+    const uint arr_idx = lin_id / 32;
+    const uint bit_idx = lin_id - (arr_idx * 32);
+    return (tiles[tile_id].written[arr_idx] & (1 << bit_idx)) != 0;
+}
+
 void main() {
     if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.target_dims))) {
         return;
     }
 
+    const uint tile_id = (gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x;
     const ivec2 target_texel_center = ivec2(gl_GlobalInvocationID.xy);
+    const vec2 screen_uv = (vec2(target_texel_center) + vec2(0.5)) * consts.inv_target_dims;
+    vec2 vel = texture(vel_tex, screen_uv).xy;
+    const float center_depth = consts.camera_near_clip / texture(depth_tex, screen_uv).x;
 
-    vec3 base_color = imageLoad(dst_image, target_texel_center).rgb;
-    const vec2 vel = texture(
-        vel_tex,
-        (vec2(target_texel_center) + vec2(0.5)) * consts.inv_target_dims
-    ).xy;
+    const uint written = bitCount(tiles[tile_id].written[0]) + bitCount(tiles[tile_id].written[1]);
+    // vel /= 1.0 + (float(tiles[tile_id].ray_len_sum) / float(written + RAY_LEN_SCALE_FACT)) * 0.01;
+
+    float blend = 0.0;
+
+    vec3 base_color = vec3(0.0);
+    if (is_texel_written(tile_id, gl_LocalInvocationID.xy)) {
+        base_color = imageLoad(dst_image, target_texel_center).rgb;
+        blend = 0.15 + (length(vel) * 4.0);
+    }
 
     const ivec2 history_offset = ivec2(vel * vec2(consts.target_dims));
     const ivec2 history_sample = target_texel_center - history_offset;
-    vec4 history = vec4(vec3(0.0), 1.0);
+    const float history_depth = consts.camera_near_clip 
+        / texture(depth_tex, vec2(history_sample) * consts.inv_target_dims).r;
 
+    vec3 history = vec3(0.0);
     if (!any(lessThan(history_sample, ivec2(0))) 
         && !any(greaterThanEqual(history_sample, consts.target_dims))
     ) {
-        vec3 history_value = imageLoad(history_image, history_sample).rgb;
-        history = vec4(
-            history_value,
-            0.15 + (length(vel) * 4.0)
-        );
+        history = imageLoad(history_image, history_sample).rgb;
+    } else {
+        blend = 1.0;
     }
+
+    blend = mix(1.0, blend, 1.0 / (1.0 + (abs(center_depth - history_depth) * 10.0)));
 
     imageStore(
         dst_image, 
         target_texel_center,
-        vec4(mix(history.rgb, base_color, history.a), 0.0)     
+        vec4(mix(history.rgb, base_color, clamp(blend, 0.0, 1.0)), 0.0)     
     );
 }

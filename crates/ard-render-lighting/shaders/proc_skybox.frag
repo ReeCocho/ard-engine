@@ -14,6 +14,7 @@ layout(location = 0) out vec4 FRAGMENT_COLOR;
 layout(location = 1) out vec4 OUT_KS_RGH;
 layout(location = 2) out vec4 OUT_VEL;
 layout(location = 3) out vec4 OUT_NORM;
+layout(location = 4) out vec4 OUT_TAN;
 #endif
 
 layout(location = 0) in vec3 DIR;
@@ -44,5 +45,6 @@ void main() {
     OUT_KS_RGH = vec4(0.0);
     OUT_VEL = vec4(cur_pos - prv_pos, 0.0, 0.0);
     OUT_NORM = vec4(0.0);
+    OUT_TAN = vec4(0.0);
 #endif
 }

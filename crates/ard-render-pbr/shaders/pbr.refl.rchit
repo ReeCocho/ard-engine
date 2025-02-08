@@ -81,6 +81,7 @@ void main() {
     F0 = mix(F0, color.rgb, metallic);
 
     vec4 brdf = compute_brdf_pdf(sun_dir, N, V, color.rgb, F0, roughness, metallic);
+    const float pdf = get_ggx_pdf(N, normalize(sun_dir + V), V, roughness);
 
     // Ambient lighting
     const vec3 kS = specular_f_roughness(max(dot(N, V), 0.0), F0, roughness);
@@ -92,7 +93,7 @@ void main() {
     const vec3 ambient = global_lighting.ambient_color_intensity.a * kD * diffuse;
 
     hit_value.emissive = vec4(ambient, 0.0);
-    hit_value.brdf = vec4(brdf.rgb, 1.0);
+    hit_value.brdf = vec4(brdf.rgb, pdf);
     hit_value.location = vec4(hit_loc, 1.0);
     hit_value.hit = 1;
 }

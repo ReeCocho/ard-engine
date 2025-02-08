@@ -1,0 +1,146 @@
+#version 450 core
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define ARD_SET_REFLECTIONS_RAY_GEN 0
+#define ARD_SET_CAMERA 1
+#include "ard_bindings.glsl"
+#include "pbr_common.rt.glsl"
+#include "utils.glsl"
+
+layout(push_constant) uniform constants {
+    ReflectionRayGenPushConstants consts;
+};
+
+#include "reflections/common.glsl"
+
+layout(local_size_x_id = 0) in;
+layout(local_size_y_id = 1) in;
+layout(local_size_z_id = 2) in;
+
+shared uint s_ray_count;
+shared uint[2] s_written_texels;
+
+void mark_texel_written(const uvec2 local_id) {
+    const uint lin_id = (local_id.y * TILE_SIZE) + local_id.x;
+    const uint arr_idx = lin_id / 32;
+    const uint bit_idx = lin_id - (arr_idx * 32);
+    atomicOr(s_written_texels[arr_idx], 1 << bit_idx);
+}
+
+void gen_ray(const uint valid_mask) {
+    const uvec2 inner_coord = gl_LocalInvocationID.xy;
+    const uint local_idx = (inner_coord.y * TILE_SIZE) 
+        + ((inner_coord.y & 1) == 0 ? inner_coord.x : ((TILE_SIZE - 1) - inner_coord.x))
+        + consts.frame_count;
+    
+    if ((valid_mask & local_idx) != 0) {
+        return;
+    }
+
+    const uvec2 texel_loc = gl_GlobalInvocationID.xy;
+
+    if (any(greaterThanEqual(texel_loc, consts.target_dims))) {
+        return;
+    }
+
+    const vec2 screen_uv = (vec2(texel_loc) + vec2(0.5)) * consts.inv_target_dims;
+    const float raw_depth = texture(depth_tex, screen_uv).r;
+
+    if (raw_depth == 0.0) {
+        return;
+    }
+
+    // Ray is valid, so we attempt to allocate
+    const uint ray_idx = atomicAdd(global_ray_count, 1);
+    if (ray_idx >= consts.ray_budget) {
+        atomicAdd(global_ray_count, -1);
+        return;
+    }
+    atomicAdd(indirect_buffer.x, 1);
+
+    vec4 ray_origin = vec4(
+        (screen_uv.x - 0.5) * 2.0,
+        ((1.0 - screen_uv.y) - 0.5) * 2.0,
+        raw_depth,
+        1.0
+    );
+    ray_origin = camera[0].vp_inv * ray_origin;
+    ray_origin /= ray_origin.w;
+
+    const float roughness = texture(thin_g_tex, screen_uv).a;
+
+    const vec3 N = normalize(texture(norm_tex, screen_uv).xyz);
+    ray_origin.xyz += N * 0.01;
+
+    const vec3 V = normalize(ray_origin.xyz - camera[0].position.xyz);
+    const vec3 R = normalize(reflect(V, N));
+
+    vec3 T = normalize(texture(tan_tex, screen_uv).xyz);
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = normalize(cross(N, T));
+
+    const mat3 TBN = mat3(T, B, N);
+
+    uint rng_state = (consts.target_dims.x * consts.target_dims.y * consts.frame_count)
+        + (gl_GlobalInvocationID.y * consts.target_dims.x)
+        + gl_GlobalInvocationID.x;
+    const vec2 rand_vec = vec2(rng_float(rng_state), rng_float(rng_state));
+
+    const vec3 H = normalize(TBN * get_ggx_microfacet(rand_vec, roughness));
+    const vec3 L = normalize(reflect(V, H));
+
+    ReflectionRay ray;
+    ray.origin_ray = uvec4(
+        floatBitsToUint(ray_origin.x),
+        floatBitsToUint(ray_origin.y),
+        floatBitsToUint(ray_origin.z),
+        packUnorm2x16(oct_encode(L))
+    );
+    ray.texel = (texel_loc.x << 16) | texel_loc.y;
+
+    global_rays[ray_idx] = ray;
+    mark_texel_written(inner_coord);
+}
+
+void main() {
+    const uint tile_id = (gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x;
+
+    // Normalize kS value for this tile and allocate rays 
+    if (gl_LocalInvocationIndex == 0) {
+        // Allocate rays based on this tiles kS value
+        float normalized_ks = tiles[tile_id].max_ks 
+            / (float(global_ks_sum) / 255.0);
+
+        if (isnan(normalized_ks)) {
+            normalized_ks = 0.0;
+        }
+
+        const uint ray_count_base = min(
+            uint(float(consts.ray_budget) * normalized_ks), 
+            TILE_SIZE * TILE_SIZE
+        );
+        const int msb = findMSB(ray_count_base);
+        const uint ray_count = msb <= -1 ? 0 : (1 << msb);
+        s_ray_count = ray_count;
+        s_written_texels[0] = 0;
+        s_written_texels[1] = 0;
+    }
+    barrier();
+
+    // If the ray count is zero, we can early out
+    const uint ray_count = s_ray_count;
+    if (ray_count == 0) {
+        return;
+    }
+
+    // 63 = 0b0111111
+    const uint valid_mask = 63 >> findMSB(ray_count);
+    gen_ray(valid_mask);
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0) {
+        tiles[tile_id].written = s_written_texels;
+    }
+}

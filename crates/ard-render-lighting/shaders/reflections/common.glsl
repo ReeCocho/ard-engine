@@ -3,19 +3,10 @@
 
 const uint TILE_SIZE = 8;
 
-// Finds tiles to ignore and makes SSR and hybrid tiles active.
-const uint CLASSIFY_PASS_SSR = 0;
-
-// Makes RT and hybrid tiles active.
-const uint CLASSIFY_PASS_RT = 1;
-
-// Randomly makes some RT tiles hybrid and hybrid tiles RT.
-const uint CLASSIFY_PASS_DEMOTE = 2;
+const uint RAY_LEN_SCALE_FACT = 1000;
 
 const uint TILE_TYPE_IGNORE = 0;
-const uint TILE_TYPE_SSR = 1;
-const uint TILE_TYPE_HYBRID = 2;
-const uint TILE_TYPE_RT = 3;
+const uint TILE_TYPE_RT = 1;
 
 #ifndef ARD_SET_REFLECTION_RESET
 uvec2 get_tile_dims() {

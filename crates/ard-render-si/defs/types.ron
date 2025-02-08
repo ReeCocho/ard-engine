@@ -285,8 +285,22 @@
         fields: [
             // Bit field indicating which texels in the tile have been written to this frame.
             (name: "written", ty: Array(len: "2", ty: U32)),
-            // Type of tile (ignore, ssr, hybrid, rt)
-            (name: "ty", ty: U32),
+            // Maximum specular ratio within the tile.
+            (name: "max_ks", ty: F32),
+            // Total sum of all ray lengths (normalized to mm).
+            (name: "ray_len_sum", ty: U32),
+        ]
+    ),
+    // Reflection ray data.
+    (
+        name: "ReflectionRay",
+        no_mangle: false,
+        fields: [
+            // Ray origin as f32s in the xyz components. Direction encoded in octahedral format
+            // packed into two 16-bit values in the w component.
+            (name: "origin_ray", ty: UVec4),
+            // Texel coordinate of the ray encoded as two 16-bit values.
+            (name: "texel", ty: U32),
         ]
     ),
     // Push constants for mesh shadering rendering.
@@ -484,6 +498,7 @@
             (name: "refine_steps", ty: U32),
             (name: "coarse_thickness", ty: F32),
             (name: "refine_thickness", ty: F32),
+            (name: "camera_near_clip", ty: F32),
         ]
     ),
     // Push constants for reflection tile classification.
@@ -494,9 +509,18 @@
             (name: "canvas_dims", ty: UVec2),
             (name: "target_dims", ty: UVec2),
             (name: "inv_target_dims", ty: Vec2),
-            (name: "classify_ty", ty: U32),
-            (name: "sample_idx", ty: I32),
             (name: "sample_count", ty: U32),
+            (name: "frame_count", ty: U32),
+        ]
+    ),
+    // Push constants for ray generation.
+    (
+        name: "ReflectionRayGenPushConstants",
+        no_mangle: false,
+        fields: [
+            (name: "target_dims", ty: UVec2),
+            (name: "inv_target_dims", ty: Vec2),
+            (name: "ray_budget", ty: U32),
             (name: "frame_count", ty: U32),
         ]
     ),

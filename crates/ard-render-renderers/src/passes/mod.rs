@@ -110,7 +110,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 0,
+                color_attachment_count: 1,
             },
         )
         .unwrap();
@@ -127,7 +127,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 0,
+                color_attachment_count: 1,
             },
         )
         .unwrap();
@@ -195,7 +195,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 4,
+                color_attachment_count: 5,
             },
         )
         .unwrap();
@@ -212,7 +212,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 4,
+                color_attachment_count: 5,
             },
         )
         .unwrap();
@@ -229,7 +229,7 @@ pub fn define_passes(factory: &mut MaterialFactory, layouts: &Layouts) {
                     layouts.textures.clone(),
                 ],
                 has_depth_stencil_attachment: true,
-                color_attachment_count: 4,
+                color_attachment_count: 5,
             },
         )
         .unwrap();

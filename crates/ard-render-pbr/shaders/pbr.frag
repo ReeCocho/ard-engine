@@ -13,6 +13,7 @@
     layout(location = 1) out vec4 OUT_KS_RGH;
     layout(location = 2) out vec4 OUT_VEL;
     layout(location = 3) out vec4 OUT_NORM;
+    layout(location = 4) out vec4 OUT_TAN;
 #endif
 #endif
 
@@ -21,7 +22,16 @@
 #endif
 
 #if defined(DEPTH_PREPASS)
+    layout(location = 0) out vec4 ALPHA_TO_COVERAGE_OUT;
 #endif
+
+float calc_mip_level(const vec2 texture_coord)
+{
+    const vec2 dx = dFdx(texture_coord);
+    const vec2 dy = dFdy(texture_coord);
+    const float delta_max_sqr = max(dot(dx, dx), dot(dy, dy));
+    return max(0.0, 0.5 * log2(delta_max_sqr));
+}
 
 ////////////////////
 /// MAIN PROGRAM ///
@@ -32,17 +42,42 @@ void main() {
 
 // Get color from diffuse texture
 #if ARD_VS_HAS_UV0
-    const vec4 color = sample_texture_default(vs_in.slots.x, vs_in.uv, vec4(1)) * data.color;
+    vec4 color = sample_texture_default(vs_in.slots.x, vs_in.uv, vec4(1)) * data.color;
+    const vec2 tex_size = vs_in.slots.x >= MAX_TEXTURES
+        ? vec2(0.0)
+        : vec2(textureSize(textures[vs_in.slots.x], 0));
+// Or just use the material color if we have no UVs
+#else
+    vec4 color = data.color;
+    const vec2 tex_size = vec2(0.0);
+#endif
+
+#if !defined(TRANSPARENT_COLOR_PASS) && !defined(SHADOW_PASS)
+    // Alpha-to-coverage fix for MSAA when alpha testing geometry.
+    // https://bgolus.medium.com/anti-aliased-alpha-test-the-esoteric-alpha-to-coverage-8b177335ae4f
+
+    // This is to scale the cuttoff by mip level to prevent fading out at far distances
+    const float mip_scale = 0.25;
+    #if ARD_VS_HAS_UV0
+        const float mip_level = calc_mip_level(vs_in.uv * tex_size);
+    #else
+        const float mip_level = 0.0;
+    #endif
+    color.a *= 1.0 + max(0.0, mip_level) * mip_scale;
+
+    // This is to sharpen the alpha to the width of a single texel
+    color.a = (color.a - data.alpha_cutoff) / max(fwidth(color.a), 0.0001) + 0.5;
+#endif
     
+#if defined(ALPHA_CUTOFF_PASS)
     // Alpha-Cutoff
-    #if defined(ALPHA_CUTOFF_PASS)
     if (color.a < data.alpha_cutoff) {
         discard;
     }
-    #endif
-// Or just use the material color if we have no UVs
-#else
-    const vec4 color = data.color;
+#endif
+
+#if defined(DEPTH_PREPASS)
+    ALPHA_TO_COVERAGE_OUT.a = color.a;
 #endif
 
 // Entity pass just needs to output the entity ID
@@ -80,9 +115,13 @@ void main() {
         );
         N = (N * 2.0) - vec3(1.0);
         N = normalize(tbn * N);
+        const vec3 T = tbn[0];
     // Otherwise, we just use the vertex shader supplied normal
     #else
         vec3 N = normalize(vs_in.normal);
+        const vec3 T = normalize(
+            cross(N, abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0))
+        );
     #endif
 
     // View vector
@@ -113,6 +152,7 @@ void main() {
     OUT_KS_RGH = vec4(kS, roughness);
     OUT_VEL = vec4(cur_pos - last_pos, 0.0, 0.0);
     OUT_NORM = vec4(N.xyz, 0.0);
+    OUT_TAN = vec4(T.xyz, 0.0);
 #endif
 
 #if !defined(TRANSPARENT_PREPASS)

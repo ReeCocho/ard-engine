@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     context::Context, descriptor_set::DescriptorSetLayout, shader::Shader, types::*, Backend,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The shader stages used by a graphics pipeline.
@@ -61,7 +62,7 @@ pub struct VertexInputState {
 }
 
 /// Describes how rasterization should be performed for the pipeline.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RasterizationState {
     /// The kinds of primitives to form.
     pub polygon_mode: PolygonMode,
@@ -69,6 +70,8 @@ pub struct RasterizationState {
     pub cull_mode: CullMode,
     /// Which direction represents the front face of a primitive.
     pub front_face: FrontFace,
+    /// Enable alpha-to-coverage when using MSAA.
+    pub alpha_to_coverage: bool,
 }
 
 /// Describes depth testing rules for a graphics pipeline.
@@ -205,6 +208,7 @@ impl Default for RasterizationState {
             polygon_mode: PolygonMode::Fill,
             cull_mode: CullMode::Back,
             front_face: FrontFace::CounterClockwise,
+            alpha_to_coverage: false,
         }
     }
 }

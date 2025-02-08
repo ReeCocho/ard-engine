@@ -17,6 +17,7 @@ enum Attachments {
         thin_g_target: Texture,
         vel_target: Texture,
         norm_target: Texture,
+        tan_target: Texture,
         linear_color: Texture,
         entities: Texture,
     },
@@ -31,6 +32,8 @@ enum Attachments {
         vel_resolve: Texture,
         norm_target: Texture,
         norm_resolve: Texture,
+        tan_target: Texture,
+        tan_resolve: Texture,
         linear_color: Texture,
         entities: Texture,
     },
@@ -43,8 +46,10 @@ impl RenderTarget {
     pub const THIN_G_TARGET_FORMAT: Format = Format::Rgba8Unorm;
     /// UV-space velocities.
     pub const VEL_TARGET_FORMAT: Format = Format::Rg16SFloat;
-    /// World space normals
+    /// World space normals.
     pub const NORM_TARGET_FORMAT: Format = Format::Rgba8Snorm;
+    /// World space tangents.
+    pub const TAN_TARGET_FORMAT: Format = Format::Rgba8Snorm;
     pub const FINAL_COLOR_FORMAT: Format = Format::Rgba8Unorm;
     pub const DEPTH_FORMAT: Format = Format::D32Sfloat;
     pub const ENTITIES_FORMAT: Format = Format::R32UInt;
@@ -80,8 +85,9 @@ impl RenderTarget {
     }
 
     pub fn depth_prepass(&self) -> RenderPassDescriptor {
-        let (dt, load_op, dsra) = match &self.attachments {
-            Attachments::SingleSample { depth_target, .. } => (
+        let (ct, dt, load_op, dsra) = match &self.attachments {
+            Attachments::SingleSample { depth_target, thin_g_target, .. } => (
+                thin_g_target,
                 depth_target,
                 // We can load the result of the HZB render when not using multi-sampling.
                 LoadOp::Load,
@@ -90,8 +96,10 @@ impl RenderTarget {
             Attachments::MultiSample {
                 depth_target,
                 depth_resolve,
+                thin_g_target,
                 ..
             } => (
+                thin_g_target,
                 depth_target,
                 LoadOp::Clear(ClearColor::D32S32(0.0, 0)),
                 Some(DepthStencilResolveAttachment {
@@ -109,7 +117,18 @@ impl RenderTarget {
         };
 
         RenderPassDescriptor {
-            color_attachments: Vec::default(),
+            color_attachments: vec![
+                ColorAttachment {
+                    dst: ColorAttachmentDestination::Texture { 
+                        texture: ct, 
+                        array_element: 0, 
+                        mip_level: 0
+                    },
+                    load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                    store_op: StoreOp::None,
+                    samples: self.samples,
+                }
+            ],
             color_resolve_attachments: Vec::default(),
             depth_stencil_attachment: Some(DepthStencilAttachment {
                 dst: DepthStencilAttachmentDestination::Texture {
@@ -169,12 +188,13 @@ impl RenderTarget {
     }
 
     pub fn opaque_pass(&self, clear_op: CameraClearColor) -> RenderPassDescriptor {
-        let (col, thin_g, vel, norm, gstore, depth, resolve) = match &self.attachments {
+        let (col, thin_g, vel, norm, tan, gstore, depth, resolve) = match &self.attachments {
             Attachments::SingleSample {
                 color_target,
                 thin_g_target,
                 vel_target,
                 norm_target,
+                tan_target,
                 depth_target,
                 ..
             } => (
@@ -182,6 +202,7 @@ impl RenderTarget {
                 thin_g_target,
                 vel_target,
                 norm_target,
+                tan_target,
                 StoreOp::Store,
                 depth_target,
                 Vec::default(),
@@ -195,12 +216,15 @@ impl RenderTarget {
                 vel_resolve,
                 norm_target,
                 norm_resolve,
+                tan_target,
+                tan_resolve,
                 ..
             } => (
                 color_target,
                 thin_g_target,
                 vel_target,
                 norm_target,
+                tan_target,
                 StoreOp::DontCare,
                 depth_target,
                 vec![
@@ -230,6 +254,16 @@ impl RenderTarget {
                         src: 3,
                         dst: ColorAttachmentDestination::Texture {
                             texture: norm_resolve,
+                            array_element: 0,
+                            mip_level: 0,
+                        },
+                        load_op: LoadOp::DontCare,
+                        store_op: StoreOp::Store,
+                    },
+                    ColorResolveAttachment {
+                        src: 4,
+                        dst: ColorAttachmentDestination::Texture {
+                            texture: tan_resolve,
                             array_element: 0,
                             mip_level: 0,
                         },
@@ -284,6 +318,17 @@ impl RenderTarget {
                 ColorAttachment {
                     dst: ColorAttachmentDestination::Texture {
                         texture: norm,
+                        array_element: 0,
+                        mip_level: 0,
+                    },
+                    load_op: LoadOp::Clear(ClearColor::RgbaF32(0.0, 0.0, 0.0, 0.0)),
+                    store_op: gstore,
+                    samples: self.samples,
+                },
+                // Tan attachment
+                ColorAttachment {
+                    dst: ColorAttachmentDestination::Texture {
+                        texture: tan,
                         array_element: 0,
                         mip_level: 0,
                     },
@@ -380,6 +425,27 @@ impl RenderTarget {
         }
     }
 
+    pub fn reflection_apply_pass(&self) -> RenderPassDescriptor {
+        RenderPassDescriptor {
+            color_attachments: vec![ColorAttachment {
+                dst: ColorAttachmentDestination::Texture {
+                    texture: match &self.attachments {
+                        Attachments::SingleSample { color_target, .. } => color_target,
+                        Attachments::MultiSample { color_resolve, .. } => color_resolve,
+                    },
+                    array_element: 0,
+                    mip_level: 0,
+                },
+                load_op: LoadOp::Load,
+                store_op: StoreOp::Store,
+                samples: MultiSamples::Count1,
+            }],
+            depth_stencil_attachment: None,
+            color_resolve_attachments: Vec::default(),
+            depth_stencil_resolve_attachment: None,
+        }
+    }
+
     #[inline(always)]
     pub fn dims(&self) -> (u32, u32) {
         self.dims
@@ -419,6 +485,14 @@ impl RenderTarget {
         match &self.attachments {
             Attachments::SingleSample { norm_target, .. } => norm_target,
             Attachments::MultiSample { norm_resolve, .. } => norm_resolve,
+        }
+    }
+
+    #[inline(always)]
+    pub fn final_tan(&self) -> &Texture {
+        match &self.attachments {
+            Attachments::SingleSample { tan_target, .. } => tan_target,
+            Attachments::MultiSample { tan_resolve, .. } => tan_resolve,
         }
     }
 
@@ -471,11 +545,6 @@ impl RenderTarget {
     }
 
     fn create_images(ctx: &Context, dims: (u32, u32), samples: MultiSamples) -> Attachments {
-        let extra_usage = match samples {
-            MultiSamples::Count1 => TextureUsage::STORAGE,
-            _ => TextureUsage::empty(),
-        };
-
         let color_target = Texture::new(
             ctx.clone(),
             TextureCreateInfo {
@@ -488,9 +557,7 @@ impl RenderTarget {
                 mip_levels: 1,
                 sample_count: samples,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT
-                    | TextureUsage::SAMPLED
-                    | TextureUsage::TRANSFER_SRC
-                    | extra_usage,
+                    | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
@@ -535,7 +602,7 @@ impl RenderTarget {
                 array_elements: 1,
                 mip_levels: 1,
                 sample_count: samples,
-                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED | extra_usage,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
@@ -556,8 +623,7 @@ impl RenderTarget {
                 mip_levels: 1,
                 sample_count: samples,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT
-                    | TextureUsage::SAMPLED
-                    | TextureUsage::TRANSFER_SRC,
+                    | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
@@ -578,12 +644,32 @@ impl RenderTarget {
                 mip_levels: 1,
                 sample_count: samples,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT
-                    | TextureUsage::SAMPLED
-                    | TextureUsage::TRANSFER_SRC,
+                    | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
                 debug_name: Some("norm_target".to_owned()),
+            },
+        )
+        .unwrap();
+
+        let tan_target = Texture::new(
+            ctx.clone(),
+            TextureCreateInfo {
+                format: Self::TAN_TARGET_FORMAT,
+                ty: TextureType::Type2D,
+                width: dims.0,
+                height: dims.1,
+                depth: 1,
+                array_elements: 1,
+                mip_levels: 1,
+                sample_count: samples,
+                texture_usage: TextureUsage::COLOR_ATTACHMENT
+                    | TextureUsage::SAMPLED,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("tan_target".to_owned()),
             },
         )
         .unwrap();
@@ -600,8 +686,7 @@ impl RenderTarget {
                 mip_levels: 1,
                 sample_count: MultiSamples::Count1,
                 texture_usage: TextureUsage::COLOR_ATTACHMENT
-                    | TextureUsage::SAMPLED
-                    | TextureUsage::TRANSFER_SRC,
+                    | TextureUsage::SAMPLED,
                 memory_usage: MemoryUsage::GpuOnly,
                 queue_types: QueueTypes::MAIN,
                 sharing_mode: SharingMode::Exclusive,
@@ -637,6 +722,7 @@ impl RenderTarget {
                 thin_g_target,
                 vel_target,
                 norm_target,
+                tan_target,
                 linear_color,
                 entities,
             }
@@ -655,9 +741,7 @@ impl RenderTarget {
                         mip_levels: 1,
                         sample_count: MultiSamples::Count1,
                         texture_usage: TextureUsage::COLOR_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::STORAGE
-                            | TextureUsage::TRANSFER_SRC,
+                            | TextureUsage::SAMPLED,
                         memory_usage: MemoryUsage::GpuOnly,
                         queue_types: QueueTypes::MAIN,
                         sharing_mode: SharingMode::Exclusive,
@@ -700,8 +784,7 @@ impl RenderTarget {
                         mip_levels: 1,
                         sample_count: MultiSamples::Count1,
                         texture_usage: TextureUsage::COLOR_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::STORAGE,
+                            | TextureUsage::SAMPLED,
                         memory_usage: MemoryUsage::GpuOnly,
                         queue_types: QueueTypes::MAIN,
                         sharing_mode: SharingMode::Exclusive,
@@ -722,8 +805,7 @@ impl RenderTarget {
                         mip_levels: 1,
                         sample_count: MultiSamples::Count1,
                         texture_usage: TextureUsage::COLOR_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::TRANSFER_SRC,
+                            | TextureUsage::SAMPLED,
                         memory_usage: MemoryUsage::GpuOnly,
                         queue_types: QueueTypes::MAIN,
                         sharing_mode: SharingMode::Exclusive,
@@ -744,12 +826,32 @@ impl RenderTarget {
                         mip_levels: 1,
                         sample_count: MultiSamples::Count1,
                         texture_usage: TextureUsage::COLOR_ATTACHMENT
-                            | TextureUsage::SAMPLED
-                            | TextureUsage::TRANSFER_SRC,
+                            | TextureUsage::SAMPLED,
                         memory_usage: MemoryUsage::GpuOnly,
                         queue_types: QueueTypes::MAIN,
                         sharing_mode: SharingMode::Exclusive,
                         debug_name: Some("norm_resolve".to_owned()),
+                    },
+                )
+                .unwrap(),
+                tan_target,
+                tan_resolve: Texture::new(
+                    ctx.clone(),
+                    TextureCreateInfo {
+                        format: Self::TAN_TARGET_FORMAT,
+                        ty: TextureType::Type2D,
+                        width: dims.0,
+                        height: dims.1,
+                        depth: 1,
+                        array_elements: 1,
+                        mip_levels: 1,
+                        sample_count: MultiSamples::Count1,
+                        texture_usage: TextureUsage::COLOR_ATTACHMENT
+                            | TextureUsage::SAMPLED,
+                        memory_usage: MemoryUsage::GpuOnly,
+                        queue_types: QueueTypes::MAIN,
+                        sharing_mode: SharingMode::Exclusive,
+                        debug_name: Some("tan_resolve".to_owned()),
                     },
                 )
                 .unwrap(),

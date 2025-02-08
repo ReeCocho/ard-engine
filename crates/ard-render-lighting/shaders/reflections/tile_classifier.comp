@@ -17,127 +17,39 @@ layout(local_size_x_id = 0) in;
 layout(local_size_y_id = 1) in;
 layout(local_size_z_id = 2) in;
 
-shared uint valid_texels;
-
-float rand_float(uint x) {
-    x ^= x >> 16;
-    x *= 0x7feb352dU;
-    x ^= x >> 15;
-    x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return float(x) / float(0xffffffffU);
-}
-
-void classify_ssr(const uint tile_idx) {
-    // Reset written flags
-    if (gl_LocalInvocationIndex == 0) {
-        tiles[tile_idx].written[0] = 0;
-        tiles[tile_idx].written[1] = 0;
-    }
-
-    // Read in the kS component for this pixel and determine if it's valid
-    const vec2 kS_uv = vec2(gl_GlobalInvocationID.xy) * consts.inv_target_dims;
-    const vec3 kS = texture(thin_g_tex, kS_uv).rgb;
-    atomicAdd(valid_texels, dot(kS, vec3(1.0)) > 0.01 ? 1 : 0);
-    barrier();
-
-    if (gl_LocalInvocationIndex != 0) {
-        return;
-    }
-
-    // If every texel is invalid, mark the tile as ignored
-    if (valid_texels == 0) {
-        tiles[tile_idx].ty = TILE_TYPE_IGNORE;
-        return;
-    }
-
-    // If the previous usage was ignored, make the tile SSR
-    // if (tiles[tile_idx].ty == TILE_TYPE_IGNORE) {
-        tiles[tile_idx].ty = TILE_TYPE_RT;
-    // }
-}
-
-void classify_rt(const uint tile_idx) {
-    const uint tile_ty = tiles[tile_idx].ty;
-
-    // Skip if this is an SSR or ignored tile
-    if (tile_ty == TILE_TYPE_SSR || tile_ty == TILE_TYPE_IGNORE) {
-        return;
-    }
-
-    // If every texel in this tile was already written, then we should reclassify it as SSR
-    if (tiles[tile_idx].written[0] == 0xFFFFFFFF 
-        && tiles[tile_idx].written[1] == 0xFFFFFFFF
-    ) {
-        tiles[tile_idx].ty = TILE_TYPE_SSR;
-        return;
-    }
-
-    // Tile must be hybrid or RT, so add it to the active tiles list
-    active_tiles[atomicAdd(tile_count, 1)] = tile_idx;
-    atomicAdd(indirect_buffer.z, 1);
-}
-
-void classify_demote(const uvec2 tile_dims, const uint tile_idx) {
-    const uint tile_ty = tiles[tile_idx].ty;
-
-    // Skip if this tile is an SSR or ignored tile
-    if (tile_ty == TILE_TYPE_SSR || tile_ty == TILE_TYPE_IGNORE) {
-        return;
-    }
-
-    // Randomly decide to demote the tile
-    const uint rand_seed = (tile_dims.x * tile_dims.y * consts.frame_count) + tile_idx;
-    const float r = rand_float(rand_seed);
-
-    if (r < 0.10) {
-        tiles[tile_idx].ty = tile_ty - 1;
-    }
-}
+// NOTE: Since kS values range from 0 to 1, it's valid to bit-cast 
+// them as uint and do comparisons.
+shared uint tile_max_ks;
+shared uint history_oob;
 
 void main() {
-    switch (consts.classify_ty) {
-        // NOTE: SSR pass is the only pass to dispatch over texels instead of tiles.
-    case CLASSIFY_PASS_SSR:
-    {
-        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, consts.target_dims))) {
-            return;
-        }
-
-        if (gl_LocalInvocationIndex == 0) {
-            valid_texels = 0;
-        }
-        barrier();
-
-        classify_ssr((gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x);
+    if (gl_LocalInvocationIndex == 0) {
+        tile_max_ks = floatBitsToUint(0.0);
     }
-    break;
+    barrier();
 
-    case CLASSIFY_PASS_RT:
-    {
-        const uvec2 tile_dims = get_tile_dims();
-        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, tile_dims))) {
-            return;
-        }
-        classify_rt((gl_GlobalInvocationID.y * tile_dims.x) + gl_GlobalInvocationID.x);
-    }
-    break;
+    // Read in the kS component for this pixel and atomic max it with the other texels
+    const vec2 kS_uv = (vec2(gl_GlobalInvocationID.xy) + vec2(0.5)) * consts.inv_target_dims;
+    const vec2 vel = texture(vel_tex, kS_uv).xy;
+    const vec3 kS = texture(thin_g_tex, kS_uv).rgb;
+    const ivec2 history_offset = ivec2(vel * vec2(consts.target_dims));
+    const ivec2 history_sample = ivec2(gl_GlobalInvocationID.xy) - history_offset;
 
-    case CLASSIFY_PASS_DEMOTE:
-    {
-        const uvec2 tile_dims = get_tile_dims();
-        if (any(greaterThanEqual(gl_GlobalInvocationID.xy, tile_dims))) {
-            return;
-        }
+    atomicMax(tile_max_ks, floatBitsToUint(max(kS.r, max(kS.g, kS.b))));
+    atomicAdd(
+        history_oob, 
+        uint(any(lessThan(history_sample, ivec2(0))) 
+        || any(greaterThanEqual(history_sample, consts.target_dims)))
+    );
+    barrier();
 
-        classify_demote(
-            tile_dims,
-            (gl_GlobalInvocationID.y * tile_dims.x) + gl_GlobalInvocationID.x
-        );
-    }
-    break;
-
-    default:
-    break;
+    if (gl_LocalInvocationIndex == 0) {
+        const uint tile_idx = (gl_WorkGroupID.y * gl_NumWorkGroups.x) + gl_WorkGroupID.x;
+        const float max_ks = clamp(uintBitsToFloat(tile_max_ks), 0.0, 1.0);
+        tiles[tile_idx].written[0] = 0;
+        tiles[tile_idx].written[1] = 0;
+        tiles[tile_idx].ray_len_sum = 0;
+        tiles[tile_idx].max_ks = max_ks;
+        atomicAdd(global_ks_sum, uint(round(max_ks * 255.0)));
     }
 }

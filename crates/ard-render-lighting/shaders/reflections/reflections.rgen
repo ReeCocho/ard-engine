@@ -17,63 +17,25 @@ layout(push_constant) uniform constants {
 
 #include "reflections/common.glsl"
 
-bool is_texel_written(const uint tile_id, const uvec2 local_id) {
-    const uint lin_id = (local_id.y * TILE_SIZE) + local_id.x;
-    const uint arr_idx = lin_id / 32;
-    const uint bit_idx = lin_id - (arr_idx * 32);
-    return (tiles[tile_id].written[arr_idx] & (1 << bit_idx)) != 0;
-}
-
 void main() {
-    if (gl_LaunchIDEXT.z >= tile_count) {
-        return;
-    }
-
-    const uint tile_id = active_tiles[gl_LaunchIDEXT.z];
-    const ivec2 texel_coord = get_texel_coord(tile_id);
-
-    // If more than half the texels are missing, promote the tile to RT
-    if (gl_LaunchIDEXT.xy == uvec2(0)) {
-        const uint written_count = bitCount(tiles[tile_id].written[0])
-            + bitCount(tiles[tile_id].written[1]);
-        if (written_count < (TILE_SIZE * TILE_SIZE / 2)) {
-            tiles[tile_id].ty = TILE_TYPE_RT;
-        }
-    }
-
-    // If this texel was already written, skip
-    if (is_texel_written(tile_id, gl_LaunchIDEXT.xy)) {
-        return;
-    }
-
-	vec2 screen_uv = (vec2(texel_coord) + vec2(0.5)) * consts.inv_target_dims;
-    screen_uv = clamp(screen_uv, vec2(0.0), vec2(1.0));
-
-    const float raw_depth = texture(depth_tex, screen_uv).r;
-
-    if (raw_depth == 0.0) {
-        imageStore(dst_image, texel_coord, vec4(0.0));
-        return;
-    }
-    vec4 ray_origin_ndc = vec4(
-        (screen_uv.x - 0.5) * 2.0,
-        ((1.0 - screen_uv.y) - 0.5) * 2.0,
-        raw_depth,
-        1.0
+    const ReflectionRay ray = global_rays[gl_LaunchIDEXT.x];
+    const ivec2 texel_coord = ivec2(
+        int(ray.texel >> 16),
+        int(ray.texel & 0xFFFF)
     );
-    vec4 ray_origin = camera[0].vp_inv * ray_origin_ndc;
-    ray_origin /= ray_origin.w;
 
-    // Surface normal in world space
-    const vec3 N = normalize(texture(norm_tex, screen_uv).xyz);
+    const uvec2 tile_dims = get_tile_dims();
+    const uint tile_id = ((uint(texel_coord.y) / TILE_SIZE) * tile_dims.x) 
+        + (texel_coord.x / TILE_SIZE);
 
-    ray_origin.xyz += N * 0.01;
+    vec3 ray_origin = vec3(
+        uintBitsToFloat(ray.origin_ray.x),
+        uintBitsToFloat(ray.origin_ray.y),
+        uintBitsToFloat(ray.origin_ray.z)
+    );
 
-    // View direction in world space
-    const vec3 V = normalize(ray_origin.xyz - camera[0].position.xyz);
+    const vec3 ray_dir = oct_decode(unpackUnorm2x16(ray.origin_ray.w));
 
-    // Reflection direction in world space
-    const vec3 R = normalize(reflect(V, N));
     const vec3 sun_dir = -normalize(global_lighting.sun_direction.xyz);
 
     hit_value.rng_state = 0;
@@ -85,23 +47,32 @@ void main() {
         0xff, 0, 0, 0,
         ray_origin.xyz,
         0.05,
-        R,
+        ray_dir,
         consts.max_distance,
         0
     );
 
-    vec3 brdf = hit_value.brdf.rgb / hit_value.brdf.w;
+    vec3 brdf = hit_value.brdf.rgb;
+    if (hit_value.brdf.a < 0.001) {
+        brdf = vec3(0.0);
+    }
     const vec3 emissive = hit_value.emissive.rgb;
+
+    const uint ray_len = uint(
+        length(hit_value.location.xyz - ray_origin.xyz) 
+        * float(RAY_LEN_SCALE_FACT)
+    );
+    atomicAdd(tiles[tile_id].ray_len_sum, ray_len);
 
     if (hit_value.hit == 1) {
         // Check for sun ray
         // TODO: Use shadow maps when the ray lands within the view frustum
-        ray_origin.xyz = hit_value.location.xyz;
+        ray_origin = hit_value.location.xyz;
         traceRayEXT(
             tlas,
             gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, 
             0xff, 0, 0, 0,
-            ray_origin.xyz,
+            ray_origin,
             0.05,
             sun_dir,
             1000.0,

@@ -84,6 +84,17 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/reflections/raygen.comp",
+        PathBuf::from(&out_dir).join("raygen.comp.spv"),
+        &[
+            "./shaders/",
+            "../ard-render/shaders/",
+            "../ard-render-pbr/shaders/",
+        ],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
         "./shaders/reflections/reflections.rgen",
         PathBuf::from(&out_dir).join("reflections.rgen.spv"),
         &["./shaders/", "../ard-render/shaders/"],
@@ -105,8 +116,15 @@ fn main() {
     );
 
     ard_render_codegen::vulkan_spirv::compile_shader(
-        "./shaders/reflections/reflection_apply.comp",
-        PathBuf::from(&out_dir).join("reflection_apply.comp.spv"),
+        "./shaders/reflections/reflection_apply.vert",
+        PathBuf::from(&out_dir).join("reflection_apply.vert.spv"),
+        &["./shaders/", "../ard-render/shaders/"],
+        &[],
+    );
+
+    ard_render_codegen::vulkan_spirv::compile_shader(
+        "./shaders/reflections/reflection_apply.frag",
+        PathBuf::from(&out_dir).join("reflection_apply.frag.spv"),
         &["./shaders/", "../ard-render/shaders/"],
         &[],
     );

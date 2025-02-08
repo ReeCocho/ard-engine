@@ -1419,14 +1419,14 @@
         name: "ReflectionReset",
         bindings: [
             (
-                name: "ActiveTiles",
+                name: "KsSum",
                 stage: Compute,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: WriteOnly,
-                    inner: Some((name: "tile_count", ty: U32)),
-                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                    inner: Some((name: "global_ks_sum", ty: U32)),
+                    unbounded_array: None,
                 )
             ),
             (
@@ -1438,6 +1438,17 @@
                     access: WriteOnly,
                     inner: Some((name: "indirect_buffer", ty: Struct("IndirectDispatch"))),
                     unbounded_array: None,
+                )
+            ),
+            (
+                name: "Rays",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: WriteOnly,
+                    inner: Some((name: "global_ray_count", ty: I32)),
+                    unbounded_array: Some((name: "global_rays", ty: Struct("ReflectionRay"))),
                 )
             )
         ]
@@ -1464,14 +1475,85 @@
                 )
             ),
             (
-                name: "ActiveTiles",
+                name: "KsSum",
                 stage: Compute,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadWrite,
-                    inner: Some((name: "tile_count", ty: U32)),
-                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                    // kS values are scaled from 0..1 -> 0..255
+                    inner: Some((name: "global_ks_sum", ty: U32)),
+                    unbounded_array: None,
+                )
+            ),
+            (
+                name: "Vel",
+                stage: Compute,
+                count: "1",
+                data: Texture("vel_tex"),
+            )
+        ]
+    ),
+    /// Used to generate rays for reflections.
+    (
+        name: "ReflectionsRayGen",
+        bindings: [
+            (
+                name: "Norm",
+                stage: Compute,
+                count: "1",
+                data: Texture("norm_tex"),
+            ),
+            (
+                name: "Tan",
+                stage: Compute,
+                count: "1",
+                data: Texture("tan_tex"),
+            ),
+            (
+                name: "ThinG",
+                stage: Compute,
+                count: "1",
+                data: Texture("thin_g_tex"),
+            ),
+            (
+                name: "Depth",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex"),
+            ),
+            (
+                name: "KsSum",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    // kS values are scaled from 0..1 -> 0..255
+                    inner: Some((name: "global_ks_sum", ty: U32)),
+                    unbounded_array: None,
+                )
+            ),
+            (
+                name: "Rays",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: Some((name: "global_ray_count", ty: I32)),
+                    unbounded_array: Some((name: "global_rays", ty: Struct("ReflectionRay"))),
+                )
+            ),
+            (
+                name: "Tiles",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadWrite,
+                    inner: None,
+                    unbounded_array: Some((name: "tiles", ty: Struct("ReflectionTile"))),
                 )
             ),
             (
@@ -1484,7 +1566,7 @@
                     inner: Some((name: "indirect_buffer", ty: Struct("IndirectDispatch"))),
                     unbounded_array: None,
                 )
-            )
+            ),
         ]
     ),
     /// Computes ray traced reflections.
@@ -1529,26 +1611,14 @@
                 data: Tlas("tlas"),
             ),
             (
-                name: "Norm",
-                stage: RayTracing,
-                count: "1",
-                data: Texture("norm_tex"),
-            ),
-            (
-                name: "Depth",
-                stage: RayTracing,
-                count: "1",
-                data: Texture("depth_tex"),
-            ),
-            (
-                name: "ActiveTiles",
+                name: "Rays",
                 stage: RayTracing,
                 count: "1",
                 data: Ssbo(
                     restrict: true,
                     access: ReadOnly,
-                    inner: Some((name: "tile_count", ty: U32)),
-                    unbounded_array: Some((name: "active_tiles", ty: U32)),
+                    inner: Some((name: "global_ray_count", ty: I32)),
+                    unbounded_array: Some((name: "global_rays", ty: Struct("ReflectionRay"))),
                 )
             ),
             (
@@ -1592,6 +1662,17 @@
                 )
             ),
             (
+                name: "Tiles",
+                stage: Compute,
+                count: "1",
+                data: Ssbo(
+                    restrict: true,
+                    access: ReadOnly,
+                    inner: None,
+                    unbounded_array: Some((name: "tiles", ty: Struct("ReflectionTile"))),
+                )
+            ),
+            (
                 name: "Dst",
                 stage: Compute,
                 count: "1",
@@ -1607,6 +1688,12 @@
                 stage: Compute,
                 count: "1",
                 data: Texture("vel_tex"),
+            ),
+            (
+                name: "Depth",
+                stage: Compute,
+                count: "1",
+                data: Texture("depth_tex"),
             )
         ]
     ),
@@ -1616,31 +1703,15 @@
         bindings: [
             (
                 name: "Src",
-                stage: Compute,
+                stage: Fragment,
                 count: "1",
                 data: Texture("src_image"),
             ),
             (
                 name: "ThinG",
-                stage: Compute,
+                stage: Fragment,
                 count: "1",
-                data: StorageImage(
-                    field_name: "thin_g_tex",
-                    restrict: true,
-                    access: ReadOnly,
-                    format: Rgba8UNorm,
-                ),
-            ),
-            (
-                name: "Dst",
-                stage: Compute,
-                count: "1",
-                data: StorageImage(
-                    field_name: "dst_image",
-                    restrict: true,
-                    access: ReadWrite,
-                    format: Rgba16F,
-                )
+                data: Texture("thin_g_tex"),
             ),
         ]
     )

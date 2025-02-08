@@ -21,7 +21,7 @@ void main() {
     vec3 sun_shafts = texture(sun_shafts_image, UV).rgb;
 
     // Tonemapping with adaptive luminance
-    color = mix(color, bloom, 0.05);
+    // color = mix(color, bloom, 0.05);
     color += 0.2 * sun_shafts;
     color = vec3(1.0) - exp(-color * (consts.exposure / luminance));
     color = pow(color, vec3(1.0 / consts.gamma));

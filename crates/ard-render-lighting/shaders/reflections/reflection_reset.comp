@@ -17,9 +17,9 @@ void main() {
         return;
     }
 
-    // NOTE: x and y are relative texel offset, and z is the tile index.
-    indirect_buffer.x = TILE_SIZE;
-    indirect_buffer.y = TILE_SIZE;
-    indirect_buffer.z = 0;
-    tile_count = 0;
+    indirect_buffer.x = 0;
+    indirect_buffer.y = 1;
+    indirect_buffer.z = 1;
+    global_ks_sum = 0;
+    global_ray_count = 0;
 }

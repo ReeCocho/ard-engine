@@ -95,6 +95,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -116,6 +117,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: true,
@@ -137,6 +139,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: true,
@@ -158,6 +161,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -167,7 +171,15 @@ pub fn create_pbr_material(
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState::default(),
+            color_blend: ColorBlendState {
+                attachments: vec![
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::empty(),
+                        ..Default::default()
+                    }
+                ]
+            },
             debug_name: "pbr_depth_opaque_prepass_pipeline".into(),
         },
     );
@@ -179,6 +191,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: true,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -188,7 +201,15 @@ pub fn create_pbr_material(
                 min_depth: 0.0,
                 max_depth: 1.0,
             }),
-            color_blend: ColorBlendState::default(),
+            color_blend: ColorBlendState {
+                attachments: vec![
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::empty(),
+                        ..Default::default()
+                    }
+                ]
+            },
             debug_name: "pbr_depth_alpha_cutoff_prepass_pipeline".into(),
         },
     );
@@ -200,6 +221,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -227,6 +249,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -254,6 +277,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -281,6 +305,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -305,6 +330,11 @@ pub fn create_pbr_material(
                     ColorBlendAttachment {
                         blend: false,
                         write_mask: ColorComponents::R | ColorComponents::G,
+                        ..Default::default()
+                    },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                         ..Default::default()
                     },
                     ColorBlendAttachment {
@@ -325,6 +355,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: true,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -356,6 +387,11 @@ pub fn create_pbr_material(
                         write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                         ..Default::default()
                     },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
                 ],
             },
             debug_name: "pbr_color_alpha_cutoff_pipeline".into(),
@@ -369,6 +405,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,
@@ -400,6 +437,11 @@ pub fn create_pbr_material(
                         write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
                         ..Default::default()
                     },
+                    ColorBlendAttachment {
+                        blend: false,
+                        write_mask: ColorComponents::R | ColorComponents::G | ColorComponents::B,
+                        ..Default::default()
+                    },
                 ],
             },
             debug_name: "pbr_transparent_prepass_pipeline".into(),
@@ -413,6 +455,7 @@ pub fn create_pbr_material(
                 polygon_mode: PolygonMode::Fill,
                 cull_mode: CullMode::Back,
                 front_face: FrontFace::CounterClockwise,
+                alpha_to_coverage: false,
             },
             depth_stencil: Some(DepthStencilState {
                 depth_clamp: false,

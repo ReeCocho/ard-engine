@@ -272,6 +272,7 @@ impl Smaa {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::CounterClockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: None,
                 color_blend: ColorBlendState {

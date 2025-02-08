@@ -30,8 +30,11 @@ pub struct Reflections {
     canvas_size: (u32, u32),
     /// Buffer that contains data for each 8x8 tile.
     tiles: Buffer,
-    /// Buffer containing tile indices for the active tiles of the given pass.
-    active_tiles: Buffer,
+    /// Buffer that contains the sum of all tile max kS values.
+    _max_ks_sum: Buffer,
+    /// Buffer that contains rays.
+    rays: Buffer,
+    ray_budget: usize,
     /// Buffer containing indirect dispatch parameters.
     indirect_dispatch: Buffer,
     /// Counter used to determine which multi-sample to use for reflections.
@@ -42,11 +45,14 @@ pub struct Reflections {
     /// Compute pipeline to classify tiles.
     classify_pipeline: ComputePipeline,
     classify_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
+    /// Compute pipeline for ray generation.
+    ray_gen_pipeline: ComputePipeline,
+    ray_gen_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     /// Compute pipeline for accumulating reflection history.
     accum_pipeline: ComputePipeline,
     accum_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
-    /// Compute pipeline for applying reflections
-    apply_pipeline: ComputePipeline,
+    /// Graphics pipeline for applying reflections
+    apply_pipeline: GraphicsPipeline,
     apply_sets: [DescriptorSet; FRAMES_IN_FLIGHT],
     // RT pipeline for ray traced reflections
     rt_pipeline: RayTracingMaterialPipeline,
@@ -54,12 +60,7 @@ pub struct Reflections {
 }
 
 const TILE_SIZE: u32 = 8;
-
-enum ClassifyType {
-    Ssr = 0,
-    Rt = 1,
-    Demote = 2,
-}
+const RAY_BUDGET: usize = 700_000;
 
 const REFLECTION_SAMPLER: Sampler = Sampler {
     min_filter: Filter::Linear,
@@ -130,6 +131,25 @@ impl Reflections {
         )
         .unwrap();
 
+        let ray_gen_pipeline = ComputePipeline::new(
+            ctx.clone(),
+            ComputePipelineCreateInfo {
+                layouts: vec![layouts.reflections_ray_gen.clone(), layouts.camera.clone()],
+                module: Shader::new(
+                    ctx.clone(),
+                    ShaderCreateInfo {
+                        code: include_bytes!(concat!(env!("OUT_DIR"), "./raygen.comp.spv")),
+                        debug_name: Some("reflection_raygen_shader".into()),
+                    },
+                )
+                .unwrap(),
+                work_group_size: (TILE_SIZE, TILE_SIZE, 1),
+                push_constants_size: Some(size_of::<GpuReflectionRayGenPushConstants>() as u32),
+                debug_name: Some("reflection_raygen_pipeline".into()),
+            },
+        )
+        .unwrap();
+
         let accum_pipeline = ComputePipeline::new(
             ctx.clone(),
             ComputePipelineCreateInfo {
@@ -152,24 +172,64 @@ impl Reflections {
         )
         .unwrap();
 
-        let apply_pipeline = ComputePipeline::new(
+        let apply_pipeline = GraphicsPipeline::new(
             ctx.clone(),
-            ComputePipelineCreateInfo {
+            GraphicsPipelineCreateInfo {
+                stages: ShaderStages::Traditional {
+                    vertex: Shader::new(
+                        ctx.clone(),
+                        ShaderCreateInfo {
+                            code: include_bytes!(concat!(
+                                env!("OUT_DIR"),
+                                "./reflection_apply.vert.spv"
+                            )),
+                            debug_name: Some("reflection_apply_vertex_shader".into()),
+                        },
+                    )
+                    .unwrap(),
+                    fragment: Some(
+                        Shader::new(
+                            ctx.clone(),
+                            ShaderCreateInfo {
+                                code: include_bytes!(concat!(
+                                    env!("OUT_DIR"),
+                                    "./reflection_apply.frag.spv"
+                                )),
+                                debug_name: Some("reflection_apply_fragment_shader".into()),
+                            },
+                        )
+                        .unwrap(),
+                    ),
+                },
                 layouts: vec![layouts.reflection_apply.clone()],
-                module: Shader::new(
-                    ctx.clone(),
-                    ShaderCreateInfo {
-                        code: include_bytes!(concat!(
-                            env!("OUT_DIR"),
-                            "./reflection_apply.comp.spv"
-                        )),
-                        debug_name: Some("reflection_apply_shader".into()),
-                    },
-                )
-                .unwrap(),
-                work_group_size: (TILE_SIZE, TILE_SIZE, 1),
-                push_constants_size: Some(size_of::<GpuSsrPushConstants>() as u32),
-                debug_name: Some("reflection_apply_pipeline".into()),
+                vertex_input: VertexInputState {
+                    attributes: Vec::default(),
+                    bindings: Vec::default(),
+                    topology: PrimitiveTopology::TriangleList,
+                },
+                rasterization: RasterizationState {
+                    polygon_mode: PolygonMode::Fill,
+                    cull_mode: CullMode::None,
+                    front_face: FrontFace::CounterClockwise,
+                    alpha_to_coverage: false,
+                },
+                depth_stencil: None,
+                color_blend: ColorBlendState {
+                    attachments: vec![ColorBlendAttachment {
+                        write_mask: ColorComponents::R
+                            | ColorComponents::G
+                            | ColorComponents::B,
+                        blend: true,
+                        src_color_blend_factor: BlendFactor::One,
+                        dst_color_blend_factor: BlendFactor::One,
+                        src_alpha_blend_factor: BlendFactor::One,
+                        dst_alpha_blend_factor: BlendFactor::Zero,
+                        color_blend_op: BlendOp::Add,
+                        alpha_blend_op: BlendOp::Add,
+                    }],
+                },
+                push_constants_size: None,
+                debug_name: Some("reflections_apply_pipeline".into()),
             },
         )
         .unwrap();
@@ -225,6 +285,22 @@ impl Reflections {
         )
         .unwrap();
 
+        let max_ks_sum = Buffer::new(
+            ctx.clone(),
+            BufferCreateInfo {
+                size: size_of::<u32>() as u64,
+                array_elements: 1,
+                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                memory_usage: MemoryUsage::GpuOnly,
+                queue_types: QueueTypes::MAIN,
+                sharing_mode: SharingMode::Exclusive,
+                debug_name: Some("max_ks_sum".into()),
+            },
+        )
+        .unwrap();
+
+        let (rays, ray_budget) = Self::make_rays(ctx, dims);
+
         let mut reset_set = DescriptorSet::new(
             ctx.clone(),
             DescriptorSetCreateInfo {
@@ -234,14 +310,24 @@ impl Reflections {
         )
         .unwrap();
 
-        reset_set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RESET_SET_INDIRECT_BINDING,
-            array_element: 0,
-            value: DescriptorValue::StorageBuffer {
-                buffer: &indirect_dispatch,
+        reset_set.update(&[
+            DescriptorSetUpdate {
+                binding: REFLECTION_RESET_SET_INDIRECT_BINDING,
                 array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &indirect_dispatch,
+                    array_element: 0,
+                },
             },
-        }]);
+            DescriptorSetUpdate {
+                binding: REFLECTION_RESET_SET_KS_SUM_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &max_ks_sum,
+                    array_element: 0,
+                },
+            },
+        ]);
 
         let classify_sets = std::array::from_fn(|_| {
             let mut set = DescriptorSet::new(
@@ -254,13 +340,45 @@ impl Reflections {
             .unwrap();
 
             set.update(&[DescriptorSetUpdate {
-                binding: REFLECTION_TILE_CLASSIFIER_SET_INDIRECT_BINDING,
+                binding: REFLECTION_TILE_CLASSIFIER_SET_KS_SUM_BINDING,
                 array_element: 0,
                 value: DescriptorValue::StorageBuffer {
-                    buffer: &indirect_dispatch,
+                    buffer: &max_ks_sum,
                     array_element: 0,
                 },
             }]);
+
+            set
+        });
+
+        let ray_gen_sets = std::array::from_fn(|_| {
+            let mut set = DescriptorSet::new(
+                ctx.clone(),
+                DescriptorSetCreateInfo {
+                    layout: layouts.reflections_ray_gen.clone(),
+                    debug_name: Some("reflection_ray_gen_set".into()),
+                },
+            )
+            .unwrap();
+
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: REFLECTIONS_RAY_GEN_SET_KS_SUM_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &max_ks_sum,
+                        array_element: 0,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: REFLECTIONS_RAY_GEN_SET_INDIRECT_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &indirect_dispatch,
+                        array_element: 0,
+                    },
+                },
+            ]);
 
             set
         });
@@ -302,11 +420,15 @@ impl Reflections {
             target: Self::make_target(ctx, dims),
             canvas_size: dims,
             tiles: Self::make_tiles(ctx, dims),
-            active_tiles: Self::make_active_tiles(ctx, dims),
+            rays,
+            ray_budget,
             indirect_dispatch,
+            _max_ks_sum: max_ks_sum,
             sample_counter: AtomicU64::new(0),
             reset_pipeline,
             reset_set,
+            ray_gen_pipeline,
+            ray_gen_sets,
             classify_pipeline,
             classify_sets,
             accum_pipeline,
@@ -352,8 +474,8 @@ impl Reflections {
             TextureCreateInfo {
                 format: Format::Rgba16SFloat,
                 ty: TextureType::Type2D,
-                width: dims.0,  // .div_ceil(2),
-                height: dims.1, // .div_ceil(2),
+                width: dims.0,
+                height: dims.1,
                 depth: 1,
                 // Two images to ping-pong between
                 array_elements: 2,
@@ -370,8 +492,8 @@ impl Reflections {
     }
 
     fn make_tiles(ctx: &Context, dims: (u32, u32)) -> Buffer {
-        let width = dims.0.div_ceil(1).div_ceil(TILE_SIZE) as u64;
-        let height = dims.1.div_ceil(1).div_ceil(TILE_SIZE) as u64;
+        let width = dims.0.div_ceil(TILE_SIZE) as u64;
+        let height = dims.1.div_ceil(TILE_SIZE) as u64;
         Buffer::new(
             ctx.clone(),
             BufferCreateInfo {
@@ -387,59 +509,49 @@ impl Reflections {
         .unwrap()
     }
 
-    fn make_active_tiles(ctx: &Context, dims: (u32, u32)) -> Buffer {
-        let width = dims.0.div_ceil(1).div_ceil(TILE_SIZE) as u64;
-        let height = dims.1.div_ceil(1).div_ceil(TILE_SIZE) as u64;
-        Buffer::new(
-            ctx.clone(),
-            BufferCreateInfo {
-                // +1 for tile count
-                size: size_of::<u32>() as u64 * (width * height + 1),
-                array_elements: 1,
-                buffer_usage: BufferUsage::STORAGE_BUFFER,
-                memory_usage: MemoryUsage::GpuOnly,
-                queue_types: QueueTypes::MAIN,
-                sharing_mode: SharingMode::Exclusive,
-                debug_name: Some("active_tiles_buffer".into()),
-            },
+    fn make_rays(ctx: &Context, dims: (u32, u32)) -> (Buffer, usize) {
+        let width = dims.0.div_ceil(TILE_SIZE) as usize;
+        let height = dims.1.div_ceil(TILE_SIZE) as usize;
+        let ray_budget = (width * height)
+            .max(RAY_BUDGET)
+            .next_multiple_of((TILE_SIZE * TILE_SIZE) as usize);
+        let ray_size = size_of::<GpuReflectionRay>().next_multiple_of(16);
+        let size = (size_of::<u32>() * 4) + (ray_budget * ray_size);
+        (
+            Buffer::new(
+                ctx.clone(),
+                BufferCreateInfo {
+                    size: size as u64,
+                    array_elements: 1,
+                    buffer_usage: BufferUsage::STORAGE_BUFFER,
+                    memory_usage: MemoryUsage::GpuOnly,
+                    queue_types: QueueTypes::MAIN,
+                    sharing_mode: SharingMode::Exclusive,
+                    debug_name: Some("reflection_ray_buffer".into()),
+                },
+            )
+            .unwrap(),
+            ray_budget,
         )
-        .unwrap()
     }
 
     pub fn resize(&mut self, ctx: &Context, dims: (u32, u32)) {
+        let (rays, ray_budget) = Self::make_rays(ctx, dims);
         self.target = Self::make_target(ctx, dims);
         self.canvas_size = dims;
         self.tiles = Self::make_tiles(ctx, dims);
-        self.active_tiles = Self::make_active_tiles(ctx, dims);
-
-        self.reset_set.update(&[DescriptorSetUpdate {
-            binding: REFLECTION_RESET_SET_ACTIVE_TILES_BINDING,
-            array_element: 0,
-            value: DescriptorValue::StorageBuffer {
-                buffer: &self.active_tiles,
-                array_element: 0,
-            },
-        }]);
+        self.rays = rays;
+        self.ray_budget = ray_budget;
 
         self.classify_sets.iter_mut().for_each(|set| {
-            set.update(&[
-                DescriptorSetUpdate {
-                    binding: REFLECTION_TILE_CLASSIFIER_SET_TILES_BINDING,
+            set.update(&[DescriptorSetUpdate {
+                binding: REFLECTION_TILE_CLASSIFIER_SET_TILES_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &self.tiles,
                     array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &self.tiles,
-                        array_element: 0,
-                    },
                 },
-                DescriptorSetUpdate {
-                    binding: REFLECTION_TILE_CLASSIFIER_SET_ACTIVE_TILES_BINDING,
-                    array_element: 0,
-                    value: DescriptorValue::StorageBuffer {
-                        buffer: &self.active_tiles,
-                        array_element: 0,
-                    },
-                },
-            ]);
+            }]);
         });
 
         self.rt_sets.iter_mut().for_each(|set| {
@@ -453,14 +565,55 @@ impl Reflections {
                     },
                 },
                 DescriptorSetUpdate {
-                    binding: REFLECTIONS_PASS_SET_ACTIVE_TILES_BINDING,
+                    binding: REFLECTIONS_PASS_SET_RAYS_BINDING,
                     array_element: 0,
                     value: DescriptorValue::StorageBuffer {
-                        buffer: &self.active_tiles,
+                        buffer: &self.rays,
                         array_element: 0,
                     },
                 },
             ]);
+        });
+
+        self.reset_set.update(&[DescriptorSetUpdate {
+            binding: REFLECTION_RESET_SET_RAYS_BINDING,
+            array_element: 0,
+            value: DescriptorValue::StorageBuffer {
+                buffer: &self.rays,
+                array_element: 0,
+            },
+        }]);
+
+        self.ray_gen_sets.iter_mut().for_each(|set| {
+            set.update(&[
+                DescriptorSetUpdate {
+                    binding: REFLECTIONS_RAY_GEN_SET_TILES_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &self.tiles,
+                        array_element: 0,
+                    },
+                },
+                DescriptorSetUpdate {
+                    binding: REFLECTIONS_RAY_GEN_SET_RAYS_BINDING,
+                    array_element: 0,
+                    value: DescriptorValue::StorageBuffer {
+                        buffer: &self.rays,
+                        array_element: 0,
+                    },
+                },
+            ]);
+        });
+
+        self.accum_sets.iter_mut().for_each(|set| {
+            set.update(&[DescriptorSetUpdate {
+                binding: REFLECTION_ACCUM_SET_TILES_BINDING,
+                array_element: 0,
+                value: DescriptorValue::StorageBuffer {
+                    buffer: &self.tiles,
+                    array_element: 0,
+                },
+            }]);
         });
     }
 
@@ -557,6 +710,64 @@ impl Reflections {
                     mip_count: 1,
                 },
             },
+            DescriptorSetUpdate {
+                binding: REFLECTION_ACCUM_SET_DEPTH_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_depth(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+        ]);
+
+        self.ray_gen_sets[frame].update(&[
+            DescriptorSetUpdate {
+                binding: REFLECTIONS_RAY_GEN_SET_NORM_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_norm(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: REFLECTIONS_RAY_GEN_SET_TAN_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_tan(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: REFLECTIONS_RAY_GEN_SET_THIN_G_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_thin_g(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+            DescriptorSetUpdate {
+                binding: REFLECTIONS_RAY_GEN_SET_DEPTH_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_depth(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
         ]);
 
         self.apply_sets[frame].update(&[
@@ -574,34 +785,40 @@ impl Reflections {
             DescriptorSetUpdate {
                 binding: REFLECTION_APPLY_SET_THIN_G_BINDING,
                 array_element: 0,
-                value: DescriptorValue::StorageImage {
+                value: DescriptorValue::Texture {
                     texture: target.final_thin_g(),
                     array_element: 0,
-                    mip: 0,
-                },
-            },
-            DescriptorSetUpdate {
-                binding: REFLECTION_APPLY_SET_DST_BINDING,
-                array_element: 0,
-                value: DescriptorValue::StorageImage {
-                    texture: target.final_color(),
-                    array_element: 0,
-                    mip: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
                 },
             },
         ]);
 
-        self.classify_sets[frame].update(&[DescriptorSetUpdate {
-            binding: REFLECTION_TILE_CLASSIFIER_SET_THIN_G_BINDING,
-            array_element: 0,
-            value: DescriptorValue::Texture {
-                texture: target.final_thin_g(),
+        self.classify_sets[frame].update(&[
+            DescriptorSetUpdate {
+                binding: REFLECTION_TILE_CLASSIFIER_SET_THIN_G_BINDING,
                 array_element: 0,
-                sampler: REFLECTION_SAMPLER,
-                base_mip: 0,
-                mip_count: 1,
+                value: DescriptorValue::Texture {
+                    texture: target.final_thin_g(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
             },
-        }]);
+            DescriptorSetUpdate {
+                binding: REFLECTION_TILE_CLASSIFIER_SET_VEL_BINDING,
+                array_element: 0,
+                value: DescriptorValue::Texture {
+                    texture: target.final_vel(),
+                    array_element: 0,
+                    sampler: REFLECTION_SAMPLER,
+                    base_mip: 0,
+                    mip_count: 1,
+                },
+            },
+        ]);
 
         self.rt_sets[frame].update(&[
             DescriptorSetUpdate {
@@ -611,28 +828,6 @@ impl Reflections {
                     texture: &self.target,
                     array_element: dst_idx,
                     mip: 0,
-                },
-            },
-            DescriptorSetUpdate {
-                binding: REFLECTIONS_PASS_SET_NORM_BINDING,
-                array_element: 0,
-                value: DescriptorValue::Texture {
-                    texture: target.final_norm(),
-                    array_element: 0,
-                    sampler: REFLECTION_SAMPLER,
-                    base_mip: 0,
-                    mip_count: 1,
-                },
-            },
-            DescriptorSetUpdate {
-                binding: REFLECTIONS_PASS_SET_DEPTH_BINDING,
-                array_element: 0,
-                value: DescriptorValue::Texture {
-                    texture: target.final_depth(),
-                    array_element: 0,
-                    sampler: REFLECTION_SAMPLER,
-                    base_mip: 0,
-                    mip_count: 1,
                 },
             },
             DescriptorSetUpdate {
@@ -655,6 +850,7 @@ impl Reflections {
         &'a self,
         commands: &mut CommandBuffer<'a>,
         frame: Frame,
+        apply_pass: RenderPassDescriptor<'a>,
         camera: &'a CameraUbo,
         mesh_factory: &'a MeshFactory,
         material_factory: &'a MaterialFactory,
@@ -671,12 +867,10 @@ impl Reflections {
         let target_dims = UVec2::new(self.target.dims().0, self.target.dims().1);
         let inv_target_dims = Vec2::ONE / target_dims.as_vec2();
 
-        let mut classify_consts = [GpuReflectionTileClassifierPushConstants {
+        let classify_consts = [GpuReflectionTileClassifierPushConstants {
             canvas_dims,
             target_dims,
             inv_target_dims,
-            classify_ty: ClassifyType::Ssr as u32,
-            sample_idx: sample_idx as i32,
             sample_count: ms_sample_count,
             frame_count: (sample_count % std::u32::MAX as u64) as u32,
         }];
@@ -695,6 +889,14 @@ impl Reflections {
             search_skips: 0,
             search_steps: 40,
             refine_steps: 8,
+            camera_near_clip: camera.last().near,
+        }];
+
+        let ray_gen_consts = [GpuReflectionRayGenPushConstants {
+            target_dims,
+            inv_target_dims,
+            ray_budget: self.ray_budget as u32,
+            frame_count: (sample_count % std::u32::MAX as u64) as u32,
         }];
 
         let rt_consts = [GpuRtReflectionsPushConstants {
@@ -707,11 +909,15 @@ impl Reflections {
             frame_count: (sample_count % std::u32::MAX as u64) as u32,
         }];
 
-        // Determine which tiles should be SSR
-        commands.compute_pass(&self.classify_pipeline, Some("ssr_clasify"), |pass| {
+        // Determine which tiles need reflections
+        commands.compute_pass(&self.reset_pipeline, Some("refl_reset"), |pass| {
+            pass.bind_sets(0, vec![&self.reset_set]);
+            ComputePassDispatch::Inline(1, 1, 1)
+        });
+
+        commands.compute_pass(&self.classify_pipeline, Some("refl_tile_clasify"), |pass| {
             pass.bind_sets(0, vec![&self.classify_sets[frame_idx]]);
             pass.push_constants(bytemuck::cast_slice(&classify_consts));
-            // NOTE: SSR needs a dispatch over texels, unlike the others which dispatch over tiles
             ComputePassDispatch::Inline(
                 self.target.dims().0.div_ceil(TILE_SIZE),
                 self.target.dims().1.div_ceil(TILE_SIZE),
@@ -719,19 +925,16 @@ impl Reflections {
             )
         });
 
-        // Determine which tiles need to be raytraced
-        commands.compute_pass(&self.reset_pipeline, Some("ssr_reset"), |pass| {
-            pass.bind_sets(0, vec![&self.reset_set]);
-            ComputePassDispatch::Inline(1, 1, 1)
-        });
-
-        classify_consts[0].classify_ty = ClassifyType::Rt as u32;
-        commands.compute_pass(&self.classify_pipeline, Some("rt_clasify"), |pass| {
-            pass.bind_sets(0, vec![&self.classify_sets[frame_idx]]);
-            pass.push_constants(bytemuck::cast_slice(&classify_consts));
+        // Allocate and generate rays
+        commands.compute_pass(&self.ray_gen_pipeline, Some("refl_ray_gen"), |pass| {
+            pass.bind_sets(
+                0,
+                vec![&self.ray_gen_sets[frame_idx], camera.get_set(frame)],
+            );
+            pass.push_constants(bytemuck::cast_slice(&ray_gen_consts));
             ComputePassDispatch::Inline(
-                self.target.dims().0.div_ceil(TILE_SIZE).div_ceil(TILE_SIZE),
-                self.target.dims().1.div_ceil(TILE_SIZE).div_ceil(TILE_SIZE),
+                self.target.dims().0.div_ceil(TILE_SIZE),
+                self.target.dims().1.div_ceil(TILE_SIZE),
                 1,
             )
         });
@@ -771,22 +974,6 @@ impl Reflections {
             },
         );
 
-        // Randomly demote tiles
-        classify_consts[0].classify_ty = ClassifyType::Demote as u32;
-        commands.compute_pass(
-            &self.classify_pipeline,
-            Some("reflections_demote"),
-            |pass| {
-                pass.bind_sets(0, vec![&self.classify_sets[frame_idx]]);
-                pass.push_constants(bytemuck::cast_slice(&classify_consts));
-                ComputePassDispatch::Inline(
-                    self.target.dims().0.div_ceil(TILE_SIZE).div_ceil(TILE_SIZE),
-                    self.target.dims().1.div_ceil(TILE_SIZE).div_ceil(TILE_SIZE),
-                    1,
-                )
-            },
-        );
-
         // Accumulate reflections
         commands.compute_pass(&self.accum_pipeline, Some("accum_reflections"), |pass| {
             pass.bind_sets(0, vec![&self.accum_sets[frame_idx]]);
@@ -799,14 +986,10 @@ impl Reflections {
         });
 
         // Apply reflection lighting
-        commands.compute_pass(&self.apply_pipeline, Some("apply_reflections"), |pass| {
+        commands.render_pass(apply_pass, Some("reflection_apply"), |pass| {
+            pass.bind_pipeline(self.apply_pipeline.clone());
             pass.bind_sets(0, vec![&self.apply_sets[frame_idx]]);
-            pass.push_constants(bytemuck::cast_slice(&ssr_consts));
-            ComputePassDispatch::Inline(
-                self.canvas_size.0.div_ceil(TILE_SIZE),
-                self.canvas_size.1.div_ceil(TILE_SIZE),
-                1,
-            )
+            pass.draw(3, 1, 0, 0);
         });
     }
 }

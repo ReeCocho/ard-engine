@@ -119,7 +119,11 @@ impl GraphicsPipeline {
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .rasterization_samples(render_pass.samples)
-            .alpha_to_coverage_enable(false)
+            .alpha_to_coverage_enable(if render_pass.samples == vk::SampleCountFlags::TYPE_1 {
+                    false
+                } else {
+                    self.descriptor.rasterization.alpha_to_coverage
+                })
             .alpha_to_one_enable(false);
 
         // NOTE: For the viewport and scissor the width and height doesn't really matter

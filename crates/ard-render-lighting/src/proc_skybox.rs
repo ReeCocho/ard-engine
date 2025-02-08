@@ -274,6 +274,7 @@ impl ProceduralSkyBox {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::Clockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,
@@ -340,6 +341,7 @@ impl ProceduralSkyBox {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::Clockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: Some(DepthStencilState {
                     depth_clamp: false,
@@ -372,6 +374,14 @@ impl ProceduralSkyBox {
                             ..Default::default()
                         },
                         // Norm
+                        ColorBlendAttachment {
+                            blend: false,
+                            write_mask: ColorComponents::R
+                                | ColorComponents::G
+                                | ColorComponents::B,
+                            ..Default::default()
+                        },
+                        // Tan
                         ColorBlendAttachment {
                             blend: false,
                             write_mask: ColorComponents::R
@@ -434,6 +444,7 @@ impl ProceduralSkyBox {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::Clockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: None,
                 color_blend: ColorBlendState {
@@ -571,6 +582,7 @@ impl ProceduralSkyBox {
                     polygon_mode: PolygonMode::Fill,
                     cull_mode: CullMode::None,
                     front_face: FrontFace::Clockwise,
+                    alpha_to_coverage: false,
                 },
                 depth_stencil: None,
                 color_blend: ColorBlendState {

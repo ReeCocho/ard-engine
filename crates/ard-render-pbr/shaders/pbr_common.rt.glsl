@@ -1,6 +1,8 @@
 #ifndef _ARD_PBR_COMMON_RT
 #define _ARD_PBR_COMMON_RT
 
+#include "pbr_brdf.glsl"
+
 struct VertexAttribs {
     vec3 normal;
     vec3 tangent;
@@ -87,6 +89,7 @@ vec4 compute_brdf_pdf(
     );
 }
 
+#ifdef ARD_SET_MESH_DATA
 VertexAttribs get_vertex_attribs(
     const mat3 normal_mat,
     const uint index_base,
@@ -152,5 +155,6 @@ VertexAttribs get_vertex_attribs(
 
     return out_attribs;
 }
+#endif
 
 #endif

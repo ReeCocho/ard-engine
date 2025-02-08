@@ -679,6 +679,7 @@ impl RenderEcs {
         self.reflections.render(
             &mut cb,
             frame.frame,
+            canvas.render_target().reflection_apply_pass(),
             &self.camera,
             &mesh_factory,
             &material_factory,
